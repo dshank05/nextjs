@@ -66,7 +66,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // OPTIMIZED: Get customer names and item counts in batch queries
-    const invoiceIds = invoices.map(inv => inv.id)
+    const invoiceIds = invoices.map((inv: { id: any }) => inv.id)
     
     const [customerData, itemCounts] = await Promise.all([
       // Get all customer names in one query
@@ -84,7 +84,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map(c => [c.invoice_no, c.user_name]))
+    const customerMap = new Map(customerData.map((c: { invoice_no: any; user_name: any }) => [c.invoice_no, c.user_name]))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
@@ -148,7 +148,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Start transaction
-    const result = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx: any) => {
       // Create invoice
       const invoice = await tx.invoice.create({
         data: {
@@ -166,7 +166,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           notes,
           fy,
           status: 1,
-          payment_mode: 1
+          payment_mode: 1,
+          updated_at: new Date().toISOString()
         }
       })
 

@@ -112,7 +112,7 @@ export default async function handler(
     }
 
     // Build subcategory options (Car Models)
-    const subcategoryOptions = subcategories.map(sub => ({
+    const subcategoryOptions = subcategories.map((sub: { id: { toString: () => any }; subcategory_name: any }) => ({
       id: sub.id.toString(),
       name: sub.subcategory_name,
       source: 'lookup'
@@ -120,7 +120,7 @@ export default async function handler(
 
     res.status(200).json({
       categories: categoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
-      subcategories: subcategoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
+      subcategories: subcategoryOptions.sort((a: { name: string }, b: { name: any }) => a.name.localeCompare(b.name)),
       companies: companyOptions.sort((a, b) => a.name.localeCompare(b.name))
     })
   } catch (error) {

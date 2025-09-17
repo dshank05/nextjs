@@ -165,8 +165,8 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
 
   // Extract unique IDs for batch queries
   const productIds = products.map(p => p.id.toString())
-  const categoryIds = [...new Set(products.map(p => p.product_category).filter(Boolean))]
-  const companyIds = [...new Set(products.map(p => p.company).filter(Boolean))]
+  const categoryIds = Array.from(new Set(products.map(p => p.product_category).filter(Boolean)))
+  const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean)))
   
   // Get all subcategory IDs from comma-separated values
   const allSubcategoryIds = new Set<string>()
