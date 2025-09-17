@@ -10,11 +10,13 @@ export default async function handler(
   }
 
   try {
-    // Get current date for today's calculations (Purchase uses string dates)
-    const today = new Date()
-    const todayStart = Math.floor(today.setHours(0, 0, 0, 0) / 1000)
-    const todayEnd = Math.floor(today.setHours(23, 59, 59, 999) / 1000)
-    const todayDateString = today.toISOString().split('T')[0] // YYYY-MM-DD format
+    // Get current date for today's calculations
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+    const todayStartUnix = Math.floor(todayStart.getTime() / 1000)
+    const todayEndUnix = Math.floor(todayEnd.getTime() / 1000)
+    const todayDateString = now.toISOString().split('T')[0] // YYYY-MM-DD format
 
     // Run all queries in parallel for better performance
     const [
@@ -24,18 +26,14 @@ export default async function handler(
       totalPurchases,
       todaysSalesResult,
       todaysPurchasesResult,
+      lastSale,
+      lastPurchase,
     ] = await Promise.all([
       // Total products count
       prisma.product.count(),
 
-      // Low stock products (stock < min_stock)
-      prisma.product.count({
-        where: {
-          stock: {
-            lt: prisma.product.fields.min_stock
-          }
-        }
-      }),
+      // Low stock products (stock < min_stock) - using raw SQL since Prisma doesn't support field comparisons
+      prisma.$queryRaw`SELECT COUNT(*) as count FROM product WHERE stock < min_stock AND min_stock IS NOT NULL`,
 
       // Total invoices count
       prisma.invoice.count(),
@@ -47,8 +45,8 @@ export default async function handler(
       prisma.invoice.aggregate({
         where: {
           invoice_date: {
-            gte: todayStart,
-            lte: todayEnd,
+            gte: todayStartUnix,
+            lte: todayEndUnix,
           },
         },
         _sum: {
@@ -56,17 +54,65 @@ export default async function handler(
         },
       }),
 
-      // Today's purchases total (Purchase uses string dates - skip for now)
-      Promise.resolve({ _sum: { total: 0 } }),
+      // Today's purchases total (Purchase uses Unix timestamps)
+      prisma.purchase.aggregate({
+        where: {
+          invoice_date: {
+            gte: String(todayStartUnix),
+            lte: String(todayEndUnix),
+          },
+        },
+        _sum: {
+          total: true,
+        },
+      }),
+
+      // Last sale
+      prisma.invoice.findFirst({
+        orderBy: {
+          invoice_date: 'desc'
+        },
+        select: {
+          total: true,
+          invoice_date: true,
+          invoice_no: true
+        }
+      }),
+
+      // Last purchase
+      prisma.purchase.findFirst({
+        orderBy: {
+          invoice_date: 'desc' // Using invoice_date since it's a timestamp
+        },
+        select: {
+          total: true,
+          invoice_date: true,
+          invoice_no: true
+        }
+      }),
     ])
+
+    // Extract count from raw query result
+    const lowStockCount = Array.isArray(lowStockProducts) && lowStockProducts[0] ? 
+      Number(lowStockProducts[0].count) : 0
 
     const stats = {
       totalProducts,
-      lowStockProducts,
+      lowStockProducts: lowStockCount,
       totalInvoices,
       totalPurchases,
       todaysSales: todaysSalesResult._sum.total || 0,
       todaysPurchases: todaysPurchasesResult._sum.total || 0,
+      lastSale: lastSale ? {
+        amount: lastSale.total,
+        date: lastSale.invoice_date,
+        invoiceNo: lastSale.invoice_no
+      } : null,
+      lastPurchase: lastPurchase ? {
+        amount: lastPurchase.total,
+        date: lastPurchase.invoice_date,
+        invoiceNo: lastPurchase.invoice_no
+      } : null,
     }
 
     res.status(200).json(stats)
