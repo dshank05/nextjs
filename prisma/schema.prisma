@@ -1,0 +1,389 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Adminu {
+  id                   Int     @id @default(autoincrement())
+  name                 String? @db.VarChar(200)
+  contactperson        String? @db.VarChar(200)
+  gender               Int?
+  username             String? @db.VarChar(255)
+  auth_key             String  @db.VarChar(32)
+  password_hash        String  @db.VarChar(255)
+  password_reset_token String? @db.VarChar(255)
+  email                String  @db.VarChar(255)
+  mobile               String? @db.VarChar(10)
+  status               Int     @default(10) @db.SmallInt
+  role                 Int?
+  address              String? @db.VarChar(200)
+  created_at           Int
+  updated_at           Int
+
+  @@map("adminu")
+}
+
+model Settings {
+  id        Int @id @default(autoincrement())
+  currentfy Int
+
+  @@map("settings")
+}
+
+model States {
+  id         Int    @id @default(autoincrement())
+  state_name String @db.VarChar(100)
+  code       Int
+
+  @@map("states")
+}
+
+model Product {
+  id                  Int     @id @default(autoincrement())
+  product_name        String  @db.VarChar(255)
+  hsn                 String? @db.VarChar(50)
+  product_category    String? @db.VarChar(100)
+  product_subcategory String? @db.VarChar(100)
+  company             String? @db.VarChar(255)
+  pic                 String? @db.VarChar(255)
+  part_no             String? @db.VarChar(100)
+  min_stock           Int?
+  stock               Int?
+  rate                Int?
+  notes               String? @db.VarChar(255)
+
+  @@index([product_category], map: "idx_product_category")
+  @@index([company], map: "idx_product_company")
+  @@index([product_name], map: "idx_product_name")
+  @@index([part_no], map: "idx_product_part_no")
+  @@index([stock, min_stock], map: "idx_product_stock")
+  @@map("product")
+}
+
+model Invoice {
+  id                  Int     @id @default(autoincrement())
+  invoice_no          Int
+  select_customer     Int
+  items_total         Float?
+  freight             Float?
+  total_taxable_value Float
+  taxrate             Int?
+  total_cgst          Float?
+  total_sgst          Float?
+  total_igst          Float?
+  total_tax           Float?
+  total               Float
+  notes               String? @db.VarChar(255)
+  notes_show          Int?
+  invoice_date        Int
+  updated_at          String  @db.VarChar(100)
+  status              Int?
+  payment_mode        Int?
+  fy                  Int
+  mode                Int?
+  type                Int?
+
+  @@map("invoice")
+}
+
+model Invoiceitems {
+  id              Int     @id @default(autoincrement())
+  invoice_no      Int
+  name_of_product String  @db.VarChar(255)
+  category_id     Int?
+  model_id        Int?
+  company_id      Int?
+  hsn             String? @db.VarChar(50)
+  part            String? @db.VarChar(100)
+  qty             Float?
+  rate            Float?
+  subtotal        Float
+  product_show    Int?
+  category_show   Int?
+  model_show      Int?
+  company_show    Int?
+  part_show       Int?
+  invoice_date    Int
+  fy              Int
+
+  @@map("invoice_items")
+}
+
+model Purchase {
+  id                  Int     @id @default(autoincrement())
+  invoice_no          Int
+  items_total         Float?
+  freight             Float?
+  total_taxable_value Float
+  taxrate             Int?
+  total_cgst          Float?
+  total_sgst          Float?
+  total_igst          Float?
+  total_tax           Float?
+  total               Float
+  notes               String? @db.VarChar(255)
+  invoice_date        String  @db.VarChar(30)
+  updated_at          String  @db.VarChar(100)
+  status              Int?
+  payment_mode        Int?
+  transport           String? @db.VarChar(255)
+  fy                  Int
+
+  @@map("purchase")
+}
+
+model Purchaseitems {
+  id              Int     @id @default(autoincrement())
+  invoice_no      Int
+  name_of_product String  @db.VarChar(255)
+  category_id     Int?
+  model_id        Int?
+  company_id      Int?
+  hsn             String? @db.VarChar(50)
+  part            String? @db.VarChar(100)
+  qty             Float?
+  unit            Int?
+  rate            Float?
+  subtotal        Float
+  fy              Int
+  invoice_date    Int
+
+  @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
+  @@map("purchase_items")
+}
+
+model Incexp {
+  id           Int     @id @default(autoincrement())
+  invoice_id   Int?
+  user_id      Int
+  amt          Float
+  payment_mode Int
+  type         Int?
+  incexp_date  String  @db.VarChar(30)
+  fy           Int?
+  notes        String? @db.VarChar(100)
+
+  @@map("incexp")
+}
+
+model bank_details {
+  id             Int     @id @default(autoincrement())
+  bank_name      String  @db.VarChar(200)
+  account_number String  @db.VarChar(100)
+  bank_address   String? @db.VarChar(255)
+  ifsc           String? @db.VarChar(30)
+}
+
+model bill_to {
+  id         Int     @id @default(autoincrement())
+  invoice_no Int?
+  user_name  String  @db.VarChar(255)
+  address    String  @db.VarChar(255)
+  address2   String? @db.VarChar(255)
+  state      Int?
+  state_code Int?
+  gstin      String? @db.VarChar(50)
+}
+
+model bill_tosales {
+  id         Int     @id @default(autoincrement())
+  invoice_no Int?
+  user_name  String  @db.VarChar(255)
+  address    String  @db.VarChar(255)
+  address2   String? @db.VarChar(255)
+  mobile     String? @db.VarChar(100)
+  email      String? @db.VarChar(255)
+  state      Int?
+  state_code Int?
+  gstin      String? @db.VarChar(50)
+}
+
+model bill_tosalesx {
+  id         Int     @id @default(autoincrement())
+  invoice_no Int?
+  user_name  String  @db.VarChar(255)
+  address    String  @db.VarChar(255)
+  address2   String? @db.VarChar(255)
+  mobile     String? @db.VarChar(100)
+  email      String? @db.VarChar(255)
+  state      Int?
+  state_code Int?
+  gstin      String? @db.VarChar(50)
+}
+
+model business_details {
+  id             Int     @id @default(autoincrement())
+  gstin          String  @db.VarChar(50)
+  name           String  @db.VarChar(255)
+  tagline        String? @db.VarChar(255)
+  address_line_1 String  @db.VarChar(255)
+  address_line_2 String? @db.VarChar(255)
+  phone          String? @db.VarChar(100)
+  email          String? @db.VarChar(255)
+  fax            String? @db.VarChar(30)
+  terms          String? @db.Text
+}
+
+model customer_details {
+  id                  Int     @id @default(autoincrement())
+  billing_name        String  @db.VarChar(200)
+  billing_address     String  @db.VarChar(255)
+  billing_state       Int?
+  billing_state_code  Int?
+  billing_gstin       String? @db.VarChar(30)
+  contact_no          String? @db.VarChar(20)
+  email               String? @db.VarChar(100)
+  shipping_name       String? @db.VarChar(200)
+  shipping_address    String? @db.VarChar(255)
+  shipping_state      Int?
+  shipping_state_code Int?
+  shipping_gstin      String? @db.VarChar(30)
+}
+
+model financial_year {
+  id Int    @id @default(autoincrement())
+  fy String @db.VarChar(30)
+}
+
+model incexpx {
+  id           Int     @id @default(autoincrement())
+  invoice_id   Int?
+  user_id      Int
+  amt          Float
+  payment_mode Int
+  type         Int?
+  incexp_date  String  @db.VarChar(30)
+  fy           Int?
+  notes        String? @db.VarChar(100)
+}
+
+model invoice_itemsx {
+  id              Int     @id @default(autoincrement())
+  invoice_no      Int
+  name_of_product String  @db.VarChar(255)
+  category_id     Int?
+  model_id        Int?
+  company_id      Int?
+  hsn             String? @db.VarChar(50)
+  part            String? @db.VarChar(100)
+  qty             Float?
+  rate            Float?
+  subtotal        Float
+  product_show    Int?
+  category_show   Int?
+  model_show      Int?
+  company_show    Int?
+  part_show       Int?
+  invoice_date    Int
+  fy              Int
+}
+
+model invoicex {
+  id                  Int     @id @default(autoincrement())
+  invoice_no          Int
+  select_customer     Int?
+  items_total         Float?
+  freight             Float?
+  total_taxable_value Float
+  taxrate             Int?
+  total_cgst          Float?
+  total_sgst          Float?
+  total_igst          Float?
+  total_tax           Float?
+  total               Float
+  notes               String? @db.VarChar(255)
+  notes_show          Int?
+  invoice_date        Int
+  updated_at          String  @db.VarChar(100)
+  status              Int?
+  payment_mode        Int?
+  fy                  Int
+  mode                Int?
+  type                Int?
+}
+
+model migration {
+  version    String @id @db.VarChar(180)
+  apply_time Int?
+}
+
+model product_category {
+  id            Int    @id @default(autoincrement())
+  category_name String @db.VarChar(255)
+}
+
+model product_company {
+  id           Int    @id @default(autoincrement())
+  company_name String @db.VarChar(255)
+}
+
+model product_subcategory {
+  id               Int    @id @default(autoincrement())
+  subcategory_name String @db.VarChar(255)
+}
+
+model ship_to {
+  id         Int     @id @default(autoincrement())
+  invoice_no Int?
+  user_name  String  @db.VarChar(255)
+  address    String  @db.VarChar(255)
+  state      Int?
+  state_code Int?
+  gstin      String? @db.VarChar(50)
+}
+
+model ship_tox {
+  id         Int     @id @default(autoincrement())
+  invoice_no Int?
+  user_name  String  @db.VarChar(255)
+  address    String  @db.VarChar(255)
+  state      Int?
+  state_code Int?
+  gstin      String? @db.VarChar(50)
+}
+
+model transport_details {
+  id              Int     @id @default(autoincrement())
+  invoice_id      Int
+  trans_mode      String? @db.VarChar(100)
+  vehicle_no      String? @db.VarChar(100)
+  supply_date     String? @db.VarChar(100)
+  place_of_supply String? @db.VarChar(100)
+}
+
+model transport_detailsx {
+  id              Int     @id @default(autoincrement())
+  invoice_id      Int
+  trans_mode      String? @db.VarChar(100)
+  vehicle_no      String? @db.VarChar(100)
+  supply_date     String? @db.VarChar(100)
+  place_of_supply String? @db.VarChar(100)
+}
+
+model user {
+  id                   Int     @id @default(autoincrement())
+  username             String  @unique(map: "username") @db.VarChar(255)
+  auth_key             String  @db.VarChar(32)
+  password_hash        String  @db.VarChar(255)
+  password_reset_token String? @unique(map: "password_reset_token") @db.VarChar(255)
+  email                String  @unique(map: "email") @db.VarChar(255)
+  status               Int     @default(10) @db.SmallInt
+  created_at           Int
+  updated_at           Int
+}
+
+model vendor_details {
+  id          Int     @id @default(autoincrement())
+  vendor_name String  @db.VarChar(255)
+  address     String? @db.VarChar(255)
+  address_2   String? @db.VarChar(255)
+  state       Int?
+  state_code  Int?
+  contact_no  String? @db.VarChar(20)
+  email       String? @db.VarChar(100)
+  tax_id      String? @db.VarChar(50)
+}
