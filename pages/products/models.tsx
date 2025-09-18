@@ -25,7 +25,7 @@ export default function Models() {
 
   useEffect(() => {
     if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
+      setPagination(prev => ({ ...prev, page: 1 } ));
     }
   }, [debouncedSearchTerm]);
 
