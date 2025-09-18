@@ -1,44 +1,143 @@
-import { useState, ReactNode } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/router'
-import { useSession, signOut } from 'next-auth/react'
+import { useState, ReactNode, useEffect } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { useSession, signOut } from 'next-auth/react';
+import SidebarItem from './Sidebar'; // Ensure this import path is correct
+
+// Define types for better TypeScript support
+export interface Subpage {
+  name: string;
+  href: string;
+}
+
+export interface NavigationItem {
+  name: string;
+  href?: string;
+  icon: string;
+  subpages?: Subpage[];
+}
 
 interface LayoutProps {
-  children: ReactNode
+  children: ReactNode;
 }
 
 const Layout = ({ children }: LayoutProps) => {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const router = useRouter()
-  const { data: session, status } = useSession()
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const router = useRouter();
+  const { data: session } = useSession();
 
-  const navigation = [
-    { name: 'Dashboard', href: '/', icon: '📊' },
-    { name: 'Products', href: '/products', icon: '📦' },
-    { name: 'Invoices', href: '/invoices', icon: '🧾' },
-    { name: 'Purchases', href: '/purchases', icon: '🛒' },
-    { name: 'Customers', href: '/customers', icon: '👥' },
-    { name: 'Vendors', href: '/vendors', icon: '🏢' },
-    { name: 'Categories', href: '/categories', icon: '📂' },
-    { name: 'Companies', href: '/companies', icon: '🏭' },
-    { name: 'Low Stock', href: '/products/lowstock', icon: '⚠️' },
-    { name: 'Reports', href: '/reports', icon: '📈' },
-  ]
+  // --- STATE LIFTING LOGIC ---
+  // 1. State now lives in the parent Layout component to persist across navigations.
+  const [openMenus, setOpenMenus] = useState<string[]>([]);
 
-  const isActive = (href: string) => {
-    if (href === '/') {
-      return router.pathname === '/'
+  // 2. This function is passed down to each SidebarItem to handle its toggle action.
+  const toggleMenu = (itemName: string) => {
+    setOpenMenus(prevOpenMenus => {
+      if (prevOpenMenus.includes(itemName)) {
+        return prevOpenMenus.filter(name => name !== itemName); // Close menu
+      } else {
+        return [...prevOpenMenus, itemName]; // Open menu
+      }
+    });
+  };
+
+  const navigation: NavigationItem[] = [
+    {
+      name: 'PRODUCTS',
+      icon: '📦',
+      subpages: [
+        { name: 'ALL PRODUCTS', href: '/products' },
+        { name: 'PRODUCT CATEGORY', href: '/products/category' },
+        { name: 'PRODUCT SUB CATEGORY', href: '/products/subcategory' },
+        { name: 'CAR MODELS', href: '/products/models' },
+        { name: 'PART COMPANY', href: '/products/company' },
+      ],
+    },
+    { name: 'PURCHASE', href: '/purchase', icon: '🛒' },
+    { name: 'SALE', href: '/sale', icon: '🧾' },
+    { name: 'SALEX', href: '/salex', icon: '📈' },
+    {
+      name: 'ENTRY',
+      icon: '📝',
+      subpages: [
+        { name: 'SALE RETURN', href: '/entry/salereturn' },
+        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' },
+        { name: 'DEAD STOCK', href: '/entry/deadstock' },
+        { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
+        { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },
+      ],
+    },
+    {
+      name: 'SETTINGS',
+      icon: '⚙️',
+      subpages: [
+        { name: 'USERS', href: '/settings/users' },
+        { name: 'WARE HOUSE', href: '/settings/warehouse' },
+        { name: 'STAFF DETAILS', href: '/settings/staffdetails' },
+        { name: 'BUSINESS DETAILS', href: '/settings/businessdetails' },
+        { name: 'BANK DETAILS', href: '/settings/bankdetails' },
+        { name: 'FINANCIAL YEAR', href: '/settings/financialyear' },
+        { name: 'GST TAX RATE', href: '/settings/gsttaxrate' },
+        { name: 'STATES', href: '/settings/states' },
+      ],
+    },
+    {
+      name: 'REPORTS',
+      icon: '📊',
+      subpages: [
+        { name: 'MINIMUM STOCK', href: '/reports/minimumstock' },
+        { name: 'SALE', href: '/reports/sale' },
+        { name: 'SALE X', href: '/reports/salex' },
+        // ... other report subpages
+      ],
+    },
+  ];
+
+  // 3. Effect to automatically open the menu of the current page on load/navigation.
+  useEffect(() => {
+    // Find the parent item whose subpages match the current URL
+    const activeParent = navigation.find(item =>
+      item.subpages?.some(sub => router.pathname.startsWith(sub.href))
+    );
+
+    if (activeParent) {
+      // If a parent is found, the state is SET to that parent.
+      // This ensures that navigating between sub-pages of the same parent
+      // doesn't close the menu.
+      setOpenMenus([activeParent.name]);
+    } else {
+      // If we navigate to a page with no parent (like /purchase),
+      // close all menus.
+      setOpenMenus([]);
     }
-    return router.pathname.startsWith(href)
-  }
+  }, [router.pathname]); // This logic runs on every single page navigation.
+
+
+  const isActive = (href?: string, subpages?: Subpage[]) => {
+    if (subpages?.some(sub => router.pathname.startsWith(sub.href))) {
+      return true;
+    }
+    return href ? router.pathname.startsWith(href) : false;
+  };
+
+  const getPageTitle = () => {
+    for (const item of navigation) {
+      if (item.subpages) {
+        const subpage = item.subpages.find(sub => sub.href === router.pathname);
+        if (subpage) return subpage.name;
+      }
+      if (item.href === router.pathname) {
+        return item.name;
+      }
+    }
+    return 'Dashboard'; // Default title
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 flex">
       {/* Sidebar */}
-      <div className={`bg-slate-800 border-r border-slate-700 transition-all duration-300 ${
-        sidebarOpen ? 'w-64' : 'w-16'
-      }`}>
+      <div className={`bg-slate-800 border-r border-slate-700 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
         <div className="p-4">
           <div className="flex items-center space-x-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -55,18 +154,15 @@ const Layout = ({ children }: LayoutProps) => {
 
         <nav className="mt-8">
           {navigation.map((item) => (
-            <Link
+            <SidebarItem
               key={item.name}
-              href={item.href}
-              className={`flex items-center px-4 py-3 text-sm font-medium transition-colors duration-200 ${
-                isActive(item.href)
-                  ? 'bg-blue-600 text-white border-r-2 border-blue-400'
-                  : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-              }`}
-            >
-              <span className="text-lg mr-3">{item.icon}</span>
-              {sidebarOpen && <span>{item.name}</span>}
-            </Link>
+              item={item}
+              sidebarOpen={sidebarOpen}
+              isActive={isActive}
+              // Pass the new state and toggle function as props
+              isOpen={openMenus.includes(item.name)}
+              toggleMenu={() => toggleMenu(item.name)}
+            />
           ))}
         </nav>
       </div>
@@ -86,25 +182,11 @@ const Layout = ({ children }: LayoutProps) => {
                 </svg>
               </button>
               <h2 className="text-xl font-semibold text-white">
-                {navigation.find(item => isActive(item.href))?.name || 'Dashboard'}
+                {getPageTitle()}
               </h2>
             </div>
 
             <div className="flex items-center space-x-4">
-              {/* Search */}
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  className="input w-64 pl-10"
-                />
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-              </div>
-
               {/* User Menu */}
               <div className="relative">
                 <button
@@ -116,10 +198,12 @@ const Layout = ({ children }: LayoutProps) => {
                       {session?.user?.username?.charAt(0).toUpperCase() || 'U'}
                     </span>
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-medium">{session?.user?.username || 'User'}</p>
-                    <p className="text-xs text-slate-400">Online</p>
-                  </div>
+                  {sidebarOpen && (
+                    <div className="text-left">
+                      <p className="text-sm font-medium">{session?.user?.username || 'User'}</p>
+                      <p className="text-xs text-slate-400">Online</p>
+                    </div>
+                  )}
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -151,14 +235,14 @@ const Layout = ({ children }: LayoutProps) => {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-y-auto">
           <div className="p-6">
             {children}
           </div>
         </main>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Layout
+export default Layout;

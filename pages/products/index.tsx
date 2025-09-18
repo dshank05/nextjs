@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 
 interface Product {
+  [x: string]: ReactNode
   id: number
   product_name: string
   product_category?: string
@@ -36,21 +37,21 @@ export default function Products() {
     hasMore: false
   })
   const [loading, setLoading] = useState(true)
-  
+
   // Filter states
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
   const [subcategoryFilter, setSubcategoryFilter] = useState('')
   const [companyFilter, setCompanyFilter] = useState('')
   const [stockFilter, setStockFilter] = useState('all')
-  
+
   // Filter options from database
   const [filterOptions, setFilterOptions] = useState<{
     categories: { id: string; name: string }[]
     subcategories: { id: string; name: string }[]
     companies: { id: string; name: string }[]
   }>({ categories: [], subcategories: [], companies: [] })
-  
+
   // Typeahead states
   const [categorySearch, setCategorySearch] = useState('')
   const [subcategorySearch, setSubcategorySearch] = useState('')
@@ -101,7 +102,13 @@ export default function Products() {
       const response = await fetch(`/api/products/optimized?${params}`)
       if (response.ok) {
         const data: ProductResponse = await response.json()
-        setProducts(data.products || [])
+        // Add index to each product based on current page and limit
+        const startIndex = (pagination.page - 1) * pagination.limit
+        const productsWithIndex = (data.products || []).map((product, idx) => ({
+          ...product,
+          index: startIndex + idx + 1
+        }))
+        setProducts(productsWithIndex)
         setPagination(data.pagination)
       }
     } catch (error) {
@@ -169,7 +176,7 @@ export default function Products() {
     const pages = []
     const start = Math.max(1, pagination.page - 2)
     const end = Math.min(pagination.totalPages, pagination.page + 2)
-    
+
     for (let i = start; i <= end; i++) {
       pages.push(i)
     }
@@ -408,14 +415,16 @@ export default function Products() {
           <table className="table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>S.N</th>
+                <th>UID</th>
                 <th>Product Name</th>
-                <th>Part No</th>
+
                 <th>Category</th>
                 <th>Car Model</th>
                 <th>Company</th>
+                <th>Part Number</th>
                 <th>Stock</th>
-                <th>Min Stock</th>
+                {/* <th>Min Stock</th> */}
                 <th>Rate</th>
                 <th>Status</th>
               </tr>
@@ -423,9 +432,10 @@ export default function Products() {
             <tbody>
               {products.map((product) => (
                 <tr key={product.id}>
+                  <td>{product.index}</td>
                   <td className="text-slate-400 text-sm">{product.id}</td>
                   <td className="font-medium text-white">{product.product_name}</td>
-                  <td className="text-slate-300">{product.part_no || '-'}</td>
+
                   <td className="text-slate-300">{product.categoryName || '-'}</td>
                   <td className="text-slate-300 min-w-48">
                     {product.subcategoryNames ? (
@@ -444,8 +454,9 @@ export default function Products() {
                     )}
                   </td>
                   <td className="text-slate-300">{product.companyName || '-'}</td>
+                  <td className="text-slate-300">{product.part_no || '-'}</td>
                   <td className="text-slate-300">{product.stock || 0}</td>
-                  <td className="text-slate-300">{product.min_stock || 0}</td>
+                  {/* <td className="text-slate-300">{product.min_stock || 0}</td> */}
                   <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
                   <td>
                     {(product.stock || 0) === 0 ? (
@@ -466,7 +477,7 @@ export default function Products() {
               ))}
             </tbody>
           </table>
-          
+
           {products.length === 0 && (
             <div className="text-center py-8 text-slate-400">
               {searchTerm ? `No products found matching "${searchTerm}"` : 'No products found'}
@@ -499,21 +510,20 @@ export default function Products() {
                   <span className="px-2 text-slate-500">...</span>
                 </>
               )}
-              
+
               {getPageNumbers().map((pageNum) => (
                 <button
                   key={pageNum}
                   onClick={() => handlePageChange(pageNum)}
-                  className={`px-3 py-1 rounded ${
-                    pageNum === pagination.page
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
+                  className={`px-3 py-1 rounded ${pageNum === pagination.page
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                    }`}
                 >
                   {pageNum}
                 </button>
               ))}
-              
+
               {pagination.page < pagination.totalPages - 2 && (
                 <>
                   <span className="px-2 text-slate-500">...</span>
