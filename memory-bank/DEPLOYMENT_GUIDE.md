@@ -66,7 +66,7 @@ public_html/nextjs/
 Create `.env.production` on server:
 ```env
 # Production Database (Already Configured)
-DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@localhost:3306/u348217822_baij_mc8qp"
+DATABASE_URL="mysql://your_username:your_password@localhost:3306/your_database_name"
 
 # NextJS Configuration
 NODE_ENV=production
@@ -109,7 +109,7 @@ pm2 start npm --name "nextjs-inventory" -- start
 2. **Environment Variables** (via Control Panel):
    ```
    NODE_ENV=production
-   DATABASE_URL=mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@localhost:3306/u348217822_baij_mc8qp
+   DATABASE_URL=mysql://your_username:your_password@localhost:3306/your_database_name
    ```
 
 3. **Domain Configuration**:
@@ -120,10 +120,10 @@ pm2 start npm --name "nextjs-inventory" -- start
 ### Database Connection (Production)
 ```env
 # Local connection from Hostinger server
-DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@localhost:3306/u348217822_baij_mc8qp"
+DATABASE_URL="mysql://your_username:your_password@localhost:3306/your_database_name"
 
 # Alternative: Use 127.0.0.1 if localhost fails
-DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@127.0.0.1:3306/u348217822_baij_mc8qp"
+DATABASE_URL="mysql://your_username:your_password@127.0.0.1:3306/your_database_name"
 ```
 
 ## 📋 Production Verification Steps

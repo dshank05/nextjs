@@ -45,7 +45,7 @@ Choose one of the database setup options from `../DATABASE_SETUP.md`:
 cp .env.example .env.local
 
 # Edit .env.local and add your Hostinger MySQL host
-# DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@[HOSTINGER_MYSQL_HOST]:3306/u348217822_baij_mc8qp"
+# DATABASE_URL="mysql://your_username:your_password@[HOSTINGER_MYSQL_HOST]:3306/your_database_name"
 ```
 
 **Option B: Local Database**

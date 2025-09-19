@@ -3,10 +3,10 @@
 ## 🗄️ Database Overview
 
 ### Production Database (Hostinger)
-- **Database Name**: `u348217822_baij_mc8qp`
-- **Username**: `u348217822_baij_fq87p`
-- **Password**: `8rQm~O-;94Yf`
-- **Remote Host**: `srv1192.hstgr.io` (Primary) or `193.203.184.29` (Alternative)
+- **Database Name**: `your_database_name`
+- **Username**: `your_username`
+- **Password**: `your_password`
+- **Remote Host**: `your-host.hstgr.io` (Primary) or `xxx.xxx.xxx.xxx` (Alternative)
 - **Port**: `3306`
 - **Type**: MySQL 5.7+
 
@@ -21,10 +21,10 @@
 ### Environment Variables
 ```env
 # Production Database (Hostinger) - Ready to Use
-DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@srv1192.hstgr.io:3306/u348217822_baij_mc8qp"
+DATABASE_URL="mysql://your_username:your_password@your-host.hstgr.io:3306/your_database_name"
 
 # Alternative hostname if needed
-# DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@193.203.184.29:3306/u348217822_baij_mc8qp"
+# DATABASE_URL="mysql://your_username:your_password@xxx.xxx.xxx.xxx:3306/your_database_name"
 ```
 
 ### Prisma Configuration
@@ -208,13 +208,13 @@ npx prisma generate
 SELECT 
   table_schema AS 'Database',
   SUM(data_length + index_length) / 1024 / 1024 AS 'Size (MB)'
-FROM information_schema.tables 
-WHERE table_schema = 'u348217822_baij_mc8qp';
+FROM information_schema.tables
+WHERE table_schema = 'your_database_name';
 
 -- Check table record counts
-SELECT table_name, table_rows 
-FROM information_schema.tables 
-WHERE table_schema = 'u348217822_baij_mc8qp' 
+SELECT table_name, table_rows
+FROM information_schema.tables
+WHERE table_schema = 'your_database_name'
 ORDER BY table_rows DESC;
 ```
 

@@ -118,7 +118,7 @@ else → "✅ In Stock" (Normal)
 
 ### Connection String
 ```env
-DATABASE_URL="mysql://u348217822_baij_fq87p:8rQm~O-;94Yf@srv1192.hstgr.io:3306/u348217822_baij_mc8qp"
+DATABASE_URL="mysql://your_username:your_password@your-host.hstgr.io:3306/your_database_name"
 ```
 
 ## 🚀 Deployment Overview
