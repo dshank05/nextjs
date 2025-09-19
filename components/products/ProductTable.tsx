@@ -1,6 +1,7 @@
 // In components/products/ProductTable.tsx
 
-import { ReactNode } from 'react';
+import { ReactNode, useState, useMemo } from 'react';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Define types for props
 interface Product {
@@ -31,7 +32,12 @@ interface ProductTableProps {
   onPageChange: (newPage: number) => void;
 }
 
+type SortField = 'product_name' | 'categoryName' | 'companyName' | 'part_no' | 'stock' | 'rate';
+type SortOrder = 'asc' | 'desc';
+
 export const ProductTable = ({ products, pagination, loading, onPageChange }: ProductTableProps) => {
+  const [sortBy, setSortBy] = useState<SortField>('product_name');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   const getPageNumbers = () => {
     const pages = [];
@@ -39,6 +45,64 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
     const end = Math.min(pagination.totalPages, pagination.page + 2);
     for (let i = start; i <= end; i++) pages.push(i);
     return pages;
+  };
+
+  const handleSort = (field: SortField) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortBy) {
+        case 'product_name':
+          aValue = a.product_name?.toString().toLowerCase() || '';
+          bValue = b.product_name?.toString().toLowerCase() || '';
+          break;
+        case 'categoryName':
+          aValue = a.categoryName?.toString().toLowerCase() || '';
+          bValue = b.categoryName?.toString().toLowerCase() || '';
+          break;
+        case 'companyName':
+          aValue = a.companyName?.toString().toLowerCase() || '';
+          bValue = b.companyName?.toString().toLowerCase() || '';
+          break;
+        case 'part_no':
+          aValue = a.part_no?.toString().toLowerCase() || '';
+          bValue = b.part_no?.toString().toLowerCase() || '';
+          break;
+        case 'stock':
+          aValue = a.stock || 0;
+          bValue = b.stock || 0;
+          break;
+        case 'rate':
+          aValue = a.latestPurchaseRate || a.rate || 0;
+          bValue = b.latestPurchaseRate || b.rate || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [products, sortBy, sortOrder]);
+
+  const getSortIcon = (field: SortField) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   if (loading) {
@@ -61,18 +125,30 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
             <tr>
               <th>S.N</th>
               <th>UID</th>
-              <th>Product Name</th>
-              <th>Category</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
+                Product Name {getSortIcon('product_name')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('categoryName')}>
+                Category {getSortIcon('categoryName')}
+              </th>
               <th>Car Model</th>
-              <th>Company</th>
-              <th>Part Number</th>
-              <th>Stock</th>
-              <th>Rate</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('companyName')}>
+                Company {getSortIcon('companyName')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
+                Part Number {getSortIcon('part_no')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
+                Stock {getSortIcon('stock')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
+                Rate {getSortIcon('rate')}
+              </th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {products.map((product) => (
+            {sortedProducts.map((product) => (
               <tr key={product.id}>
                 <td>{product.index}</td>
                 <td className="text-slate-400 text-sm">{product.id}</td>
@@ -114,7 +190,7 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
           </tbody>
         </table>
 
-        {products.length === 0 && !loading && (
+        {sortedProducts.length === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No products found with the current filters.</div>
         )}
       </div>
