@@ -5,6 +5,8 @@ interface Subcategory {
   id: number;
   subcategory_name: string;
   index: number;
+  productNames?: string[];
+  productCount?: number;
 }
 
 interface SubcategoryResponse {
@@ -19,7 +21,7 @@ export default function Subcategories() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingSubcategory, setEditingSubcategory] = useState<Subcategory | null>(null);
-  const [formData, setFormData] = useState({ subcategory_name: '' });
+  const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -74,32 +76,32 @@ export default function Subcategories() {
 
   const handleAdd = () => {
     setEditingSubcategory(null);
-    setFormData({ subcategory_name: '' });
+    setFormData({ id: 0, subcategory_name: '' });
     setShowModal(true);
   };
 
   const handleEdit = (subcategory: Subcategory) => {
     setEditingSubcategory(subcategory);
-    setFormData({ subcategory_name: subcategory.subcategory_name });
+    setFormData({ id: subcategory.id, subcategory_name: subcategory.subcategory_name });
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this car model?')) {
-      try {
-        const response = await fetch(`/api/products/subcategories`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        });
-        if (response.ok) {
-          fetchSubcategories();
-        }
-      } catch (error) {
-        console.error('Error deleting subcategory:', error);
-      }
-    }
-  };
+  // const handleDelete = async (id: number) => {
+  //   if (confirm('Are you sure you want to delete this car model?')) {
+  //     try {
+  //       const response = await fetch(`/api/products/subcategories`, {
+  //         method: 'DELETE',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({ id }),
+  //       });
+  //       if (response.ok) {
+  //         fetchSubcategories();
+  //       }
+  //     } catch (error) {
+  //       console.error('Error deleting subcategory:', error);
+  //     }
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,7 +177,9 @@ export default function Subcategories() {
                 <thead>
                   <tr>
                     <th>S.N</th>
+                    <th>ID</th>
                     <th>Car Model Name</th>
+                    <th>Associated Products</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -183,10 +187,33 @@ export default function Subcategories() {
                   {subcategories.map((subcategory) => (
                     <tr key={subcategory.id}>
                       <td>{subcategory.index}</td>
+                      <td>{subcategory.id}</td>
                       <td className="font-medium text-white">{subcategory.subcategory_name}</td>
+                      <td className="min-w-64">
+                        {subcategory.productNames && subcategory.productNames.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {subcategory.productNames.slice(0, 3).map((productName, index) => (
+                              <span
+                                key={index}
+                                className="px-2 py-1 bg-green-600/20 text-green-300 text-xs rounded-full border border-green-500/30"
+                                title={productName}
+                              >
+                                {productName.length > 15 ? `${productName.substring(0, 15)}...` : productName}
+                              </span>
+                            ))}
+                            {subcategory.productCount && subcategory.productCount > 3 && (
+                              <span className="px-2 py-1 bg-slate-600/20 text-slate-400 text-xs rounded-full border border-slate-500/30">
+                                +{subcategory.productCount - 3} more
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-500">-</span>
+                        )}
+                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(subcategory)}>Edit</button>
-                        <button className="btn-danger" onClick={() => handleDelete(subcategory.id)}>Delete</button>
+                        {/* <button className="btn-danger" onClick={() => handleDelete(subcategory.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -218,12 +245,23 @@ export default function Subcategories() {
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingSubcategory ? 'Edit Car Model' : 'Add Car Model'}</h2>
             <form onSubmit={handleSubmit}>
+              {editingSubcategory && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Car Model ID</label>
+                  <input
+                    type="text"
+                    value={formData.id}
+                    className="input w-full"
+                    readOnly
+                  />
+                </div>
+              )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Car Model Name</label>
                 <input
                   type="text"
                   value={formData.subcategory_name}
-                  onChange={(e) => setFormData({ subcategory_name: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, subcategory_name: e.target.value }))}
                   className="input w-full"
                   required
                 />

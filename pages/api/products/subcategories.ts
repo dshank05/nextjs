@@ -12,39 +12,52 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
 
-      // Get unique subcategories from products table
       const where = searchTerm
-        ? { product_subcategory: { contains: searchTerm } }
-        : { product_subcategory: { not: null } };
+        ? { subcategory_name: { contains: searchTerm } }
+        : {};
 
-      const products = await prisma.product.findMany({
-        where,
-        select: {
-          product_subcategory: true
-        },
-        distinct: ['product_subcategory']
-      });
-
-      // Filter and sort unique subcategories
-      const uniqueSubcategories = products
-        .map(p => p.product_subcategory)
-        .filter(Boolean)
-        .sort();
-
-      const total = uniqueSubcategories.length;
+      const total = await prisma.product_subcategory.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
+      const subcategories = await prisma.product_subcategory.findMany({
+        where,
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum,
+        orderBy: { subcategory_name: 'asc' },
+      });
+
+      // Get all products to find associated product names for each subcategory
+      const allProducts = await prisma.product.findMany({
+        where: {
+          product_subcategory: { not: null }
+        },
+        select: {
+          product_name: true,
+          product_subcategory: true
+        }
+      });
+
       const startIndex = (pageNum - 1) * limitNum;
-      const paginatedSubcategories = uniqueSubcategories
-        .slice(startIndex, startIndex + limitNum)
-        .map((subcategory, idx) => ({
-          id: startIndex + idx + 1,
-          subcategory_name: subcategory,
+      const subcategoriesWithIndex = subcategories.map((sub, idx) => {
+        // Find products that contain this subcategory ID
+        const associatedProducts = allProducts.filter(product => {
+          if (!product.product_subcategory) return false;
+          const subcategoryIds = product.product_subcategory.split(',').map(id => id.trim());
+          return subcategoryIds.includes(sub.id.toString());
+        });
+
+        const productNames = associatedProducts.map(p => p.product_name).slice(0, 5); // Limit to 5 products for display
+
+        return {
+          ...sub,
           index: startIndex + idx + 1,
-        }));
+          productNames: productNames,
+          productCount: associatedProducts.length
+        };
+      });
 
       res.status(200).json({
-        subcategories: paginatedSubcategories,
+        subcategories: subcategoriesWithIndex,
         pagination: {
           page: pageNum,
           limit: limitNum,

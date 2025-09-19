@@ -19,7 +19,7 @@ export default function Models() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
-  const [formData, setFormData] = useState({ subcategory_name: '' });
+  const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -74,32 +74,32 @@ export default function Models() {
 
   const handleAdd = () => {
     setEditingModel(null);
-    setFormData({ subcategory_name: '' });
+    setFormData({ id: 0, subcategory_name: '' });
     setShowModal(true);
   };
 
   const handleEdit = (model: Model) => {
     setEditingModel(model);
-    setFormData({ subcategory_name: model.subcategory_name });
+    setFormData({ id: model.id, subcategory_name: model.subcategory_name });
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this car model?')) {
-      try {
-        const response = await fetch(`/api/products/models`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        });
-        if (response.ok) {
-          fetchModels();
-        }
-      } catch (error) {
-        console.error('Error deleting model:', error);
-      }
-    }
-  };
+  // const handleDelete = async (id: number) => {
+  //   if (confirm('Are you sure you want to delete this car model?')) {
+  //     try {
+  //       const response = await fetch(`/api/products/models`, {
+  //         method: 'DELETE',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({ id }),
+  //       });
+  //       if (response.ok) {
+  //         fetchModels();
+  //       }
+  //     } catch (error) {
+  //       console.error('Error deleting model:', error);
+  //     }
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +175,7 @@ export default function Models() {
                 <thead>
                   <tr>
                     <th>S.N</th>
+                    <th>ID</th>
                     <th>Car Model Name</th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -183,10 +184,11 @@ export default function Models() {
                   {models.map((model) => (
                     <tr key={model.id}>
                       <td>{model.index}</td>
+                      <td>{model.id}</td>
                       <td className="font-medium text-white">{model.subcategory_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(model)}>Edit</button>
-                        <button className="btn-danger" onClick={() => handleDelete(model.id)}>Delete</button>
+                        {/* <button className="btn-danger" onClick={() => handleDelete(model.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -218,12 +220,23 @@ export default function Models() {
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingModel ? 'Edit Car Model' : 'Add Car Model'}</h2>
             <form onSubmit={handleSubmit}>
+              {editingModel && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Car Model ID</label>
+                  <input
+                    type="text"
+                    value={formData.id}
+                    className="input w-full"
+                    readOnly
+                  />
+                </div>
+              )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Car Model Name</label>
                 <input
                   type="text"
                   value={formData.subcategory_name}
-                  onChange={(e) => setFormData({ subcategory_name: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, subcategory_name: e.target.value }))}
                   className="input w-full"
                   required
                 />

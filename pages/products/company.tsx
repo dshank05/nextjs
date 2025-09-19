@@ -19,7 +19,7 @@ export default function Companies() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
-  const [formData, setFormData] = useState({ company_name: '' });
+  const [formData, setFormData] = useState({ id: 0, company_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -74,32 +74,32 @@ export default function Companies() {
 
   const handleAdd = () => {
     setEditingCompany(null);
-    setFormData({ company_name: '' });
+    setFormData({ id: 0, company_name: '' });
     setShowModal(true);
   };
 
   const handleEdit = (company: Company) => {
     setEditingCompany(company);
-    setFormData({ company_name: company.company_name });
+    setFormData({ id: company.id, company_name: company.company_name });
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this company?')) {
-      try {
-        const response = await fetch(`/api/products/companies`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        });
-        if (response.ok) {
-          fetchCompanies();
-        }
-      } catch (error) {
-        console.error('Error deleting company:', error);
-      }
-    }
-  };
+  // const handleDelete = async (id: number) => {
+  //   if (confirm('Are you sure you want to delete this company?')) {
+  //     try {
+  //       const response = await fetch(`/api/products/companies`, {
+  //         method: 'DELETE',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({ id }),
+  //       });
+  //       if (response.ok) {
+  //         fetchCompanies();
+  //       }
+  //     } catch (error) {
+  //       console.error('Error deleting company:', error);
+  //     }
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +175,7 @@ export default function Companies() {
                 <thead>
                   <tr>
                     <th>S.N</th>
+                    <th>ID</th>
                     <th>Company Name</th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -183,10 +184,11 @@ export default function Companies() {
                   {companies.map((company) => (
                     <tr key={company.id}>
                       <td>{company.index}</td>
+                      <td>{company.id}</td>
                       <td className="font-medium text-white">{company.company_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(company)}>Edit</button>
-                        <button className="btn-danger" onClick={() => handleDelete(company.id)}>Delete</button>
+                        {/* <button className="btn-danger" onClick={() => handleDelete(company.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -218,12 +220,23 @@ export default function Companies() {
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingCompany ? 'Edit Company' : 'Add Company'}</h2>
             <form onSubmit={handleSubmit}>
+              {editingCompany && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Company ID</label>
+                  <input
+                    type="text"
+                    value={formData.id}
+                    className="input w-full"
+                    readOnly
+                  />
+                </div>
+              )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Company Name</label>
                 <input
                   type="text"
                   value={formData.company_name}
-                  onChange={(e) => setFormData({ company_name: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, company_name: e.target.value }))}
                   className="input w-full"
                   required
                 />

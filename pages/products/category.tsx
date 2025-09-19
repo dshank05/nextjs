@@ -19,7 +19,7 @@ export default function Categories() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [formData, setFormData] = useState({ category_name: '' });
+  const [formData, setFormData] = useState({ id: 0, category_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -74,32 +74,32 @@ export default function Categories() {
 
   const handleAdd = () => {
     setEditingCategory(null);
-    setFormData({ category_name: '' });
+    setFormData({ id: 0, category_name: '' });
     setShowModal(true);
   };
 
   const handleEdit = (category: Category) => {
     setEditingCategory(category);
-    setFormData({ category_name: category.category_name });
+    setFormData({ id: category.id, category_name: category.category_name });
     setShowModal(true);
   };
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this category?')) {
-      try {
-        const response = await fetch(`/api/products/categories`, {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id }),
-        });
-        if (response.ok) {
-          fetchCategories();
-        }
-      } catch (error) {
-        console.error('Error deleting category:', error);
-      }
-    }
-  };
+  // const handleDelete = async (id: number) => {
+  //   if (confirm('Are you sure you want to delete this category?')) {
+  //     try {
+  //       const response = await fetch(`/api/products/categories`, {
+  //         method: 'DELETE',
+  //         headers: { 'Content-Type': 'application/json' },
+  //         body: JSON.stringify({ id }),
+  //       });
+  //       if (response.ok) {
+  //         fetchCategories();
+  //       }
+  //     } catch (error) {
+  //       console.error('Error deleting category:', error);
+  //     }
+  //   }
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -175,6 +175,7 @@ export default function Categories() {
                 <thead>
                   <tr>
                     <th>S.N</th>
+                    <th>ID</th>
                     <th>Category Name</th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -183,10 +184,11 @@ export default function Categories() {
                   {categories.map((category) => (
                     <tr key={category.id}>
                       <td>{category.index}</td>
+                      <td>{category.id}</td>
                       <td className="font-medium text-white">{category.category_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(category)}>Edit</button>
-                        <button className="btn-danger" onClick={() => handleDelete(category.id)}>Delete</button>
+                        {/* <button className="btn-danger" onClick={() => handleDelete(category.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -218,12 +220,23 @@ export default function Categories() {
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingCategory ? 'Edit Category' : 'Add Category'}</h2>
             <form onSubmit={handleSubmit}>
+              {editingCategory && (
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Category ID</label>
+                  <input
+                    type="text"
+                    value={formData.id}
+                    className="input w-full"
+                    readOnly
+                  />
+                </div>
+              )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Category Name</label>
                 <input
                   type="text"
                   value={formData.category_name}
-                  onChange={(e) => setFormData({ category_name: e.target.value })}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category_name: e.target.value }))}
                   className="input w-full"
                   required
                 />
