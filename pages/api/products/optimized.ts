@@ -42,11 +42,11 @@ export default async function handler(
     
     // Handle complex filtering that requires post-processing
     const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '')
-    
+
     if (needsPostFiltering) {
       // For complex filters, get all matching products first
       const where: any = {}
-      
+
       if (search) {
         where.OR = [
           { product_name: { contains: search as string } },
@@ -54,12 +54,26 @@ export default async function handler(
         ]
       }
 
+      // Convert category name to ID for database filtering
       if (category && category !== '') {
-        where.product_category = category as string
+        const categoryRecord = await prisma.product_category.findFirst({
+          where: { category_name: category as string },
+          select: { id: true }
+        });
+        if (categoryRecord) {
+          where.product_category = categoryRecord.id.toString()
+        }
       }
 
+      // Convert company name to ID for database filtering
       if (company && company !== '') {
-        where.company = company as string
+        const companyRecord = await prisma.product_company.findFirst({
+          where: { company_name: company as string },
+          select: { id: true }
+        });
+        if (companyRecord) {
+          where.company = companyRecord.id.toString()
+        }
       }
 
       // Get all products that match database filters
@@ -76,10 +90,17 @@ export default async function handler(
       }
 
       if (subcategory && subcategory !== '') {
-        allProducts = allProducts.filter((product: any) => 
-          product.product_subcategory && 
-          product.product_subcategory.split(',').some((id: string) => id.trim() === subcategory)
-        )
+        // Convert subcategory name to ID for filtering
+        const subcategoryRecord = await prisma.product_subcategory.findFirst({
+          where: { subcategory_name: subcategory as string },
+          select: { id: true }
+        });
+        if (subcategoryRecord) {
+          allProducts = allProducts.filter((product: any) =>
+            product.product_subcategory &&
+            product.product_subcategory.split(',').some((id: string) => id.trim() === subcategoryRecord.id.toString())
+          )
+        }
       }
 
       // Apply pagination after filtering
@@ -107,7 +128,7 @@ export default async function handler(
       // Simple filtering - can use efficient database pagination
       const skip = (pageNum - 1) * limitNum
       const where: any = {}
-      
+
       if (search) {
         where.OR = [
           { product_name: { contains: search as string } },
@@ -115,12 +136,26 @@ export default async function handler(
         ]
       }
 
+      // Convert category name to ID for database filtering
       if (category && category !== '') {
-        where.product_category = category as string
+        const categoryRecord = await prisma.product_category.findFirst({
+          where: { category_name: category as string },
+          select: { id: true }
+        });
+        if (categoryRecord) {
+          where.product_category = categoryRecord.id.toString()
+        }
       }
 
+      // Convert company name to ID for database filtering
       if (company && company !== '') {
-        where.company = company as string
+        const companyRecord = await prisma.product_company.findFirst({
+          where: { company_name: company as string },
+          select: { id: true }
+        });
+        if (companyRecord) {
+          where.company = companyRecord.id.toString()
+        }
       }
 
       // Get products with efficient pagination
@@ -165,68 +200,64 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
 
   // Extract unique IDs for batch queries
   const productIds = products.map(p => p.id.toString())
-  const categoryIds = Array.from(new Set(products.map(p => p.product_category).filter(Boolean)))
-  const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean)))
-  
+
+  // Get category and company IDs to look up names
+  const categoryIds = Array.from(new Set(products.map(p => p.product_category).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
+  const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
+
   // Get all subcategory IDs from comma-separated values
-  const allSubcategoryIds = new Set<string>()
+  const subcategoryIds = new Set<number>()
   products.forEach((product: any) => {
     if (product.product_subcategory) {
       product.product_subcategory.split(',').forEach((id: string) => {
-        if (id.trim()) allSubcategoryIds.add(id.trim())
+        const parsedId = parseInt(id.trim());
+        if (!isNaN(parsedId)) subcategoryIds.add(parsedId);
       })
     }
   })
 
-  // OPTIMIZED: Single batch queries with caching
-  const [categoriesMap, companiesMap, subcategoriesMap, latestPurchaseRates] = await Promise.all([
-    // Categories with caching
-    getCachedLookupData(`categories_${categoryIds.join(',')}`, async () => {
-      if (categoryIds.length === 0) return new Map()
-      const cats = await prisma.product_category.findMany({
-        where: { id: { in: categoryIds.map((id: string) => parseInt(id)) } },
-        select: { id: true, category_name: true }
-      })
-      return new Map(cats.map((c: any) => [c.id.toString(), c.category_name]))
-    }),
+  // Batch fetch category, company, and subcategory names
+  const [categoryRecords, companyRecords, subcategoryRecords] = await Promise.all([
+    categoryIds.length > 0 ? prisma.product_category.findMany({
+      where: { id: { in: categoryIds } },
+      select: { id: true, category_name: true }
+    }) : Promise.resolve([]),
+    companyIds.length > 0 ? prisma.product_company.findMany({
+      where: { id: { in: companyIds } },
+      select: { id: true, company_name: true }
+    }) : Promise.resolve([]),
+    subcategoryIds.size > 0 ? prisma.product_subcategory.findMany({
+      where: { id: { in: Array.from(subcategoryIds) } },
+      select: { id: true, subcategory_name: true }
+    }) : Promise.resolve([])
+  ]);
 
-    // Companies with caching
-    getCachedLookupData(`companies_${companyIds.join(',')}`, async () => {
-      if (companyIds.length === 0) return new Map()
-      const comps = await prisma.product_company.findMany({
-        where: { id: { in: companyIds.map((id: string) => parseInt(id)) } },
-        select: { id: true, company_name: true }
-      })
-      return new Map(comps.map((c: any) => [c.id.toString(), c.company_name]))
-    }),
+  // Create lookup maps
+  const categoryMap = new Map(categoryRecords.map(cat => [cat.id.toString(), cat.category_name]));
+  const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]));
+  const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id.toString(), sub.subcategory_name]));
 
-    // Subcategories with caching
-    getCachedLookupData(`subcategories_${Array.from(allSubcategoryIds).join(',')}`, async () => {
-      if (allSubcategoryIds.size === 0) return new Map()
-      const subs = await prisma.product_subcategory.findMany({
-        where: { id: { in: Array.from(allSubcategoryIds).map((id: string) => parseInt(id)) } },
-        select: { id: true, subcategory_name: true }
-      })
-      return new Map(subs.map((s: any) => [s.id.toString(), s.subcategory_name]))
-    }),
+  // Get purchase rates
+  const latestPurchaseRates = await getPurchaseRatesOptimized(productIds)
 
-    // FIXED: Single query for all purchase rates using raw SQL for better performance
-    getPurchaseRatesOptimized(productIds)
-  ])
-
-  // Build enhanced products using cached lookup maps
+  // Build enhanced products with proper names
   return products.map(product => {
-    const categoryName = categoriesMap.get(product.product_category || '') || product.product_category
-    const companyName = companiesMap.get(product.company || '') || product.company
-    
-    // Get subcategory names
-    const subcategoryNames: string[] = []
+    // Look up names from the maps
+    const categoryName = product.product_category ? categoryMap.get(product.product_category) || '' : '';
+    const companyName = product.company ? companyMap.get(product.company) || '' : '';
+
+    // Convert subcategory IDs to names
+    let subcategoryNames = '';
     if (product.product_subcategory) {
-      const subcategoryIds = product.product_subcategory.split(',').filter((id: string) => id.trim())
-      subcategoryIds.forEach((id: string) => {
-        const name = subcategoriesMap.get(id.trim())
-        if (name) subcategoryNames.push(name)
-      })
+      const subcategoryNameList = product.product_subcategory
+        .split(',')
+        .map((id: string) => {
+          const trimmedId = id.trim();
+          return subcategoryMap.get(trimmedId) || trimmedId; // fallback to ID if name not found
+        })
+        .filter(name => name); // remove empty names
+
+      subcategoryNames = subcategoryNameList.join(', ');
     }
 
     // Get latest purchase rate
@@ -236,7 +267,7 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
       ...product,
       categoryName,
       companyName,
-      subcategoryNames: subcategoryNames.join(', '),
+      subcategoryNames,
       latestPurchaseRate
     }
   })

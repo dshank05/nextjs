@@ -113,9 +113,9 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
   };
 
   const generateProductDisplay = () => {
-    const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.category_name || '';
-    const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
-    const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.company_name || '';
+    const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
+    const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
+    const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
 
     return `${formData.product_name} - ${category} - ${subcategory} - ${company} - ${formData.part_no}`.trim();
   };
@@ -272,7 +272,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               >
                 <option value="">Select Category</option>
                 {filterOptions.categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name || cat.category_name}</option>
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
                 ))}
               </select>
               {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
@@ -287,7 +287,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               >
                 <option value="">Select Sub Category</option>
                 {filterOptions.subcategories.map((sub) => (
-                  <option key={sub.id} value={sub.id}>{sub.name || sub.subcategory_name}</option>
+                  <option key={sub.id} value={sub.id}>{sub.name}</option>
                 ))}
               </select>
             </div>
@@ -315,7 +315,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               >
                 <option value="">Select Company</option>
                 {filterOptions.companies.map((comp) => (
-                  <option key={comp.id} value={comp.id}>{comp.name || comp.company_name}</option>
+                  <option key={comp.id} value={comp.id}>{comp.name}</option>
                 ))}
               </select>
               {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}

@@ -86,10 +86,25 @@ export const ProductFilters = ({
         {/* Category Filter */}
         <div className="relative">
           <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
-          <input type="text" placeholder="Search categories..." value={categorySearch} onChange={(e) => { setCategorySearch(e.target.value); setShowCategoryDropdown(true); if (e.target.value === '') setCategoryFilter(''); }} onFocus={() => setShowCategoryDropdown(true)} onBlur={() => setTimeout(() => setShowCategoryDropdown(false), 200)} className="input w-full" />
+          <input
+            type="text"
+            placeholder="Search categories..."
+            value={categorySearch || (categoryFilter && filterOptions.categories.find(c => c.id === categoryFilter)?.name) || ''}
+            onChange={(e) => {
+              setCategorySearch(e.target.value);
+              setShowCategoryDropdown(true);
+              if (e.target.value === '') {
+                setCategoryFilter('');
+                setCategorySearch('');
+              }
+            }}
+            onFocus={() => setShowCategoryDropdown(true)}
+            onBlur={() => setTimeout(() => setShowCategoryDropdown(false), 200)}
+            className="input w-full"
+          />
           {showCategoryDropdown && (
             <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-              <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCategorySelect({ id: '', name: '' })}>All Categories</div>
+              <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCategorySelect({ id: '', name: 'All Categories' })}>All Categories</div>
               {filteredCategories.map((cat) => <div key={cat.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCategorySelect(cat)}>{cat.name}</div>)}
             </div>
           )}
@@ -98,10 +113,25 @@ export const ProductFilters = ({
         {/* Subcategory (Car Model) Filter */}
         <div className="relative">
             <label className="block text-sm font-medium text-slate-300 mb-2">Car Model</label>
-            <input type="text" placeholder="Search car models..." value={subcategorySearch} onChange={(e) => { setSubcategorySearch(e.target.value); setShowSubcategoryDropdown(true); if (e.target.value === '') setSubcategoryFilter(''); }} onFocus={() => setShowSubcategoryDropdown(true)} onBlur={() => setTimeout(() => setShowSubcategoryDropdown(false), 200)} className="input w-full"/>
+            <input
+              type="text"
+              placeholder="Search car models..."
+              value={subcategorySearch || (subcategoryFilter && filterOptions.subcategories.find(s => s.id === subcategoryFilter)?.name) || ''}
+              onChange={(e) => {
+                setSubcategorySearch(e.target.value);
+                setShowSubcategoryDropdown(true);
+                if (e.target.value === '') {
+                  setSubcategoryFilter('');
+                  setSubcategorySearch('');
+                }
+              }}
+              onFocus={() => setShowSubcategoryDropdown(true)}
+              onBlur={() => setTimeout(() => setShowSubcategoryDropdown(false), 200)}
+              className="input w-full"
+            />
             {showSubcategoryDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect({id: '', name: ''})}>All Car Models</div>
+                    <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect({id: '', name: 'All Car Models'})}>All Car Models</div>
                     {filteredSubcategories.map((sub) => <div key={sub.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect(sub)}>{sub.name}</div>)}
                 </div>
             )}
@@ -110,10 +140,25 @@ export const ProductFilters = ({
         {/* Company Filter */}
         <div className="relative">
             <label className="block text-sm font-medium text-slate-300 mb-2">Company</label>
-            <input type="text" placeholder="Search companies..." value={companySearch} onChange={(e) => { setCompanySearch(e.target.value); setShowCompanyDropdown(true); if (e.target.value === '') setCompanyFilter(''); }} onFocus={() => setShowCompanyDropdown(true)} onBlur={() => setTimeout(() => setShowCompanyDropdown(false), 200)} className="input w-full"/>
+            <input
+              type="text"
+              placeholder="Search companies..."
+              value={companySearch || (companyFilter && filterOptions.companies.find(c => c.id === companyFilter)?.name) || ''}
+              onChange={(e) => {
+                setCompanySearch(e.target.value);
+                setShowCompanyDropdown(true);
+                if (e.target.value === '') {
+                  setCompanyFilter('');
+                  setCompanySearch('');
+                }
+              }}
+              onFocus={() => setShowCompanyDropdown(true)}
+              onBlur={() => setTimeout(() => setShowCompanyDropdown(false), 200)}
+              className="input w-full"
+            />
             {showCompanyDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-                    <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCompanySelect({id: '', name: ''})}>All Companies</div>
+                    <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCompanySelect({id: '', name: 'All Companies'})}>All Companies</div>
                     {filteredCompanies.map((comp) => <div key={comp.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleCompanySelect(comp)}>{comp.name}</div>)}
                 </div>
             )}
