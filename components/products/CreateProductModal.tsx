@@ -147,21 +147,40 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
     setLoading(true);
 
     try {
-      const submitData = new FormData();
+      // Get the actual names instead of IDs for the database
+      const categoryName = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || formData.product_category;
+      const subcategoryName = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || formData.product_subcategory;
+      const companyName = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || formData.company;
+      const carModelName = carModels.find(m => m.id.toString() === formData.car_model)?.subcategory_name || formData.car_model;
 
-      // Add all form fields
-      Object.entries(formData).forEach(([key, value]) => {
-        if (value) submitData.append(key, value);
-      });
-
-      // Add image if exists
-      if (imageFile) {
-        submitData.append('image', imageFile);
-      }
+      const submitData = {
+        product_name: formData.product_name,
+        product_category: categoryName,
+        product_subcategory: subcategoryName,
+        company: companyName,
+        part_no: formData.part_no,
+        min_stock: formData.min_stock,
+        stock: formData.stock,
+        rate: formData.rate,
+        hsn: formData.hsn,
+        notes: formData.notes,
+        // Additional fields that might be in the database
+        car_model: carModelName,
+        gst_rate: formData.gst_rate,
+        warehouse: formData.warehouse,
+        rack_number: formData.rack_number,
+        descriptions: formData.descriptions,
+        mrp: formData.mrp,
+        discount: formData.discount,
+        sale_price: formData.sale_price,
+      };
 
       const response = await fetch('/api/products', {
         method: 'POST',
-        body: submitData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submitData),
       });
 
       if (response.ok) {
@@ -282,7 +301,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               >
                 <option value="">Select Car Model</option>
                 {carModels.map((model) => (
-                  <option key={model.id} value={model.id}>{model.name || model.subcategory_name}</option>
+                  <option key={model.id} value={model.id}>{model.subcategory_name}</option>
                 ))}
               </select>
             </div>

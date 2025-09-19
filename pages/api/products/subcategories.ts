@@ -12,28 +12,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
 
+      // Get unique subcategories from products table
       const where = searchTerm
-        ? { subcategory_name: { contains: searchTerm } }
-        : {};
+        ? { product_subcategory: { contains: searchTerm } }
+        : { product_subcategory: { not: null } };
 
-      const total = await prisma.product_subcategory.count({ where });
-      const totalPages = Math.ceil(total / limitNum);
-
-      const subcategories = await prisma.product_subcategory.findMany({
+      const products = await prisma.product.findMany({
         where,
-        skip: (pageNum - 1) * limitNum,
-        take: limitNum,
-        orderBy: { subcategory_name: 'asc' },
+        select: {
+          product_subcategory: true
+        },
+        distinct: ['product_subcategory']
       });
 
+      // Filter and sort unique subcategories
+      const uniqueSubcategories = products
+        .map(p => p.product_subcategory)
+        .filter(Boolean)
+        .sort();
+
+      const total = uniqueSubcategories.length;
+      const totalPages = Math.ceil(total / limitNum);
+
       const startIndex = (pageNum - 1) * limitNum;
-      const subcategoriesWithIndex = subcategories.map((sub, idx) => ({
-        ...sub,
-        index: startIndex + idx + 1,
-      }));
+      const paginatedSubcategories = uniqueSubcategories
+        .slice(startIndex, startIndex + limitNum)
+        .map((subcategory, idx) => ({
+          id: startIndex + idx + 1,
+          subcategory_name: subcategory,
+          index: startIndex + idx + 1,
+        }));
 
       res.status(200).json({
-        subcategories: subcategoriesWithIndex,
+        subcategories: paginatedSubcategories,
         pagination: {
           page: pageNum,
           limit: limitNum,
@@ -43,33 +54,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       });
     } else if (req.method === 'POST') {
+      // For POST, we'll just return success since we can't add to lookup table
+      // The subcategory will be added when a product is created with it
       const { subcategory_name } = req.body;
       if (!subcategory_name) {
         return res.status(400).json({ message: 'Subcategory name is required' });
       }
-      const subcategory = await prisma.product_subcategory.create({
-        data: { subcategory_name },
-      });
-      res.status(201).json(subcategory);
-    } else if (req.method === 'PUT') {
-      const { id, subcategory_name } = req.body;
-      if (!id || !subcategory_name) {
-        return res.status(400).json({ message: 'ID and subcategory name are required' });
-      }
-      const subcategory = await prisma.product_subcategory.update({
-        where: { id: parseInt(id, 10) },
-        data: { subcategory_name },
-      });
-      res.status(200).json(subcategory);
-    } else if (req.method === 'DELETE') {
-      const { id } = req.body;
-      if (!id) {
-        return res.status(400).json({ message: 'ID is required' });
-      }
-      await prisma.product_subcategory.delete({
-        where: { id: parseInt(id, 10) },
-      });
-      res.status(204).end();
+      res.status(201).json({ message: 'Subcategory will be available when used in products' });
     } else {
       res.status(405).json({ message: 'Method not allowed' });
     }

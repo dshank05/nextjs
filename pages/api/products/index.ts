@@ -92,12 +92,38 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       rate,
       hsn,
       notes,
+      // Additional fields from the modal
+      car_model,
+      gst_rate,
+      warehouse,
+      rack_number,
+      descriptions,
+      mrp,
+      discount,
+      sale_price,
     } = req.body
 
     // Validate required fields
     if (!product_name) {
       return res.status(400).json({ message: 'Product name is required' })
     }
+
+    // For now, we'll store additional fields in the notes field as JSON
+    // since the database schema doesn't have all these fields
+    const additionalData = {
+      car_model,
+      gst_rate,
+      warehouse,
+      rack_number,
+      descriptions,
+      mrp,
+      discount,
+      sale_price,
+    };
+
+    const notesWithExtras = notes ?
+      `${notes}\n\nAdditional Data: ${JSON.stringify(additionalData)}` :
+      `Additional Data: ${JSON.stringify(additionalData)}`;
 
     const product = await prisma.product.create({
       data: {
@@ -110,14 +136,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         stock: stock ? parseInt(stock) : 0,
         rate: rate ? parseInt(rate) : null,
         hsn,
-        notes,
+        notes: notesWithExtras,
       },
     })
 
     res.status(201).json(product)
   } catch (error) {
     console.error('Product creation error:', error)
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to create product',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
