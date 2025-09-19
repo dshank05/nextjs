@@ -113,6 +113,16 @@ const Layout = ({ children }: LayoutProps) => {
     }
   }, [router.pathname]); // This logic runs on every single page navigation.
 
+  // 4. Effect to close sidebar after successful navigation
+  useEffect(() => {
+    // Close sidebar after a short delay to allow navigation to complete
+    const timer = setTimeout(() => {
+      setSidebarOpen(false);
+    }, 300); // 300ms delay for smooth UX
+
+    return () => clearTimeout(timer);
+  }, [router.pathname]); // Trigger on route change
+
 
   const isActive = (href?: string, subpages?: Subpage[]) => {
     if (subpages?.some(sub => router.pathname.startsWith(sub.href))) {
@@ -137,18 +147,28 @@ const Layout = ({ children }: LayoutProps) => {
   return (
     <div className="min-h-screen bg-slate-900 flex">
       {/* Sidebar */}
-      <div className={`bg-slate-800 border-r border-slate-700 transition-all duration-300 ${sidebarOpen ? 'w-64' : 'w-20'}`}>
+      <div className={`bg-slate-800 border-r border-slate-700 transition-all duration-300 ${sidebarOpen ? 'w-56' : 'w-16'}`}>
         <div className="p-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">BS</span>
-            </div>
-            {sidebarOpen && (
-              <div>
-                <h1 className="text-white font-semibold text-lg">Baijnath Sons</h1>
-                <p className="text-slate-400 text-xs">Inventory Management</p>
+          <div className="space-y-4">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-700 transition-colors duration-200 w-full flex justify-center"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="flex flex-col items-center space-y-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">BS</span>
               </div>
-            )}
+              {sidebarOpen && (
+                <div className="text-center">
+                  <h1 className="text-white font-semibold text-sm">Baijnath Sons</h1>
+                  <p className="text-slate-400 text-xs">Inventory Mgmt</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -162,6 +182,7 @@ const Layout = ({ children }: LayoutProps) => {
               // Pass the new state and toggle function as props
               isOpen={openMenus.includes(item.name)}
               toggleMenu={() => toggleMenu(item.name)}
+              onMenuClick={() => !sidebarOpen && setSidebarOpen(true)}
             />
           ))}
         </nav>
@@ -173,14 +194,6 @@ const Layout = ({ children }: LayoutProps) => {
         <header className="bg-slate-800 border-b border-slate-700 px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-700"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
               <h2 className="text-xl font-semibold text-white">
                 {getPageTitle()}
               </h2>
