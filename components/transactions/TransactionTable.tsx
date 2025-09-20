@@ -155,7 +155,7 @@ export const TransactionTable = ({
     return new Date(dateValue * 1000).toLocaleDateString('en-IN');
   };
 
-  const getStatusBadge = (status?: number, type: string) => {
+  const getStatusBadge = (status?: number, type?: string) => {
     if (type === 'purchase') {
       switch (status) {
         case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Received</span>;
