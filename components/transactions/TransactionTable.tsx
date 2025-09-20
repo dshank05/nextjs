@@ -15,7 +15,7 @@ interface TransactionItem {
   rate: number;
   subtotal: number;
   fy: number;
-  invoice_date: number;
+  invoice_date: number | string;
 }
 
 interface Transaction {

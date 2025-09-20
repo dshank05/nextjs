@@ -17,7 +17,7 @@ interface PurchaseItem {
   rate: number
   subtotal: number
   fy: number
-  invoice_date: number
+  invoice_date: number | string
 }
 
 interface Purchase {
@@ -154,9 +154,9 @@ export default function PurchasesPage() {
   }
 
   // Handle view details
-  const handleViewDetails = (purchase: Purchase) => {
-    console.log('View details for purchase:', purchase)
-    alert(`Viewing details for Purchase Invoice #${purchase.invoice_no}`)
+  const handleViewDetails = (transaction: any) => {
+    console.log('View details for purchase:', transaction)
+    alert(`Viewing details for Purchase Invoice #${transaction.invoice_no}`)
   }
 
   // Initial load and when filters change

@@ -16,7 +16,7 @@ interface SaleItem {
   rate: number
   subtotal: number
   fy: number
-  invoice_date: number
+  invoice_date: number | string
 }
 
 interface Sale {
@@ -36,7 +36,7 @@ interface Sale {
   total_tax?: number
   total: number
   notes?: string
-  invoice_date: number
+  invoice_date: number | string
   status?: number
   payment_mode?: number
   fy: number

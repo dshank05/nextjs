@@ -16,7 +16,7 @@ interface SaleItem {
   rate: number
   subtotal: number
   fy: number
-  invoice_date: number
+  invoice_date: number | string
 }
 
 interface Sale {
@@ -36,12 +36,12 @@ interface Sale {
   total_tax?: number;
   total: number;
   notes?: string;
-  invoice_date: number;
+  invoice_date: number | string;
   status?: number;
   payment_mode?: number;
   fy: number;
   mode?: number;
-  type?: number;
+  type?: 'sale' | 'salex' | 'purchase';
   items?: SaleItem[];
   item_count?: number;
 }
@@ -217,12 +217,18 @@ export default function SalesPage() {
     // Date filters
     if (dateFrom) {
       const fromDate = new Date(dateFrom).getTime() / 1000
-      filteredData = filteredData.filter(sale => sale.invoice_date >= fromDate)
+      filteredData = filteredData.filter(sale => {
+        const saleDate = typeof sale.invoice_date === 'string' ? new Date(sale.invoice_date).getTime() / 1000 : sale.invoice_date
+        return saleDate >= fromDate
+      })
     }
 
     if (dateTo) {
       const toDate = new Date(dateTo).getTime() / 1000
-      filteredData = filteredData.filter(sale => sale.invoice_date <= toDate)
+      filteredData = filteredData.filter(sale => {
+        const saleDate = typeof sale.invoice_date === 'string' ? new Date(sale.invoice_date).getTime() / 1000 : sale.invoice_date
+        return saleDate <= toDate
+      })
     }
 
     // Amount filters
