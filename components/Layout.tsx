@@ -54,7 +54,7 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'PART COMPANY', href: '/products/company' },
       ],
     },
-    { name: 'PURCHASE', href: '/purchase', icon: '🛒' },
+    { name: 'PURCHASE', href: '/purchases', icon: '🛒' },
     { name: 'SALE', href: '/sale', icon: '🧾' },
     { name: 'SALEX', href: '/salex', icon: '📈' },
     {

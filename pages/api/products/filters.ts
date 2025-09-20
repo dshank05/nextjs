@@ -110,29 +110,29 @@ export default async function handler(
       }),
     ])
 
-    // Build category options - use the actual category names as both id and name
+    // Build category options - use the actual category ID and name
     const categoryOptions = categories
       .filter(cat => cat.category_name)
       .map((cat) => ({
-        id: cat.category_name,
+        id: cat.id,
         name: cat.category_name,
         source: 'products'
       }))
 
-    // Build subcategory options (Car Models) - use the actual subcategory names as both id and name
+    // Build subcategory options (Car Models) - use the actual subcategory ID and name
     const subcategoryOptions = subcategories
       .filter(sub => sub.subcategory_name)
       .map((sub) => ({
-        id: sub.subcategory_name,
+        id: sub.id,
         name: sub.subcategory_name,
         source: 'products'
       }))
 
-    // Build company options - use the actual company names as both id and name
+    // Build company options - use the actual company ID and name
     const companyOptions = companies
       .filter(comp => comp.company_name)
       .map((comp) => ({
-        id: comp.company_name,
+        id: comp.id,
         name: comp.company_name,
         source: 'products'
       }))

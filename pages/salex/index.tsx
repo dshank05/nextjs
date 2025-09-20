@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
 
-// Define types for purchase data (matching the Purchase and Purchaseitems tables)
-interface PurchaseItem {
+// Define types for salex data (matching the invoicex and invoice_itemsx tables)
+interface SalexItem {
   id: number
   invoice_no: number
   name_of_product: string
@@ -13,20 +13,19 @@ interface PurchaseItem {
   hsn?: string
   part?: string
   qty: number
-  unit?: number
   rate: number
   subtotal: number
   fy: number
   invoice_date: number
 }
 
-interface Purchase {
+interface Salex {
   id: number
   invoice_no: number
-  select_vendor?: number
-  vendor_name?: string
-  vendor_address?: string
-  vendor_gstin?: string
+  select_customer?: number
+  customer_name?: string
+  customer_address?: string
+  customer_gstin?: string
   items_total: number
   freight?: number
   total_taxable_value: number
@@ -41,10 +40,10 @@ interface Purchase {
   status?: number
   payment_mode?: number
   fy: number
-  transport?: string
-  items?: PurchaseItem[]
+  mode?: number
+  type?: 'sale' | 'salex' | 'purchase'
+  items?: SalexItem[]
   item_count?: number
-  formattedDate?: string
 }
 
 interface Pagination {
@@ -54,10 +53,10 @@ interface Pagination {
   totalPages: number
 }
 
-export default function PurchasesPage() {
+export default function SalexPage() {
   // Filter states
   const [searchTerm, setSearchTerm] = useState('')
-  const [vendorFilter, setVendorFilter] = useState('')
+  const [customerVendorFilter, setCustomerVendorFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -66,7 +65,7 @@ export default function PurchasesPage() {
   const [limit, setLimit] = useState(25)
 
   // Data states
-  const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [salex, setSalex] = useState<Salex[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 25,
@@ -75,8 +74,8 @@ export default function PurchasesPage() {
   })
   const [loading, setLoading] = useState(false)
 
-  // Fetch purchases data from API
-  const fetchPurchases = async (page: number = 1) => {
+  // Fetch salex data from API
+  const fetchSalex = async (page: number = 1) => {
     setLoading(true)
 
     try {
@@ -94,11 +93,11 @@ export default function PurchasesPage() {
       if (amountMin) params.append('amountMin', amountMin)
       if (amountMax) params.append('amountMax', amountMax)
 
-      const response = await fetch(`/api/purchases?${params}`)
+      const response = await fetch(`/api/salex?${params}`)
       const data = await response.json()
 
       if (response.ok) {
-        setPurchases(data.purchases || [])
+        setSalex(data.salex || [])
         setPagination(data.pagination || {
           page: 1,
           limit: 25,
@@ -106,8 +105,8 @@ export default function PurchasesPage() {
           totalPages: 0
         })
       } else {
-        console.error('Failed to fetch purchases:', data.message)
-        setPurchases([])
+        console.error('Failed to fetch salex:', data.message)
+        setSalex([])
         setPagination({
           page: 1,
           limit: 25,
@@ -116,8 +115,8 @@ export default function PurchasesPage() {
         })
       }
     } catch (error) {
-      console.error('Error fetching purchases:', error)
-      setPurchases([])
+      console.error('Error fetching salex:', error)
+      setSalex([])
       setPagination({
         page: 1,
         limit: 25,
@@ -132,7 +131,7 @@ export default function PurchasesPage() {
   // Handle page changes
   const handlePageChange = (newPage: number) => {
     setPagination(prev => ({ ...prev, page: newPage }))
-    fetchPurchases(newPage)
+    fetchSalex(newPage)
   }
 
   // Handle limit changes
@@ -144,7 +143,7 @@ export default function PurchasesPage() {
   // Clear all filters
   const clearFilters = () => {
     setSearchTerm('')
-    setVendorFilter('')
+    setCustomerVendorFilter('')
     setStatusFilter('all')
     setDateFrom('')
     setDateTo('')
@@ -154,31 +153,31 @@ export default function PurchasesPage() {
   }
 
   // Handle view details
-  const handleViewDetails = (purchase: Purchase) => {
-    console.log('View details for purchase:', purchase)
-    alert(`Viewing details for Purchase Invoice #${purchase.invoice_no}`)
+  const handleViewDetails = (sale: Salex) => {
+    console.log('View details for salex:', sale)
+    alert(`Viewing details for SALEX Invoice #${sale.invoice_no}`)
   }
 
   // Initial load and when filters change
   useEffect(() => {
-    fetchPurchases(1)
-  }, [searchTerm, vendorFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit])
+    fetchSalex(1)
+  }, [searchTerm, customerVendorFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit])
 
-  // Convert purchases data to transaction format for the table component
-  const purchasesAsTransactions = purchases.map(purchase => ({
-    ...purchase,
-    type: 'purchase' as const,
-    customer_vendor_name: purchase.vendor_name,
-    customer_vendor_address: purchase.vendor_address,
-    customer_vendor_gstin: purchase.vendor_gstin,
-    invoice_date: purchase.formattedDate || purchase.invoice_date
+  // Convert salex data to transaction format for the table component
+  const salexAsTransactions = salex.map(sale => ({
+    ...sale,
+    type: 'salex' as const,
+    customer_vendor_name: sale.customer_name,
+    customer_vendor_address: sale.customer_address,
+    customer_vendor_gstin: sale.customer_gstin,
+    invoice_date: sale.invoice_date
   }))
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-end">
         <button className="btn-primary">
-          New Purchase Invoice
+          New SALEX
         </button>
       </div>
 
@@ -187,10 +186,10 @@ export default function PurchasesPage() {
         <TransactionFilters
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
-          transactionType="purchase"
-          setTransactionType={() => {}} // Not used for purchases page
-          customerVendorFilter={vendorFilter}
-          setCustomerVendorFilter={setVendorFilter}
+          transactionType="salex"
+          setTransactionType={() => {}} // Not used for salex page
+          customerVendorFilter={customerVendorFilter}
+          setCustomerVendorFilter={setCustomerVendorFilter}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
           dateFrom={dateFrom}
@@ -208,9 +207,9 @@ export default function PurchasesPage() {
         />
       </div>
 
-      {/* Purchases Table */}
+      {/* SALEX Table */}
       <TransactionTable
-        transactions={purchasesAsTransactions}
+        transactions={salexAsTransactions}
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}

@@ -150,6 +150,93 @@ Product ←→ Purchase Items (for rate calculation)
 - **Same Calculations**: Identical rate and stock calculations  
 - **Same Display Format**: Matches legacy system output exactly
 
+## 📋 Transaction Management System
+
+### Transaction Types & Table Usage
+
+#### Sales Transactions (`/sale`)
+- **Main Table**: `invoice` (regular sales)
+- **Items Table**: `invoiceitems` (regular sales items)
+- **Address Table**: `bill_tosales` (billing addresses)
+- **Date Format**: Integer timestamp (`invoice_date Int`)
+- **Status Values**:
+  - `0` = Pending
+  - `1` = Paid
+  - `2` = Cancelled
+  - `null/undefined` = Draft
+
+#### Extended Sales Transactions (`/salex`)
+- **Main Table**: `invoicex` (extended sales)
+- **Items Table**: `invoice_itemsx` (extended sales items)
+- **Address Table**: `bill_tosalesx` (extended billing)
+- **Date Format**: Integer timestamp (`invoice_date Int`)
+- **Status Values**: Same as regular sales
+- **Purpose**: Warranties, service contracts, extended support
+
+#### Purchase Transactions (`/purchases`)
+- **Main Table**: `purchase` (purchases)
+- **Items Table**: `purchaseitems` (purchase items)
+- **Address Table**: `vendor_details` (vendor information)
+- **Date Format**: String date (`invoice_date String @db.VarChar(30)`)
+- **Status Values**:
+  - `0` = Pending
+  - `1` = Received
+
+### API Endpoints
+
+#### Sales API (`/api/sales`)
+```typescript
+// Uses regular tables
+prisma.invoice.findMany()
+prisma.invoiceitems.groupBy()
+prisma.bill_tosales.findMany()
+```
+
+#### Salex API (`/api/salex`)
+```typescript
+// Uses 'x' tables
+prisma.invoicex.findMany()
+prisma.invoice_itemsx.groupBy()
+prisma.bill_tosalesx.findMany()
+```
+
+#### Purchases API (`/api/purchases`)
+```typescript
+// Uses purchase tables
+prisma.purchase.findMany()
+prisma.purchaseitems.groupBy()
+prisma.vendor_details.findMany()
+```
+
+### Date Handling Logic
+
+#### Timestamp Dates (Sales & Salex)
+```typescript
+// Convert Unix timestamp to readable date
+const dateObj = new Date(invoice_date * 1000)
+const formattedDate = dateObj.toLocaleDateString('en-IN')
+```
+
+#### String Dates (Purchases)
+```typescript
+// Parse string date format
+const dateObj = new Date(invoice_date)
+const formattedDate = dateObj.toLocaleDateString('en-IN')
+```
+
+### UI Component Architecture
+
+#### TransactionTable Component
+- **Conditional Type Column**: Hidden on individual pages (`hideTypeColumn={true}`)
+- **Lucid Icons Only**: Uses `lucide-react` icons exclusively
+- **Responsive Design**: Adapts to different screen sizes
+- **Sorting**: Multi-column sorting with visual indicators
+
+#### TransactionFilters Component
+- **Conditional Transaction Type**: Hidden on individual pages
+- **Debounced Search**: 300ms delay for performance
+- **Advanced Filters**: Date range, amount range, status filters
+
 ## Future Enhancements
 
 ### Potential Improvements

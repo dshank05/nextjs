@@ -56,19 +56,46 @@ datasource db {
 - **`product_company`** - Company/brand information
 - **`product_subcategory`** - Subcategory classifications
 
-#### Sales and Invoices
-- **`invoice`** - Invoice headers with totals and GST
-- **`invoice_items`** - Invoice line items with quantities and rates
-- **`customer`** - Customer information with billing/shipping addresses
+#### Transaction Tables (Current Implementation)
 
-#### Purchases and Vendors
-- **`purchase`** - Purchase order headers
-- **`purchase_items`** - Purchase line items (critical for rate calculations)
-- **`vendor`** - Vendor/supplier information
+##### Sales Transactions
+- **`invoice`** - Regular sales invoice headers (integer timestamps)
+- **`invoiceitems`** - Regular sales invoice line items
+- **`bill_tosales`** - Regular sales billing addresses
 
-#### Financial and Tax
+##### Extended Sales Transactions
+- **`invoicex`** - Extended sales invoice headers (integer timestamps)
+- **`invoice_itemsx`** - Extended sales invoice line items
+- **`bill_tosalesx`** - Extended sales billing addresses
+- **`ship_tox`** - Extended sales shipping addresses
+- **`transport_detailsx`** - Extended sales transport details
+
+##### Purchase Transactions
+- **`purchase`** - Purchase order headers (string dates)
+- **`purchaseitems`** - Purchase line items
+- **`vendor_details`** - Vendor/supplier information
+
+#### Supporting Tables
+- **`incexp`** - Income/expense records
+- **`incexpx`** - Extended income/expense records
+- **`customer_details`** - Customer information with billing/shipping addresses
+- **`financial_year`** - Financial year tracking
 - **GST Tables** - Tax rate configurations
-- **Financial Year Tables** - FY tracking for invoices and purchases
+
+### Transaction Type Mapping
+
+| Page | Main Table | Items Table | Address Table | Date Format | Status Values |
+|------|------------|-------------|---------------|-------------|---------------|
+| **Sales** | `invoice` | `invoiceitems` | `bill_tosales` | Integer timestamp | `0=Pending, 1=Paid, 2=Cancelled, default=Draft` |
+| **Salex** | `invoicex` | `invoice_itemsx` | `bill_tosalesx` | Integer timestamp | Same as Sales |
+| **Purchases** | `purchase` | `purchaseitems` | `vendor_details` | String date | `0=Pending, 1=Received` |
+
+### 'x' Table Purpose
+Tables ending with 'x' are for **Extended Transactions**:
+- **Extended Sales**: Warranties, service contracts, extended support
+- **Extended Income/Expense**: Related financial records
+- **Extended Transport**: Transport details for extended sales
+- **Extended Shipping**: Shipping addresses for extended sales
 
 ## 🎯 Critical Data Relationships
 
