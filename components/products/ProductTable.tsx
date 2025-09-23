@@ -1,6 +1,7 @@
 // In components/products/ProductTable.tsx
 
 import { ReactNode, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 // Define types for props
@@ -145,6 +146,7 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                 Rate {getSortIcon('rate')}
               </th>
               <th>Status</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -185,6 +187,11 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                     ✅ In Stock
                   </span>
                 )}</td>
+                <td>
+                  <Link href={`/products/view/${product.id}`} className="btn-primary text-xs py-1 px-3">
+                    View
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>

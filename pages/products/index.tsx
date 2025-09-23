@@ -1,10 +1,10 @@
 // In pages/products/index.tsx
 
 import { useState, useEffect, ReactNode } from 'react';
+import Link from 'next/link';
 import { useDebounce } from '../../hooks/useDebounce'; // CREATE and adjust path if needed
 import { ProductFilters } from '../../components/products/ProductFilters'; // Adjust path if needed
 import { ProductTable } from '../../components/products/ProductTable'; // Adjust path if needed
-import { CreateProductModal } from '../../components/products/CreateProductModal'; // New modal component
 
 // Interfaces remain here, as they define the data shape for this page
 interface Product {
@@ -39,8 +39,7 @@ export default function Products() {
   const [stockFilter, setStockFilter] = useState('all');
   const [filterOptions, setFilterOptions] = useState<{ categories: any[], subcategories: any[], companies: any[] }>({ categories: [], subcategories: [], companies: [] });
 
-  // Modal state
-  const [showCreateModal, setShowCreateModal] = useState(false);
+
 
   // Apply the debounce hook to the search term
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -130,14 +129,6 @@ export default function Products() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="btn-primary"
-        >
-          Add Product
-        </button>
-      </div>
 
       <ProductFilters
         searchTerm={searchTerm}
@@ -163,15 +154,7 @@ export default function Products() {
         onPageChange={handlePageChange}
       />
 
-      <CreateProductModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-        onSuccess={() => {
-          setShowCreateModal(false);
-          fetchProducts(); // Refresh the product list
-        }}
-        filterOptions={filterOptions}
-      />
+
     </div>
   );
 }
