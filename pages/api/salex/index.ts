@@ -16,7 +16,11 @@ export default async function handler(
       search = '',
       startDate = '',
       endDate = '',
-      fy = ''
+      fy = '',
+      status = '',
+      amountMin = '',
+      amountMax = '',
+      vendor = ''
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -46,13 +50,30 @@ export default async function handler(
       }
     }
 
+    if (status && status !== '') {
+      if (status === '1' || status === '0') {
+        where.status = parseInt(status)
+      } else if (status === 'unknown') {
+        // For unknown status, show statuses that are not 0, 1, or 2 (2 is cancelled for salex)
+        where.status = { notIn: [0, 1, 2] }
+      }
+    }
+
+    if (amountMin && amountMin !== '') {
+      where.total = { gte: parseFloat(amountMin as string) }
+    }
+
+    if (amountMax && amountMax !== '') {
+      where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
+    }
+
     // Get salex invoices with related data
     const [salexInvoices, total] = await Promise.all([
       prisma.invoicex.findMany({
         where,
         skip,
         take: limitNum,
-        orderBy: { id: 'desc' },
+        orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
       }),
       prisma.invoicex.count({ where })
     ])

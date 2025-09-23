@@ -201,20 +201,29 @@ Product ←→ Purchase Items (for rate calculation)
 #### Sales Transactions
 - **Tables**: `invoice`, `invoiceitems`, `bill_tosales`
 - **Date Format**: Integer timestamp
-- **Status**: `0=Pending, 1=Paid, 2=Cancelled, default=Draft`
+- **Status**: `0=Unpaid, 1=Paid, others=Unknown`
 - **Purpose**: Regular sales transactions
 
 #### Extended Sales (Salex)
 - **Tables**: `invoicex`, `invoice_itemsx`, `bill_tosalesx`
 - **Date Format**: Integer timestamp
-- **Status**: Same as regular sales
+- **Status**: `0=Unpaid, 1=Paid, others=Unknown`
 - **Purpose**: Warranties, service contracts, extended support
 
 #### Purchase Transactions
 - **Tables**: `purchase`, `purchaseitems`, `vendor_details`
 - **Date Format**: String date (`YYYY-MM-DD`)
-- **Status**: `0=Pending, 1=Received`
+- **Status**: `0=Unpaid, 1=Paid, others=Unknown`
 - **Purpose**: Purchase transactions from vendors
+
+### Business Logic Updates
+
+#### UI Display Changes
+- **GSTIN Hidden**: GSTIN numbers no longer displayed alongside customer/vendor names in transaction tables
+- **Tax Columns Removed**: Taxable Value and Tax Amount columns removed from main transaction table views
+- **Simplified Status**: All transaction types now display "Paid" (green), "Unpaid" (yellow), or "Unknown" (gray) status badges
+  - Sales/Salex: `status=0` → Unpaid, `status=1` → Paid, others → Unknown
+  - Purchases: `status=0` → Unpaid, `status=1` → Paid, others → Unknown
 
 ## 📈 Future Enhancement Opportunities
 

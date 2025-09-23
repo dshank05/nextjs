@@ -16,7 +16,11 @@ export default async function handler(
       search = '',
       startDate = '',
       endDate = '',
-      fy = ''
+      fy = '',
+      status = '',
+      amountMin = '',
+      amountMax = '',
+      vendor = ''
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -38,12 +42,49 @@ export default async function handler(
     }
 
     if (startDate && endDate) {
-      // For purchases, dates are stored as strings, so we filter as strings
-      where.invoice_date = {
-        gte: startDate as string,
-        lte: endDate as string
+      // Handle both string dates and Unix timestamps
+      // Convert input dates to appropriate format for comparison
+      try {
+        // Always try to parse input dates as standard date strings
+        const startDateObj = new Date(startDate as string);
+        const endDateObj = new Date(endDate as string);
+
+        if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
+          // Convert to Unix timestamps for comparison (assuming data is stored as integers)
+          const startTimestamp = Math.floor(startDateObj.getTime() / 1000);
+          const endTimestamp = Math.floor(endDateObj.getTime() / 1000);
+
+          where.invoice_date = {
+            gte: startTimestamp,
+            lte: endTimestamp
+          };
+        }
+      } catch (error) {
+        console.warn('Error parsing filter dates:', error);
       }
     }
+
+    if (status && status !== '') {
+      if (status === '1' || status === '0') {
+        where.status = parseInt(status)
+      } else if (status === 'unknown') {
+        // For unknown status, we don't add a where clause since we want all statuses that are not 0 or 1
+        // But actually, we need to filter to show only non-standard statuses
+        where.status = { notIn: [0, 1] }
+      }
+    }
+
+    if (amountMin && amountMin !== '') {
+      where.total = { gte: parseFloat(amountMin as string) }
+    }
+
+    if (amountMax && amountMax !== '') {
+      where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
+    }
+
+    // Vendor filtering is complex because vendor names are looked up after fetching
+    // For now, we'll skip vendor filtering as it requires joining with vendor_details table
+    // This would need to be implemented with a JOIN operation
 
     // Get purchase invoices with related data
     const [purchaseInvoices, total] = await Promise.all([
@@ -51,7 +92,7 @@ export default async function handler(
         where,
         skip,
         take: limitNum,
-        orderBy: { id: 'desc' },
+        orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
       }),
       prisma.purchase.count({ where })
     ])
@@ -81,18 +122,33 @@ export default async function handler(
 
     // Enhanced purchase invoices using maps
     const enhancedPurchases = purchaseInvoices.map((invoice: any) => {
-      // Handle string date format for purchases
-      let formattedDate = 'Invalid Date'
+      // Handle date format for purchases - could be string dates or Unix timestamps
+      let formattedDate: string | null = null
       try {
         if (invoice.invoice_date) {
-          // Purchase dates are stored as strings like "2025-01-15"
-          const dateObj = new Date(invoice.invoice_date)
-          if (!isNaN(dateObj.getTime())) {
-            formattedDate = dateObj.toLocaleDateString('en-IN')
+          let dateObj: Date
+
+          // Check if it's a Unix timestamp (integer) or string date
+          if (typeof invoice.invoice_date === 'string') {
+            if (invoice.invoice_date.trim() === '') {
+              // Empty string - skip
+            } else {
+              // Try parsing as string date like "2025-01-15"
+              dateObj = new Date(invoice.invoice_date)
+              if (!isNaN(dateObj.getTime())) {
+                formattedDate = dateObj.toLocaleDateString('en-IN')
+              }
+            }
+          } else if (typeof invoice.invoice_date === 'number') {
+            // Unix timestamp in seconds
+            dateObj = new Date(invoice.invoice_date * 1000)
+            if (!isNaN(dateObj.getTime())) {
+              formattedDate = dateObj.toLocaleDateString('en-IN')
+            }
           }
         }
       } catch (error) {
-        console.warn('Invalid date format for purchase:', invoice.invoice_date)
+        console.warn('Invalid date format for purchase:', invoice.invoice_date, error)
       }
 
       return {
@@ -111,14 +167,14 @@ export default async function handler(
         total_tax: invoice.total_tax || 0,
         total: invoice.total,
         notes: invoice.notes || '',
-        invoice_date: invoice.invoice_date,
+        invoice_date: invoice.invoice_date, // Raw date - let frontend format it
         status: invoice.status || 0,
         payment_mode: invoice.payment_mode || 0,
         fy: invoice.fy,
         transport: invoice.transport || '',
         type: 'purchase',
         item_count: itemCountMap.get(invoice.id) || 0,
-        formattedDate,
+        // Remove formattedDate - frontend handles formatting
         formattedTotal: invoice.total.toLocaleString('en-IN', {
           style: 'currency',
           currency: 'INR'

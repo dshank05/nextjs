@@ -84,6 +84,27 @@ export const TransactionTable = ({
     return pages;
   };
 
+  // Normalize date values for sorting - consistent with formatDate function
+  const normalizeDateValue = (dateValue: number | string): number => {
+    if (typeof dateValue === 'string') {
+      // Try to parse as Unix timestamp first (if it's all digits)
+      if (/^\d+$/.test(dateValue)) {
+        const timestamp = parseInt(dateValue);
+        if (timestamp > 1000000000) { // Likely a Unix timestamp
+          return timestamp;
+        }
+      }
+      // Try parsing as regular date string
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.getTime();
+      }
+      return 0; // Invalid date
+    }
+    // Number: assume Unix timestamp in seconds
+    return dateValue;
+  };
+
   const handleSort = (field: SortField) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -122,8 +143,9 @@ export const TransactionTable = ({
           bValue = b.total;
           break;
         case 'invoice_date':
-          aValue = typeof a.invoice_date === 'string' ? new Date(a.invoice_date).getTime() : a.invoice_date;
-          bValue = typeof b.invoice_date === 'string' ? new Date(b.invoice_date).getTime() : b.invoice_date;
+          // Parse date values consistently for sorting
+          aValue = normalizeDateValue(a.invoice_date);
+          bValue = normalizeDateValue(b.invoice_date);
           break;
         case 'status':
           aValue = a.status || 0;
@@ -150,24 +172,38 @@ export const TransactionTable = ({
 
   const formatDate = (dateValue: number | string) => {
     if (typeof dateValue === 'string') {
-      return new Date(dateValue).toLocaleDateString('en-IN');
+      // Try to parse as Unix timestamp first (if it's all digits)
+      if (/^\d+$/.test(dateValue)) {
+        const timestamp = parseInt(dateValue);
+        if (timestamp > 1000000000) { // Likely a Unix timestamp
+          return new Date(timestamp * 1000).toLocaleDateString('en-IN');
+        }
+      }
+      // Try parsing as regular date string
+      const parsed = new Date(dateValue);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toLocaleDateString('en-IN');
+      }
+      return 'Invalid Date';
     }
+    // Number: assume Unix timestamp in seconds
     return new Date(dateValue * 1000).toLocaleDateString('en-IN');
   };
 
   const getStatusBadge = (status?: number, type?: string) => {
+    // Use Paid (green), Unpaid (yellow), or Unknown (gray) statuses
     if (type === 'purchase') {
       switch (status) {
-        case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Received</span>;
-        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Pending</span>;
+        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
+        case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
         default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
       }
     } else {
       switch (status) {
+        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
         case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Pending</span>;
-        case 2: return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Cancelled</span>;
-        default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Draft</span>;
+        case 2: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
+        default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
       }
     }
   };
@@ -210,8 +246,6 @@ export const TransactionTable = ({
                 Customer/Vendor {getSortIcon('customer_vendor_name')}
               </th>
               <th>Items</th>
-              <th>Taxable Value</th>
-              <th>Tax Amount</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
                 Total {getSortIcon('total')}
               </th>
@@ -243,28 +277,12 @@ export const TransactionTable = ({
                   </td>
                 )}
                 <td className="text-slate-300">
-                  <div>
-                    <div className="font-medium">{transaction.customer_vendor_name || 'N/A'}</div>
-                    {transaction.customer_vendor_gstin && (
-                      <div className="text-xs text-slate-400">GSTIN: {transaction.customer_vendor_gstin}</div>
-                    )}
-                  </div>
+                  <div className="font-medium">{transaction.customer_vendor_name || 'N/A'}</div>
                 </td>
                 <td className="text-slate-300">
                   <div className="flex items-center gap-1">
                     <span>{transaction.item_count || transaction.items?.length || 0}</span>
                     <span className="text-xs text-slate-400">items</span>
-                  </div>
-                </td>
-                <td className="text-slate-300">₹{transaction.total_taxable_value?.toLocaleString('en-IN') || '0'}</td>
-                <td className="text-slate-300">
-                  <div className="text-sm">
-                    {transaction.total_tax ? (
-                      <div>
-                        <div>₹{transaction.total_tax.toLocaleString('en-IN')}</div>
-                        {transaction.taxrate && <div className="text-xs text-slate-400">@{transaction.taxrate}%</div>}
-                      </div>
-                    ) : '₹0'}
                   </div>
                 </td>
                 <td className="text-slate-300 font-semibold">₹{transaction.total.toLocaleString('en-IN')}</td>

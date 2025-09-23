@@ -89,9 +89,23 @@ export default function SalexPage() {
         fy: '' // Add financial year if needed
       })
 
-      // Add amount filters if provided
-      if (amountMin) params.append('amountMin', amountMin)
-      if (amountMax) params.append('amountMax', amountMax)
+      // Add status filter if provided
+      if (statusFilter && statusFilter !== 'all') {
+        params.append('status', getApiStatusFilter())
+      }
+
+      // Add amount filters if provided (send even if empty for consistency)
+      if (amountMin !== undefined && amountMin !== null && amountMin !== '') {
+        params.append('amountMin', amountMin)
+      }
+      if (amountMax !== undefined && amountMax !== null && amountMax !== '') {
+        params.append('amountMax', amountMax)
+      }
+
+      // Add customer/vendor filter (for client-side filtering but send to API anyway)
+      if (customerVendorFilter && customerVendorFilter !== '') {
+        params.append('vendor', customerVendorFilter)
+      }
 
       const response = await fetch(`/api/salex?${params}`)
       const data = await response.json()
@@ -152,6 +166,16 @@ export default function SalexPage() {
     setPagination(prev => ({ ...prev, page: 1 }))
   }
 
+  // Get API status values based on UI filter values
+  const getApiStatusFilter = () => {
+    switch (statusFilter) {
+      case 'paid': return '1'
+      case 'unpaid': return '0'
+      case 'unknown': return 'unknown'
+      default: return ''
+    }
+  }
+
   // Handle view details
   const handleViewDetails = (sale: Salex) => {
     console.log('View details for salex:', sale)
@@ -164,7 +188,7 @@ export default function SalexPage() {
   }, [searchTerm, customerVendorFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit])
 
   // Convert salex data to transaction format for the table component
-  const salexAsTransactions = salex.map(sale => ({
+  const allTransactions = salex.map(sale => ({
     ...sale,
     type: 'salex' as const,
     customer_vendor_name: sale.customer_name,
@@ -172,6 +196,10 @@ export default function SalexPage() {
     customer_vendor_gstin: sale.customer_gstin,
     invoice_date: sale.invoice_date
   }))
+
+  // Customer filtering: For now, disable filtering since we're properly storing IDs
+  // In proper implementation, API would filter by customer ID or client would have ID mapping
+  const salexAsTransactions = allTransactions
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 // Define the types for the props this component will receive
 interface TransactionFiltersProps {
@@ -24,6 +24,14 @@ interface TransactionFiltersProps {
   hideTransactionType?: boolean; // New optional prop to hide transaction type filter
 }
 
+interface CustomerVendor {
+  id: string;
+  name: string;
+  gstin?: string;
+  contact?: string;
+  email?: string;
+}
+
 export const TransactionFilters = ({
   searchTerm, setSearchTerm,
   transactionType, setTransactionType,
@@ -39,23 +47,47 @@ export const TransactionFilters = ({
 }: TransactionFiltersProps) => {
   const [customerVendorSearch, setCustomerVendorSearch] = useState('');
   const [showCustomerVendorDropdown, setShowCustomerVendorDropdown] = useState(false);
+  const [customerVendors, setCustomerVendors] = useState<CustomerVendor[]>([]);
+  const [loadingCustomerVendors, setLoadingCustomerVendors] = useState(false);
 
-  // Mock customer/vendor data - in real app this would come from API
-  const mockCustomerVendors = [
-    { id: '1', name: 'ABC Electronics' },
-    { id: '2', name: 'XYZ Traders' },
-    { id: '3', name: 'Global Supplies Ltd' },
-    { id: '4', name: 'Metro Distributors' },
-    { id: '5', name: 'Prime Auto Parts' }
-  ];
+  // Determine if we need customers or vendors based on transaction type
+  const isPurchase = transactionType === 'purchase';
 
-  const filteredCustomerVendors = mockCustomerVendors.filter(cv =>
+  // Fetch customer/vendor data on component mount and when transaction type changes
+  useEffect(() => {
+    fetchCustomerVendors();
+  }, [isPurchase]);
+
+  const fetchCustomerVendors = async () => {
+    setLoadingCustomerVendors(true);
+    try {
+      const endpoint = isPurchase ? '/api/vendors' : '/api/customers';
+      const response = await fetch(endpoint);
+      const data = await response.json();
+
+      if (response.ok) {
+        const entities = isPurchase ? data.vendors : data.customers;
+        setCustomerVendors(entities || []);
+      } else {
+        console.error('Failed to fetch customer/vendor data:', data.message);
+        setCustomerVendors([]);
+      }
+    } catch (error) {
+      console.error('Error fetching customer/vendor data:', error);
+      setCustomerVendors([]);
+    } finally {
+      setLoadingCustomerVendors(false);
+    }
+  };
+
+  const filteredCustomerVendors = customerVendors.filter(cv =>
     cv.name.toLowerCase().includes(customerVendorSearch.toLowerCase())
   );
 
   const handleCustomerVendorSelect = (customerVendor: { id: string; name: string }) => {
-    setCustomerVendorFilter(customerVendor.id);
-    setCustomerVendorSearch(customerVendor.name);
+    // Store the ID (key) for database operations, but display name for UI
+    setCustomerVendorFilter(customerVendor.id); // Store ID for filtering
+    setCustomerVendorSearch(customerVendor.name); // Display name for UI
     setShowCustomerVendorDropdown(false);
   };
 
@@ -103,7 +135,7 @@ export const TransactionFilters = ({
           <input
             type="text"
             placeholder="Search customers/vendors..."
-            value={customerVendorSearch || (customerVendorFilter && mockCustomerVendors.find(cv => cv.id === customerVendorFilter)?.name) || ''}
+            value={customerVendorSearch || customerVendorFilter || ''}
             onChange={(e) => {
               setCustomerVendorSearch(e.target.value);
               setShowCustomerVendorDropdown(true);
@@ -146,10 +178,9 @@ export const TransactionFilters = ({
             className="select w-full"
           >
             <option value="all">All Status</option>
-            <option value="paid">Paid/Received</option>
-            <option value="pending">Pending</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="draft">Draft</option>
+            <option value="paid">Paid</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="unknown">Unknown</option>
           </select>
         </div>
 
@@ -240,7 +271,7 @@ export const TransactionFilters = ({
           )}
           {customerVendorFilter && (
             <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded-full text-xs">
-              Customer/Vendor: {mockCustomerVendors.find(cv => cv.id === customerVendorFilter)?.name}
+              Customer/Vendor: {customerVendorFilter}
             </span>
           )}
           {statusFilter !== 'all' && (

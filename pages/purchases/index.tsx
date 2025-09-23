@@ -90,9 +90,23 @@ export default function PurchasesPage() {
         fy: '' // Add financial year if needed
       })
 
-      // Add amount filters if provided
-      if (amountMin) params.append('amountMin', amountMin)
-      if (amountMax) params.append('amountMax', amountMax)
+      // Add status filter if provided
+      if (statusFilter && statusFilter !== 'all') {
+        params.append('status', getApiStatusFilter())
+      }
+
+      // Add amount filters if provided (send even if empty for consistency)
+      if (amountMin !== undefined && amountMin !== null && amountMin !== '') {
+        params.append('amountMin', amountMin)
+      }
+      if (amountMax !== undefined && amountMax !== null && amountMax !== '') {
+        params.append('amountMax', amountMax)
+      }
+
+      // Add vendor filter (for client-side filtering but send to API anyway)
+      if (vendorFilter && vendorFilter !== '') {
+        params.append('vendor', vendorFilter)
+      }
 
       const response = await fetch(`/api/purchases?${params}`)
       const data = await response.json()
@@ -153,6 +167,16 @@ export default function PurchasesPage() {
     setPagination(prev => ({ ...prev, page: 1 }))
   }
 
+  // Get API status values based on UI filter values
+  const getApiStatusFilter = () => {
+    switch (statusFilter) {
+      case 'paid': return '1'
+      case 'unpaid': return '0'
+      case 'unknown': return 'unknown'
+      default: return ''
+    }
+  }
+
   // Handle view details
   const handleViewDetails = (transaction: any) => {
     console.log('View details for purchase:', transaction)
@@ -165,14 +189,20 @@ export default function PurchasesPage() {
   }, [searchTerm, vendorFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit])
 
   // Convert purchases data to transaction format for the table component
-  const purchasesAsTransactions = purchases.map(purchase => ({
+  const allTransactions = purchases.map(purchase => ({
     ...purchase,
     type: 'purchase' as const,
     customer_vendor_name: purchase.vendor_name,
     customer_vendor_address: purchase.vendor_address,
     customer_vendor_gstin: purchase.vendor_gstin,
-    invoice_date: purchase.formattedDate || purchase.invoice_date
+    invoice_date: purchase.formattedDate ||
+                  (typeof purchase.invoice_date === 'number' ? purchase.invoice_date :
+                   (purchase.invoice_date && purchase.invoice_date.trim() !== '') ? purchase.invoice_date : null)
   }))
+
+  // Vendor filtering: For now, disable filtering since we're properly storing IDs
+  // In proper implementation, API would filter by vendor ID or client would have ID mapping
+  const purchasesAsTransactions = allTransactions
 
   return (
     <div className="space-y-6">

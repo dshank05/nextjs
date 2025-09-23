@@ -28,11 +28,10 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
             }
             toggleMenu(); // Then toggle menu
           }}
-          className={`flex items-center justify-between px-4 py-3 text-sm font-medium cursor-pointer transition-colors duration-200 ${
-            isActive(item.href, item.subpages)
+          className={`flex items-center justify-between px-4 py-3 text-sm font-medium cursor-pointer transition-colors duration-200 ${isActive(item.href, item.subpages)
               ? 'bg-blue-600 text-white border-r-2 border-blue-400'
               : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
+            }`}
         >
           <div className="flex items-center">
             <span className="text-lg mr-3">{item.icon}</span>
@@ -50,7 +49,7 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
           <div className="absolute left-full ml-2 top-0 z-50 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <div className="bg-slate-800 border border-slate-700 rounded-lg shadow-xl p-3">
               <div className="text-white font-medium text-sm mb-1">{item.name}</div>
-              {item.subpages ? (
+              {(
                 // Show only active submenu
                 item.subpages
                   .filter(subpage => router.pathname === subpage.href)
@@ -59,11 +58,6 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
                       ● {subpage.name}
                     </div>
                   ))
-              ) : (
-                // For single items, show active indicator
-                isActive(item.href) && (
-                  <div className="text-xs text-blue-400 font-medium">● Active</div>
-                )
               )}
             </div>
           </div>
@@ -75,11 +69,10 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
               <Link
                 key={subpage.name}
                 href={subpage.href}
-                className={`flex items-center px-3 py-3 text-sm font-medium transition-colors duration-200 rounded-md mx-2 my-1 ${
-                  router.pathname === subpage.href
+                className={`flex items-center px-3 py-3 text-sm font-medium transition-colors duration-200 rounded-md mx-2 my-1 ${router.pathname === subpage.href
                     ? 'text-white bg-slate-700' // Active sub-item style
                     : 'text-slate-400 hover:bg-slate-700 hover:text-white'
-                }`}
+                  }`}
               >
                 {subpage.name}
               </Link>
@@ -94,11 +87,10 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
         <Link
           href={item.href || '#'}
           onClick={() => !sidebarOpen && onMenuClick()}
-          className={`flex items-center px-4 py-4 text-sm font-medium transition-colors duration-200 ${
-            isActive(item.href)
+          className={`flex items-center px-4 py-4 text-sm font-medium transition-colors duration-200 ${isActive(item.href)
               ? 'bg-blue-600 text-white border-r-2 border-blue-400'
               : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
+            }`}
         >
           <span className="text-lg mr-3">{item.icon}</span>
           {sidebarOpen && <span>{item.name}</span>}
@@ -114,9 +106,6 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
               >
                 {item.name}
               </Link>
-              {isActive(item.href) && (
-                <div className="text-xs text-blue-400 mt-1 font-medium">● Active</div>
-              )}
             </div>
           </div>
         )}
