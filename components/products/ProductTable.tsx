@@ -148,9 +148,9 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
             </tr>
           </thead>
           <tbody>
-            {sortedProducts.map((product) => (
+            {sortedProducts.map((product, idx) => (
               <tr key={product.id}>
-                <td>{product.index}</td>
+                <td>{idx + 1}</td>
                 <td className="text-slate-400 text-sm">{product.id}</td>
                 <td className="font-medium text-white">{product.product_name}</td>
                 <td className="text-slate-300">{product.categoryName || '-'}</td>

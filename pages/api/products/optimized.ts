@@ -253,9 +253,10 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
         .split(',')
         .map((id: string) => {
           const trimmedId = id.trim();
-          return subcategoryMap.get(trimmedId) || trimmedId; // fallback to ID if name not found
+          return subcategoryMap.get(trimmedId) || ''; // no fallback to ID if name not found
         })
-        .filter(name => name); // remove empty names
+        .filter(name => name) // remove empty names
+        .sort((a, b) => a.localeCompare(b)); // sort alphabetically
 
       subcategoryNames = subcategoryNameList.join(', ');
     }
