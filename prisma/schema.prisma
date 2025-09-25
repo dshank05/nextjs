@@ -61,8 +61,8 @@ model Product {
   notes                  String?   @db.VarChar(255)
 
   // Foreign key relationships (references new tables)
-  category_ref    product_category_new?    @relation(fields: [product_category_id], references: [id])
-  subcategory_ref product_subcategory_new? @relation(fields: [product_subcategory_id], references: [id])
+  category_ref    product_category?    @relation(fields: [product_category_id], references: [id])
+  subcategory_ref product_subcategory? @relation(fields: [product_subcategory_id], references: [id])
   // car_model_ids is comma-separated, so no direct FK relationship
 
   @@index([product_category], map: "idx_product_category")
@@ -123,24 +123,35 @@ model Invoiceitems {
 }
 
 model Purchase {
-  id                  Int     @id @default(autoincrement())
-  invoice_no          Int
-  items_total         Float?
-  freight             Float?
-  total_taxable_value Float
-  taxrate             Int?
-  total_cgst          Float?
-  total_sgst          Float?
-  total_igst          Float?
-  total_tax           Float?
-  total               Float
-  notes               String? @db.VarChar(255)
-  invoice_date        String  @db.VarChar(30)
-  updated_at          String  @db.VarChar(100)
-  status              Int?
-  payment_mode        Int?
-  transport           String? @db.VarChar(255)
-  fy                  Int
+  id                       Int     @id @default(autoincrement())
+  invoice_no               Int
+  bill_reference           String? @db.VarChar(255)
+  staff_details            String? @db.VarChar(255)
+  items_total              Float?
+  freight                  Float?
+  total_taxable_value      Float
+  taxrate                  Int?
+  total_cgst               Float?
+  total_sgst               Float?
+  total_igst               Float?
+  total_tax                Float?
+  total                    Float
+  notes                    String? @db.VarChar(255)
+  descriptions             String? @db.Text
+  packing_forwarding_qty    Float?
+  packing_forwarding_rate   Float?
+  packing_forwarding_total  Float?
+  basic_value              Float?
+  bill                     String? @db.VarChar(255)
+  tax                      String? @db.VarChar(255)
+  invoice_date             String  @db.VarChar(30)
+  updated_at               String  @db.VarChar(100)
+  status                   Int?
+  payment_mode             Int?
+  transport                String? @db.VarChar(255)
+  transport_name           String? @db.VarChar(255)
+  vehicle_number           String? @db.VarChar(100)
+  fy                       Int
 
   @@map("purchase")
 }
@@ -150,13 +161,16 @@ model Purchaseitems {
   invoice_no      Int
   name_of_product String  @db.VarChar(255)
   category_id     Int?
+  subcategory_id  Int?
   model_id        Int?
   company_id      Int?
+  car_model       String? @db.VarChar(255)
   hsn             String? @db.VarChar(50)
   part            String? @db.VarChar(100)
   qty             Float?
   unit            Int?
   rate            Float?
+  tax             Float?
   subtotal        Float
   fy              Int
   invoice_date    Int
@@ -320,24 +334,24 @@ model migration {
   apply_time Int?
 }
 
-model product_category_new {
+model product_category {
   id           Int    @id @default(autoincrement())
   product_name String @db.VarChar(255)
 
   // Backward relations to products
   products Product[]
 
-  @@map("product_category_new")
+  @@map("product_category")
 }
 
-model product_subcategory_new {
+model product_subcategory {
   id               Int    @id @default(autoincrement())
   subcategory_name String @db.VarChar(255)
 
   // Backward relations to products
   products Product[]
 
-  @@map("product_subcategory_new")
+  @@map("product_subcategory")
 }
 
 model car_models {
@@ -349,19 +363,9 @@ model car_models {
   @@map("car_models")
 }
 
-model product_category {
-  id            Int    @id @default(autoincrement())
-  category_name String @db.VarChar(255)
-}
-
 model product_company {
   id           Int    @id @default(autoincrement())
   company_name String @db.VarChar(255)
-}
-
-model product_subcategory {
-  id               Int    @id @default(autoincrement())
-  subcategory_name String @db.VarChar(255)
 }
 
 model ship_to {

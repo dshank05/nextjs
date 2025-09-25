@@ -5,9 +5,16 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method !== 'GET') {
+  if (req.method === 'GET') {
+    return handleGet(req, res)
+  } else if (req.method === 'POST') {
+    return handlePost(req, res)
+  } else {
     return res.status(405).json({ message: 'Method not allowed' })
   }
+}
+
+async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
   try {
     const {
@@ -201,4 +208,177 @@ export default async function handler(
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
+}
+
+async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const {
+      invoice_number,
+      bill_reference,
+      staff_details,
+      date,
+      vendor_name,
+      contact_number,
+      email_id,
+      address,
+      city,
+      state,
+      gst_number,
+      transport_name,
+      vehicle_number,
+      transport_cost,
+      bill,
+      tax,
+      items,
+      descriptions,
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
+      tax_rate,
+      basic_value,
+      total_cgst,
+      total_sgst,
+      total_igst,
+      notes,
+      total_tax,
+      payment_status,
+      payment_mode,
+      grand_total
+    } = req.body
+
+    // Validate required fields
+    if (!invoice_number || !vendor_name || !items || items.length === 0) {
+      return res.status(400).json({
+        message: 'Missing required fields: invoice_number, vendor_name, or items'
+      })
+    }
+
+    // Get current financial year
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+
+    // Convert date to Unix timestamp
+    const invoiceDate = new Date(date).getTime() / 1000
+
+    // Calculate totals
+    const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
+    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
+
+    // Create or update vendor
+    let vendorId: number
+    const existingVendor = await prisma.vendor_details.findFirst({
+      where: { vendor_name: vendor_name }
+    })
+
+    if (existingVendor) {
+      vendorId = existingVendor.id
+      // Update vendor details if provided
+      await prisma.vendor_details.update({
+        where: { id: vendorId },
+        data: {
+          contact_no: contact_number || existingVendor.contact_no,
+          email: email_id || existingVendor.email,
+          address: address || existingVendor.address,
+          tax_id: gst_number || existingVendor.tax_id
+        }
+      })
+    } else {
+      const newVendor = await prisma.vendor_details.create({
+        data: {
+          vendor_name: vendor_name,
+          contact_no: contact_number,
+          email: email_id,
+          address: address,
+          tax_id: gst_number
+        }
+      })
+      vendorId = newVendor.id
+    }
+
+    // Create purchase record
+    const purchase = await prisma.purchase.create({
+      data: {
+        invoice_no: parseInt(invoice_number),
+        bill_reference: bill_reference,
+        staff_details: staff_details,
+        items_total: itemsTotal,
+        freight: transport_cost || 0,
+        total_taxable_value: itemsTotal,
+        taxrate: tax_rate || 0,
+        total_cgst: total_cgst || 0,
+        total_sgst: total_sgst || 0,
+        total_igst: total_igst || 0,
+        total_tax: total_tax || 0,
+        total: calculatedGrandTotal,
+        notes: notes || '',
+        descriptions: descriptions,
+        packing_forwarding_qty: packing_forwarding_qty || 0,
+        packing_forwarding_rate: packing_forwarding_rate || 0,
+        packing_forwarding_total: packing_forwarding_total || 0,
+        basic_value: basic_value || 0,
+        bill: bill,
+        tax: tax,
+        invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
+        updated_at: new Date().toISOString().split('T')[0], // Current date
+        status: payment_status === 'paid' ? 1 : 0,
+        payment_mode: getPaymentModeId(payment_mode),
+        fy: financialYear,
+        transport: transport_name || '',
+        transport_name: transport_name,
+        vehicle_number: vehicle_number
+      }
+    })
+
+    // Create purchase items
+    for (const item of items) {
+      await prisma.purchaseitems.create({
+        data: {
+          invoice_no: purchase.invoice_no,
+          name_of_product: item.product_name,
+          category_id: item.category_id,
+          subcategory_id: item.subcategory_id,
+          model_id: item.model_id,
+          company_id: item.company_id,
+          car_model: item.car_model,
+          hsn: item.hsn,
+          part: item.part_number,
+          qty: item.qty,
+          unit: 1, // Default unit
+          rate: item.rate,
+          tax: item.tax || 0,
+          subtotal: item.total,
+          fy: financialYear,
+          invoice_date: invoiceDate
+        }
+      })
+    }
+
+    res.status(201).json({
+      message: 'Purchase created successfully',
+      purchase: {
+        id: purchase.id,
+        invoice_no: purchase.invoice_no,
+        total: purchase.total,
+        vendor_name: vendor_name
+      }
+    })
+
+  } catch (error) {
+    console.error('Purchase creation error:', error)
+    res.status(500).json({
+      message: 'Failed to create purchase',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+function getPaymentModeId(paymentMode: string): number {
+  const paymentModes: { [key: string]: number } = {
+    'cash': 1,
+    'card': 2,
+    'bank_transfer': 3,
+    'cheque': 4
+  }
+  return paymentModes[paymentMode] || 1
 }

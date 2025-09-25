@@ -49,7 +49,7 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'PRODUCT PAGE', href: '/products' },
         { name: 'PRODUCT CREATION', href: '/products/create' },
-        { name: 'PRODUCT VIEW PAGE', href: '/products/view' },
+        // { name: 'PRODUCT VIEW PAGE', href: '/products/view' },
       ],
     },
     {
@@ -58,7 +58,7 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'PURCHASE PAGE', href: '/purchases' },
         { name: 'PURCHASE CREATION', href: '/purchases/create' },
-        { name: 'PURCHASE VIEW PAGE', href: '/purchases/view' },
+        // { name: 'PURCHASE VIEW PAGE', href: '/purchases/view' },
       ],
     },
     {
