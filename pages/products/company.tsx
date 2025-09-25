@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Company {
   id: number;
@@ -17,21 +19,37 @@ export default function Companies() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('company_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingCompanyData, setPendingCompanyData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [formData, setFormData] = useState({ id: 0, company_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    // Reset to first page when sorting
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   useEffect(() => {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchCompanies();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchCompanies = async () => {
     setLoading(true);
@@ -40,6 +58,8 @@ export default function Companies() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
       });
       const response = await fetch(`/api/products/companies?${params}`);
       if (response.ok) {
@@ -52,6 +72,15 @@ export default function Companies() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handlePageChange = (newPage: number) => {
@@ -103,21 +132,44 @@ export default function Companies() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Store the pending data and show confirmation modal
+    const isEditing = editingCompany !== null;
+    const method = isEditing ? 'PUT' : 'POST';
+    const body = isEditing ? { ...formData, id: editingCompany.id } : formData;
+
+    setPendingCompanyData({ method, body });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingCompanyData || isSaving) return;
+
+    setIsSaving(true);
     try {
-      const method = editingCompany ? 'PUT' : 'POST';
-      const body = editingCompany ? { ...formData, id: editingCompany.id } : formData;
       const response = await fetch(`/api/products/companies`, {
-        method,
+        method: pendingCompanyData.method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(pendingCompanyData.body),
       });
       if (response.ok) {
         setShowModal(false);
+        setShowConfirmModal(false);
+        setPendingCompanyData(null);
         fetchCompanies();
       }
     } catch (error) {
       console.error('Error saving company:', error);
+    } finally {
+      setIsSaving(false);
+      setShowConfirmModal(false);
+      setPendingCompanyData(null);
     }
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirmModal(false);
+    setPendingCompanyData(null);
   };
 
   return (
@@ -175,8 +227,12 @@ export default function Companies() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Company Name</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('company_name')}>
+                      Company Name {getSortIcon('company_name')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -249,6 +305,15 @@ export default function Companies() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Confirm Action"
+        message={`Do you want to ${editingCompany ? 'edit' : 'create'} - ${formData.company_name} company?`}
+        showLoading={isSaving}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelConfirm}
+      />
     </div>
   );
 }

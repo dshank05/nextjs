@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Category {
   id: number;
@@ -17,7 +19,12 @@ export default function Categories() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('category_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingCategoryData, setPendingCategoryData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [formData, setFormData] = useState({ id: 0, category_name: '' });
 
@@ -29,9 +36,26 @@ export default function Categories() {
     }
   }, [debouncedSearchTerm]);
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    // Reset to first page when sorting
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
+
   useEffect(() => {
     fetchCategories();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchCategories = async () => {
     setLoading(true);
@@ -40,6 +64,8 @@ export default function Categories() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
       });
       const response = await fetch(`/api/products/categories?${params}`);
       if (response.ok) {
@@ -103,21 +129,53 @@ export default function Categories() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Store the pending data and show confirmation modal
+    const isEditing = editingCategory !== null;
+    const method = isEditing ? 'PUT' : 'POST';
+    const body = isEditing ? { ...formData, id: editingCategory.id } : formData;
+
+    setPendingCategoryData({ method, body });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingCategoryData || isSaving) return;
+
+    setIsSaving(true);
     try {
-      const method = editingCategory ? 'PUT' : 'POST';
-      const body = editingCategory ? { ...formData, id: editingCategory.id } : formData;
       const response = await fetch(`/api/products/categories`, {
-        method,
+        method: pendingCategoryData.method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(pendingCategoryData.body),
       });
       if (response.ok) {
         setShowModal(false);
+        setShowConfirmModal(false);
+        setPendingCategoryData(null);
         fetchCategories();
       }
     } catch (error) {
       console.error('Error saving category:', error);
+    } finally {
+      setIsSaving(false);
+      setShowConfirmModal(false);
+      setPendingCategoryData(null);
     }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirmModal(false);
+    setPendingCategoryData(null);
   };
 
   return (
@@ -175,8 +233,12 @@ export default function Categories() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Category Name</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('category_name')}>
+                      Category Name {getSortIcon('category_name')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -215,6 +277,7 @@ export default function Categories() {
         )}
       </div>
 
+      {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
@@ -249,6 +312,15 @@ export default function Categories() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Confirm Action"
+        message={`Do you want to ${editingCategory ? 'edit' : 'create'} - ${formData.category_name} category?`}
+        showLoading={isSaving}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelConfirm}
+      />
     </div>
   );
 }

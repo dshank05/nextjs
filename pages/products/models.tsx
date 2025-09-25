@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Model {
   id: number;
@@ -17,21 +19,37 @@ export default function Models() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('subcategory_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingModelData, setPendingModelData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
   const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    // Reset to first page when sorting
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   useEffect(() => {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchModels();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchModels = async () => {
     setLoading(true);
@@ -40,6 +58,8 @@ export default function Models() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
       });
       const response = await fetch(`/api/products/models?${params}`);
       if (response.ok) {
@@ -52,6 +72,15 @@ export default function Models() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handlePageChange = (newPage: number) => {
@@ -103,21 +132,44 @@ export default function Models() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Store the pending data and show confirmation modal
+    const isEditing = editingModel !== null;
+    const method = isEditing ? 'PUT' : 'POST';
+    const body = isEditing ? { ...formData, id: editingModel.id } : formData;
+
+    setPendingModelData({ method, body });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingModelData || isSaving) return;
+
+    setIsSaving(true);
     try {
-      const method = editingModel ? 'PUT' : 'POST';
-      const body = editingModel ? { ...formData, id: editingModel.id } : formData;
       const response = await fetch(`/api/products/models`, {
-        method,
+        method: pendingModelData.method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(pendingModelData.body),
       });
       if (response.ok) {
         setShowModal(false);
+        setShowConfirmModal(false);
+        setPendingModelData(null);
         fetchModels();
       }
     } catch (error) {
       console.error('Error saving model:', error);
+    } finally {
+      setIsSaving(false);
+      setShowConfirmModal(false);
+      setPendingModelData(null);
     }
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirmModal(false);
+    setPendingModelData(null);
   };
 
   return (
@@ -175,8 +227,12 @@ export default function Models() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Car Model Name</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
+                      Car Model Name {getSortIcon('subcategory_name')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -249,6 +305,15 @@ export default function Models() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Confirm Action"
+        message={`Do you want to ${editingModel ? 'edit' : 'create'} - ${formData.subcategory_name} car model?`}
+        showLoading={isSaving}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelConfirm}
+      />
     </div>
   );
 }

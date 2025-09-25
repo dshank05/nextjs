@@ -4,30 +4,39 @@ import { prisma } from '../../../lib/db';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { page = 1, limit = 50, search = '' } = req.query;
+      const { page = 1, limit = 50, search = '', sortBy = 'category_name', sortOrder = 'asc' } = req.query;
 
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
+      const sortField = sortBy as string;
+      const sortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
 
       const where = searchTerm
-        ? { product_name: { contains: searchTerm } }
+        ? { category_name: { contains: searchTerm } }
         : {};
 
-      const total = await (prisma as any).product_category.count({ where });
+      const total = await prisma.product_category.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const categories = await (prisma as any).product_category.findMany({
+      const orderBy: any = {};
+      if (sortField === 'id') {
+        orderBy.id = sortDirection;
+      } else {
+        orderBy.category_name = sortDirection;
+      }
+
+      const categories = await prisma.product_category.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy: { product_name: 'asc' },
+        orderBy,
       });
 
       const startIndex = (pageNum - 1) * limitNum;
       const categoriesWithIndex = categories.map((cat, idx) => ({
         ...cat,
-        category_name: cat.product_name, // Add backward compatibility
+        category_name: cat.category_name, // Add backward compatibility
         index: startIndex + idx + 1,
       }));
 
@@ -46,8 +55,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!category_name) {
         return res.status(400).json({ message: 'Category name is required' });
       }
-      const category = await (prisma as any).product_category.create({
-        data: { product_name: category_name },
+      const category = await prisma.product_category.create({
+        data: { category_name: category_name },
       });
       res.status(201).json(category);
     } else if (req.method === 'PUT') {
@@ -55,9 +64,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id || !category_name) {
         return res.status(400).json({ message: 'ID and category name are required' });
       }
-      const category = await (prisma as any).product_category.update({
+      const category = await prisma.product_category.update({
         where: { id: parseInt(id, 10) },
-        data: { product_name: category_name },
+        data: { category_name: category_name },
       });
       res.status(200).json(category);
     } else if (req.method === 'DELETE') {
@@ -65,7 +74,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
-      await (prisma as any).product_category.delete({
+      await prisma.product_category.delete({
         where: { id: parseInt(id, 10) },
       });
       res.status(204).end();

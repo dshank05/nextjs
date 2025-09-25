@@ -1,60 +1,43 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../../lib/db';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { page = 1, limit = 50, search = '' } = req.query;
+      const { page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc' } = req.query;
 
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
+      const sortField = sortBy as string;
+      const sortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
 
       const where = searchTerm
         ? { subcategory_name: { contains: searchTerm } }
         : {};
 
-      const total = await prisma.product_subcategory_new.count({ where });
+      const total = await prisma.product_subcategory.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const subcategories = await prisma.product_subcategory_new.findMany({
+      const orderBy: any = {};
+      if (sortField === 'id') {
+        orderBy.id = sortDirection;
+      } else {
+        orderBy.subcategory_name = sortDirection;
+      }
+
+      const subcategories = await prisma.product_subcategory.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy: { subcategory_name: 'asc' },
-      });
-
-      // Get all products to find associated product names for each subcategory
-      const allProducts = await prisma.product.findMany({
-        where: {
-          product_subcategory: { not: null }
-        },
-        select: {
-          product_name: true,
-          product_subcategory: true
-        }
+        orderBy,
       });
 
       const startIndex = (pageNum - 1) * limitNum;
-      const subcategoriesWithIndex = subcategories.map((sub, idx) => {
-        // Find products that contain this subcategory ID
-        const associatedProducts = allProducts.filter(product => {
-          if (!product.product_subcategory) return false;
-          const subcategoryIds = product.product_subcategory.split(',').map(id => id.trim());
-          return subcategoryIds.includes(sub.id.toString());
-        });
-
-        const productNames = associatedProducts.map(p => p.product_name).slice(0, 5); // Limit to 5 products for display
-
-        return {
-          ...sub,
-          index: startIndex + idx + 1,
-          productNames: productNames,
-          productCount: associatedProducts.length
-        };
-      });
+      const subcategoriesWithIndex = subcategories.map((sub, idx) => ({
+        ...sub,
+        index: startIndex + idx + 1,
+      }));
 
       res.status(200).json({
         subcategories: subcategoriesWithIndex,
@@ -71,10 +54,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!subcategory_name) {
         return res.status(400).json({ message: 'Subcategory name is required' });
       }
-      const subcategory = await prisma.product_subcategory_new.create({
+      const subcategory = await prisma.product_subcategory.create({
         data: { subcategory_name },
       });
       res.status(201).json(subcategory);
+    } else if (req.method === 'PUT') {
+      const { id, subcategory_name } = req.body;
+      if (!id || !subcategory_name) {
+        return res.status(400).json({ message: 'ID and subcategory name are required' });
+      }
+      const subcategory = await prisma.product_subcategory.update({
+        where: { id: parseInt(id, 10) },
+        data: { subcategory_name },
+      });
+      res.status(200).json(subcategory);
     } else {
       res.status(405).json({ message: 'Method not allowed' });
     }

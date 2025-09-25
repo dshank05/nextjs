@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Subcategory {
   id: number;
   subcategory_name: string;
   index: number;
-  productNames?: string[];
-  productCount?: number;
 }
 
 interface SubcategoryResponse {
@@ -19,21 +19,37 @@ export default function Subcategories() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('subcategory_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingSubcategoryData, setPendingSubcategoryData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [editingSubcategory, setEditingSubcategory] = useState<Subcategory | null>(null);
   const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    // Reset to first page when sorting
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
   useEffect(() => {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchSubcategories();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchSubcategories = async () => {
     setLoading(true);
@@ -42,6 +58,8 @@ export default function Subcategories() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
       });
       const response = await fetch(`/api/products/subcategories?${params}`);
       if (response.ok) {
@@ -54,6 +72,15 @@ export default function Subcategories() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handlePageChange = (newPage: number) => {
@@ -105,37 +132,60 @@ export default function Subcategories() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Store the pending data and show confirmation modal
+    const isEditing = editingSubcategory !== null;
+    const method = isEditing ? 'PUT' : 'POST';
+    const body = isEditing ? { ...formData, id: editingSubcategory.id } : formData;
+
+    setPendingSubcategoryData({ method, body });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingSubcategoryData || isSaving) return;
+
+    setIsSaving(true);
     try {
-      const method = editingSubcategory ? 'PUT' : 'POST';
-      const body = editingSubcategory ? { ...formData, id: editingSubcategory.id } : formData;
       const response = await fetch(`/api/products/subcategories`, {
-        method,
+        method: pendingSubcategoryData.method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(pendingSubcategoryData.body),
       });
       if (response.ok) {
         setShowModal(false);
+        setShowConfirmModal(false);
+        setPendingSubcategoryData(null);
         fetchSubcategories();
       }
     } catch (error) {
       console.error('Error saving subcategory:', error);
+    } finally {
+      setIsSaving(false);
+      setShowConfirmModal(false);
+      setPendingSubcategoryData(null);
     }
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirmModal(false);
+    setPendingSubcategoryData(null);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Car Model</button>
+        <button className="btn-primary" onClick={handleAdd}>Add Subcategory</button>
       </div>
 
       <div className="card">
         <div className="flex items-end justify-between">
           <div className="flex items-end space-x-4">
             <div className="w-80">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Search Car Models</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
               <input
                 type="text"
-                placeholder="Search car models..."
+                placeholder="Search subcategories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="input w-full"
@@ -177,9 +227,12 @@ export default function Subcategories() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Car Model Name</th>
-                    <th>Associated Products</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
+                      Subcategory Name {getSortIcon('subcategory_name')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -189,31 +242,8 @@ export default function Subcategories() {
                       <td>{subcategory.index}</td>
                       <td>{subcategory.id}</td>
                       <td className="font-medium text-white">{subcategory.subcategory_name}</td>
-                      <td className="min-w-64">
-                        {subcategory.productNames && subcategory.productNames.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
-                            {subcategory.productNames.slice(0, 3).map((productName, index) => (
-                              <span
-                                key={index}
-                                className="px-2 py-1 bg-green-600/20 text-green-300 text-xs rounded-full border border-green-500/30"
-                                title={productName}
-                              >
-                                {productName.length > 15 ? `${productName.substring(0, 15)}...` : productName}
-                              </span>
-                            ))}
-                            {subcategory.productCount && subcategory.productCount > 3 && (
-                              <span className="px-2 py-1 bg-slate-600/20 text-slate-400 text-xs rounded-full border border-slate-500/30">
-                                +{subcategory.productCount - 3} more
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-500">-</span>
-                        )}
-                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(subcategory)}>Edit</button>
-                        {/* <button className="btn-danger" onClick={() => handleDelete(subcategory.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -221,7 +251,7 @@ export default function Subcategories() {
               </table>
 
               {subcategories.length === 0 && !loading && (
-                <div className="text-center py-8 text-slate-400">No car models found.</div>
+                <div className="text-center py-8 text-slate-400">No subcategories found.</div>
               )}
             </div>
 
@@ -240,14 +270,15 @@ export default function Subcategories() {
         )}
       </div>
 
+      {/* Add/Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingSubcategory ? 'Edit Car Model' : 'Add Car Model'}</h2>
+            <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingSubcategory ? 'Edit Subcategory' : 'Add Subcategory'}</h2>
             <form onSubmit={handleSubmit}>
               {editingSubcategory && (
                 <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Car Model ID</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory ID</label>
                   <input
                     type="text"
                     value={formData.id}
@@ -257,7 +288,7 @@ export default function Subcategories() {
                 </div>
               )}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Car Model Name</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory Name</label>
                 <input
                   type="text"
                   value={formData.subcategory_name}
@@ -274,6 +305,15 @@ export default function Subcategories() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Confirm Action"
+        message={`Do you want to ${editingSubcategory ? 'edit' : 'create'} - ${formData.subcategory_name} subcategory?`}
+        showLoading={isSaving}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelConfirm}
+      />
     </div>
   );
 }
