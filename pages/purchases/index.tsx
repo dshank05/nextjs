@@ -206,11 +206,11 @@ export default function PurchasesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      {/* <div className="flex items-center justify-end">
         <button className="btn-primary">
           New Purchase Invoice
         </button>
-      </div>
+      </div> */}
 
       {/* Filters */}
       <div>

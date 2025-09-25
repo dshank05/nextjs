@@ -339,7 +339,7 @@ export default function PurchaseCreate() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">CREATE PURCHASE</h1>
         <button
           onClick={() => router.push('/purchases')}
@@ -347,7 +347,7 @@ export default function PurchaseCreate() {
         >
           Back to Purchases
         </button>
-      </div>
+      </div> */}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Header Information */}
@@ -792,21 +792,23 @@ export default function PurchaseCreate() {
         )}
 
         {/* Form Actions */}
-        <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
-          <button
-            type="button"
-            onClick={() => router.push('/purchases')}
-            className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Creating...' : 'Create Purchase'}
-          </button>
+        <div className="card">
+          <div className="p-6 flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => router.push('/purchases')}
+              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Creating...' : 'Create Purchase'}
+            </button>
+          </div>
         </div>
       </form>
     </div>

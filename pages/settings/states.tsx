@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface State {
   id: number;
@@ -18,13 +19,16 @@ interface StateResponse {
 }
 
 export default function States() {
-  const [states, setStates] = useState<Array<{id: number, state_name: string, code: number}>>([]);
+  const [states, setStates] = useState<Array<{id: number, state_name: string}>>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
-  const [editingState, setEditingState] = useState<{id: number, state_name: string, code: number} | null>(null);
-  const [formData, setFormData] = useState({ id: 0, state_name: '', code: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [editingState, setEditingState] = useState<{id: number, state_name: string} | null>(null);
+  const [formData, setFormData] = useState({ id: 0, state_name: '' });
+  const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string } | null>(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -41,20 +45,20 @@ export default function States() {
   const fetchStates = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData = {
-        states: [
-          { id: 1, state_name: 'Delhi', code: 1 },
-          { id: 2, state_name: 'Maharashtra', code: 2 },
-          { id: 3, state_name: 'Karnataka', code: 3 },
-          { id: 4, state_name: 'Tamil Nadu', code: 4 },
-          { id: 5, state_name: 'Rajasthan', code: 5 },
-        ],
-        pagination: { page: 1, limit: 50, total: 5, totalPages: 1, hasMore: false }
-      };
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm
+      });
 
-      setStates(mockData.states);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/states?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setStates(data.states);
+      setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching states:', error);
     } finally {
@@ -82,29 +86,62 @@ export default function States() {
 
   const handleAdd = () => {
     setEditingState(null);
-    setFormData({ id: 0, state_name: '', code: '' });
+    setFormData({ id: 0, state_name: '' });
     setShowModal(true);
   };
 
-  const handleEdit = (state: {id: number, state_name: string, code: number}) => {
+  const handleEdit = (state: {id: number, state_name: string}) => {
     setEditingState(state);
     setFormData({
       id: state.id,
-      state_name: state.state_name,
-      code: state.code.toString()
+      state_name: state.state_name
     });
     setShowModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setPendingFormData(formData);
+    setShowModal(false);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingFormData) return;
+
+    setConfirmLoading(true);
+
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving state:', formData);
-      setShowModal(false);
-      fetchStates(); // Refresh the list
+      const apiUrl = editingState
+        ? `/api/states/${editingState.id}`
+        : '/api/states';
+
+      const method = editingState ? 'PUT' : 'POST';
+
+      const response = await fetch(apiUrl, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ state_name: pendingFormData.state_name }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save state');
+      }
+
+      // Refresh the states list
+      await fetchStates();
+
+      setShowConfirmModal(false);
+      setPendingFormData(null);
     } catch (error) {
       console.error('Error saving state:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
+      setConfirmLoading(false);
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -166,7 +203,6 @@ export default function States() {
                     <th>S.N</th>
                     <th>ID</th>
                     <th>State Name</th>
-                    <th>Code</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -176,7 +212,6 @@ export default function States() {
                       <td>{index + 1}</td>
                       <td>{state.id}</td>
                       <td className="font-medium text-white">{state.state_name}</td>
-                      <td className="text-slate-300 font-mono">{state.code}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(state)}>Edit</button>
                       </td>
@@ -184,6 +219,14 @@ export default function States() {
                   ))}
                 </tbody>
               </table>
+
+              {states.length === 0 && !loading && (
+                <div className="text-center py-12">
+                  <div className="text-4xl mb-4">🏛️</div>
+                  <h3 className="text-lg font-semibold text-white mb-2">No states found</h3>
+                  <p className="text-slate-400">Start by adding your first state to the database.</p>
+                </div>
+              )}
             </div>
 
             {pagination.totalPages > 1 && (
@@ -230,17 +273,6 @@ export default function States() {
                   required
                 />
               </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Code</label>
-                <input
-                  type="number"
-                  value={formData.code}
-                  onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
-                  className="input w-full"
-                  placeholder="Enter code (integer)"
-                  required
-                />
-              </div>
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>
@@ -249,6 +281,24 @@ export default function States() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={editingState ? 'Confirm Edit' : 'Confirm Add'}
+        message={editingState
+          ? `Are you sure you want to update this state to "${pendingFormData?.state_name}"?`
+          : `Are you sure you want to add "${pendingFormData?.state_name}" as a new state?`
+        }
+        showLoading={confirmLoading}
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => {
+          if (!confirmLoading) {
+            setShowConfirmModal(false);
+            setPendingFormData(null);
+          }
+        }}
+      />
     </div>
   );
 }

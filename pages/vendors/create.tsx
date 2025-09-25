@@ -44,7 +44,7 @@ export default function CreateVendor() {
     if (selectedState) {
       setFormData(prev => ({
         ...prev,
-        state: selectedState.id,
+        state: selectedState.id.toString(),
         state_code: selectedState.code.toString().padStart(2, '0')
       }));
     }
