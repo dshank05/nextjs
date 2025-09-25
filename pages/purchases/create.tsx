@@ -339,320 +339,307 @@ export default function PurchaseCreate() {
 
   return (
     <div className="space-y-6">
-      {/* <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">CREATE PURCHASE</h1>
-        <button
-          onClick={() => router.push('/purchases')}
-          className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-        >
-          Back to Purchases
-        </button>
-      </div> */}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Header Information */}
+        {/* Single Mega Card with All Sections */}
         <div className="card">
           <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Invoice Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
-                <input
-                  type="text"
-                  value={formData.invoice_number}
-                  onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter invoice number"
-                />
-                {errors.invoice_number && <p className="text-red-400 text-xs mt-1">{errors.invoice_number}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">BILL REFERENCE</label>
-                <input
-                  type="text"
-                  value={formData.bill_reference}
-                  onChange={(e) => handleInputChange('bill_reference', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter bill reference"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">STAFF DETAILS</label>
-                <input
-                  type="text"
-                  value={formData.staff_details}
-                  onChange={(e) => handleInputChange('staff_details', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter staff details"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>
-                <input
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => handleInputChange('date', e.target.value)}
-                  className="input w-full"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
 
-        {/* Vendor Information */}
-        <div className="card">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Vendor Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
-                <select
-                  value={formData.vendor_name}
-                  onChange={(e) => {
-                    handleInputChange('vendor_name', e.target.value);
-                    handleVendorSelect(e.target.value);
-                  }}
-                  className="select w-full"
-                >
-                  <option value="">Select Vendor</option>
-                  {vendors.map((vendor) => (
-                    <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
-                  ))}
-                </select>
-                {errors.vendor_name && <p className="text-red-400 text-xs mt-1">{errors.vendor_name}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
-                <input
-                  type="text"
-                  value={formData.contact_number}
-                  onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter contact number"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
-                <input
-                  type="email"
-                  value={formData.email_id}
-                  onChange={(e) => handleInputChange('email_id', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter email"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
-                <input
-                  type="text"
-                  value={formData.gst_number}
-                  onChange={(e) => handleInputChange('gst_number', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter GST number"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS</label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) => handleInputChange('address', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter address"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
-                <input
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => handleInputChange('city', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter city"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                <input
-                  type="text"
-                  value={formData.state}
-                  onChange={(e) => handleInputChange('state', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter state"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Transport Information */}
-        <div className="card">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Transport Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
-                <input
-                  type="text"
-                  value={formData.transport_name}
-                  onChange={(e) => handleInputChange('transport_name', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter transport name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
-                <input
-                  type="text"
-                  value={formData.vehicle_number}
-                  onChange={(e) => handleInputChange('vehicle_number', e.target.value)}
-                  className="input w-full"
-                  placeholder="Enter vehicle number"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT COST</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={formData.transport_cost}
-                  onChange={(e) => handleInputChange('transport_cost', e.target.value)}
-                  className="input w-full"
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Product Selection */}
-        <div className="card">
-          <div className="p-6">
-            <h2 className="text-lg font-semibold mb-4">Product Selection</h2>
-
-            {/* Product Search */}
-            <div className="mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="input w-full pl-10"
-                  placeholder="Search products by name, part number, or category..."
-                />
+            {/* Invoice Information */}
+            <div className="mb-10">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Invoice Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
+                  <input
+                    type="text"
+                    value={formData.invoice_number}
+                    onChange={(e) => handleInputChange('invoice_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter invoice number"
+                  />
+                  {errors.invoice_number && <p className="text-red-400 text-xs mt-1">{errors.invoice_number}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BILL REFERENCE</label>
+                  <input
+                    type="text"
+                    value={formData.bill_reference}
+                    onChange={(e) => handleInputChange('bill_reference', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter bill reference"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF DETAILS</label>
+                  <input
+                    type="text"
+                    value={formData.staff_details}
+                    onChange={(e) => handleInputChange('staff_details', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter staff details"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>
+                  <input
+                    type="date"
+                    value={formData.date}
+                    onChange={(e) => handleInputChange('date', e.target.value)}
+                    className="input w-full"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Product List */}
-            <div className="max-h-64 overflow-y-auto border border-slate-600 rounded">
-              <table className="w-full">
-                <thead className="bg-slate-700">
-                  <tr>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">FULL PRODUCT NAME</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CATEGORY</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">COMPANY</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">PART NUMBER</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">RATE</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">ACTION</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredProducts.slice(0, 10).map((product) => (
-                    <tr key={product.id} className="border-t border-slate-600 hover:bg-slate-700">
-                      <td className="px-4 py-2 text-sm text-slate-300">{product.product_name}</td>
-                      <td className="px-4 py-2 text-sm text-slate-300">{product.category_name}</td>
-                      <td className="px-4 py-2 text-sm text-slate-300">{product.company_name}</td>
-                      <td className="px-4 py-2 text-sm text-slate-300">{product.part_no}</td>
-                      <td className="px-4 py-2 text-sm text-slate-300">₹{product.rate}</td>
-                      <td className="px-4 py-2 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => addProductToPurchase(product)}
-                          className="text-blue-400 hover:text-blue-300"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </td>
+            {/* Vendor Information */}
+            <div className="mb-10 border-t border-slate-600 pt-8">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Vendor Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
+                  <select
+                    value={formData.vendor_name}
+                    onChange={(e) => {
+                      handleInputChange('vendor_name', e.target.value);
+                      handleVendorSelect(e.target.value);
+                    }}
+                    className="select w-full"
+                  >
+                    <option value="">Select Vendor</option>
+                    {vendors.map((vendor) => (
+                      <option key={vendor.id} value={vendor.id}>{vendor.name}</option>
+                    ))}
+                  </select>
+                  {errors.vendor_name && <p className="text-red-400 text-xs mt-1">{errors.vendor_name}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
+                  <input
+                    type="text"
+                    value={formData.contact_number}
+                    onChange={(e) => handleInputChange('contact_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter contact number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
+                  <input
+                    type="email"
+                    value={formData.email_id}
+                    onChange={(e) => handleInputChange('email_id', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter email"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
+                  <input
+                    type="text"
+                    value={formData.gst_number}
+                    onChange={(e) => handleInputChange('gst_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter GST number"
+                  />
+                </div>
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS</label>
+                    <input
+                      type="text"
+                      value={formData.address}
+                      onChange={(e) => handleInputChange('address', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter address"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
+                    <input
+                      type="text"
+                      value={formData.city}
+                      onChange={(e) => handleInputChange('city', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter city"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                    <input
+                      type="text"
+                      value={formData.state}
+                      onChange={(e) => handleInputChange('state', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter state"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Transport Information */}
+            <div className="mb-10 border-t border-slate-600 pt-8">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Transport Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
+                  <input
+                    type="text"
+                    value={formData.transport_name}
+                    onChange={(e) => handleInputChange('transport_name', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter transport name"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
+                  <input
+                    type="text"
+                    value={formData.vehicle_number}
+                    onChange={(e) => handleInputChange('vehicle_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter vehicle number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT COST</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.transport_cost}
+                    onChange={(e) => handleInputChange('transport_cost', e.target.value)}
+                    className="input w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Product Selection */}
+            <div className="mb-10 border-t border-slate-600 pt-8">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Product Selection</h3>
+
+              {/* Product Search */}
+              <div className="mb-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="input w-full pl-10"
+                    placeholder="Search products by name, part number, or category..."
+                  />
+                </div>
+              </div>
+
+              {/* Product List */}
+              <div className="max-h-64 overflow-y-auto border border-slate-600 rounded">
+                <table className="w-full">
+                  <thead className="bg-slate-700">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">FULL PRODUCT NAME</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CATEGORY</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">COMPANY</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">PART NUMBER</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">RATE</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">ACTION</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {filteredProducts.slice(0, 10).map((product) => (
+                      <tr key={product.id} className="border-t border-slate-600 hover:bg-slate-700">
+                        <td className="px-4 py-2 text-sm text-slate-300">{product.product_name}</td>
+                        <td className="px-4 py-2 text-sm text-slate-300">{product.category_name}</td>
+                        <td className="px-4 py-2 text-sm text-slate-300">{product.company_name}</td>
+                        <td className="px-4 py-2 text-sm text-slate-300">{product.part_no}</td>
+                        <td className="px-4 py-2 text-sm text-slate-300">₹{product.rate}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => addProductToPurchase(product)}
+                            className="text-blue-400 hover:text-blue-300"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Selected Products */}
+              {selectedProducts.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="text-md font-semibold mb-4">Selected Products</h4>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border border-slate-600 rounded">
+                      <thead className="bg-slate-700">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">SN</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">FULL PRODUCT NAME</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CAR MODEL</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CATEGORY</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">SUB CATEGORY</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">COMPANY</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">PART NUMBER</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">QTY</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">RATE</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">TAX</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">TOTAL</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedProducts.map((item, index) => (
+                          <tr key={item.id} className="border-t border-slate-600">
+                            <td className="px-4 py-2 text-sm text-slate-300">{index + 1}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.product_name}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.car_model}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.category}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.sub_category}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.company}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.part_number}</td>
+                            <td className="px-4 py-2 text-sm">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.qty}
+                                onChange={(e) => updateProductQuantity(item.id, parseInt(e.target.value) || 1)}
+                                className="input w-20"
+                              />
+                            </td>
+                            <td className="px-4 py-2 text-sm text-slate-300">₹{item.rate}</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">{item.tax}%</td>
+                            <td className="px-4 py-2 text-sm text-slate-300">₹{item.total}</td>
+                            <td className="px-4 py-2 text-sm">
+                              <button
+                                type="button"
+                                onClick={() => removeProduct(item.id)}
+                                className="text-red-400 hover:text-red-300"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 text-right">
+                    <span className="text-slate-300 font-medium text-lg">Subtotal: ₹{calculateSubtotal().toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
+              {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
             </div>
 
-            {/* Selected Products */}
-            {selectedProducts.length > 0 && (
-              <div className="mt-4">
-                <h3 className="text-md font-semibold mb-2">Selected Products</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full border border-slate-600 rounded">
-                    <thead className="bg-slate-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">SN</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">FULL PRODUCT NAME</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CAR MODEL</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">CATEGORY</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">SUB CATEGORY</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">COMPANY</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">PART NUMBER</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">QTY</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">RATE</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">TAX</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">TOTAL</th>
-                        <th className="px-4 py-2 text-left text-xs font-medium text-slate-300">ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedProducts.map((item, index) => (
-                        <tr key={item.id} className="border-t border-slate-600">
-                          <td className="px-4 py-2 text-sm text-slate-300">{index + 1}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.product_name}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.car_model}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.category}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.sub_category}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.company}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.part_number}</td>
-                          <td className="px-4 py-2 text-sm">
-                            <input
-                              type="number"
-                              min="1"
-                              value={item.qty}
-                              onChange={(e) => updateProductQuantity(item.id, parseInt(e.target.value) || 1)}
-                              className="input w-20"
-                            />
-                          </td>
-                          <td className="px-4 py-2 text-sm text-slate-300">₹{item.rate}</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">{item.tax}%</td>
-                          <td className="px-4 py-2 text-sm text-slate-300">₹{item.total}</td>
-                          <td className="px-4 py-2 text-sm">
-                            <button
-                              type="button"
-                              onClick={() => removeProduct(item.id)}
-                              className="text-red-400 hover:text-red-300"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="mt-2 text-right">
-                  <span className="text-slate-300 font-medium">Subtotal: ₹{calculateSubtotal().toFixed(2)}</span>
-                </div>
-              </div>
-            )}
-            {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
-          </div>
-        </div>
-
-        {/* Additional Information */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="card">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Additional Information</h2>
-              <div className="space-y-4">
+            {/* Additional Information */}
+            <div className="mb-10 border-t border-slate-600 pt-8">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Additional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
                   <textarea
@@ -675,11 +662,10 @@ export default function PurchaseCreate() {
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="card">
-            <div className="p-6">
-              <h2 className="text-lg font-semibold mb-4">Tax & Payment Information</h2>
+            {/* Tax & Payment Information */}
+            <div className="border-t border-slate-600 pt-8">
+              <h3 className="text-lg font-medium text-slate-200 mb-6">Tax & Payment Information</h3>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -782,35 +768,37 @@ export default function PurchaseCreate() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Error Display */}
-        {errors.submit && (
-          <div className="bg-red-900 border border-red-700 rounded p-3">
-            <p className="text-red-200 text-sm">{errors.submit}</p>
-          </div>
-        )}
 
-        {/* Form Actions */}
-        <div className="card">
-          <div className="p-6 flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={() => router.push('/purchases')}
-              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Creating...' : 'Create Purchase'}
-            </button>
+          {/* Error Display */}
+          {errors.submit && (
+            <div className="bg-red-900 border border-red-700 rounded p-3">
+              <p className="text-red-200 text-sm">{errors.submit}</p>
+            </div>
+          )}
+
+          {/* Form Actions */}
+          <div className='border-t border-slate-600 pt-2'>
+            <div className="p-6 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => router.push('/purchases')}
+                className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Creating...' : 'Create Purchase'}
+              </button>
+            </div>
           </div>
         </div>
       </form>
     </div>
+
   );
 }
