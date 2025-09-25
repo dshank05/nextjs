@@ -336,7 +336,7 @@ model migration {
 
 model product_category {
   id           Int    @id @default(autoincrement())
-  product_name String @db.VarChar(255)
+  category_name String @db.VarChar(255)
 
   // Backward relations to products
   products Product[]

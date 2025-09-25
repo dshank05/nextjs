@@ -1,30 +1,103 @@
-export default function VendorDetailsPage() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Vendor Details</h1>
-        <p className="text-slate-400">Manage vendor information and supplier profiles</p>
-      </div>
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { VendorTable } from '../../components/vendor/VendorTable';
 
-      <div className="card">
-        <div className="text-center py-12">
-          <div className="text-6xl mb-4">🏢</div>
-          <h2 className="text-2xl font-bold text-white mb-2">Vendor Management</h2>
-          <p className="text-slate-400 mb-6">
-            Comprehensive vendor database with contact and procurement information.
-          </p>
-          <div className="bg-slate-700/50 rounded-lg p-6 max-w-md mx-auto">
-            <h3 className="text-lg font-semibold text-white mb-3">Planned Features:</h3>
-            <ul className="text-sm text-slate-300 space-y-2 text-left">
-              <li>• Vendor profile management</li>
-              <li>• Contact and payment details</li>
-              <li>• Procurement history</li>
-              <li>• Performance tracking</li>
-              <li>• Supplier analytics</li>
-            </ul>
-          </div>
+interface Vendor {
+  id: number;
+  vendor_name: string;
+  address?: string;
+  address_2?: string;
+  contact_no?: string;
+  email?: string;
+  tax_id?: string;
+}
+
+export default function VendorDetailsPage() {
+  const router = useRouter();
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchVendors();
+  }, []);
+
+  const fetchVendors = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch('/api/vendors');
+      if (!response.ok) {
+        throw new Error('Failed to fetch vendors');
+      }
+
+      const data = await response.json();
+
+      // Transform API data to match our interface
+      const transformedVendors: Vendor[] = data.vendors?.map((vendor: any) => ({
+        id: parseInt(vendor.id),
+        vendor_name: vendor.vendor_name,
+        address: vendor.address,
+        address_2: vendor.address_2,
+        tax_id: vendor.tax_id,
+        contact_no: vendor.contact_no,
+        email: vendor.email
+      })) || [];
+
+      setVendors(transformedVendors);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to fetch vendors:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Vendor Details</h1>
+          <p className="text-sm text-slate-400 mt-1">Manage vendor information and supplier profiles</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => router.push('/vendors/create')}
+            className="btn-primary"
+          >
+            Add Vendor
+          </button>
         </div>
       </div>
+
+      {error && (
+        <div className="card border-red-500 bg-red-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-red-400 text-lg">⚠️</span>
+              <div>
+                <div className="text-red-400 font-medium">Error loading vendors</div>
+                <div className="text-red-300 text-sm">{error}</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="btn-secondary text-red-400 text-sm py-1 px-3"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
+
+      <VendorTable vendors={vendors} loading={loading} />
+
+      {vendors.length > 0 && !loading && (
+        <div className="text-center text-sm text-slate-400 py-2">
+          Total vendors: <span className="font-semibold text-white">{vendors.length}</span>
+        </div>
+      )}
     </div>
-  )
+  );
 }

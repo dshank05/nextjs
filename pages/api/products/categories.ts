@@ -1,7 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../../../lib/db';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -16,10 +14,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? { product_name: { contains: searchTerm } }
         : {};
 
-      const total = await prisma.product_category_new.count({ where });
+      const total = await (prisma as any).product_category.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const categories = await prisma.product_category_new.findMany({
+      const categories = await (prisma as any).product_category.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
@@ -48,7 +46,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!category_name) {
         return res.status(400).json({ message: 'Category name is required' });
       }
-      const category = await prisma.product_category_new.create({
+      const category = await (prisma as any).product_category.create({
         data: { product_name: category_name },
       });
       res.status(201).json(category);
@@ -57,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id || !category_name) {
         return res.status(400).json({ message: 'ID and category name are required' });
       }
-      const category = await prisma.product_category_new.update({
+      const category = await (prisma as any).product_category.update({
         where: { id: parseInt(id, 10) },
         data: { product_name: category_name },
       });
@@ -67,7 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
-      await prisma.product_category_new.delete({
+      await (prisma as any).product_category.delete({
         where: { id: parseInt(id, 10) },
       });
       res.status(204).end();
