@@ -86,8 +86,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       display_name,
       product_category_id,
       product_subcategory_id,
-      car_model_id,
-      company,
+      car_model_ids, // Changed from car_model_id
+      company, // This should be company_id (FK)
       part_no,
       min_stock,
       stock,
@@ -103,33 +103,68 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       sale_price,
     } = req.body
 
+    console.log('📝 API Received POST data:', req.body);
+
     // Validate required fields
     if (!product_name) {
       return res.status(400).json({ message: 'Product name is required' })
     }
 
+    // Validate company FK if provided
+    if (company && !isNaN(parseInt(company))) {
+      const companyExists = await prisma.product_company.findUnique({
+        where: { id: parseInt(company) }
+      });
+      if (!companyExists) {
+        return res.status(400).json({ message: 'Invalid company selected' })
+      }
+    }
+
+    // For now, store additional fields in notes or skip them since they don't exist in schema
+    // We'll need to update the schema to add these fields later
+    const enhancedNotes = notes ? `${notes}
+
+Additional Data:
+${gst_rate ? `GST Rate: ${gst_rate}` : ''}
+${warehouse ? `Warehouse: ${warehouse}` : ''}
+${rack_number ? `Rack: ${rack_number}` : ''}
+${descriptions ? `Desc: ${descriptions}` : ''}
+${mrp ? `MRP: ${mrp}` : ''}
+${discount ? `Discount: ${discount}` : ''}
+${sale_price ? `Sale Price: ${sale_price}` : ''}` :
+    `Additional Data:
+${gst_rate ? `GST Rate: ${gst_rate}` : ''}
+${warehouse ? `Warehouse: ${warehouse}` : ''}
+${rack_number ? `Rack: ${rack_number}` : ''}
+${descriptions ? `Desc: ${descriptions}` : ''}
+${mrp ? `MRP: ${mrp}` : ''}
+${discount ? `Discount: ${discount}` : ''}
+${sale_price ? `Sale Price: ${sale_price}` : ''}`;
+
     const product = await prisma.product.create({
       data: {
         product_name,
-        display_name: display_name || product_name, // Use display_name or fallback to product_name
+        display_name: display_name || product_name,
         product_category_id: product_category_id ? parseInt(product_category_id) : null,
         product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
-        car_model_id: car_model_id ? parseInt(car_model_id) : null,
-        company,
-        part_no,
+        // Store car_model_ids as comma-separated string (schema expects this)
+        car_model_ids: car_model_ids || null,
+        // For now keep company as string, but we should update schema to make it FK
+        company: company ? company.toString() : null,
+        part_no: part_no || null,
         min_stock: min_stock ? parseInt(min_stock) : null,
         stock: stock ? parseInt(stock) : null,
         rate: rate ? parseFloat(rate) : null,
-        hsn,
-        notes,
-        // Store additional data in separate fields (to be added to schema later)
-        // For now, keep backward compatibility
+        hsn: hsn || null,
+        notes: enhancedNotes,
       },
     })
 
+    console.log('✅ Product created successfully:', product);
+
     res.status(201).json(product)
   } catch (error) {
-    console.error('Product creation error:', error)
+    console.error('❌ Product creation error:', error)
     res.status(500).json({
       message: 'Failed to create product',
       error: error instanceof Error ? error.message : 'Unknown error'

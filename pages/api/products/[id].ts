@@ -5,19 +5,21 @@ import { prisma } from '../../../lib/db'
 async function enhanceProduct(product: any) {
   if (!product) return null
 
-  // Get foreign key IDs using new relationships
+  // Get foreign key IDs using new relationships - handle comma-separated car models
   const categoryIds = product.product_category_id ? [product.product_category_id] : []
   const subcategoryIds = product.product_subcategory_id ? [product.product_subcategory_id] : []
-  const carModelIds = product.car_model_id ? [product.car_model_id] : []
+  const carModelIds = product.car_model_ids ?
+    product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id))
+    : []
   const companyIds = product.company ? [parseInt(product.company)].filter(id => !isNaN(id)) : []
 
   // Batch fetch names using foreign key relationships
   const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
-    categoryIds.length > 0 ? prisma.product_category_new.findMany({
+    categoryIds.length > 0 ? prisma.product_category.findMany({
       where: { id: { in: categoryIds } },
-      select: { id: true, product_name: true }
+      select: { id: true, category_name: true }
     }) : Promise.resolve([]),
-    subcategoryIds.length > 0 ? prisma.product_subcategory_new.findMany({
+    subcategoryIds.length > 0 ? prisma.product_subcategory.findMany({
       where: { id: { in: subcategoryIds } },
       select: { id: true, subcategory_name: true }
     }) : Promise.resolve([]),
@@ -32,7 +34,7 @@ async function enhanceProduct(product: any) {
   ])
 
   // Create lookup maps
-  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.product_name]))
+  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.category_name]))
   const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]))
   const carModelMap = new Map(carModelRecords.map(model => [model.id, model.model_name]))
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]))
@@ -40,17 +42,25 @@ async function enhanceProduct(product: any) {
   // Look up names using foreign key maps
   const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : ''
   const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : ''
-  const carModelName = product.car_model_id ? carModelMap.get(product.car_model_id) || '' : ''
   const companyName = product.company ? companyMap.get(product.company) || '' : ''
 
-  // For display, combine subcategory and car model for backward compatibility
-  const subcategoryNames = [subcategoryName, carModelName].filter(Boolean).join(', ')
+  // Handle comma-separated car model IDs
+  let carModelNames: string[] = [];
+  if (product.car_model_ids) {
+    const modelIds = product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id));
+    carModelNames = modelIds.map(id => carModelMap.get(id)).filter(Boolean) as string[];
+  }
+
+  // Separate display for clean data presentation
+  const subcategoryDisplay = subcategoryName; // Only subcategory
+  const carModelsDisplay = carModelNames.join(', '); // Only car models
 
   return {
     ...product,
     categoryName,
     companyName,
-    subcategoryNames
+    subcategoryName: subcategoryDisplay, // Separate subcategory field
+    carModelsDisplay, // Separate car models field
   }
 }
 
@@ -97,7 +107,7 @@ export default async function handler(
           display_name,
           product_category_id,
           product_subcategory_id,
-          car_model_id,
+          car_model_ids, // Changed from car_model_id
           company,
           part_no,
           min_stock,
@@ -105,6 +115,13 @@ export default async function handler(
           rate,
           hsn,
           notes,
+          gst_rate,
+          warehouse,
+          rack_number,
+          descriptions,
+          mrp,
+          discount,
+          sale_price,
         } = req.body
 
         // Validate required fields
@@ -119,7 +136,7 @@ export default async function handler(
             display_name: display_name || product_name,
             product_category_id: product_category_id ? parseInt(product_category_id) : null,
             product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
-            car_model_id: car_model_id ? parseInt(car_model_id) : null,
+            car_model_ids: car_model_ids || null, // Changed from car_model_id
             company,
             part_no,
             min_stock: min_stock ? parseInt(min_stock) : null,
@@ -127,6 +144,8 @@ export default async function handler(
             rate: rate ? parseFloat(rate) : null,
             hsn,
             notes,
+            // Note: Additional fields (gst_rate, warehouse, etc.) will be stored in notes
+            // until the database schema is updated to include them
           }
         })
 

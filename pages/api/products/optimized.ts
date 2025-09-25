@@ -27,21 +27,22 @@ export default async function handler(
   }
 
   try {
-    const { 
-      page = '1', 
-      limit = '50', 
-      search = '', 
+    const {
+      page = '1',
+      limit = '50',
+      search = '',
       category = '',
-      subcategory = '',
+      subcategory = '', // Filters actual subcategories
+      model = '', // NEW: Filters car models (comma-separated IDs)
       company = '',
-      lowStock = 'false' 
+      lowStock = 'false'
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
-    
+
     // Handle complex filtering that requires post-processing
-    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '')
+    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '') || (model && model !== '')
 
     if (needsPostFiltering) {
       // For complex filters, get all matching products first
@@ -57,8 +58,8 @@ export default async function handler(
 
       // Convert category name to foreign key ID for database filtering
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category_new.findFirst({
-          where: { product_name: category as string },
+        const categoryRecord = await prisma.product_category.findFirst({
+          where: { category_name: category as string },
           select: { id: true }
         });
         if (categoryRecord) {
@@ -91,15 +92,28 @@ export default async function handler(
       }
 
       if (subcategory && subcategory !== '') {
-        // Convert subcategory name to ID for filtering
-        const subcategoryRecord = await prisma.product_subcategory.findFirst({
-          where: { subcategory_name: subcategory as string },
+        // Convert car model name to ID for filtering
+        const carModelRecord = await prisma.car_models.findFirst({
+          where: { model_name: subcategory as string },
           select: { id: true }
         });
-        if (subcategoryRecord) {
+        if (carModelRecord) {
           allProducts = allProducts.filter((product: any) =>
-            product.product_subcategory &&
-            product.product_subcategory.split(',').some((id: string) => id.trim() === subcategoryRecord.id.toString())
+            product.car_model_ids &&
+            product.car_model_ids.split(',').some((id: string) => id.trim() === carModelRecord.id.toString())
+          )
+        }
+      }
+
+      // NEW: Handle multiple car model selection (comma-separated IDs)
+      if (model && model !== '') {
+        const selectedModelIds = (model as string).split(',').map(id => id.trim()).filter(id => id !== '');
+        if (selectedModelIds.length > 0) {
+          allProducts = allProducts.filter((product: any) =>
+            product.car_model_ids &&
+            product.car_model_ids.split(',').some((productModelId: string) =>
+              selectedModelIds.some((selectedId: string) => productModelId.trim() === selectedId)
+            )
           )
         }
       }
@@ -140,8 +154,8 @@ export default async function handler(
 
       // Convert category name to foreign key ID for database filtering
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category_new.findFirst({
-          where: { product_name: category as string },
+        const categoryRecord = await prisma.product_category.findFirst({
+          where: { category_name: category as string },
           select: { id: true }
         });
         if (categoryRecord) {
@@ -203,19 +217,25 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
   // Extract unique IDs for batch queries
   const productIds = products.map(p => p.id.toString())
 
-  // Get foreign key IDs using new relationships
+  // Get foreign key IDs using new relationships - handle comma-separated car models
   const categoryIds = Array.from(new Set(products.map(p => p.product_category_id).filter(Boolean)))
   const subcategoryIds = Array.from(new Set(products.map(p => p.product_subcategory_id).filter(Boolean)))
-  const carModelIds = Array.from(new Set(products.map(p => p.car_model_id).filter(Boolean)))
+  const carModelIds = Array.from(new Set(
+    products.flatMap(p =>
+      p.car_model_ids ?
+        p.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id))
+        : []
+    )
+  ))
   const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
 
   // Batch fetch names using foreign key relationships
   const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
-    categoryIds.length > 0 ? prisma.product_category_new.findMany({
+    categoryIds.length > 0 ? prisma.product_category.findMany({
       where: { id: { in: categoryIds } },
-      select: { id: true, product_name: true }
+      select: { id: true, category_name: true }
     }) : Promise.resolve([]),
-    subcategoryIds.length > 0 ? prisma.product_subcategory_new.findMany({
+    subcategoryIds.length > 0 ? prisma.product_subcategory.findMany({
       where: { id: { in: subcategoryIds } },
       select: { id: true, subcategory_name: true }
     }) : Promise.resolve([]),
@@ -229,8 +249,8 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
     }) : Promise.resolve([])
   ]);
 
-  // Create lookup maps with new field names
-  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.product_name]));
+  // Create lookup maps
+  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.category_name])); // Use category_name
   const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]));
   const carModelMap = new Map(carModelRecords.map(model => [model.id, model.model_name]));
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]));
@@ -243,11 +263,18 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
     // Look up names using foreign key maps
     const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : '';
     const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : '';
-    const carModelName = product.car_model_id ? carModelMap.get(product.car_model_id) || '' : '';
     const companyName = product.company ? companyMap.get(product.company) || '' : '';
 
-    // For display, show the display_name, then single subcategory/car model as comma-separated for backward compatibility
-    const subcategoryNames = [subcategoryName, carModelName].filter(Boolean).join(', ');
+    // Handle comma-separated car model IDs
+    let carModelNames: string[] = [];
+    if (product.car_model_ids) {
+      const modelIds = product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id));
+      carModelNames = modelIds.map(id => carModelMap.get(id)).filter(Boolean) as string[];
+    }
+
+    // Separate fields for clean display - no mixing subcategories with car models
+    const subcategoryDisplay = subcategoryName; // Just subcategory
+    const carModelsDisplay = carModelNames.join(', '); // Just car models
 
     // Get latest purchase rate
     const latestPurchaseRate = latestPurchaseRates.get(product.id.toString()) || product.rate
@@ -255,8 +282,9 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
     return {
       ...product,
       categoryName,
+      subcategoryName: subcategoryDisplay, // ONLY subcategory
+      carModelsDisplay, // ONLY car models
       companyName,
-      subcategoryNames,
       latestPurchaseRate
     }
   })

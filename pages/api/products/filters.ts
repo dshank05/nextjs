@@ -10,19 +10,19 @@ export default async function handler(
   }
 
   try {
-    // Get filter options using new foreign key relationships
-    const [categories, subcategories, companies] = await Promise.all([
-      // Get categories with proper names from new product_category_new table
-      prisma.product_category_new.findMany({
+    // Get filter options from all related tables
+    const [categories, subcategories, companies, models] = await Promise.all([
+      // Get categories from product_category table
+      prisma.product_category.findMany({
         select: {
           id: true,
-          product_name: true
+          category_name: true
         },
-        orderBy: { product_name: 'asc' }
+        orderBy: { category_name: 'asc' }
       }),
 
-      // Get subcategories with proper names from new product_subcategory_new table
-      prisma.product_subcategory_new.findMany({
+      // Get subcategories from product_subcategory table
+      prisma.product_subcategory.findMany({
         select: {
           id: true,
           subcategory_name: true
@@ -30,45 +30,31 @@ export default async function handler(
         orderBy: { subcategory_name: 'asc' }
       }),
 
-      // Get distinct companies with proper names by joining with product_company table
-      prisma.product.findMany({
-        where: {
-          company: { not: null }
-        },
+      // Get companies from product_company table
+      prisma.product_company.findMany({
         select: {
-          company: true
+          id: true,
+          company_name: true
         },
-        distinct: ['company']
-      }).then(async (products) => {
-        // Get company names by joining with product_company table
-        const companyIds = products
-          .map(p => p.company)
-          .filter(Boolean)
-          .map(id => parseInt(id as string))
-          .filter(id => !isNaN(id));
+        orderBy: { company_name: 'asc' }
+      }),
 
-        if (companyIds.length === 0) return [];
-
-        const companyRecords = await prisma.product_company.findMany({
-          where: {
-            id: { in: companyIds }
-          },
-          select: {
-            id: true,
-            company_name: true
-          }
-        });
-
-        return companyRecords;
+      // Get car models from car_models table
+      prisma.car_models.findMany({
+        select: {
+          id: true,
+          model_name: true
+        },
+        orderBy: { model_name: 'asc' }
       }),
     ])
 
     // Build category options - use the actual category ID and name
     const categoryOptions = categories
-      .filter(cat => cat.product_name)
+      .filter(cat => cat.category_name)
       .map((cat) => ({
         id: cat.id,
-        name: cat.product_name,
+        name: cat.category_name,
         source: 'products'
       }))
 
@@ -90,10 +76,20 @@ export default async function handler(
         source: 'products'
       }))
 
+    // Build model options - use the actual model ID and name
+    const modelOptions = models
+      .filter(model => model.model_name)
+      .map((model) => ({
+        id: model.id,
+        name: model.model_name,
+        source: 'products'
+      }))
+
     res.status(200).json({
       categories: categoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
       subcategories: subcategoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
-      companies: companyOptions.sort((a, b) => a.name.localeCompare(b.name))
+      companies: companyOptions.sort((a, b) => a.name.localeCompare(b.name)),
+      models: modelOptions.sort((a, b) => a.name.localeCompare(b.name))
     })
   } catch (error) {
     console.error('Filter options fetch error:', error)

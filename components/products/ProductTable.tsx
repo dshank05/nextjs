@@ -2,7 +2,7 @@
 
 import { ReactNode, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Eye } from 'lucide-react';
 
 // Define types for props
 interface Product {
@@ -132,7 +132,8 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('categoryName')}>
                 Category {getSortIcon('categoryName')}
               </th>
-              <th>Car Model</th>
+              <th>Subcategory</th>
+              <th>Car Models</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('companyName')}>
                 Company {getSortIcon('companyName')}
               </th>
@@ -156,9 +157,10 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                 <td className="text-slate-400 text-sm">{product.id}</td>
                 <td className="font-medium text-white">{product.product_name}</td>
                 <td className="text-slate-300">{product.categoryName || '-'}</td>
-                <td className="text-slate-300 min-w-48">{product.subcategoryNames ? (
+                <td className="text-slate-300">{(product as any).subcategoryName || '-'}</td>
+                <td className="text-slate-300 min-w-32">{(product as any).carModelsDisplay ? (
                   <div className="flex flex-wrap gap-1">
-                    {product.subcategoryNames.split(', ').map((model, index) => (
+                    {(product as any).carModelsDisplay.split(', ').map((model: string, index: number) => (
                       <span
                         key={index}
                         className="px-2 py-1 bg-blue-600/20 text-blue-300 text-xs rounded-full border border-blue-500/30"
@@ -188,8 +190,8 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                   </span>
                 )}</td>
                 <td>
-                  <Link href={`/products/view/${product.id}`} className="btn-primary text-xs py-1 px-3">
-                    View
+                  <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
+                    <Eye className="w-4 h-4" />
                   </Link>
                 </td>
               </tr>

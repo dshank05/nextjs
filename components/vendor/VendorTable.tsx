@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Eye, Edit } from 'lucide-react';
 
 interface Vendor {
@@ -106,9 +107,9 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, loading = fal
                 </td>
                 <td>
                   <div className="flex gap-1">
-                    <button className="btn-primary text-xs py-1 px-3" title="View Details">
+                    <Link href={`/vendors/view/${vendor.id}`} className="btn-primary text-xs py-1 px-3" title="View Details">
                       <Eye className="w-4 h-4" />
-                    </button>
+                    </Link>
                     <button className="btn-secondary text-xs py-1 px-3" title="Edit Vendor">
                       <Edit className="w-4 h-4" />
                     </button>

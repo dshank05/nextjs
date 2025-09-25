@@ -1,19 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { Upload, Calculator } from 'lucide-react';
+import { Upload, Calculator, ChevronDown, X, Check } from 'lucide-react';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface ProductFormData {
   product_name: string;
   product_category: string;
   product_subcategory: string;
-  car_model: string;
+  car_models: string[]; // Changed to array for multi-select
   company: string;
   part_no: string;
   min_stock: string;
   stock: string;
   rate: string;
   hsn: string;
-  gst_rate: string;
+  gst_rate: string; // Keep as string, change to input field
   warehouse: string;
   rack_number: string;
   descriptions: string;
@@ -27,6 +28,7 @@ interface FilterOptions {
   categories: any[];
   subcategories: any[];
   companies: any[];
+  models: any[];
 }
 
 export default function ProductCreate() {
@@ -34,13 +36,14 @@ export default function ProductCreate() {
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     subcategories: [],
-    companies: []
+    companies: [],
+    models: []
   });
   const [formData, setFormData] = useState<ProductFormData>({
     product_name: '',
     product_category: '',
     product_subcategory: '',
-    car_model: '',
+    car_models: [],
     company: '',
     part_no: '',
     min_stock: '',
@@ -61,20 +64,35 @@ export default function ProductCreate() {
   const [imagePreview, setImagePreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Additional dropdown data
-  const [carModels, setCarModels] = useState<any[]>([]);
-  const [gstRates] = useState([
-    { value: '5', label: '5%' },
-    { value: '12', label: '12%' },
-    { value: '18', label: '18%' },
-    { value: '28', label: '28%' }
-  ]);
+  // Multi-select state for car models
+  const [isModelsDropdownOpen, setIsModelsDropdownOpen] = useState(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState('');
+  const modelsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Confirmation modal state for car models
+  const [showCarModelsConfirmModal, setShowCarModelsConfirmModal] = useState(false);
+  const [pendingCarModelsData, setPendingCarModelsData] = useState<string[] | null>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modelsDropdownRef.current && !modelsDropdownRef.current.contains(event.target as Node)) {
+        setIsModelsDropdownOpen(false);
+        setModelSearchQuery('');
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+
 
   // Fetch filter options on mount
   useEffect(() => {
     fetchFilterOptions();
-    fetchCarModels();
   }, []);
 
   const fetchFilterOptions = async () => {
@@ -84,23 +102,15 @@ export default function ProductCreate() {
     } catch (error) { console.error('Error fetching filter options:', error); }
   };
 
-  const fetchCarModels = async () => {
-    try {
-      const response = await fetch('/api/products/models');
-      if (response.ok) {
-        const data = await response.json();
-        setCarModels(data.models || []);
-      }
-    } catch (error) {
-      console.error('Error fetching car models:', error);
-    }
-  };
-
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
+  };
+
+  const handleMultiSelectChange = (field: keyof ProductFormData, values: string[]) => {
+    setFormData(prev => ({ ...prev, [field]: values }));
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,31 +163,70 @@ export default function ProductCreate() {
       return;
     }
 
-    setLoading(true);
+    // Show confirmation modal if car models are selected
+    if (formData.car_models.length > 0) {
+      setPendingCarModelsData(formData.car_models);
+      setShowCarModelsConfirmModal(true);
+      return;
+    }
+
+    // Proceed with submission if no car models selected
+    await handleConfirmSubmit();
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (isSaving) return;
+
+    setIsSaving(true);
 
     try {
-      // Use foreign key IDs instead of names
-      const submitData = {
-        display_name: formData.product_name, // New field for display
-        product_name: formData.product_name, // Keep for backward compatibility
+      // Log form data to verify all fields are being sent
+      console.log('Submitting form data:', {
+        product_name: formData.product_name,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
-        car_model_ids: formData.car_model ? formData.car_model : null, // Single ID for now, will be expanded later
-        company: formData.company,
+        car_models: formData.car_models, // Array of selected model IDs
+        car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated
+        company: formData.company ? parseInt(formData.company) : null,
         part_no: formData.part_no,
-        min_stock: formData.min_stock,
-        stock: formData.stock,
-        rate: formData.rate,
+        min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
+        stock: formData.stock ? parseInt(formData.stock) : null,
+        rate: formData.rate ? parseFloat(formData.rate) : null,
         hsn: formData.hsn,
-        notes: formData.notes,
         gst_rate: formData.gst_rate,
         warehouse: formData.warehouse,
         rack_number: formData.rack_number,
         descriptions: formData.descriptions,
-        mrp: formData.mrp,
-        discount: formData.discount,
-        sale_price: formData.sale_price,
+        notes: formData.notes,
+        mrp: formData.mrp ? parseFloat(formData.mrp) : null,
+        discount: formData.discount ? parseFloat(formData.discount) : null,
+        sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
+      });
+
+      // Use foreign key IDs instead of names
+      const submitData = {
+        display_name: formData.product_name,
+        product_name: formData.product_name,
+        product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
+        product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
+        car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
+        company: formData.company ? parseInt(formData.company) : null, // Company should be FK to product_company table
+        part_no: formData.part_no || null,
+        min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
+        stock: formData.stock ? parseInt(formData.stock) : null,
+        rate: formData.rate ? parseFloat(formData.rate) : null,
+        hsn: formData.hsn || null,
+        gst_rate: formData.gst_rate || null,
+        warehouse: formData.warehouse || null,
+        rack_number: formData.rack_number || null,
+        descriptions: formData.descriptions || null,
+        notes: formData.notes || null,
+        mrp: formData.mrp ? parseFloat(formData.mrp) : null,
+        discount: formData.discount ? parseFloat(formData.discount) : null,
+        sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
       };
+
+      console.log('Submitting data to API:', submitData);
 
       const response = await fetch('/api/products', {
         method: 'POST',
@@ -187,13 +236,19 @@ export default function ProductCreate() {
         body: JSON.stringify(submitData),
       });
 
+      console.log('API Response status:', response.status);
+      const responseData = await response.json();
+      console.log('API Response data:', responseData);
+
       if (response.ok) {
+        console.log('Product created successfully');
         router.push('/products'); // Redirect to products page after success
       } else {
-        const error = await response.json();
-        setErrors({ submit: error.message || 'Failed to create product' });
+        console.error('API Error:', responseData);
+        setErrors({ submit: responseData.message || 'Failed to create product' });
       }
     } catch (error) {
+      console.error('Network error:', error);
       setErrors({ submit: 'Network error occurred' });
     } finally {
       setLoading(false);
@@ -285,17 +340,114 @@ export default function ProductCreate() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODEL</label>
-            <select
-              value={formData.car_model}
-              onChange={(e) => handleInputChange('car_model', e.target.value)}
-              className="select w-full"
+            <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
+            <div className="relative" ref={modelsDropdownRef}>
+              {/* Selected items display */}
+            <div
+              className="select w-full h-10 cursor-pointer flex items-center justify-between px-3 py-2"
+              onClick={() => setIsModelsDropdownOpen(!isModelsDropdownOpen)}
             >
-              <option value="">Select Car Model</option>
-              {carModels.map((model) => (
-                <option key={model.id} value={model.id}>{model.subcategory_name}</option>
-              ))}
-            </select>
+                <div className="flex flex-wrap gap-1 flex-1">
+                  {formData.car_models.length > 0 ? (
+                    formData.car_models.slice(0, 3).map((modelId) => {
+                      const model = filterOptions.models.find(m => m.id.toString() === modelId);
+                      return (
+                        <span
+                          key={modelId}
+                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded-sm"
+                        >
+                          {model?.name}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const newSelection = formData.car_models.filter(id => id !== modelId);
+                              handleMultiSelectChange('car_models', newSelection);
+                            }}
+                            className="hover:bg-blue-700 rounded-sm p-0.5"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <span className="text-slate-400 text-sm">Select car models...</span>
+                  )}
+                  {formData.car_models.length > 3 && (
+                    <span className="text-slate-400 text-sm">+{formData.car_models.length - 3} more</span>
+                  )}
+                </div>
+                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isModelsDropdownOpen ? 'rotate-180' : ''}`} />
+              </div>
+
+              {/* Dropdown menu */}
+              {isModelsDropdownOpen && (
+                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-hidden">
+                  {/* Search input */}
+                  <div className="p-2 border-b border-slate-700">
+                    <input
+                      type="text"
+                      placeholder="Search models..."
+                      value={modelSearchQuery}
+                      onChange={(e) => setModelSearchQuery(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* Options list */}
+                  <div className="max-h-48 overflow-y-auto">
+                    {filterOptions.models
+                      .filter(model =>
+                        model.name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                      )
+                      .map((model) => {
+                        const isSelected = formData.car_models.includes(model.id.toString());
+                        return (
+                          <div
+                            key={model.id}
+                            className="flex items-center px-3 py-2 hover:bg-slate-700 cursor-pointer transition-colors"
+                            onClick={() => {
+                              const newSelection = isSelected
+                                ? formData.car_models.filter(id => id !== model.id.toString())
+                                : [...formData.car_models, model.id.toString()];
+                              handleMultiSelectChange('car_models', newSelection);
+                            }}
+                          >
+                            <div className="flex items-center justify-center w-4 h-4 mr-3">
+                              {isSelected && <Check className="w-3 h-3 text-blue-400" />}
+                            </div>
+                            <span className={`text-sm ${isSelected ? 'text-blue-300 font-medium' : 'text-slate-300'}`}>
+                              {model.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    {filterOptions.models.filter(model =>
+                      model.name.toLowerCase().includes(modelSearchQuery.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-3 py-2 text-slate-500 text-sm">No models found</div>
+                    )}
+                  </div>
+
+                  {/* Footer with selected count */}
+                  {formData.car_models.length > 0 && (
+                    <div className="px-3 py-2 border-t border-slate-700 bg-slate-750">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>{formData.car_models.length} selected</span>
+                        <button
+                          type="button"
+                          onClick={() => handleMultiSelectChange('car_models', [])}
+                          className="text-red-400 hover:text-red-300 underline"
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div>
@@ -378,17 +530,15 @@ export default function ProductCreate() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE</label>
-            <select
+            <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE (%)</label>
+            <input
+              type="number"
+              step="0.01"
               value={formData.gst_rate}
               onChange={(e) => handleInputChange('gst_rate', e.target.value)}
-              className="select w-full"
-            >
-              <option value="">Select GST Rate</option>
-              {gstRates.map((rate) => (
-                <option key={rate.value} value={rate.value}>{rate.label}</option>
-              ))}
-            </select>
+              className="input w-full"
+              placeholder="Enter GST rate (e.g., 18.00)"
+            />
           </div>
         </div>
 
@@ -530,6 +680,22 @@ export default function ProductCreate() {
         </div>
       </form>
     </div>
+
+    {/* Car Models Confirmation Modal */}
+    <ConfirmationModal
+      isOpen={showCarModelsConfirmModal}
+      title="Confirm Car Models Selection"
+      message={`You have selected ${pendingCarModelsData?.length} car model${pendingCarModelsData && pendingCarModelsData.length > 1 ? 's' : ''}. Do you want to save this product?`}
+      showLoading={false}
+      onConfirm={async () => {
+        setShowCarModelsConfirmModal(false);
+        await handleConfirmSubmit();
+      }}
+      onCancel={() => {
+        setShowCarModelsConfirmModal(false);
+        setPendingCarModelsData(null);
+      }}
+    />
     </div>
   );
 }

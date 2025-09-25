@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { Edit, Trash2 } from 'lucide-react';
 
 interface Product {
   id: number;
@@ -11,7 +12,8 @@ interface Product {
   part_no?: string;
   categoryName?: string;
   companyName?: string;
-  subcategoryNames?: string;
+  subcategoryName?: string;
+  carModelsDisplay?: string;
   latestPurchaseRate?: number;
   hsn?: string;
   gst_rate?: string;
@@ -77,19 +79,11 @@ export default function ProductView() {
               <div className="text-6xl">📦</div>
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">{product.product_name}</h3>
-            <p className="text-slate-400 text-sm">{product.categoryName} • {product.companyName}</p>
+            <p className="text-slate-400 text-sm mb-2">{product.categoryName} • {product.companyName}</p>
           </div>
 
           {/* Right: Key-Value Display + Actions */}
           <div className="space-y-4">
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Stock:</span>
-              <span className="text-white font-medium">{product.stock || 0}</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Latest Rate:</span>
-              <span className="text-white font-medium">₹{product.latestPurchaseRate || product.rate || 0}</span>
-            </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Category:</span>
               <span className="text-white font-medium">{product.categoryName || 'N/A'}</span>
@@ -98,10 +92,45 @@ export default function ProductView() {
               <span className="text-slate-400">Company:</span>
               <span className="text-white font-medium">{product.companyName || 'N/A'}</span>
             </div>
+            <div className="flex justify-between border-b border-slate-700 pb-2">
+              <span className="text-slate-400">Subcategory:</span>
+              <span className="text-white font-medium">{product.subcategoryName || 'N/A'}</span>
+            </div>
+            {product.carModelsDisplay && (
+              <div className="border-b border-slate-700 pb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">Compatible Models:</span>
+                  <div className="flex flex-wrap gap-1">
+                    {product.carModelsDisplay.split(', ').map((model, index) => (
+                      <span
+                        key={index}
+                        className="px-2 py-1 bg-blue-600/20 text-blue-300 text-xs rounded-full border border-blue-500/30"
+                      >
+                        {model.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="flex justify-between border-b border-slate-700 pb-2">
+              <span className="text-slate-400">Stock:</span>
+              <span className="text-white font-medium">{product.stock || 0}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-2">
+              <span className="text-slate-400">Latest Rate:</span>
+              <span className="text-white font-medium">₹{product.latestPurchaseRate || product.rate || 0}</span>
+            </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button className="btn-primary">✏️ Edit</button>
-              <button className="btn-danger">🗑️ Delete</button>
+              <button className="btn-primary flex items-center gap-2" title="Edit Product">
+                <Edit className="w-4 h-4" />
+                Edit
+              </button>
+              <button className="btn-danger flex items-center gap-2" title="Delete Product">
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
             </div>
           </div>
         </div>

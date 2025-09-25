@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { Eye, Edit, Trash2 } from 'lucide-react';
 
 interface Customer {
@@ -111,9 +112,9 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, loading
                 </td>
                 <td>
                   <div className="flex gap-1">
-                    <button className="btn-primary text-xs py-1 px-3" title="View Details">
+                    <Link href={`/customers/view/${customer.id}`} className="btn-primary text-xs py-1 px-3" title="View Details">
                       <Eye className="w-4 h-4" />
-                    </button>
+                    </Link>
                     <button className="btn-secondary text-xs py-1 px-3" title="Edit Customer">
                       <Edit className="w-4 h-4" />
                     </button>

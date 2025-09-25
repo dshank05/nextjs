@@ -35,9 +35,10 @@ export default function Products() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [subcategoryFilter, setSubcategoryFilter] = useState('');
+  const [modelFilter, setModelFilter] = useState<string[]>([]); // NEW: car models filter array
   const [companyFilter, setCompanyFilter] = useState('');
   const [stockFilter, setStockFilter] = useState('all');
-  const [filterOptions, setFilterOptions] = useState<{ categories: any[], subcategories: any[], companies: any[] }>({ categories: [], subcategories: [], companies: [] });
+  const [filterOptions, setFilterOptions] = useState<{ categories: any[], subcategories: any[], companies: any[], models: any[] }>({ categories: [], subcategories: [], companies: [], models: [] }); // UPDATED: added models
 
 
 
@@ -55,7 +56,7 @@ export default function Products() {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm, categoryFilter, subcategoryFilter, companyFilter, stockFilter])
+  }, [debouncedSearchTerm, categoryFilter, subcategoryFilter, modelFilter, companyFilter, stockFilter]) // ADDED: modelFilter
 
 
   // This effect handles the actual data fetching whenever a dependency changes
@@ -71,6 +72,7 @@ export default function Products() {
     debouncedSearchTerm,
     categoryFilter,
     subcategoryFilter,
+    modelFilter, // ADDED: car models filter
     companyFilter,
     stockFilter,
   ]);
@@ -91,6 +93,7 @@ export default function Products() {
         search: debouncedSearchTerm, // Use the debounced value for the API call
         category: categoryFilter,
         subcategory: subcategoryFilter,
+        model: modelFilter.length > 0 ? modelFilter.join(',') : '', // FIXED: convert array to comma-separated string
         company: companyFilter,
         lowStock: stockFilter === 'low-stock' ? 'true' : 'false'
       });
@@ -123,6 +126,7 @@ export default function Products() {
     setSearchTerm('');
     setCategoryFilter('');
     setSubcategoryFilter('');
+    setModelFilter([]); // FIXED: clear car models filter with empty array
     setCompanyFilter('');
     setStockFilter('all');
   };
@@ -137,6 +141,8 @@ export default function Products() {
         setCategoryFilter={setCategoryFilter}
         subcategoryFilter={subcategoryFilter}
         setSubcategoryFilter={setSubcategoryFilter}
+        modelFilter={modelFilter} // ADDED: car models filter
+        setModelFilter={setModelFilter} // ADDED: car models setter
         companyFilter={companyFilter}
         setCompanyFilter={setCompanyFilter}
         stockFilter={stockFilter}

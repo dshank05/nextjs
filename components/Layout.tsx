@@ -151,15 +151,8 @@ const Layout = ({ children }: LayoutProps) => {
     }
   }, [router.pathname]); // This logic runs on every single page navigation.
 
-  // 4. Effect to close sidebar after successful navigation
-  useEffect(() => {
-    // Close sidebar after a short delay to allow navigation to complete
-    const timer = setTimeout(() => {
-      setSidebarOpen(false);
-    }, 300); // 300ms delay for smooth UX
-
-    return () => clearTimeout(timer);
-  }, [router.pathname]); // Trigger on route change
+  // Removed auto-close sidebar effect as it was causing navigation conflicts
+  // The sidebar now stays open/closed based on user preference
 
 
   const isActive = (href?: string, subpages?: Subpage[]) => {
