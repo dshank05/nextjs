@@ -13,22 +13,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const searchTerm = search as string;
 
       const where = searchTerm
-        ? { category_name: { contains: searchTerm } }
+        ? { product_name: { contains: searchTerm } }
         : {};
 
-      const total = await prisma.product_category.count({ where });
+      const total = await prisma.product_category_new.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const categories = await prisma.product_category.findMany({
+      const categories = await prisma.product_category_new.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy: { category_name: 'asc' },
+        orderBy: { product_name: 'asc' },
       });
 
       const startIndex = (pageNum - 1) * limitNum;
       const categoriesWithIndex = categories.map((cat, idx) => ({
         ...cat,
+        category_name: cat.product_name, // Add backward compatibility
         index: startIndex + idx + 1,
       }));
 
@@ -47,8 +48,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!category_name) {
         return res.status(400).json({ message: 'Category name is required' });
       }
-      const category = await prisma.product_category.create({
-        data: { category_name },
+      const category = await prisma.product_category_new.create({
+        data: { product_name: category_name },
       });
       res.status(201).json(category);
     } else if (req.method === 'PUT') {
@@ -56,9 +57,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id || !category_name) {
         return res.status(400).json({ message: 'ID and category name are required' });
       }
-      const category = await prisma.product_category.update({
+      const category = await prisma.product_category_new.update({
         where: { id: parseInt(id, 10) },
-        data: { category_name },
+        data: { product_name: category_name },
       });
       res.status(200).json(category);
     } else if (req.method === 'DELETE') {
@@ -66,7 +67,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
-      await prisma.product_category.delete({
+      await prisma.product_category_new.delete({
         where: { id: parseInt(id, 10) },
       });
       res.status(204).end();

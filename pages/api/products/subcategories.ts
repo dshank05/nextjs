@@ -16,10 +16,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? { subcategory_name: { contains: searchTerm } }
         : {};
 
-      const total = await prisma.product_subcategory.count({ where });
+      const total = await prisma.product_subcategory_new.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const subcategories = await prisma.product_subcategory.findMany({
+      const subcategories = await prisma.product_subcategory_new.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
@@ -67,13 +67,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       });
     } else if (req.method === 'POST') {
-      // For POST, we'll just return success since we can't add to lookup table
-      // The subcategory will be added when a product is created with it
       const { subcategory_name } = req.body;
       if (!subcategory_name) {
         return res.status(400).json({ message: 'Subcategory name is required' });
       }
-      res.status(201).json({ message: 'Subcategory will be available when used in products' });
+      const subcategory = await prisma.product_subcategory_new.create({
+        data: { subcategory_name },
+      });
+      res.status(201).json(subcategory);
     } else {
       res.status(405).json({ message: 'Method not allowed' });
     }

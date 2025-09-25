@@ -68,24 +68,6 @@ export default function ProductView() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
-            👁️
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-white">{product.product_name}</h1>
-            <p className="text-slate-400">Product ID: {product.id}</p>
-          </div>
-        </div>
-        <div className="flex space-x-3">
-          <button className="btn-primary">✏️ Edit</button>
-          <button className="btn-danger">🗑️ Delete</button>
-          <Link href="/products" className="btn-secondary">⬅️ Back</Link>
-        </div>
-      </div>
-
       {/* Main Product Overview Card */}
       <div className="card">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
@@ -98,7 +80,7 @@ export default function ProductView() {
             <p className="text-slate-400 text-sm">{product.categoryName} • {product.companyName}</p>
           </div>
 
-          {/* Right: Simple Key-Value Display */}
+          {/* Right: Key-Value Display + Actions */}
           <div className="space-y-4">
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Stock:</span>
@@ -115,6 +97,11 @@ export default function ProductView() {
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Company:</span>
               <span className="text-white font-medium">{product.companyName || 'N/A'}</span>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <button className="btn-primary">✏️ Edit</button>
+              <button className="btn-danger">🗑️ Delete</button>
             </div>
           </div>
         </div>

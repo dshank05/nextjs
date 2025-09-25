@@ -86,10 +86,10 @@ export default function ProductCreate() {
 
   const fetchCarModels = async () => {
     try {
-      const response = await fetch('/api/products/subcategories');
+      const response = await fetch('/api/products/models');
       if (response.ok) {
         const data = await response.json();
-        setCarModels(data.subcategories || []);
+        setCarModels(data.models || []);
       }
     } catch (error) {
       console.error('Error fetching car models:', error);
@@ -156,24 +156,20 @@ export default function ProductCreate() {
     setLoading(true);
 
     try {
-      // Get the actual names instead of IDs for the database
-      const categoryName = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.category_name || formData.product_category;
-      const subcategoryName = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || formData.product_subcategory;
-      const companyName = filterOptions.companies.find(c => c.id.toString() === formData.company)?.company_name || formData.company;
-      const carModelName = carModels.find(m => m.id.toString() === formData.car_model)?.subcategory_name || formData.car_model;
-
+      // Use foreign key IDs instead of names
       const submitData = {
-        product_name: formData.product_name,
-        product_category: categoryName,
-        product_subcategory: subcategoryName,
-        company: companyName,
+        display_name: formData.product_name, // New field for display
+        product_name: formData.product_name, // Keep for backward compatibility
+        product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
+        product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
+        car_model_ids: formData.car_model ? formData.car_model : null, // Single ID for now, will be expanded later
+        company: formData.company,
         part_no: formData.part_no,
         min_stock: formData.min_stock,
         stock: formData.stock,
         rate: formData.rate,
         hsn: formData.hsn,
         notes: formData.notes,
-        car_model: carModelName,
         gst_rate: formData.gst_rate,
         warehouse: formData.warehouse,
         rack_number: formData.rack_number,
@@ -268,7 +264,7 @@ export default function ProductCreate() {
             >
               <option value="">Select Category</option>
               {filterOptions.categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.category_name}</option>
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </select>
             {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
@@ -283,7 +279,7 @@ export default function ProductCreate() {
             >
               <option value="">Select Sub Category</option>
               {filterOptions.subcategories.map((sub) => (
-                <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
+                <option key={sub.id} value={sub.id}>{sub.name}</option>
               ))}
             </select>
           </div>
@@ -311,7 +307,7 @@ export default function ProductCreate() {
             >
               <option value="">Select Company</option>
               {filterOptions.companies.map((comp) => (
-                <option key={comp.id} value={comp.id}>{comp.company_name}</option>
+                <option key={comp.id} value={comp.id}>{comp.name}</option>
               ))}
             </select>
             {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}

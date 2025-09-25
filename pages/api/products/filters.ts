@@ -10,71 +10,24 @@ export default async function handler(
   }
 
   try {
-    // Get unique values by joining with lookup tables for proper names
+    // Get filter options using new foreign key relationships
     const [categories, subcategories, companies] = await Promise.all([
-      // Get distinct categories with proper names by joining with product_category table
-      prisma.product.findMany({
-        where: {
-          product_category: { not: null }
-        },
+      // Get categories with proper names from new product_category_new table
+      prisma.product_category_new.findMany({
         select: {
-          product_category: true
+          id: true,
+          product_name: true
         },
-        distinct: ['product_category']
-      }).then(async (products) => {
-        // Get category names by joining with product_category table
-        const categoryIds = products
-          .map(p => p.product_category)
-          .filter(Boolean)
-          .map(id => parseInt(id as string))
-          .filter(id => !isNaN(id));
-
-        if (categoryIds.length === 0) return [];
-
-        const categoryRecords = await prisma.product_category.findMany({
-          where: {
-            id: { in: categoryIds }
-          },
-          select: {
-            id: true,
-            category_name: true
-          }
-        });
-
-        return categoryRecords;
+        orderBy: { product_name: 'asc' }
       }),
 
-      // Get distinct subcategories with proper names by joining with product_subcategory table
-      prisma.product.findMany({
-        where: {
-          product_subcategory: { not: null }
-        },
+      // Get subcategories with proper names from new product_subcategory_new table
+      prisma.product_subcategory_new.findMany({
         select: {
-          product_subcategory: true
+          id: true,
+          subcategory_name: true
         },
-        distinct: ['product_subcategory']
-      }).then(async (products) => {
-        // Get subcategory names by joining with product_subcategory table
-        const subcategoryIds = products
-          .map(p => p.product_subcategory)
-          .filter(Boolean)
-          .flatMap(sub => sub ? sub.split(',').map(s => s.trim()) : [])
-          .map(id => parseInt(id as string))
-          .filter(id => !isNaN(id));
-
-        if (subcategoryIds.length === 0) return [];
-
-        const subcategoryRecords = await prisma.product_subcategory.findMany({
-          where: {
-            id: { in: subcategoryIds }
-          },
-          select: {
-            id: true,
-            subcategory_name: true
-          }
-        });
-
-        return subcategoryRecords;
+        orderBy: { subcategory_name: 'asc' }
       }),
 
       // Get distinct companies with proper names by joining with product_company table
@@ -112,10 +65,10 @@ export default async function handler(
 
     // Build category options - use the actual category ID and name
     const categoryOptions = categories
-      .filter(cat => cat.category_name)
+      .filter(cat => cat.product_name)
       .map((cat) => ({
         id: cat.id,
-        name: cat.category_name,
+        name: cat.product_name,
         source: 'products'
       }))
 

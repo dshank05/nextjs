@@ -13,22 +13,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const searchTerm = search as string;
 
       const where = searchTerm
-        ? { subcategory_name: { contains: searchTerm } }
+        ? { model_name: { contains: searchTerm } }
         : {};
 
-      const total = await prisma.product_subcategory.count({ where });
+      const total = await prisma.car_models.count({ where });
       const totalPages = Math.ceil(total / limitNum);
 
-      const models = await prisma.product_subcategory.findMany({
+      const models = await prisma.car_models.findMany({
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy: { subcategory_name: 'asc' },
+        orderBy: { model_name: 'asc' },
       });
 
       const startIndex = (pageNum - 1) * limitNum;
       const modelsWithIndex = models.map((mod, idx) => ({
         ...mod,
+        subcategory_name: mod.model_name, // Add backward compatibility
         index: startIndex + idx + 1,
       }));
 
@@ -42,23 +43,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           hasMore: pageNum < totalPages,
         },
       });
+
     } else if (req.method === 'POST') {
       const { subcategory_name } = req.body;
       if (!subcategory_name) {
-        return res.status(400).json({ message: 'Subcategory name is required' });
+        return res.status(400).json({ message: 'Model name is required' });
       }
-      const model = await prisma.product_subcategory.create({
-        data: { subcategory_name },
+      const model = await prisma.car_models.create({
+        data: { model_name: subcategory_name },
       });
       res.status(201).json(model);
     } else if (req.method === 'PUT') {
       const { id, subcategory_name } = req.body;
       if (!id || !subcategory_name) {
-        return res.status(400).json({ message: 'ID and subcategory name are required' });
+        return res.status(400).json({ message: 'ID and model name are required' });
       }
-      const model = await prisma.product_subcategory.update({
+      const model = await prisma.car_models.update({
         where: { id: parseInt(id, 10) },
-        data: { subcategory_name },
+        data: { model_name: subcategory_name },
       });
       res.status(200).json(model);
     } else if (req.method === 'DELETE') {
@@ -66,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
-      await prisma.product_subcategory.delete({
+      await prisma.car_models.delete({
         where: { id: parseInt(id, 10) },
       });
       res.status(204).end();

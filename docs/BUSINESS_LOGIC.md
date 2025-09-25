@@ -65,11 +65,11 @@ Product: New Product (ID: 4112)
 
 ## Category and Company Display
 
-### Legacy System Logic
+### Current Logic (Pre-Migration)
 - **Categories**: Stored as IDs, displayed as names from `product_category` table
 - **Companies**: Stored as IDs, displayed as names from `product_company` table
 
-### NextJS Implementation
+### Current NextJS Implementation
 ```typescript
 // Get category name
 const category = await prisma.product_category.findFirst({
@@ -83,6 +83,45 @@ const company = await prisma.product_company.findFirst({
 })
 const companyName = company?.company_name || product.company
 ```
+
+## 🚧 Upcoming Changes (Post-Migration)
+
+### New Product Categorization Structure
+After the product categorization migration:
+
+- **Product Names**: Stored in `product_category` table (e.g., "Oil Filter", "Air Filter")
+- **Subcategories**: Stored in `product_subcategory` table (e.g., "Filters")
+- **Car Models**: Stored in `car_models` table (e.g., "Toyota Camry")
+- **Product Table**: Will have foreign key relationships instead of string storage
+
+### Post-Migration Logic (Planned)
+```typescript
+// Get product name from new structure
+const productName = await prisma.product_category.findFirst({
+  where: { id: product.product_category_id }
+})
+const displayProductName = product.display_name // Main product identifier
+
+// Get subcategory name
+const subcategory = await prisma.product_subcategory.findFirst({
+  where: { id: product.product_subcategory_id }
+})
+
+// Get car model name
+const carModel = await prisma.car_models.findFirst({
+  where: { id: product.car_model_id }
+})
+
+// Full display format
+const fullDisplayName = `${displayProductName} - ${subcategory?.subcategory_name} - ${carModel?.model_name}`
+```
+
+### Migration Impact on Business Logic
+- **Rate Display**: Unchanged - still uses latest purchase rate
+- **Stock Management**: Unchanged - same stock level calculations
+- **Display Logic**: Will be enhanced to use proper relational data
+- **Filtering**: Improved with foreign key relationships
+- **Data Integrity**: Enhanced through database constraints
 
 ## Stock Management Logic
 

@@ -43,18 +43,51 @@ datasource db {
 ## 📊 Database Structure
 
 ### Scale and Scope
-- **Total Tables**: 29 tables
+- **Total Tables**: 29 tables (will become 30 after migration)
 - **Total Products**: 4,111+ products in inventory
 - **Business Data**: Live production data from existing Yii2 system
 - **Years of Data**: Historical invoices, purchases, customer records
+
+### 🚧 Planned Schema Migration (Product Categorization System)
+
+**Migration Status**: Planned - Not yet implemented
+**Estimated Impact**: Major refactoring of product-related tables and relationships
+**Risk Level**: High - Requires coordinated updates across frontend, API, and database
+
+#### Current Structure (Before Migration)
+- `product_category` table: Stores category names (e.g., "Engine Parts")
+- `product_subcategory` table: Stores subcategory names (e.g., "Filters", "Belts")
+- `Product.product_category`: String field storing category name
+- `Product.product_subcategory`: String field with comma-separated subcategory names
+
+#### New Structure (After Migration)
+- `product_category` table: **RENEWED** - Product names/types (e.g., "Oil Filter", "Air Filter")
+- `product_subcategory` table: **RENAMED** - Subcategory classifications (e.g., "Filters")
+- `car_models` table: **RENAMED from product_subcategory** - Car model information (e.g., "Toyota Camry")
+- `Product.display_name`: New field for product display name
+- `Product.product_category_id`: Foreign key to `product_category.id`
+- `Product.product_subcategory_id`: Foreign key to `product_subcategory.id`
+- `Product.car_model_id`: Foreign key to `car_models.id`
+- `Invoiceitems.category_id`: References new `product_category.id`
+- `Invoiceitems.model_id`: References new `car_models.id`
+- `Purchaseitems.category_id`: References new `product_category.id`
+- `Purchaseitems.model_id`: References new `car_models.id`
+
+#### Migration Timeline
+1. **Phase 1**: Update Prisma schema and create new tables
+2. **Phase 2**: Data migration scripts to populate new relationships
+3. **Phase 3**: Update API endpoints for new table structure
+4. **Phase 4**: Update frontend components and forms
+5. **Phase 5**: Testing and validation across all features
 
 ### Core Tables
 
 #### Products and Inventory
 - **`product`** - Main product catalog (4,111+ records)
-- **`product_category`** - Product categories with names
+- **`product_category`** - **NEW**: Product names/types (e.g., "Oil Filter", "Air Filter")
+- **`product_subcategory`** - **RENAMED**: Store subcategory classifications (e.g., "Filters")
+- **`car_models`** - **RENAMED from product_subcategory**: Car model information (e.g., "Toyota Camry", "Honda Civic")
 - **`product_company`** - Company/brand information
-- **`product_subcategory`** - Subcategory classifications
 
 #### Transaction Tables (Current Implementation)
 

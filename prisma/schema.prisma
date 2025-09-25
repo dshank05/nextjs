@@ -43,18 +43,27 @@ model States {
 }
 
 model Product {
-  id                  Int     @id @default(autoincrement())
-  product_name        String  @db.VarChar(255)
-  hsn                 String? @db.VarChar(50)
-  product_category    String? @db.VarChar(100)
-  product_subcategory String? @db.VarChar(100)
-  company             String? @db.VarChar(255)
-  pic                 String? @db.VarChar(255)
-  part_no             String? @db.VarChar(100)
-  min_stock           Int?
-  stock               Int?
-  rate                Int?
-  notes               String? @db.VarChar(255)
+  id                     Int       @id @default(autoincrement())
+  product_name           String    @db.VarChar(255) // Will be moved to display_name
+  display_name           String?   @db.VarChar(255) // New field for product display
+  hsn                    String?   @db.VarChar(50)
+  product_category       String?   @db.VarChar(100) // Legacy - will be migrated to FK
+  product_subcategory    String?   @db.VarChar(100) // Legacy - will be migrated to FK
+  product_category_id    Int?                    // New FK to product_category
+  product_subcategory_id Int?                    // New FK to product_subcategory
+  car_model_ids          String?                 // New: comma-separated car model IDs
+  company                String?   @db.VarChar(255)
+  pic                    String?   @db.VarChar(255)
+  part_no                String?   @db.VarChar(100)
+  min_stock              Int?
+  stock                  Int?
+  rate                   Int?
+  notes                  String?   @db.VarChar(255)
+
+  // Foreign key relationships (references new tables)
+  category_ref    product_category_new?    @relation(fields: [product_category_id], references: [id])
+  subcategory_ref product_subcategory_new? @relation(fields: [product_subcategory_id], references: [id])
+  // car_model_ids is comma-separated, so no direct FK relationship
 
   @@index([product_category], map: "idx_product_category")
   @@index([company], map: "idx_product_company")
@@ -309,6 +318,35 @@ model invoicex {
 model migration {
   version    String @id @db.VarChar(180)
   apply_time Int?
+}
+
+model product_category_new {
+  id           Int    @id @default(autoincrement())
+  product_name String @db.VarChar(255)
+
+  // Backward relations to products
+  products Product[]
+
+  @@map("product_category_new")
+}
+
+model product_subcategory_new {
+  id               Int    @id @default(autoincrement())
+  subcategory_name String @db.VarChar(255)
+
+  // Backward relations to products
+  products Product[]
+
+  @@map("product_subcategory_new")
+}
+
+model car_models {
+  id        Int    @id @default(autoincrement())
+  model_name String @db.VarChar(255)
+
+  // No direct FK relation since car_model_ids is comma-separated
+
+  @@map("car_models")
 }
 
 model product_category {

@@ -62,11 +62,11 @@ if (stock === 0) {
 
 ## 🏢 Category and Company Display
 
-### Legacy System Compatibility
+### Current Logic (Pre-Migration)
 - **Categories**: Stored as IDs, displayed as names from `product_category` table
 - **Companies**: Stored as IDs, displayed as names from `product_company` table
 
-### Implementation
+### Current Implementation
 ```typescript
 // Get category name
 const category = await prisma.product_category.findFirst({
@@ -80,6 +80,42 @@ const company = await prisma.product_company.findFirst({
 })
 const companyName = company?.company_name || product.company
 ```
+
+## 🚧 Planned Migration: Product Categorization System
+
+### Post-Migration Structure (Planned)
+After the product categorization migration, the system will have:
+
+- **Product Names**: Stored in `product_category` table (e.g., "Oil Filter", "Air Filter")
+- **Subcategories**: Stored in `product_subcategory` table (e.g., "Filters")
+- **Car Models**: Stored in `car_models` table (e.g., "Toyota Camry")
+- **Product Table**: Foreign keys instead of string fields
+
+### Post-Migration Implementation (Planned)
+```typescript
+// Get full product details with proper relationships
+const productCategory = await prisma.product_category.findFirst({
+  where: { id: product.product_category_id }
+})
+
+const productSubcategory = await prisma.product_subcategory.findFirst({
+  where: { id: product.product_subcategory_id }
+})
+
+const carModel = await prisma.car_models.findFirst({
+  where: { id: product.car_model_id }
+})
+
+// Enhanced display name
+const fullDisplayName = `${product.display_name} - ${productCategory?.product_name} - ${productSubcategory?.subcategory_name} - ${carModel?.model_name}`
+```
+
+### Migration Impact Summary
+- **Rate/Stock Logic**: Unchanged - maintains same business rules
+- **Data Relationships**: Improved with proper foreign keys
+- **Data Integrity**: Enhanced through database constraints
+- **Performance**: Better query performance with indexed relationships
+- **Filtering**: More reliable with foreign key constraints
 
 ## 🧮 GST Tax Calculations
 

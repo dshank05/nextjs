@@ -50,18 +50,19 @@ export default async function handler(
       if (search) {
         where.OR = [
           { product_name: { contains: search as string } },
+          { display_name: { contains: search as string } },
           { part_no: { contains: search as string } },
         ]
       }
 
-      // Convert category name to ID for database filtering
+      // Convert category name to foreign key ID for database filtering
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category.findFirst({
-          where: { category_name: category as string },
+        const categoryRecord = await prisma.product_category_new.findFirst({
+          where: { product_name: category as string },
           select: { id: true }
         });
         if (categoryRecord) {
-          where.product_category = categoryRecord.id.toString()
+          where.product_category_id = categoryRecord.id
         }
       }
 
@@ -132,18 +133,19 @@ export default async function handler(
       if (search) {
         where.OR = [
           { product_name: { contains: search as string } },
+          { display_name: { contains: search as string } },
           { part_no: { contains: search as string } },
         ]
       }
 
-      // Convert category name to ID for database filtering
+      // Convert category name to foreign key ID for database filtering
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category.findFirst({
-          where: { category_name: category as string },
+        const categoryRecord = await prisma.product_category_new.findFirst({
+          where: { product_name: category as string },
           select: { id: true }
         });
         if (categoryRecord) {
-          where.product_category = categoryRecord.id.toString()
+          where.product_category_id = categoryRecord.id
         }
       }
 
@@ -171,7 +173,7 @@ export default async function handler(
 
       // Get enhanced data
       const enhancedProducts = await enhanceProducts(products)
-      
+
       const totalPages = Math.ceil(total / limitNum)
 
       res.status(200).json({
@@ -201,65 +203,51 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
   // Extract unique IDs for batch queries
   const productIds = products.map(p => p.id.toString())
 
-  // Get category and company IDs to look up names
-  const categoryIds = Array.from(new Set(products.map(p => p.product_category).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
+  // Get foreign key IDs using new relationships
+  const categoryIds = Array.from(new Set(products.map(p => p.product_category_id).filter(Boolean)))
+  const subcategoryIds = Array.from(new Set(products.map(p => p.product_subcategory_id).filter(Boolean)))
+  const carModelIds = Array.from(new Set(products.map(p => p.car_model_id).filter(Boolean)))
   const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
 
-  // Get all subcategory IDs from comma-separated values
-  const subcategoryIds = new Set<number>()
-  products.forEach((product: any) => {
-    if (product.product_subcategory) {
-      product.product_subcategory.split(',').forEach((id: string) => {
-        const parsedId = parseInt(id.trim());
-        if (!isNaN(parsedId)) subcategoryIds.add(parsedId);
-      })
-    }
-  })
-
-  // Batch fetch category, company, and subcategory names
-  const [categoryRecords, companyRecords, subcategoryRecords] = await Promise.all([
-    categoryIds.length > 0 ? prisma.product_category.findMany({
+  // Batch fetch names using foreign key relationships
+  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
+    categoryIds.length > 0 ? prisma.product_category_new.findMany({
       where: { id: { in: categoryIds } },
-      select: { id: true, category_name: true }
+      select: { id: true, product_name: true }
+    }) : Promise.resolve([]),
+    subcategoryIds.length > 0 ? prisma.product_subcategory_new.findMany({
+      where: { id: { in: subcategoryIds } },
+      select: { id: true, subcategory_name: true }
+    }) : Promise.resolve([]),
+    carModelIds.length > 0 ? prisma.car_models.findMany({
+      where: { id: { in: carModelIds } },
+      select: { id: true, model_name: true }
     }) : Promise.resolve([]),
     companyIds.length > 0 ? prisma.product_company.findMany({
       where: { id: { in: companyIds } },
       select: { id: true, company_name: true }
-    }) : Promise.resolve([]),
-    subcategoryIds.size > 0 ? prisma.product_subcategory.findMany({
-      where: { id: { in: Array.from(subcategoryIds) } },
-      select: { id: true, subcategory_name: true }
     }) : Promise.resolve([])
   ]);
 
-  // Create lookup maps
-  const categoryMap = new Map(categoryRecords.map(cat => [cat.id.toString(), cat.category_name]));
+  // Create lookup maps with new field names
+  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.product_name]));
+  const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]));
+  const carModelMap = new Map(carModelRecords.map(model => [model.id, model.model_name]));
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]));
-  const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id.toString(), sub.subcategory_name]));
 
   // Get purchase rates
   const latestPurchaseRates = await getPurchaseRatesOptimized(productIds)
 
   // Build enhanced products with proper names
   return products.map(product => {
-    // Look up names from the maps
-    const categoryName = product.product_category ? categoryMap.get(product.product_category) || '' : '';
+    // Look up names using foreign key maps
+    const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : '';
+    const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : '';
+    const carModelName = product.car_model_id ? carModelMap.get(product.car_model_id) || '' : '';
     const companyName = product.company ? companyMap.get(product.company) || '' : '';
 
-    // Convert subcategory IDs to names
-    let subcategoryNames = '';
-    if (product.product_subcategory) {
-      const subcategoryNameList = product.product_subcategory
-        .split(',')
-        .map((id: string) => {
-          const trimmedId = id.trim();
-          return subcategoryMap.get(trimmedId) || ''; // no fallback to ID if name not found
-        })
-        .filter(name => name) // remove empty names
-        .sort((a, b) => a.localeCompare(b)); // sort alphabetically
-
-      subcategoryNames = subcategoryNameList.join(', ');
-    }
+    // For display, show the display_name, then single subcategory/car model as comma-separated for backward compatibility
+    const subcategoryNames = [subcategoryName, carModelName].filter(Boolean).join(', ');
 
     // Get latest purchase rate
     const latestPurchaseRate = latestPurchaseRates.get(product.id.toString()) || product.rate

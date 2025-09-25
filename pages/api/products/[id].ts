@@ -1,62 +1,50 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
-// Function to enhance a single product (reuse from optimized.ts)
+// Function to enhance a single product using new FK relationships
 async function enhanceProduct(product: any) {
   if (!product) return null
 
-  const productIds = [product.id.toString()]
+  // Get foreign key IDs using new relationships
+  const categoryIds = product.product_category_id ? [product.product_category_id] : []
+  const subcategoryIds = product.product_subcategory_id ? [product.product_subcategory_id] : []
+  const carModelIds = product.car_model_id ? [product.car_model_id] : []
+  const companyIds = product.company ? [parseInt(product.company)].filter(id => !isNaN(id)) : []
 
-  // Get category and company IDs
-  const categoryIds = [product.product_category].filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))
-  const companyIds = [product.company].filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))
-
-  // Get subcategory IDs
-  const subcategoryIds = new Set<number>()
-  if (product.product_subcategory) {
-    product.product_subcategory.split(',').forEach((id: string) => {
-      const parsedId = parseInt(id.trim())
-      if (!isNaN(parsedId)) subcategoryIds.add(parsedId)
-    })
-  }
-
-  // Batch fetch
-  const [categoryRecords, companyRecords, subcategoryRecords] = await Promise.all([
-    categoryIds.length > 0 ? prisma.product_category.findMany({
+  // Batch fetch names using foreign key relationships
+  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
+    categoryIds.length > 0 ? prisma.product_category_new.findMany({
       where: { id: { in: categoryIds } },
-      select: { id: true, category_name: true }
+      select: { id: true, product_name: true }
+    }) : Promise.resolve([]),
+    subcategoryIds.length > 0 ? prisma.product_subcategory_new.findMany({
+      where: { id: { in: subcategoryIds } },
+      select: { id: true, subcategory_name: true }
+    }) : Promise.resolve([]),
+    carModelIds.length > 0 ? prisma.car_models.findMany({
+      where: { id: { in: carModelIds } },
+      select: { id: true, model_name: true }
     }) : Promise.resolve([]),
     companyIds.length > 0 ? prisma.product_company.findMany({
       where: { id: { in: companyIds } },
       select: { id: true, company_name: true }
-    }) : Promise.resolve([]),
-    subcategoryIds.size > 0 ? prisma.product_subcategory.findMany({
-      where: { id: { in: Array.from(subcategoryIds) } },
-      select: { id: true, subcategory_name: true }
     }) : Promise.resolve([])
   ])
 
-  const categoryMap = new Map(categoryRecords.map(cat => [cat.id.toString(), cat.category_name]))
+  // Create lookup maps
+  const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.product_name]))
+  const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]))
+  const carModelMap = new Map(carModelRecords.map(model => [model.id, model.model_name]))
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]))
-  const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id.toString(), sub.subcategory_name]))
 
-  // Lookup
-  const categoryName = product.product_category ? categoryMap.get(product.product_category) || '' : ''
+  // Look up names using foreign key maps
+  const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : ''
+  const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : ''
+  const carModelName = product.car_model_id ? carModelMap.get(product.car_model_id) || '' : ''
   const companyName = product.company ? companyMap.get(product.company) || '' : ''
 
-  let subcategoryNames = ''
-  if (product.product_subcategory) {
-    const subcategoryNameList = product.product_subcategory
-      .split(',')
-      .map((id: string) => {
-        const trimmedId = id.trim()
-        return subcategoryMap.get(trimmedId) || ''
-      })
-      .filter(name => name)
-      .sort((a, b) => a.localeCompare(b))
-
-    subcategoryNames = subcategoryNameList.join(', ')
-  }
+  // For display, combine subcategory and car model for backward compatibility
+  const subcategoryNames = [subcategoryName, carModelName].filter(Boolean).join(', ')
 
   return {
     ...product,
@@ -72,30 +60,106 @@ export default async function handler(
 ) {
   const { id } = req.query
 
-  if (req.method === 'GET') {
-    try {
-      const productId = parseInt(id as string)
-      if (isNaN(productId)) {
-        return res.status(400).json({ message: 'Invalid product ID' })
+  switch (req.method) {
+    case 'GET':
+      try {
+        const productId = parseInt(id as string)
+        if (isNaN(productId)) {
+          return res.status(400).json({ message: 'Invalid product ID' })
+        }
+
+        const product = await prisma.product.findUnique({
+          where: { id: productId }
+        })
+
+        if (!product) {
+          return res.status(404).json({ message: 'Product not found' })
+        }
+
+        const enhancedProduct = await enhanceProduct(product)
+        res.status(200).json(enhancedProduct)
+
+      } catch (error) {
+        console.error('Get product error:', error)
+        res.status(500).json({ message: 'Failed to fetch product', error: error instanceof Error ? error.message : 'Unknown error' })
       }
+      break
 
-      const product = await prisma.product.findUnique({
-        where: { id: productId }
-      })
+    case 'PUT':
+      try {
+        const productId = parseInt(id as string)
+        if (isNaN(productId)) {
+          return res.status(400).json({ message: 'Invalid product ID' })
+        }
 
-      if (!product) {
-        return res.status(404).json({ message: 'Product not found' })
+        const {
+          product_name,
+          display_name,
+          product_category_id,
+          product_subcategory_id,
+          car_model_id,
+          company,
+          part_no,
+          min_stock,
+          stock,
+          rate,
+          hsn,
+          notes,
+        } = req.body
+
+        // Validate required fields
+        if (!product_name) {
+          return res.status(400).json({ message: 'Product name is required' })
+        }
+
+        const updatedProduct = await prisma.product.update({
+          where: { id: productId },
+          data: {
+            product_name,
+            display_name: display_name || product_name,
+            product_category_id: product_category_id ? parseInt(product_category_id) : null,
+            product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
+            car_model_id: car_model_id ? parseInt(car_model_id) : null,
+            company,
+            part_no,
+            min_stock: min_stock ? parseInt(min_stock) : null,
+            stock: stock ? parseInt(stock) : null,
+            rate: rate ? parseFloat(rate) : null,
+            hsn,
+            notes,
+          }
+        })
+
+        const enhancedProduct = await enhanceProduct(updatedProduct)
+        res.status(200).json(enhancedProduct)
+
+      } catch (error) {
+        console.error('Update product error:', error)
+        res.status(500).json({ message: 'Failed to update product', error: error instanceof Error ? error.message : 'Unknown error' })
       }
+      break
 
-      const enhancedProduct = await enhanceProduct(product)
-      res.status(200).json(enhancedProduct)
+    case 'DELETE':
+      try {
+        const productId = parseInt(id as string)
+        if (isNaN(productId)) {
+          return res.status(400).json({ message: 'Invalid product ID' })
+        }
 
-    } catch (error) {
-      console.error('Get product error:', error)
-      res.status(500).json({ message: 'Failed to fetch product', error: error instanceof Error ? error.message : 'Unknown error' })
-    }
-  } else {
-    res.setHeader('Allow', ['GET'])
-    res.status(405).end(`Method ${req.method} Not Allowed`)
+        await prisma.product.delete({
+          where: { id: productId }
+        })
+
+        res.status(204).end()
+
+      } catch (error) {
+        console.error('Delete product error:', error)
+        res.status(500).json({ message: 'Failed to delete product', error: error instanceof Error ? error.message : 'Unknown error' })
+      }
+      break
+
+    default:
+      res.setHeader('Allow', ['GET', 'PUT', 'DELETE'])
+      res.status(405).end(`Method ${req.method} Not Allowed`)
   }
 }

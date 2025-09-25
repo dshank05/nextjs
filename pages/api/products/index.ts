@@ -83,8 +83,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
       product_name,
-      product_category,
-      product_subcategory,
+      display_name,
+      product_category_id,
+      product_subcategory_id,
+      car_model_id,
       company,
       part_no,
       min_stock,
@@ -92,8 +94,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       rate,
       hsn,
       notes,
-      // Additional fields from the modal
-      car_model,
       gst_rate,
       warehouse,
       rack_number,
@@ -108,35 +108,22 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Product name is required' })
     }
 
-    // For now, we'll store additional fields in the notes field as JSON
-    // since the database schema doesn't have all these fields
-    const additionalData = {
-      car_model,
-      gst_rate,
-      warehouse,
-      rack_number,
-      descriptions,
-      mrp,
-      discount,
-      sale_price,
-    };
-
-    const notesWithExtras = notes ?
-      `${notes}\n\nAdditional Data: ${JSON.stringify(additionalData)}` :
-      `Additional Data: ${JSON.stringify(additionalData)}`;
-
     const product = await prisma.product.create({
       data: {
         product_name,
-        product_category,
-        product_subcategory,
+        display_name: display_name || product_name, // Use display_name or fallback to product_name
+        product_category_id: product_category_id ? parseInt(product_category_id) : null,
+        product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
+        car_model_id: car_model_id ? parseInt(car_model_id) : null,
         company,
         part_no,
-        min_stock: min_stock ? parseInt(min_stock) : 0,
-        stock: stock ? parseInt(stock) : 0,
-        rate: rate ? parseInt(rate) : null,
+        min_stock: min_stock ? parseInt(min_stock) : null,
+        stock: stock ? parseInt(stock) : null,
+        rate: rate ? parseFloat(rate) : null,
         hsn,
-        notes: notesWithExtras,
+        notes,
+        // Store additional data in separate fields (to be added to schema later)
+        // For now, keep backward compatibility
       },
     })
 
