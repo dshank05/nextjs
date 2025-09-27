@@ -32,12 +32,41 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Build where clause
     const where: any = {}
     
-    if (search) {
-      where.OR = [
-        { product_name: { contains: search as string } },
-        { part_no: { contains: search as string } },
-      ]
-    }
+      if (search) {
+        // Search normalization function
+        const normalizeSearchText = (text: string): string => {
+          return text
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, '') // Remove all whitespace
+            .replace(/[^a-z0-9]/g, '') // Remove special characters except alphanumeric
+        }
+
+        const normalizedSearch = normalizeSearchText(search as string)
+
+        where.OR = [
+          // Original search for exact matches
+          { product_name: { contains: search as string } },
+          { display_name: { contains: search as string } },
+          { part_no: { contains: search as string } },
+          // Normalized search for flexible matching
+          {
+            product_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            display_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            part_no: {
+              contains: normalizedSearch
+            }
+          }
+        ]
+      }
 
     if (category && category !== '') {
       where.product_category = parseInt(category as string)
@@ -100,7 +129,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       descriptions,
       mrp,
       discount,
-      sale_price,
+      margin, // Changed from sale_price to match UI label
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
@@ -131,7 +160,7 @@ ${rack_number ? `Rack: ${rack_number}` : ''}
 ${descriptions ? `Desc: ${descriptions}` : ''}
 ${mrp ? `MRP: ${mrp}` : ''}
 ${discount ? `Discount: ${discount}` : ''}
-${sale_price ? `Sale Price: ${sale_price}` : ''}` :
+${margin ? `Margin: ${margin}` : ''}` :
     `Additional Data:
 ${gst_rate ? `GST Rate: ${gst_rate}` : ''}
 ${warehouse ? `Warehouse: ${warehouse}` : ''}
@@ -139,7 +168,7 @@ ${rack_number ? `Rack: ${rack_number}` : ''}
 ${descriptions ? `Desc: ${descriptions}` : ''}
 ${mrp ? `MRP: ${mrp}` : ''}
 ${discount ? `Discount: ${discount}` : ''}
-${sale_price ? `Sale Price: ${sale_price}` : ''}`;
+${margin ? `Margin: ${margin}` : ''}`;
 
     const product = await prisma.product.create({
       data: {

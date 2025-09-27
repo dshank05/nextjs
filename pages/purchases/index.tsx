@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
 
@@ -55,6 +56,9 @@ interface Pagination {
 }
 
 export default function PurchasesPage() {
+  // Router for navigation
+  const router = useRouter()
+
   // Filter states
   const [searchTerm, setSearchTerm] = useState('')
   const [vendorFilter, setVendorFilter] = useState('')
@@ -180,7 +184,7 @@ export default function PurchasesPage() {
   // Handle view details
   const handleViewDetails = (transaction: any) => {
     console.log('View details for purchase:', transaction)
-    alert(`Viewing details for Purchase Invoice #${transaction.invoice_no}`)
+    router.push(`/purchases/view/${transaction.id}`)
   }
 
   // Initial load and when filters change

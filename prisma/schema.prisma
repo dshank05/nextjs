@@ -127,6 +127,7 @@ model Purchase {
   invoice_no               Int
   bill_reference           String? @db.VarChar(255)
   staff_details            String? @db.VarChar(255)
+  vendor_id                Int?
   items_total              Float?
   freight                  Float?
   total_taxable_value      Float
@@ -153,6 +154,9 @@ model Purchase {
   vehicle_number           String? @db.VarChar(100)
   fy                       Int
 
+  // Foreign key relationship to vendor_details
+  vendor vendor_details? @relation(fields: [vendor_id], references: [id])
+
   @@map("purchase")
 }
 
@@ -165,6 +169,7 @@ model Purchaseitems {
   model_id        Int?
   company_id      Int?
   car_model       String? @db.VarChar(255)
+  vendor_id       Int?
   hsn             String? @db.VarChar(50)
   part            String? @db.VarChar(100)
   qty             Float?
@@ -174,6 +179,9 @@ model Purchaseitems {
   subtotal        Float
   fy              Int
   invoice_date    Int
+
+  // Foreign key relationship to vendor_details
+  vendor vendor_details? @relation(fields: [vendor_id], references: [id])
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
   @@map("purchase_items")
@@ -338,17 +346,20 @@ model product_category {
   id           Int    @id @default(autoincrement())
   category_name String @db.VarChar(255)
 
-  // Backward relations to products
+  // Relations to subcategories and products
+  subcategories product_subcategory[]
   products Product[]
 
   @@map("product_category")
 }
 
 model product_subcategory {
-  id               Int    @id @default(autoincrement())
-  subcategory_name String @db.VarChar(255)
+  id               Int                 @id @default(autoincrement())
+  subcategory_name String              @db.VarChar(255)
+  category_id      Int                  // Foreign key to product_category
 
-  // Backward relations to products
+  // Relations
+  category product_category @relation(fields: [category_id], references: [id])
   products Product[]
 
   @@map("product_subcategory")
@@ -428,4 +439,8 @@ model vendor_details {
   contact_no  String? @db.VarChar(20)
   email       String? @db.VarChar(100)
   tax_id      String? @db.VarChar(50)
+
+  // Backward relations to purchases and purchase items
+  purchases     Purchase[]
+  purchaseItems Purchaseitems[]
 }

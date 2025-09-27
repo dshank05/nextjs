@@ -57,7 +57,7 @@ export default function CreateVendor() {
 
     try {
       // Validate required fields
-      const requiredFields = ['vendor_name', 'tax_id', 'contact_no', 'email'];
+      const requiredFields = ['vendor_name', 'contact_no'];
       const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
 
       if (missingFields.length > 0) {
@@ -189,7 +189,7 @@ export default function CreateVendor() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                Email *
+                Email
               </label>
               <input
                 type="email"
@@ -198,14 +198,13 @@ export default function CreateVendor() {
                 onChange={handleChange}
                 className="input w-full"
                 placeholder="vendor@example.com"
-                required
               />
               {errors.email && <span className="text-red-400 text-sm">{errors.email}</span>}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                GST No *
+                GST No
               </label>
               <input
                 type="text"
@@ -214,7 +213,6 @@ export default function CreateVendor() {
                 onChange={handleChange}
                 className="input w-full"
                 placeholder="22AAAAA0000A1Z5"
-                required
               />
               {errors.tax_id && <span className="text-red-400 text-sm">{errors.tax_id}</span>}
             </div>

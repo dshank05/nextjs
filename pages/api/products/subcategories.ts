@@ -31,6 +31,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
         orderBy,
+        include: {
+          category: true
+        }
       });
 
       const startIndex = (pageNum - 1) * limitNum;
@@ -49,23 +52,47 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           hasMore: pageNum < totalPages,
         },
       });
-    } else if (req.method === 'POST') {
-      const { subcategory_name } = req.body;
-      if (!subcategory_name) {
-        return res.status(400).json({ message: 'Subcategory name is required' });
+  } else if (req.method === 'POST') {
+      const { subcategory_name, category_id } = req.body;
+      if (!subcategory_name || !category_id) {
+        return res.status(400).json({ message: 'Subcategory name and category_id are required' });
       }
+
+      // Validate that the category exists
+      const category = await prisma.product_category.findUnique({
+        where: { id: parseInt(category_id) }
+      });
+      if (!category) {
+        return res.status(400).json({ message: 'Invalid category_id' });
+      }
+
       const subcategory = await prisma.product_subcategory.create({
-        data: { subcategory_name },
+        data: {
+          subcategory_name,
+          category_id: parseInt(category_id)
+        },
       });
       res.status(201).json(subcategory);
     } else if (req.method === 'PUT') {
-      const { id, subcategory_name } = req.body;
-      if (!id || !subcategory_name) {
-        return res.status(400).json({ message: 'ID and subcategory name are required' });
+      const { id, subcategory_name, category_id } = req.body;
+      if (!id || !subcategory_name || !category_id) {
+        return res.status(400).json({ message: 'ID, subcategory name, and category_id are required' });
       }
+
+      // Validate that the category exists
+      const category = await prisma.product_category.findUnique({
+        where: { id: parseInt(category_id) }
+      });
+      if (!category) {
+        return res.status(400).json({ message: 'Invalid category_id' });
+      }
+
       const subcategory = await prisma.product_subcategory.update({
         where: { id: parseInt(id, 10) },
-        data: { subcategory_name },
+        data: {
+          subcategory_name,
+          category_id: parseInt(category_id)
+        },
       });
       res.status(200).json(subcategory);
     } else {

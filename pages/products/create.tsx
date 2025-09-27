@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { Upload, Calculator, ChevronDown, X, Check } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 
 interface ProductFormData {
   product_name: string;
@@ -95,6 +96,27 @@ export default function ProductCreate() {
     fetchFilterOptions();
   }, []);
 
+  // Auto-generate product name from display name
+  useEffect(() => {
+    const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
+    const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
+    const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
+    
+    // Get first selected car model name
+    const firstCarModelId = formData.car_models.length > 0 ? formData.car_models[0] : '';
+    const firstCarModel = filterOptions.models.find(m => m.id.toString() === firstCarModelId)?.name || '';
+
+    const displayName = `${category}-${subcategory}-${firstCarModel}-${company}`.trim();
+    const cleanDisplayName = displayName
+      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
+      .replace(/-+/g, '-') // Replace multiple dashes with single dash
+      .trim();
+
+    if (cleanDisplayName && cleanDisplayName !== formData.product_name) {
+      setFormData(prev => ({ ...prev, product_name: cleanDisplayName }));
+    }
+  }, [formData.product_category, formData.product_subcategory, formData.company, formData.car_models, filterOptions]);
+
   const fetchFilterOptions = async () => {
     try {
       const response = await fetch('/api/products/filters');
@@ -136,7 +158,22 @@ export default function ProductCreate() {
     const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
     const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
 
-    return `${formData.product_name} - ${category} - ${subcategory} - ${company} - ${formData.part_no}`.trim();
+    // Get first selected car model name
+    const firstCarModelId = formData.car_models.length > 0 ? formData.car_models[0] : '';
+    const firstCarModel = filterOptions.models.find(m => m.id.toString() === firstCarModelId)?.name || '';
+
+    const displayName = `${category}-${subcategory}-${firstCarModel}-${company}`.trim();
+    const cleanDisplayName = displayName
+      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
+      .replace(/-+/g, '-') // Replace multiple dashes with single dash
+      .trim();
+
+    // Update formData.product_name whenever display is generated
+    if (cleanDisplayName && cleanDisplayName !== formData.product_name) {
+      setFormData(prev => ({ ...prev, product_name: cleanDisplayName }));
+    }
+
+    return cleanDisplayName;
   };
 
   const validateForm = () => {
@@ -203,10 +240,12 @@ export default function ProductCreate() {
         sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
       });
 
+      // Generate display name
+      const displayName = generateProductDisplay();
+
       // Use foreign key IDs instead of names
       const submitData = {
-        display_name: formData.product_name,
-        product_name: formData.product_name,
+        display_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
         car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
@@ -223,7 +262,7 @@ export default function ProductCreate() {
         notes: formData.notes || null,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
         discount: formData.discount ? parseFloat(formData.discount) : null,
-        sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
+        margin: formData.sale_price ? parseFloat(formData.sale_price) : null, // Changed from sale_price to margin
       };
 
       console.log('Submitting data to API:', submitData);
@@ -259,385 +298,286 @@ export default function ProductCreate() {
     <div className="space-y-6">
       <div className="card">
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        {/* Image Upload */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">IMAGE</label>
-            <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center">
-              {imagePreview ? (
-                <div className="space-y-2">
-                  <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded mx-auto" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setImageFile(null);
-                      setImagePreview('');
-                    }}
-                    className="text-red-400 text-sm hover:text-red-300"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                  <div className="text-slate-400 text-sm">Click to upload image</div>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageChange}
-                    className="hidden"
-                    id="image-upload"
-                  />
-                  <label
-                    htmlFor="image-upload"
-                    className="text-blue-400 hover:text-blue-300 cursor-pointer text-sm"
-                  >
-                    Browse files
-                  </label>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY OF PRODUCT NAME</label>
-            <div className="bg-slate-700 rounded p-3 text-sm text-slate-300 min-h-20">
-              {generateProductDisplay() || 'Complete product details to see display name'}
-            </div>
-          </div>
-        </div>
-
-        {/* Product Details */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
-            <select
-              value={formData.product_category}
-              onChange={(e) => handleInputChange('product_category', e.target.value)}
-              className="select w-full"
-            >
-              <option value="">Select Category</option>
-              {filterOptions.categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
-            {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
-            <select
-              value={formData.product_subcategory}
-              onChange={(e) => handleInputChange('product_subcategory', e.target.value)}
-              className="select w-full"
-            >
-              <option value="">Select Sub Category</option>
-              {filterOptions.subcategories.map((sub) => (
-                <option key={sub.id} value={sub.id}>{sub.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
-            <div className="relative" ref={modelsDropdownRef}>
-              {/* Selected items display */}
-            <div
-              className="select w-full h-10 cursor-pointer flex items-center justify-between px-3 py-2"
-              onClick={() => setIsModelsDropdownOpen(!isModelsDropdownOpen)}
-            >
-                <div className="flex flex-wrap gap-1 flex-1">
-                  {formData.car_models.length > 0 ? (
-                    formData.car_models.slice(0, 3).map((modelId) => {
-                      const model = filterOptions.models.find(m => m.id.toString() === modelId);
-                      return (
-                        <span
-                          key={modelId}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded-sm"
-                        >
-                          {model?.name}
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const newSelection = formData.car_models.filter(id => id !== modelId);
-                              handleMultiSelectChange('car_models', newSelection);
-                            }}
-                            className="hover:bg-blue-700 rounded-sm p-0.5"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      );
-                    })
-                  ) : (
-                    <span className="text-slate-400 text-sm">Select car models...</span>
-                  )}
-                  {formData.car_models.length > 3 && (
-                    <span className="text-slate-400 text-sm">+{formData.car_models.length - 3} more</span>
-                  )}
-                </div>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isModelsDropdownOpen ? 'rotate-180' : ''}`} />
-              </div>
-
-              {/* Dropdown menu */}
-              {isModelsDropdownOpen && (
-                <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-hidden">
-                  {/* Search input */}
-                  <div className="p-2 border-b border-slate-700">
+        {/* Row 1: Image and Product Name */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">IMAGE</label>
+              <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center">
+                {imagePreview ? (
+                  <div className="space-y-2">
+                    <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded mx-auto" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageFile(null);
+                        setImagePreview('');
+                      }}
+                      className="text-red-400 text-sm hover:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Upload className="w-8 h-8 text-slate-400 mx-auto" />
+                    <div className="text-slate-400 text-sm">Click to upload image</div>
                     <input
-                      type="text"
-                      placeholder="Search models..."
-                      value={modelSearchQuery}
-                      onChange={(e) => setModelSearchQuery(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                      id="image-upload"
                     />
+                    <label
+                      htmlFor="image-upload"
+                      className="text-blue-400 hover:text-blue-300 cursor-pointer text-sm"
+                    >
+                      Browse files
+                    </label>
                   </div>
+                )}
+              </div>
+            </div>
 
-                  {/* Options list */}
-                  <div className="max-h-48 overflow-y-auto">
-                    {filterOptions.models
-                      .filter(model =>
-                        model.name.toLowerCase().includes(modelSearchQuery.toLowerCase())
-                      )
-                      .map((model) => {
-                        const isSelected = formData.car_models.includes(model.id.toString());
-                        return (
-                          <div
-                            key={model.id}
-                            className="flex items-center px-3 py-2 hover:bg-slate-700 cursor-pointer transition-colors"
-                            onClick={() => {
-                              const newSelection = isSelected
-                                ? formData.car_models.filter(id => id !== model.id.toString())
-                                : [...formData.car_models, model.id.toString()];
-                              handleMultiSelectChange('car_models', newSelection);
-                            }}
-                          >
-                            <div className="flex items-center justify-center w-4 h-4 mr-3">
-                              {isSelected && <Check className="w-3 h-3 text-blue-400" />}
-                            </div>
-                            <span className={`text-sm ${isSelected ? 'text-blue-300 font-medium' : 'text-slate-300'}`}>
-                              {model.name}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    {filterOptions.models.filter(model =>
-                      model.name.toLowerCase().includes(modelSearchQuery.toLowerCase())
-                    ).length === 0 && (
-                      <div className="px-3 py-2 text-slate-500 text-sm">No models found</div>
-                    )}
-                  </div>
-
-                  {/* Footer with selected count */}
-                  {formData.car_models.length > 0 && (
-                    <div className="px-3 py-2 border-t border-slate-700 bg-slate-750">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>{formData.car_models.length} selected</span>
-                        <button
-                          type="button"
-                          onClick={() => handleMultiSelectChange('car_models', [])}
-                          className="text-red-400 hover:text-red-300 underline"
-                        >
-                          Clear all
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY OF PRODUCT NAME</label>
+              <div className="bg-slate-700 rounded p-3 text-sm text-slate-300 min-h-20">
+                {generateProductDisplay() || 'Complete product details to see display name'}
+              </div>
             </div>
           </div>
+        </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
-            <select
-              value={formData.company}
-              onChange={(e) => handleInputChange('company', e.target.value)}
-              className="select w-full"
-            >
-              <option value="">Select Company</option>
-              {filterOptions.companies.map((comp) => (
-                <option key={comp.id} value={comp.id}>{comp.name}</option>
-              ))}
-            </select>
-            {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}
-          </div>
+        {/* Row 2: Basic Product Information */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">📦 Product Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
+              <select
+                value={formData.product_category}
+                onChange={(e) => handleInputChange('product_category', e.target.value)}
+                className="select w-full"
+              >
+                <option value="">Select Category</option>
+                {filterOptions.categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                ))}
+              </select>
+              {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
-            <input
-              type="text"
-              value={formData.part_no}
-              onChange={(e) => handleInputChange('part_no', e.target.value)}
-              className="input w-full"
-              placeholder="Enter part number"
-            />
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
+              <select
+                value={formData.product_subcategory}
+                onChange={(e) => handleInputChange('product_subcategory', e.target.value)}
+                className="select w-full"
+              >
+                <option value="">Select Sub Category</option>
+                {filterOptions.subcategories.map((sub) => (
+                  <option key={sub.id} value={sub.id}>{sub.name}</option>
+                ))}
+              </select>
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">PRODUCT NAME *</label>
-            <input
-              type="text"
-              value={formData.product_name}
-              onChange={(e) => handleInputChange('product_name', e.target.value)}
-              className="input w-full"
-              placeholder="Enter product name"
-            />
-            {errors.product_name && <p className="text-red-400 text-xs mt-1">{errors.product_name}</p>}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
+              <select
+                value={formData.company}
+                onChange={(e) => handleInputChange('company', e.target.value)}
+                className="select w-full"
+              >
+                <option value="">Select Company</option>
+                {filterOptions.companies.map((comp) => (
+                  <option key={comp.id} value={comp.id}>{comp.name}</option>
+                ))}
+              </select>
+              {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
+              <SearchableMultiSelect
+                options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
+                selectedValues={formData.car_models}
+                onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
+                placeholder="Select car models..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
+              <input
+                type="text"
+                value={formData.part_no}
+                onChange={(e) => handleInputChange('part_no', e.target.value)}
+                className="input w-full"
+                placeholder="Enter part number"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Pricing Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.mrp}
-              onChange={(e) => handleInputChange('mrp', e.target.value)}
-              className="input w-full"
-              placeholder="0.00"
-            />
-          </div>
+        {/* Row 4: Pricing */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">💰 Pricing</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.mrp}
+                onChange={(e) => handleInputChange('mrp', e.target.value)}
+                className="input w-full"
+                placeholder="0.00"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.discount}
-              onChange={(e) => handleInputChange('discount', e.target.value)}
-              className="input w-full"
-              placeholder="0.00"
-            />
-          </div>
-        </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.discount}
+                onChange={(e) => handleInputChange('discount', e.target.value)}
+                className="input w-full"
+                placeholder="0.00"
+              />
+            </div>
 
-        {/* HSN and GST */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
-            <input
-              type="text"
-              value={formData.hsn}
-              onChange={(e) => handleInputChange('hsn', e.target.value)}
-              className="input w-full"
-              placeholder="Enter HSN code"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE (%)</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.gst_rate}
-              onChange={(e) => handleInputChange('gst_rate', e.target.value)}
-              className="input w-full"
-              placeholder="Enter GST rate (e.g., 18.00)"
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">MARGIN</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.sale_price}
+                onChange={(e) => handleInputChange('sale_price', e.target.value)}
+                className="input w-full"
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Warehouse and Rack */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">WARE HOUSE</label>
-            <input
-              type="text"
-              value={formData.warehouse}
-              onChange={(e) => handleInputChange('warehouse', e.target.value)}
-              className="input w-full"
-              placeholder="Enter warehouse"
-            />
-          </div>
+        {/* Row 5: Location & Tax */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">🏢 Location & Tax</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
+              <input
+                type="text"
+                value={formData.hsn}
+                onChange={(e) => handleInputChange('hsn', e.target.value)}
+                className="input w-full"
+                placeholder="Enter HSN code"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">RACK NUMBER</label>
-            <input
-              type="text"
-              value={formData.rack_number}
-              onChange={(e) => handleInputChange('rack_number', e.target.value)}
-              className="input w-full"
-              placeholder="Enter rack number"
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE (%)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.gst_rate}
+                onChange={(e) => handleInputChange('gst_rate', e.target.value)}
+                className="input w-full"
+                placeholder="Enter GST rate (e.g., 18.00)"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">WARE HOUSE</label>
+              <input
+                type="text"
+                value={formData.warehouse}
+                onChange={(e) => handleInputChange('warehouse', e.target.value)}
+                className="input w-full"
+                placeholder="Enter warehouse"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">RACK NUMBER</label>
+              <input
+                type="text"
+                value={formData.rack_number}
+                onChange={(e) => handleInputChange('rack_number', e.target.value)}
+                className="input w-full"
+                placeholder="Enter rack number"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Descriptions and Notes */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
-            <textarea
-              value={formData.descriptions}
-              onChange={(e) => handleInputChange('descriptions', e.target.value)}
-              rows={3}
-              className="input w-full"
-              placeholder="Enter product description"
-            />
-          </div>
+        {/* Row 6: Additional Information */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">� Additional Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
+              <textarea
+                value={formData.descriptions}
+                onChange={(e) => handleInputChange('descriptions', e.target.value)}
+                rows={3}
+                className="input w-full"
+                placeholder="Enter product description"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => handleInputChange('notes', e.target.value)}
-              rows={3}
-              className="input w-full"
-              placeholder="Enter additional notes"
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => handleInputChange('notes', e.target.value)}
+                rows={3}
+                className="input w-full"
+                placeholder="Enter additional notes"
+              />
+            </div>
           </div>
         </div>
 
-        {/* Stock and Pricing */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
-            <input
-              type="number"
-              value={formData.min_stock}
-              onChange={(e) => handleInputChange('min_stock', e.target.value)}
-              className="input w-full"
-              placeholder="0"
-            />
-          </div>
+        {/* Row 7: Stock & Inventory */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">📦 Stock & Inventory</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
+              <input
+                type="number"
+                value={formData.min_stock}
+                onChange={(e) => handleInputChange('min_stock', e.target.value)}
+                className="input w-full"
+                placeholder="0"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">SALE PRICE</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.sale_price}
-              onChange={(e) => handleInputChange('sale_price', e.target.value)}
-              className="input w-full"
-              placeholder="0.00"
-            />
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
+              <input
+                type="number"
+                value={formData.stock}
+                onChange={(e) => handleInputChange('stock', e.target.value)}
+                className="input w-full"
+                placeholder="0"
+              />
+            </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
-            <input
-              type="number"
-              value={formData.stock}
-              onChange={(e) => handleInputChange('stock', e.target.value)}
-              className="input w-full"
-              placeholder="0"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
-            <input
-              type="number"
-              step="0.01"
-              value={formData.rate}
-              onChange={(e) => handleInputChange('rate', e.target.value)}
-              className="input w-full"
-              placeholder="0.00"
-            />
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
+              <input
+                type="number"
+                step="0.01"
+                value={formData.rate}
+                onChange={(e) => handleInputChange('rate', e.target.value)}
+                className="input w-full"
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
 

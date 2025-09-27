@@ -1,4 +1,5 @@
 import { ReactNode, useState, useMemo } from 'react';
+import Link from 'next/link';
 import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Truck } from 'lucide-react';
 
 // Define types for transaction data
@@ -289,24 +290,13 @@ export const TransactionTable = ({
                 <td className="text-slate-300">{formatDate(transaction.invoice_date)}</td>
                 <td>{getStatusBadge(transaction.status, transaction.type)}</td>
                 <td>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleRowExpansion(transaction.id)}
-                      className="p-1 hover:bg-slate-600 rounded text-slate-400 hover:text-white"
-                      title="View Details"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                    {onViewDetails && (
-                      <button
-                        onClick={() => onViewDetails(transaction)}
-                        className="p-1 hover:bg-slate-600 rounded text-slate-400 hover:text-white"
-                        title="View Full Details"
-                      >
-                        <FileText className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  <Link
+                    href={`/purchases/view/${transaction.id}`}
+                    title="View Purchase Details"
+                    className="btn-icon text-slate-300"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Link>
                 </td>
               </tr>
             ))}

@@ -104,16 +104,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.purchase.count({ where })
     ])
 
-    // Get vendor names and item counts in batch queries
+    // Get item counts in batch queries (vendor info will be fetched individually when needed)
     const invoiceIds = purchaseInvoices.map((inv: { id: any }) => inv.id)
 
-    const [vendorData, itemCounts] = await Promise.all([
-      // Get all vendor names in one query
-      prisma.vendor_details.findMany({
-        where: { id: { in: purchaseInvoices.map(inv => inv.id).filter(id => id) } },
-        select: { id: true, vendor_name: true, tax_id: true }
-      }),
-
+    const [itemCounts] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
@@ -123,8 +117,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const vendorMap = new Map(vendorData.map((v: { id: any; vendor_name: any; tax_id: any }) => [v.id, v.vendor_name]))
-    const taxIdMap = new Map(vendorData.map((v: { id: any; tax_id: any }) => [v.id, v.tax_id]))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced purchase invoices using maps
@@ -161,9 +153,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
-        select_vendor: invoice.id, // Using invoice id as vendor reference
-        vendor_name: vendorMap.get(invoice.id) || 'N/A',
-        vendor_gstin: taxIdMap.get(invoice.id) || '',
+        bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
+        vendor_name: 'Loading...', // Vendor name will be fetched via individual API call
+        vendor_gstin: '', // GSTIN will be fetched via individual API call
         items_total: invoice.items_total || 0,
         freight: invoice.freight || 0,
         total_taxable_value: invoice.total_taxable_value,
@@ -217,6 +209,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       bill_reference,
       staff_details,
       date,
+      vendor_id, // Now receiving vendor ID
       vendor_name,
       contact_number,
       email_id,
@@ -300,8 +293,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const purchase = await prisma.purchase.create({
       data: {
         invoice_no: parseInt(invoice_number),
-        bill_reference: bill_reference,
+        bill_reference: bill_reference, // Keep bill reference separate from vendor name
         staff_details: staff_details,
+        vendor_id: vendorId, // ✅ Save vendor ID as FK
         items_total: itemsTotal,
         freight: transport_cost || 0,
         total_taxable_value: itemsTotal,
@@ -341,6 +335,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           model_id: item.model_id,
           company_id: item.company_id,
           car_model: item.car_model,
+          vendor_id: vendorId, // ✅ Save vendor ID in purchase items as well
           hsn: item.hsn,
           part: item.part_number,
           qty: item.qty,
@@ -372,7 +367,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
-
+o
 function getPaymentModeId(paymentMode: string): number {
   const paymentModes: { [key: string]: number } = {
     'cash': 1,

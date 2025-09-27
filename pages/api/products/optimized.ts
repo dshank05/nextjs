@@ -8,14 +8,40 @@ const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 async function getCachedLookupData(key: string, fetcher: () => Promise<any>) {
   const cached = lookupCache.get(key)
   const now = Date.now()
-  
+
   if (cached && (now - cached.timestamp) < CACHE_TTL) {
     return cached.data
   }
-  
+
   const data = await fetcher()
   lookupCache.set(key, { data, timestamp: now })
   return data
+}
+
+// Search normalization function
+function normalizeSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '') // Remove all whitespace
+    .replace(/[^a-z0-9]/g, '') // Remove special characters except alphanumeric
+}
+
+function createSearchableText(productName: string, partNo: string): string {
+  const normalizedProductName = productName
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '') // Keep letters, numbers, spaces, and hyphens
+    .replace(/\s+/g, '') // Remove spaces
+    .replace(/-/g, '') // Remove hyphens for searching
+
+  const normalizedPartNo = partNo
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '') // Remove all whitespace
+    .replace(/[^a-z0-9]/g, '') // Remove special characters
+
+  return `${normalizedProductName} ${normalizedPartNo}`.trim()
 }
 
 export default async function handler(
@@ -49,10 +75,28 @@ export default async function handler(
       const where: any = {}
 
       if (search) {
+        const normalizedSearch = normalizeSearchText(search as string)
         where.OR = [
+          // Original search for exact matches
           { product_name: { contains: search as string } },
           { display_name: { contains: search as string } },
           { part_no: { contains: search as string } },
+          // Normalized search for flexible matching
+          {
+            product_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            display_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            part_no: {
+              contains: normalizedSearch
+            }
+          }
         ]
       }
 
@@ -145,10 +189,28 @@ export default async function handler(
       const where: any = {}
 
       if (search) {
+        const normalizedSearch = normalizeSearchText(search as string)
         where.OR = [
+          // Original search for exact matches
           { product_name: { contains: search as string } },
           { display_name: { contains: search as string } },
           { part_no: { contains: search as string } },
+          // Normalized search for flexible matching
+          {
+            product_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            display_name: {
+              contains: normalizedSearch
+            }
+          },
+          {
+            part_no: {
+              contains: normalizedSearch
+            }
+          }
         ]
       }
 

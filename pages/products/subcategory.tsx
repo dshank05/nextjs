@@ -3,10 +3,17 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
+interface Category {
+  id: number;
+  category_name: string;
+}
+
 interface Subcategory {
   id: number;
   subcategory_name: string;
+  category_id?: number;
   index: number;
+  category?: Category;
 }
 
 interface SubcategoryResponse {
@@ -16,6 +23,7 @@ interface SubcategoryResponse {
 
 export default function Subcategories() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -26,7 +34,7 @@ export default function Subcategories() {
   const [pendingSubcategoryData, setPendingSubcategoryData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [editingSubcategory, setEditingSubcategory] = useState<Subcategory | null>(null);
-  const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
+  const [formData, setFormData] = useState({ id: 0, subcategory_name: '', category_id: 0 });
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -48,8 +56,21 @@ export default function Subcategories() {
   }, [debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
+    fetchCategories();
     fetchSubcategories();
   }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/api/products/categories?limit=1000');
+      if (response.ok) {
+        const data = await response.json();
+        setCategories(data.categories || []);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
 
   const fetchSubcategories = async () => {
     setLoading(true);
@@ -103,35 +124,27 @@ export default function Subcategories() {
 
   const handleAdd = () => {
     setEditingSubcategory(null);
-    setFormData({ id: 0, subcategory_name: '' });
+    setFormData({ id: 0, subcategory_name: '', category_id: 0 });
     setShowModal(true);
   };
 
   const handleEdit = (subcategory: Subcategory) => {
     setEditingSubcategory(subcategory);
-    setFormData({ id: subcategory.id, subcategory_name: subcategory.subcategory_name });
+    setFormData({
+      id: subcategory.id,
+      subcategory_name: subcategory.subcategory_name,
+      category_id: subcategory.category_id || 0
+    });
     setShowModal(true);
   };
 
-  // const handleDelete = async (id: number) => {
-  //   if (confirm('Are you sure you want to delete this car model?')) {
-  //     try {
-  //       const response = await fetch(`/api/products/subcategories`, {
-  //         method: 'DELETE',
-  //         headers: { 'Content-Type': 'application/json' },
-  //         body: JSON.stringify({ id }),
-  //       });
-  //       if (response.ok) {
-  //         fetchSubcategories();
-  //       }
-  //     } catch (error) {
-  //       console.error('Error deleting subcategory:', error);
-  //     }
-  //   }
-  // };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.category_id) {
+      alert('Please select a category');
+      return;
+    }
 
     // Store the pending data and show confirmation modal
     const isEditing = editingSubcategory !== null;
@@ -218,7 +231,7 @@ export default function Subcategories() {
         ) : (
           <>
             <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {subcategories.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} car models</div>
+              <div>Showing {subcategories.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} subcategories</div>
               <div>Page {pagination.page} of {pagination.totalPages}</div>
             </div>
 
@@ -233,6 +246,7 @@ export default function Subcategories() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
                       Subcategory Name {getSortIcon('subcategory_name')}
                     </th>
+                    <th>Category</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -242,6 +256,9 @@ export default function Subcategories() {
                       <td>{subcategory.index}</td>
                       <td>{subcategory.id}</td>
                       <td className="font-medium text-white">{subcategory.subcategory_name}</td>
+                      <td className="text-slate-300">
+                        {subcategory.category ? subcategory.category.category_name : 'N/A'}
+                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(subcategory)}>Edit</button>
                       </td>
@@ -287,8 +304,26 @@ export default function Subcategories() {
                   />
                 </div>
               )}
+
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory Name</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Category *</label>
+                <select
+                  value={formData.category_id}
+                  onChange={(e) => setFormData(prev => ({ ...prev, category_id: parseInt(e.target.value) }))}
+                  className="select w-full"
+                  required
+                >
+                  <option value="">Select Category</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id.toString()}>
+                      {category.category_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory Name *</label>
                 <input
                   type="text"
                   value={formData.subcategory_name}
@@ -297,6 +332,7 @@ export default function Subcategories() {
                   required
                 />
               </div>
+
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>
@@ -309,7 +345,7 @@ export default function Subcategories() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title="Confirm Action"
-        message={`Do you want to ${editingSubcategory ? 'edit' : 'create'} - ${formData.subcategory_name} subcategory?`}
+        message={`Do you want to ${editingSubcategory ? 'edit' : 'create'} the subcategory - ${formData.subcategory_name}?`}
         showLoading={isSaving}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelConfirm}

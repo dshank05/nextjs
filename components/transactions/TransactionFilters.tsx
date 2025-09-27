@@ -26,11 +26,17 @@ interface TransactionFiltersProps {
 
 interface CustomerVendor {
   id: string;
-  name: string;
+  name?: string;
+  vendor_name?: string;
   gstin?: string;
   contact?: string;
   email?: string;
 }
+
+// Helper function to get display name (prioritizes name, falls back to vendor_name)
+const getDisplayName = (cv: CustomerVendor): string => {
+  return cv.name || cv.vendor_name || 'Unknown';
+};
 
 export const TransactionFilters = ({
   searchTerm, setSearchTerm,
@@ -81,13 +87,13 @@ export const TransactionFilters = ({
   };
 
   const filteredCustomerVendors = customerVendors.filter(cv =>
-    cv.name.toLowerCase().includes(customerVendorSearch.toLowerCase())
+    getDisplayName(cv).toLowerCase().includes(customerVendorSearch.toLowerCase())
   );
 
-  const handleCustomerVendorSelect = (customerVendor: { id: string; name: string }) => {
+  const handleCustomerVendorSelect = (customerVendor: CustomerVendor) => {
     // Store the ID (key) for database operations, but display name for UI
     setCustomerVendorFilter(customerVendor.id); // Store ID for filtering
-    setCustomerVendorSearch(customerVendor.name); // Display name for UI
+    setCustomerVendorSearch(getDisplayName(customerVendor)); // Display name for UI
     setShowCustomerVendorDropdown(false);
   };
 
@@ -152,7 +158,11 @@ export const TransactionFilters = ({
             <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
               <div
                 className="px-3 py-2 hover:bg-slate-600 cursor-pointer"
-                onClick={() => handleCustomerVendorSelect({ id: '', name: 'All Customers/Vendors' })}
+                onClick={() => {
+                  setCustomerVendorFilter(''); // Clear filter
+                  setCustomerVendorSearch('All Customers/Vendors'); // Display text
+                  setShowCustomerVendorDropdown(false);
+                }}
               >
                 All Customers/Vendors
               </div>
@@ -162,7 +172,7 @@ export const TransactionFilters = ({
                   className="px-3 py-2 hover:bg-slate-600 cursor-pointer"
                   onClick={() => handleCustomerVendorSelect(cv)}
                 >
-                  {cv.name}
+                  {getDisplayName(cv)}
                 </div>
               ))}
             </div>
