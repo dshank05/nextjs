@@ -93,10 +93,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // For now, we'll skip vendor filtering as it requires joining with vendor_details table
     // This would need to be implemented with a JOIN operation
 
-    // Get purchase invoices with related data
+    // Get purchase invoices with related vendor data
     const [purchaseInvoices, total] = await Promise.all([
       prisma.purchase.findMany({
         where,
+        include: {
+          vendor: {
+            select: {
+              vendor_name: true,
+              tax_id: true
+            }
+          }
+        },
         skip,
         take: limitNum,
         orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
@@ -154,8 +162,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
         bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
-        vendor_name: 'Loading...', // Vendor name will be fetched via individual API call
-        vendor_gstin: '', // GSTIN will be fetched via individual API call
+        vendor_name: invoice.vendor?.vendor_name || 'Unknown Vendor', // ✅ Vendor name from JOIN
+        vendor_gstin: invoice.vendor?.tax_id || '', // ✅ GSTIN from JOIN
         items_total: invoice.items_total || 0,
         freight: invoice.freight || 0,
         total_taxable_value: invoice.total_taxable_value,
@@ -205,24 +213,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
+      // ===== MAIN PURCHASE TABLE FIELDS =====
       invoice_number,
       bill_reference,
       staff_details,
       date,
-      vendor_id, // Now receiving vendor ID
-      vendor_name,
-      contact_number,
-      email_id,
-      address,
-      city,
-      state,
-      gst_number,
+
+      // ===== VENDOR RELATIONSHIP (ONLY vendor_id - NO vendor data creation/update) =====
+      vendor_id, // FK to vendor_details table - vendor must already exist
+
+      // ===== TRANSPORT FIELDS =====
       transport_name,
       vehicle_number,
       transport_cost,
-      bill,
-      tax,
-      items,
+
+      // ===== ITEMS AND CALCULATIONS =====
+      items, // Array of purchase items
       descriptions,
       packing_forwarding_qty,
       packing_forwarding_rate,
@@ -236,15 +242,36 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       total_tax,
       payment_status,
       payment_mode,
-      grand_total
+      grand_total,
+
+      // ===== LEGACY FIELDS (UNCLEAR PURPOSE) =====
+      bill,  // Stored in purchase.bill - unclear what this represents
+      tax,   // Stored in purchase.tax - unclear what this represents
     } = req.body
 
-    // Validate required fields
-    if (!invoice_number || !vendor_name || !items || items.length === 0) {
+    console.log('📝 API Received POST data:', req.body);
+
+    // ===== VALIDATION =====
+    if (!invoice_number || !vendor_id || !items || items.length === 0) {
       return res.status(400).json({
-        message: 'Missing required fields: invoice_number, vendor_name, or items'
+        message: 'Missing required fields: invoice_number, vendor_id, or items'
       })
     }
+
+    // ===== VALIDATE VENDOR EXISTS =====
+    // Vendor must already exist - purchase only stores the relationship
+    const existingVendor = await prisma.vendor_details.findUnique({
+      where: { id: parseInt(vendor_id) }
+    })
+
+    if (!existingVendor) {
+      return res.status(400).json({
+        message: 'Invalid vendor selected - vendor does not exist'
+      })
+    }
+
+    console.log('🏗️ Purchase Table Data: All main fields are stored');
+    console.log('🏗️ Vendor Relationship: Using existing vendor ID:', vendor_id);
 
     // Get current financial year
     const currentDate = new Date()
@@ -258,44 +285,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
-    // Create or update vendor
-    let vendorId: number
-    const existingVendor = await prisma.vendor_details.findFirst({
-      where: { vendor_name: vendor_name }
-    })
-
-    if (existingVendor) {
-      vendorId = existingVendor.id
-      // Update vendor details if provided
-      await prisma.vendor_details.update({
-        where: { id: vendorId },
-        data: {
-          contact_no: contact_number || existingVendor.contact_no,
-          email: email_id || existingVendor.email,
-          address: address || existingVendor.address,
-          tax_id: gst_number || existingVendor.tax_id
-        }
-      })
-    } else {
-      const newVendor = await prisma.vendor_details.create({
-        data: {
-          vendor_name: vendor_name,
-          contact_no: contact_number,
-          email: email_id,
-          address: address,
-          tax_id: gst_number
-        }
-      })
-      vendorId = newVendor.id
-    }
-
     // Create purchase record
     const purchase = await prisma.purchase.create({
       data: {
         invoice_no: parseInt(invoice_number),
         bill_reference: bill_reference, // Keep bill reference separate from vendor name
         staff_details: staff_details,
-        vendor_id: vendorId, // ✅ Save vendor ID as FK
+        vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
         items_total: itemsTotal,
         freight: transport_cost || 0,
         total_taxable_value: itemsTotal,
@@ -335,7 +331,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           model_id: item.model_id,
           company_id: item.company_id,
           car_model: item.car_model,
-          vendor_id: vendorId, // ✅ Save vendor ID in purchase items as well
+          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
           hsn: item.hsn,
           part: item.part_number,
           qty: item.qty,
@@ -355,7 +351,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         id: purchase.id,
         invoice_no: purchase.invoice_no,
         total: purchase.total,
-        vendor_name: vendor_name
+        vendor_name: existingVendor.vendor_name
       }
     })
 

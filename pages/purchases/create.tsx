@@ -402,15 +402,8 @@ export default function PurchaseCreate() {
         bill_reference: formData.bill_reference,
         staff_details: formData.staff_details,
         date: formData.date,
-        vendor_id: vendorIdToSave, // Send vendor ID
-        vendor_name: formData.vendor_name,
-        contact_number: formData.contact_number,
-        email_id: formData.email_id,
-        address: formData.address,
-        address_2: formData.address_2,
-        city: formData.city,
-        state: formData.state,
-        gst_number: formData.gst_number,
+        vendor_id: vendorIdToSave, // Only send vendor relationship ID
+        // Removed all vendor detail fields - they're only for UI display
         transport_name: formData.transport_name,
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
