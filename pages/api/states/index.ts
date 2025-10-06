@@ -38,7 +38,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where,
       select: {
         id: true,
-        state_name: true
+        state_name: true,
+        code: true
       },
       orderBy: { state_name: 'asc' },
       skip: (pageNum - 1) * limitNum,

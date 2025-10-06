@@ -17,8 +17,8 @@ export default function CreateVendor() {
     contact_no: '',
     email: '',
     tax_id: '',
-    state: '', // This will store the state ID as string
-    state_code: ''
+    state: '', // This will store the state name
+    state_code: '' // This will store the state ID
   });
 
   const [states, setStates] = useState<State[]>([]);
@@ -44,8 +44,8 @@ export default function CreateVendor() {
     if (selectedState) {
       setFormData(prev => ({
         ...prev,
-        state: selectedState.id.toString(),
-        state_code: selectedState.code.toString().padStart(2, '0')
+        state: selectedState.state_name,
+        state_code: selectedState.id.toString()
       }));
     }
   };
@@ -222,7 +222,7 @@ export default function CreateVendor() {
               </label>
               <select
                 name="state"
-                value={states.find(s => s.id === parseInt(formData.state))?.state_name || ''}
+                value={formData.state}
                 onChange={(e) => handleStateChange(e.target.value)}
                 className="select w-full"
               >

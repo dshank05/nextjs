@@ -436,7 +436,7 @@ model vendor_details {
   vendor_name String  @db.VarChar(255)
   address     String? @db.VarChar(255)
   address_2   String? @db.VarChar(255)
-  state       Int?
+  state       String?
   state_code  Int?
   contact_no  String? @db.VarChar(20)
   email       String? @db.VarChar(100)
