@@ -262,14 +262,16 @@ model business_details {
 model customer_details {
   id                  Int     @id @default(autoincrement())
   billing_name        String  @db.VarChar(200)
-  billing_address     String  @db.VarChar(255)
+  billing_address     String  @db.VarChar(255)  // Main billing address line
+  billing_address_2   String? @db.VarChar(255)  // Additional billing address line (ADDED for consistency)
   billing_state       Int?
   billing_state_code  Int?
   billing_gstin       String? @db.VarChar(30)
   contact_no          String? @db.VarChar(20)
   email               String? @db.VarChar(100)
   shipping_name       String? @db.VarChar(200)
-  shipping_address    String? @db.VarChar(255)
+  shipping_address    String  @db.VarChar(255)  // Main shipping address line
+  shipping_address_2  String? @db.VarChar(255)  // Additional shipping address line (ADDED for consistency)
   shipping_state      Int?
   shipping_state_code Int?
   shipping_gstin      String? @db.VarChar(30)

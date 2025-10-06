@@ -5,12 +5,16 @@ import { CustomerTable } from '../../components/customer/CustomerTable';
 interface Customer {
   id: number;
   billing_name: string;
+  // ===== BILLING ADDRESS FIELDS =====
   billing_address?: string;
+  billing_address_2?: string;
   billing_gstin?: string;
   contact_no?: string;
   email?: string;
   shipping_name?: string;
+  // ===== SHIPPING ADDRESS FIELDS =====
   shipping_address?: string;
+  shipping_address_2?: string;
 }
 
 export default function Customers() {
@@ -35,16 +39,20 @@ export default function Customers() {
 
       const data = await response.json();
 
-      // Transform API data to match our interface
+      // Transform API data to match our interface (now includes _2 fields)
       const transformedCustomers: Customer[] = data.customers?.map((customer: any) => ({
         id: parseInt(customer.id),
         billing_name: customer.billing_name,
+        // ===== BILLING ADDRESS FIELDS =====
         billing_address: customer.billing_address,
+        billing_address_2: customer.billing_address_2,
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
         email: customer.email,
         shipping_name: customer.shipping_name,
-        shipping_address: customer.shipping_address
+        // ===== SHIPPING ADDRESS FIELDS =====
+        shipping_address: customer.shipping_address,
+        shipping_address_2: customer.shipping_address_2
       })) || [];
 
       setCustomers(transformedCustomers);
@@ -58,26 +66,15 @@ export default function Customers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Customers</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage your customer database</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={fetchCustomers}
-            disabled={loading}
-            className="btn-secondary"
-          >
-            {loading ? 'Loading...' : 'Refresh'}
-          </button>
+
+      <div className="flex flex-row-reverse">
         <button
           onClick={() => router.push('/customers/create')}
           className="btn-primary">
           Add Customer
         </button>
-        </div>
       </div>
+
 
       {error && (
         <div className="card border-red-500 bg-red-500/10 p-4">

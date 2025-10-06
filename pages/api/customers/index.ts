@@ -10,14 +10,22 @@ export default async function handler(
     try {
       const customerData = {
         billing_name: req.body.billing_name,
-        billing_address: req.body.billing_address,
+        // ===== BILLING ADDRESS (Consistent with vendor pattern) =====
+        billing_address: req.body.billing_address,        // Main billing address line (REQUIRED)
+        billing_address_2: req.body.billing_address_2 || null, // Additional billing address line (OPTIONAL)
+
         billing_state: parseInt(req.body.billing_state),
         billing_state_code: parseInt(req.body.billing_state_code),
         billing_gstin: req.body.billing_gstin,
         contact_no: req.body.contact_no,
         email: req.body.email,
+
         shipping_name: req.body.shipping_name || null,
-        shipping_address: req.body.shipping_address || null,
+
+        // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
+        shipping_address: req.body.shipping_address || null,          // Main shipping address line
+        shipping_address_2: req.body.shipping_address_2 || null,       // Additional shipping address line
+
         shipping_state: req.body.shipping_state ? parseInt(req.body.shipping_state) : null,
         shipping_state_code: req.body.shipping_state_code ? parseInt(req.body.shipping_state_code) : null,
         shipping_gstin: req.body.shipping_gstin || null,
@@ -53,12 +61,16 @@ export default async function handler(
       select: {
         id: true,
         billing_name: true,
+        // ===== BILLING ADDRESS FIELDS (Matching vendor pattern) =====
         billing_address: true,
+        billing_address_2: true,
         billing_gstin: true,
         contact_no: true,
         email: true,
         shipping_name: true,
+        // ===== SHIPPING ADDRESS FIELDS (Matching vendor pattern) =====
         shipping_address: true,
+        shipping_address_2: true,
         shipping_gstin: true
       },
       orderBy: { billing_name: 'asc' }
@@ -67,12 +79,16 @@ export default async function handler(
     const formattedCustomers = customers.map(customer => ({
       id: customer.id.toString(),
       billing_name: customer.billing_name,
+      // ===== BILLING ADDRESS (Consistent with vendors) =====
       billing_address: customer.billing_address || '',
+      billing_address_2: customer.billing_address_2 || '',
       billing_gstin: customer.billing_gstin || '',
       contact_no: customer.contact_no || '',
       email: customer.email || '',
       shipping_name: customer.shipping_name || '',
+      // ===== SHIPPING ADDRESS (Consistent with vendors) =====
       shipping_address: customer.shipping_address || '',
+      shipping_address_2: customer.shipping_address_2 || '',
       shipping_gstin: customer.shipping_gstin || ''
     }))
 

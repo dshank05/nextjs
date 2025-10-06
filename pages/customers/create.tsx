@@ -1,310 +1,531 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+// Import useForm or similar validation later if needed
 
-interface State {
+interface CustomerFormData {
+  // ===== REQUIRED FIELDS =====
+  billing_name: string;
+  billing_address: string;        // Main billing address line (REQUIRED)
+  shipping_name: string;
+  shipping_address: string;       // Main shipping address line (REQUIRED)
+  contact_no: string;             // Made REQUIRED
+
+  // ===== OPTIONAL FIELDS =====
+  billing_address_2: string;      // Additional billing address line
+  shipping_address_2: string;     // Additional shipping address line
+  billing_state: string;
+  billing_state_code: string;     // Auto-filled, not shown in UI
+  billing_gstin: string;
+  shipping_state: string;
+  shipping_state_code: string;    // Auto-filled, not shown in UI
+  shipping_gstin: string;
+  email: string;
+
+  // ===== FORM CONTROLS =====
+  copyFromBilling: boolean;       // Checkbox for copying billing to shipping
+}
+
+interface Option {
   id: number;
   state_name: string;
   code: number;
 }
 
-export default function CreateCustomer() {
+export default function CustomerCreate() {
   const router = useRouter();
+  const [states, setStates] = useState<Option[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmData, setConfirmData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<CustomerFormData>({
     billing_name: '',
     billing_address: '',
+    billing_address_2: '',
+    shipping_name: '',
+    shipping_address: '',
+    shipping_address_2: '',
     billing_state: '',
     billing_state_code: '',
     billing_gstin: '',
-    contact_no: '',
-    email: '',
-    shipping_name: '',
-    shipping_address: '',
     shipping_state: '',
     shipping_state_code: '',
-    shipping_gstin: ''
+    shipping_gstin: '',
+    contact_no: '',
+    email: '',
+    copyFromBilling: false
   });
 
-  const [states, setStates] = useState<State[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{[key: string]: string}>({});
-
+  // Fetch states on mount
   useEffect(() => {
+    const fetchStates = async () => {
+      try {
+        const response = await fetch('/api/states');
+        if (response.ok) {
+          const data = await response.json();
+          setStates(data.states || []);
+        }
+      } catch (error) {
+        console.error('Error fetching states:', error);
+      }
+    };
     fetchStates();
   }, []);
 
-  const fetchStates = async () => {
-    try {
-      const response = await fetch('/api/states');
-      const data = await response.json();
-      setStates(data.states || []);
-    } catch (error) {
-      console.error('Error fetching states:', error);
+  // Handle copy from billing checkbox functionality
+  const handleCopyFromBillingChange = (checked: boolean) => {
+    setFormData(prev => {
+      if (checked) {
+        // Copy billing to shipping when checked
+        return {
+          ...prev,
+          copyFromBilling: true,
+          shipping_name: prev.billing_name,
+          shipping_address: prev.billing_address,
+          shipping_address_2: prev.billing_address_2,
+          shipping_state: prev.billing_state,
+          shipping_state_code: prev.billing_state_code,
+          shipping_gstin: prev.billing_gstin
+        };
+      } else {
+        // Clear shipping fields when unchecked
+        return {
+          ...prev,
+          copyFromBilling: false,
+          shipping_name: '',
+          shipping_address: '',
+          shipping_address_2: '',
+          shipping_state: '',
+          shipping_state_code: '',
+          shipping_gstin: ''
+        };
+      }
+    });
+  };
+
+  // Auto-update shipping when copy from billing is checked and billing fields change
+  useEffect(() => {
+    if (formData.copyFromBilling) {
+      setFormData(prev => ({
+        ...prev,
+        shipping_name: prev.billing_name,
+        shipping_address: prev.billing_address,
+        shipping_address_2: prev.billing_address_2,
+        shipping_state: prev.billing_state,
+        shipping_state_code: prev.billing_state_code,
+        shipping_gstin: prev.billing_gstin
+      }));
+    }
+  }, [formData.copyFromBilling, formData.billing_name, formData.billing_address, formData.billing_address_2, formData.billing_state, formData.billing_state_code, formData.billing_gstin]);
+
+  const handleInputChange = (field: keyof CustomerFormData, value: string | boolean) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+
+    // Clear errors when user starts typing
+    if (errors[field as string]) {
+      setErrors(prev => ({ ...prev, [field as string]: '' }));
     }
   };
 
-  const handleStateChange = (field: 'billing_state' | 'shipping_state', stateName: string) => {
-    const selectedState = states.find(s => s.state_name === stateName);
-    if (selectedState) {
-      setFormData(prev => ({
-        ...prev,
-        [field]: selectedState.id,
-        [`${field}_code`]: selectedState.code.toString().padStart(2, '0')
-      }));
+
+
+  // Auto-fill state code when state is selected
+  const handleStateChange = (type: 'billing' | 'shipping', stateName: string) => {
+    const selectedState = states.find(state => state.state_name === stateName);
+    const stateCode = selectedState ? selectedState.code?.toString() || '' : '';
+
+    if (type === 'billing') {
+      handleInputChange('billing_state', stateName);
+      handleInputChange('billing_state_code', stateCode);
+    } else {
+      handleInputChange('shipping_state', stateName);
+      handleInputChange('shipping_state_code', stateCode);
     }
+  };
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+  // ===== REQUIRED FIELD VALIDATION =====
+    if (!formData.billing_name.trim()) {
+      newErrors.billing_name = 'Billing name is required';
+    }
+    if (!formData.billing_address.trim()) {
+      newErrors.billing_address = 'Billing address is required';
+    }
+
+    // Only validate shipping fields if NOT copying from billing
+    if (!formData.copyFromBilling) {
+      if (!formData.shipping_name.trim()) {
+        newErrors.shipping_name = 'Shipping name is required';
+      }
+      if (!formData.shipping_address.trim()) {
+        newErrors.shipping_address = 'Shipping address is required';
+      }
+    }
+
+    if (!formData.contact_no.trim()) {
+      newErrors.contact_no = 'Contact number is required';
+    }
+
+    // ===== EMAIL VALIDATION =====
+    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    // ===== GSTIN VALIDATION =====
+    if (formData.billing_gstin && formData.billing_gstin.length !== 15) {
+      newErrors.billing_gstin = 'GSTIN must be 15 characters';
+    }
+    if (formData.shipping_gstin && formData.shipping_gstin.length !== 15) {
+      newErrors.shipping_gstin = 'GSTIN must be 15 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setErrors({});
+
+    if (!validateForm()) {
+      return;
+    }
+
+    // Show confirmation modal before submitting
+    setConfirmData({
+      billing_name: formData.billing_name,
+      shipping_name: formData.shipping_name,
+      copyFromBilling: formData.copyFromBilling
+    });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!confirmData) return;
+
+    setIsSaving(true);
+    setShowConfirmModal(false);
 
     try {
-      // Validate required fields
-      const requiredFields = ['billing_name', 'billing_address', 'billing_state', 'billing_gstin', 'contact_no', 'email'];
-      const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
+      // Get state IDs from names for API submission
+      const billingState = states.find(s => s.state_name === formData.billing_state);
+      const shippingState = states.find(s => s.state_name === formData.shipping_state);
 
-      if (missingFields.length > 0) {
-        setErrors({ submit: 'Please fill in all required fields.' });
-        setLoading(false);
-        return;
-      }
+      const submitData = {
+        billing_name: formData.billing_name.trim(),
+        // ===== BILLING ADDRESS FIELDS =====
+        billing_address: formData.billing_address.trim(),
+        billing_address_2: formData.billing_address_2.trim(),
+        billing_state: billingState ? billingState.id : null,
+        billing_state_code: formData.billing_state_code,
+        billing_gstin: formData.billing_gstin.trim(),
 
-      // Validate GSTIN format (basic validation)
-      if (formData.billing_gstin && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(formData.billing_gstin)) {
-        setErrors({ billing_gstin: 'Please enter a valid GSTIN number.' });
-        setLoading(false);
-        return;
-      }
+        shipping_name: formData.shipping_name.trim(),
+        // ===== SHIPPING ADDRESS FIELDS =====
+        shipping_address: formData.shipping_address.trim(),
+        shipping_address_2: formData.shipping_address_2.trim(),
+        shipping_state: shippingState ? shippingState.id : null,
+        shipping_state_code: formData.shipping_state_code,
+        shipping_gstin: formData.shipping_gstin.trim(),
 
-      // Validate email format
-      if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
-        setErrors({ email: 'Please enter a valid email address.' });
-        setLoading(false);
-        return;
-      }
+        contact_no: formData.contact_no.trim(),
+        email: formData.email.trim()
+      };
+
+      console.log('Creating customer with data:', submitData);
 
       const response = await fetch('/api/customers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(submitData),
       });
 
       if (response.ok) {
-        router.push('/customers'); // Redirect back to customers list
+        console.log('Customer created successfully');
+        router.push('/customers'); // Redirect to customer list after successful creation
       } else {
         const errorData = await response.json();
-        setErrors({ submit: errorData.message || 'Failed to create customer.' });
+        console.error('API Error:', errorData);
+        setErrors({ submit: errorData.message || 'Failed to create customer' });
       }
     } catch (error) {
-      setErrors({ submit: 'An error occurred while creating the customer.' });
+      console.error('Network error:', error);
+      setErrors({ submit: 'Network error occurred' });
     } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-
-    // Clear error for this field
-    if (errors[name]) {
-      setErrors(prev => ({ ...prev, [name]: '' }));
+      setIsSaving(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Create New Customer</h1>
-        <p className="text-sm text-slate-400 mt-1">Add a new customer to your database</p>
+      <div className="card">
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* ===== BILLING INFORMATION ===== */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-white border-b border-slate-600 pb-2">🏢 Billing Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING NAME *
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_name}
+                  onChange={(e) => handleInputChange('billing_name', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter billing name"
+                />
+                {errors.billing_name && <p className="text-red-400 text-xs mt-1">{errors.billing_name}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING ADDRESS LINE 1 *
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_address}
+                  onChange={(e) => handleInputChange('billing_address', e.target.value)}
+                  className="input w-full"
+                  placeholder="Street address, building, etc."
+                />
+                {errors.billing_address && <p className="text-red-400 text-xs mt-1">{errors.billing_address}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING ADDRESS LINE 2
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_address_2}
+                  onChange={(e) => handleInputChange('billing_address_2', e.target.value)}
+                  className="input w-full"
+                  placeholder="Area, locality, landmark (optional)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING STATE
+                </label>
+                <select
+                  value={formData.billing_state}
+                  onChange={(e) => handleStateChange('billing', e.target.value)}
+                  className="select w-full"
+                >
+                  <option value="">Select State</option>
+                  {states.map((state) => (
+                    <option key={state.id} value={state.state_name}>
+                      {state.state_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING GSTIN
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_gstin}
+                  onChange={(e) => handleInputChange('billing_gstin', e.target.value.toUpperCase())}
+                  className="input w-full"
+                  placeholder="15-digit GST number"
+                  maxLength={15}
+                />
+                {errors.billing_gstin && <p className="text-red-400 text-xs mt-1">{errors.billing_gstin}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* ===== SHIPPING INFORMATION ===== */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-600 pb-2">
+              <h3 className="text-lg font-medium text-white">🚚 Shipping Information</h3>
+              <label className="flex items-center gap-2 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  checked={formData.copyFromBilling}
+                  onChange={(e) => handleCopyFromBillingChange(e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                Copy from Billing
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING NAME *
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_name}
+                  onChange={(e) => handleInputChange('shipping_name', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter shipping name"
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+                {errors.shipping_name && <p className="text-red-400 text-xs mt-1">{errors.shipping_name}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING ADDRESS LINE 1 *
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_address}
+                  onChange={(e) => handleInputChange('shipping_address', e.target.value)}
+                  className="input w-full"
+                  placeholder="Street address, building, etc."
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+                {errors.shipping_address && <p className="text-red-400 text-xs mt-1">{errors.shipping_address}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING ADDRESS LINE 2
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_address_2}
+                  onChange={(e) => handleInputChange('shipping_address_2', e.target.value)}
+                  className="input w-full"
+                  placeholder="Area, locality, landmark (optional)"
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING STATE
+                </label>
+                <select
+                  value={formData.shipping_state}
+                  onChange={(e) => handleStateChange('shipping', e.target.value)}
+                  className="select w-full"
+                  disabled={formData.copyFromBilling}
+                >
+                  <option value="">Select State</option>
+                  {states.map((state) => (
+                    <option key={state.id} value={state.state_name}>
+                      {state.state_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING GSTIN
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_gstin}
+                  onChange={(e) => handleInputChange('shipping_gstin', e.target.value.toUpperCase())}
+                  className="input w-full"
+                  placeholder="15-digit GST number"
+                  maxLength={15}
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+                {errors.shipping_gstin && <p className="text-red-400 text-xs mt-1">{errors.shipping_gstin}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* ===== CONTACT INFORMATION ===== */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-white border-b border-slate-600 pb-2">📞 Contact Information</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  CONTACT NUMBER *
+                </label>
+                <input
+                  type="tel"
+                  value={formData.contact_no}
+                  onChange={(e) => handleInputChange('contact_no', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter phone number"
+                />
+                {errors.contact_no && <p className="text-red-400 text-xs mt-1">{errors.contact_no}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  EMAIL ADDRESS
+                </label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter email address"
+                />
+                {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}
+              </div>
+            </div>
+          </div>
+
+          {/* Error Display */}
+          {errors.submit && (
+            <div className="bg-red-900 border border-red-700 rounded p-3">
+              <p className="text-red-200 text-sm">{errors.submit}</p>
+            </div>
+          )}
+
+          {/* Form Actions */}
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+            <button
+              type="button"
+              onClick={() => router.push('/customers')}
+              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Creating...' : 'Create Customer'}
+            </button>
+          </div>
+        </form>
       </div>
 
-      {errors.submit && (
-        <div className="card border-red-500 bg-red-500/10 p-4">
-          <span className="text-red-400">⚠️ {errors.submit}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <div className="card p-6">
-          <h2 className="text-xl font-semibold text-white mb-6">Create Customer Details</h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Billing Name</label>
-              <input
-                type="text"
-                name="billing_name"
-                value={formData.billing_name}
-                onChange={handleChange}
-                className="input w-full"
-                required
-              />
-              {errors.billing_name && <span className="text-red-400 text-sm">{errors.billing_name}</span>}
-              {!formData.billing_name && <span className="text-slate-500 text-sm">Billing Name cannot be blank.</span>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Billing Address</label>
-              <textarea
-                name="billing_address"
-                value={formData.billing_address}
-                onChange={handleChange}
-                className="input w-full min-h-20"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Billing State</label>
-                <select
-                  name="billing_state"
-                  value={states.find(s => s.id === parseInt(formData.billing_state))?.state_name || ''}
-                  onChange={(e) => handleStateChange('billing_state', e.target.value)}
-                  className="select w-full"
-                >
-                  <option value="">Select State</option>
-                  {states.map(state => (
-                    <option key={state.id} value={state.state_name}>{state.state_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Billing State Code</label>
-                <input
-                  type="text"
-                  name="billing_state_code"
-                  value={formData.billing_state_code}
-                  onChange={handleChange}
-                  className="input w-full bg-slate-700"
-                  readOnly
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Billing Gstin</label>
-              <input
-                type="text"
-                name="billing_gstin"
-                value={formData.billing_gstin}
-                onChange={handleChange}
-                className="input w-full"
-                placeholder="22AAAAA0000A1Z5"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Contact No</label>
-              <input
-                type="tel"
-                name="contact_no"
-                value={formData.contact_no}
-                onChange={handleChange}
-                className="input w-full"
-                placeholder="+91-XXXXXXXXXX"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                className="input w-full"
-                placeholder="customer@example.com"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Shipping Name</label>
-              <input
-                type="text"
-                name="shipping_name"
-                value={formData.shipping_name}
-                onChange={handleChange}
-                className="input w-full"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Shipping Address</label>
-              <textarea
-                name="shipping_address"
-                value={formData.shipping_address}
-                onChange={handleChange}
-                className="input w-full min-h-20"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Shipping State</label>
-                <select
-                  name="shipping_state"
-                  value={states.find(s => s.id === parseInt(formData.shipping_state))?.state_name || ''}
-                  onChange={(e) => handleStateChange('shipping_state', e.target.value)}
-                  className="select w-full"
-                >
-                  <option value="">Select State</option>
-                  {states.map(state => (
-                    <option key={state.id} value={state.state_name}>{state.state_name}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Shipping State Code</label>
-                <input
-                  type="text"
-                  name="shipping_state_code"
-                  value={formData.shipping_state_code}
-                  onChange={handleChange}
-                  className="input w-full bg-slate-700"
-                  readOnly
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Shipping Gstin</label>
-              <input
-                type="text"
-                name="shipping_gstin"
-                value={formData.shipping_gstin}
-                onChange={handleChange}
-                className="input w-full"
-                placeholder="22AAAAA0000A1Z5"
-              />
-            </div>
-          </div>
-
-          <div className="border-t border-slate-600 pt-4 mt-6">
-            <div className="flex justify-end gap-3">
-              <button
-                type="submit"
-                disabled={loading}
-                className="btn-primary"
-              >
-                {loading ? 'Creating Customer...' : 'Create Customer'}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/customers')}
-                className="btn-secondary"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      </form>
+      {/* Pre-Submit Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Create Customer"
+        message={`Are you sure you want to create customer "${confirmData?.billing_name}"${formData.copyFromBilling ? ' with shipping address copied from billing?' : ' with separate shipping address?'}`}
+        showLoading={isSaving}
+        onConfirm={async () => {
+          await handleConfirmSubmit();
+        }}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          setConfirmData(null);
+        }}
+      />
     </div>
   );
 }

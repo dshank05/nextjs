@@ -30,14 +30,18 @@ export default async function handler(
       const formattedCustomer = {
         id: customer.id.toString(),
         billing_name: customer.billing_name,
+        // ===== BILLING ADDRESS (Consistent with vendor pattern) =====
         billing_address: customer.billing_address,
+        billing_address_2: customer.billing_address_2 || null, // NEW: Additional address field
         billing_state: billingState?.state_name || null,
         billing_state_code: customer.billing_state_code || null,
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
         email: customer.email,
         shipping_name: customer.shipping_name,
+        // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
         shipping_address: customer.shipping_address,
+        shipping_address_2: customer.shipping_address_2 || null, // NEW: Additional address field
         shipping_state: shippingState?.state_name || null,
         shipping_state_code: customer.shipping_state_code || null,
         shipping_gstin: customer.shipping_gstin

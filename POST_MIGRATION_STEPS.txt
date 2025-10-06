@@ -1,0 +1,13 @@
+🚀 POST-MIGRATION STEPS - Address Consistency Update
+
+AFTER running the migration SQL, Execute:
+
+1. Generate Prisma Client:
+   npx prisma generate
+
+2. Check API endpoints are working with new fields
+
+3. Test customer creation/update forms with address fields
+
+---
+NOTE: TypeScript errors are expected until migration + prisma generate are complete!

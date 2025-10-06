@@ -5,12 +5,16 @@ import { Eye, Edit, Trash2 } from 'lucide-react';
 interface Customer {
   id: number;
   billing_name: string;
+  // ===== BILLING ADDRESS FIELDS =====
   billing_address?: string;
+  billing_address_2?: string;
   billing_gstin?: string;
   contact_no?: string;
   email?: string;
   shipping_name?: string;
+  // ===== SHIPPING ADDRESS FIELDS =====
   shipping_address?: string;
+  shipping_address_2?: string;
 }
 
 interface CustomerTableProps {
@@ -112,12 +116,9 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, loading
                 </td>
                 <td>
                   <div className="flex gap-1">
-                    <Link href={`/customers/view/${customer.id}`} className="btn-primary text-xs py-1 px-3" title="View Details">
+                    <Link href={`/customers/view/${customer.id}`} className="text-slate-300 hover:text-blue-400 transition-colors text-xs py-1 px-3 border border-slate-600 rounded hover:border-blue-400" title="View Details">
                       <Eye className="w-4 h-4" />
                     </Link>
-                    <button className="btn-secondary text-xs py-1 px-3" title="Edit Customer">
-                      <Edit className="w-4 h-4" />
-                    </button>
                   </div>
                 </td>
               </tr>
