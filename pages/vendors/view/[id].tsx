@@ -7,6 +7,7 @@ interface Vendor {
   vendor_name: string;
   address: string;
   address_2: string | null;
+  city: string | null;
   state: string | null;
   state_code: number | null;
   contact_no: string | null;
@@ -146,14 +147,18 @@ export default function VendorView() {
               <span className="text-slate-400">TAX ID:</span>
               <span className="text-white font-medium">{vendor.tax_id || 'Not provided'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">State:</span>
-              <span className="text-white font-medium">{vendor.state || 'Not provided'}</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{vendor.contact_no || 'Not provided'}</span>
-            </div>
+              <div className="flex justify-between border-b border-slate-700 pb-2">
+                <span className="text-slate-400">City:</span>
+                <span className="text-white font-medium">{vendor.city || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-700 pb-2">
+                <span className="text-slate-400">State:</span>
+                <span className="text-white font-medium">{vendor.state || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-700 pb-2">
+                <span className="text-slate-400">Contact:</span>
+                <span className="text-white font-medium">{vendor.contact_no || 'Not provided'}</span>
+              </div>
 
             <div className="flex justify-end space-x-3 pt-4">
               <Link
@@ -188,6 +193,10 @@ export default function VendorView() {
                   <div>{vendor.address}</div>
                   {vendor.address_2 && <div>{vendor.address_2}</div>}
                 </div>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">City:</span>
+                <span className="text-white font-medium">{vendor.city || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>

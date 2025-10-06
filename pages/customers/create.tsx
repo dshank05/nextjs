@@ -13,7 +13,9 @@ interface CustomerFormData {
 
   // ===== OPTIONAL FIELDS =====
   billing_address_2: string;      // Additional billing address line
+  billing_city: string;           // Billing city
   shipping_address_2: string;     // Additional shipping address line
+  shipping_city: string;          // Shipping city
   billing_state: string;
   billing_state_code: string;     // Auto-filled, not shown in UI
   billing_gstin: string;
@@ -48,9 +50,11 @@ export default function CustomerCreate() {
     billing_name: '',
     billing_address: '',
     billing_address_2: '',
+    billing_city: '',
     shipping_name: '',
     shipping_address: '',
     shipping_address_2: '',
+    shipping_city: '',
     billing_state: '',
     billing_state_code: '',
     billing_gstin: '',
@@ -96,9 +100,11 @@ export default function CustomerCreate() {
           billing_name: customerData.billing_name || '',
           billing_address: customerData.billing_address || '',
           billing_address_2: customerData.billing_address_2 || '',
+          billing_city: customerData.billing_city || '',
           shipping_name: customerData.shipping_name || customerData.billing_name || '',
           shipping_address: customerData.shipping_address || customerData.billing_address || '',
           shipping_address_2: customerData.shipping_address_2 || customerData.billing_address_2 || '',
+          shipping_city: customerData.shipping_city || customerData.billing_city || '',
           billing_state: customerData.billing_state || '',
           billing_state_code: customerData.billing_state_code ? customerData.billing_state_code.toString() : '',
           billing_gstin: customerData.billing_gstin || '',
@@ -129,6 +135,7 @@ export default function CustomerCreate() {
           shipping_name: prev.billing_name,
           shipping_address: prev.billing_address,
           shipping_address_2: prev.billing_address_2,
+          shipping_city: prev.billing_city,
           shipping_state: prev.billing_state,
           shipping_state_code: prev.billing_state_code,
           shipping_gstin: prev.billing_gstin
@@ -141,6 +148,7 @@ export default function CustomerCreate() {
           shipping_name: '',
           shipping_address: '',
           shipping_address_2: '',
+          shipping_city: '',
           shipping_state: '',
           shipping_state_code: '',
           shipping_gstin: ''
@@ -157,12 +165,13 @@ export default function CustomerCreate() {
         shipping_name: prev.billing_name,
         shipping_address: prev.billing_address,
         shipping_address_2: prev.billing_address_2,
+        shipping_city: prev.billing_city,
         shipping_state: prev.billing_state,
         shipping_state_code: prev.billing_state_code,
         shipping_gstin: prev.billing_gstin
       }));
     }
-  }, [formData.copyFromBilling, formData.billing_name, formData.billing_address, formData.billing_address_2, formData.billing_state, formData.billing_state_code, formData.billing_gstin]);
+  }, [formData.copyFromBilling, formData.billing_name, formData.billing_address, formData.billing_address_2, formData.billing_city, formData.billing_state, formData.billing_state_code, formData.billing_gstin]);
 
   const handleInputChange = (field: keyof CustomerFormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -262,6 +271,7 @@ export default function CustomerCreate() {
         // ===== BILLING ADDRESS FIELDS =====
         billing_address: formData.billing_address.trim(),
         billing_address_2: formData.billing_address_2.trim(),
+        billing_city: formData.billing_city.trim(),
         billing_state: billingState ? billingState.id : null,
         billing_state_code: formData.billing_state_code,
         billing_gstin: formData.billing_gstin.trim(),
@@ -270,6 +280,7 @@ export default function CustomerCreate() {
         // ===== SHIPPING ADDRESS FIELDS =====
         shipping_address: formData.shipping_address.trim(),
         shipping_address_2: formData.shipping_address_2.trim(),
+        shipping_city: formData.shipping_city.trim(),
         shipping_state: shippingState ? shippingState.id : null,
         shipping_state_code: formData.shipping_state_code,
         shipping_gstin: formData.shipping_gstin.trim(),
@@ -361,6 +372,19 @@ export default function CustomerCreate() {
                   onChange={(e) => handleInputChange('billing_address_2', e.target.value)}
                   className="input w-full"
                   placeholder="Area, locality, landmark (optional)"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING CITY
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_city}
+                  onChange={(e) => handleInputChange('billing_city', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter city name"
                 />
               </div>
 
@@ -458,6 +482,21 @@ export default function CustomerCreate() {
                   onChange={(e) => handleInputChange('shipping_address_2', e.target.value)}
                   className="input w-full"
                   placeholder="Area, locality, landmark (optional)"
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING CITY
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_city}
+                  onChange={(e) => handleInputChange('shipping_city', e.target.value)}
+                  className="input w-full"
+                  placeholder="Enter city name"
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
                 />

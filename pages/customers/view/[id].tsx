@@ -6,6 +6,8 @@ interface Customer {
   id: string;
   billing_name: string;
   billing_address: string;
+  billing_address_2: string | null;
+  billing_city: string | null;
   billing_state: string | null;
   billing_state_code: number | null;
   billing_gstin: string | null;
@@ -13,6 +15,8 @@ interface Customer {
   email: string | null;
   shipping_name: string | null;
   shipping_address: string | null;
+  shipping_address_2: string | null;
+  shipping_city: string | null;
   shipping_state: string | null;
   shipping_state_code: number | null;
   shipping_gstin: string | null;
@@ -124,8 +128,13 @@ export default function CustomerView() {
               <div className="space-y-2">
                 <span className="text-slate-400">Address:</span>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {customer.billing_address}
+                  <div>{customer.billing_address}</div>
+                  {customer.billing_address_2 && <div>{customer.billing_address_2}</div>}
                 </div>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">City:</span>
+                <span className="text-white font-medium">{customer.billing_city || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>
@@ -175,8 +184,13 @@ export default function CustomerView() {
                 <div className="space-y-2">
                   <span className="text-slate-400">Address:</span>
                   <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                    {customer.shipping_address || customer.billing_address}
+                    <div>{customer.shipping_address || customer.billing_address}</div>
+                    {(customer.shipping_address_2 || customer.billing_address_2) && <div>{customer.shipping_address_2 || customer.billing_address_2}</div>}
                   </div>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">City:</span>
+                  <span className="text-white font-medium">{customer.shipping_city || customer.billing_city || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">State:</span>

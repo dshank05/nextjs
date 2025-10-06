@@ -33,6 +33,7 @@ export default async function handler(
         // ===== BILLING ADDRESS (Consistent with vendor pattern) =====
         billing_address: customer.billing_address,
         billing_address_2: customer.billing_address_2 || null, // NEW: Additional address field
+        billing_city: customer.billing_city || null,
         billing_state: billingState?.state_name || null,
         billing_state_code: customer.billing_state_code || null,
         billing_gstin: customer.billing_gstin,
@@ -42,6 +43,7 @@ export default async function handler(
         // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
         shipping_address: customer.shipping_address,
         shipping_address_2: customer.shipping_address_2 || null, // NEW: Additional address field
+        shipping_city: customer.shipping_city || null,
         shipping_state: shippingState?.state_name || null,
         shipping_state_code: customer.shipping_state_code || null,
         shipping_gstin: customer.shipping_gstin
@@ -65,6 +67,8 @@ export default async function handler(
       const customerData = {
         billing_name: req.body.billing_name,
         billing_address: req.body.billing_address,
+        billing_address_2: req.body.billing_address_2 || null,
+        billing_city: req.body.billing_city || null,
         billing_state: parseInt(req.body.billing_state),
         billing_state_code: parseInt(req.body.billing_state_code),
         billing_gstin: req.body.billing_gstin,
@@ -72,6 +76,8 @@ export default async function handler(
         email: req.body.email,
         shipping_name: req.body.shipping_name || null,
         shipping_address: req.body.shipping_address || null,
+        shipping_address_2: req.body.shipping_address_2 || null,
+        shipping_city: req.body.shipping_city || null,
         shipping_state: req.body.shipping_state ? parseInt(req.body.shipping_state) : null,
         shipping_state_code: req.body.shipping_state_code ? parseInt(req.body.shipping_state_code) : null,
         shipping_gstin: req.body.shipping_gstin || null,
@@ -92,6 +98,8 @@ export default async function handler(
         id: customer.id.toString(),
         billing_name: customer.billing_name,
         billing_address: customer.billing_address,
+        billing_address_2: customer.billing_address_2 || null,
+        billing_city: customer.billing_city || null,
         billing_state: billingState?.state_name || null,
         billing_state_code: customer.billing_state_code || null,
         billing_gstin: customer.billing_gstin,
@@ -99,6 +107,8 @@ export default async function handler(
         email: customer.email,
         shipping_name: customer.shipping_name,
         shipping_address: customer.shipping_address,
+        shipping_address_2: customer.shipping_address_2 || null,
+        shipping_city: customer.shipping_city || null,
         shipping_state: shippingState?.state_name || null,
         shipping_state_code: customer.shipping_state_code || null,
         shipping_gstin: customer.shipping_gstin

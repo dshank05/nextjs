@@ -16,6 +16,7 @@ export default function CreateVendor() {
     vendor_name: '',
     address: '',
     address_2: '',
+    city: '',
     contact_no: '',
     email: '',
     tax_id: '',
@@ -54,6 +55,7 @@ export default function CreateVendor() {
           vendor_name: vendorData.vendor_name || '',
           address: vendorData.address || '',
           address_2: vendorData.address_2 || '',
+          city: vendorData.city || '',
           contact_no: vendorData.contact_no || '',
           email: vendorData.email || '',
           tax_id: vendorData.tax_id || '',
@@ -239,6 +241,20 @@ export default function CreateVendor() {
                 onChange={handleChange}
                 className="input w-full"
                 placeholder="Additional address information"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                City
+              </label>
+              <input
+                type="text"
+                name="city"
+                value={formData.city}
+                onChange={handleChange}
+                className="input w-full"
+                placeholder="City name"
               />
             </div>
 

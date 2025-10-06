@@ -13,6 +13,7 @@ export default async function handler(
         // ===== BILLING ADDRESS (Consistent with vendor pattern) =====
         billing_address: req.body.billing_address,        // Main billing address line (REQUIRED)
         billing_address_2: req.body.billing_address_2 || null, // Additional billing address line (OPTIONAL)
+        billing_city: req.body.billing_city || null,     // Billing city
 
         billing_state: parseInt(req.body.billing_state),
         billing_state_code: parseInt(req.body.billing_state_code),
@@ -25,6 +26,7 @@ export default async function handler(
         // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
         shipping_address: req.body.shipping_address || null,          // Main shipping address line
         shipping_address_2: req.body.shipping_address_2 || null,       // Additional shipping address line
+        shipping_city: req.body.shipping_city || null,               // Shipping city
 
         shipping_state: req.body.shipping_state ? parseInt(req.body.shipping_state) : null,
         shipping_state_code: req.body.shipping_state_code ? parseInt(req.body.shipping_state_code) : null,

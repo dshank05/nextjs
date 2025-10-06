@@ -5,14 +5,16 @@ import { SearchableMultiSelect } from '../../components/common/SearchableMultiSe
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Vendor {
-  id: number;
+  id: string;
   vendor_name: string;
-  contact_number?: string;
+  contact_no?: string;
   email?: string;
   address?: string;
+  address_2?: string;
   city?: string;
   state?: string;
-  gst_number?: string;
+  state_code?: number;
+  tax_id?: string;
 }
 
 interface Product {
@@ -61,6 +63,7 @@ interface PurchaseFormData {
   contact_number: string;
   email_id: string;
   address: string;
+  address_2: string;
   city: string;
   state: string;
   gst_number: string;
@@ -144,6 +147,7 @@ export default function PurchaseCreate() {
     contact_number: '',
     email_id: '',
     address: '',
+    address_2: '',
     city: '',
     state: '',
     gst_number: '',
@@ -284,18 +288,19 @@ export default function PurchaseCreate() {
   };
 
   const handleVendorSelect = (vendorId: string) => {
-    const vendor = vendors.find(v => v.id.toString() === vendorId);
+    const vendor = vendors.find(v => v.id === vendorId);
     if (vendor) {
-      setVendorIdToSave(vendor.id); // Store vendor ID for API
+      setVendorIdToSave(parseInt(vendor.id)); // Store vendor ID for API
       setFormData(prev => ({
         ...prev,
         vendor_name: vendor.vendor_name,
-        contact_number: vendor.contact_number || '',
+        contact_number: vendor.contact_no || '',
         email_id: vendor.email || '',
         address: vendor.address || '',
+        address_2: vendor.address_2 || '',
         city: vendor.city || '',
         state: vendor.state || '',
-        gst_number: vendor.gst_number || ''
+        gst_number: vendor.tax_id || ''
       }));
     }
   };
@@ -402,6 +407,7 @@ export default function PurchaseCreate() {
         contact_number: formData.contact_number,
         email_id: formData.email_id,
         address: formData.address,
+        address_2: formData.address_2,
         city: formData.city,
         state: formData.state,
         gst_number: formData.gst_number,
@@ -579,15 +585,25 @@ export default function PurchaseCreate() {
                     placeholder="Enter GST number"
                   />
                 </div>
-                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS</label>
+                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 1</label>
                     <input
                       type="text"
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
                       className="input w-full"
-                      placeholder="Enter address"
+                      placeholder="Enter address line 1"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
+                    <input
+                      type="text"
+                      value={formData.address_2}
+                      onChange={(e) => handleInputChange('address_2', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter address line 2 (optional)"
                     />
                   </div>
                   <div>
