@@ -1,53 +1,88 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
+import { useDebounce } from '../../hooks/useDebounce';
 import { CustomerTable } from '../../components/customer/CustomerTable';
 
 interface Customer {
   id: number;
   billing_name: string;
   billing_address?: string;
+  billing_address_2?: string;
   billing_gstin?: string;
   contact_no?: string;
   email?: string;
   shipping_name?: string;
   shipping_address?: string;
+  shipping_address_2?: string;
+}
+
+interface CustomerResponse {
+  customers: Omit<Customer, 'id'> & { id: string }[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
 }
 
 export default function CustomerDetailsPage() {
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm]);
+
+  // Fetch customers when pagination or search changes
   useEffect(() => {
     fetchCustomers();
-  }, []);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
 
   const fetchCustomers = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/customers');
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: debouncedSearchTerm
+      });
+
+      const response = await fetch(`/api/customers?${params}`);
       if (!response.ok) {
         throw new Error('Failed to fetch customers');
       }
 
-      const data = await response.json();
+      const data: CustomerResponse = await response.json();
 
       // Transform API data to match our interface
       const transformedCustomers: Customer[] = data.customers?.map((customer: any) => ({
         id: parseInt(customer.id),
         billing_name: customer.billing_name,
         billing_address: customer.billing_address,
+        billing_address_2: customer.billing_address_2,
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
         email: customer.email,
         shipping_name: customer.shipping_name,
-        shipping_address: customer.shipping_address
+        shipping_address: customer.shipping_address,
+        shipping_address_2: customer.shipping_address_2
       })) || [];
 
       setCustomers(transformedCustomers);
+      setPagination(data.pagination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       console.error('Failed to fetch customers:', err);
@@ -56,20 +91,53 @@ export default function CustomerDetailsPage() {
     }
   };
 
+  const handlePageChange = (newPage: number) => {
+    if (newPage > 0 && newPage <= pagination.totalPages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+    }
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Customer Details</h1>
-          <p className="text-sm text-slate-400 mt-1">Manage customer information and profiles</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => router.push('/customers/create')}
-            className="btn-primary"
-          >
-            Add Customer
-          </button>
+      <div className="card">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
+              <input
+                type="text"
+                placeholder="Search by name, phone, email..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
+              <select
+                value={pagination.limit}
+                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                className="select w-full min-w-24"
+              >
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => router.push('/customers/create')}
+              className="btn-primary"
+            >
+              Add Customer
+            </button>
+          </div>
         </div>
       </div>
 
@@ -93,13 +161,18 @@ export default function CustomerDetailsPage() {
         </div>
       )}
 
-      <CustomerTable customers={customers} loading={loading} />
-
+      <CustomerTable
+        customers={customers}
+        pagination={pagination}
+        loading={loading}
+        onPageChange={handlePageChange}
+      />
+{/* 
       {customers.length > 0 && !loading && (
         <div className="text-center text-sm text-slate-400 py-2">
           Total customers: <span className="font-semibold text-white">{customers.length}</span>
         </div>
-      )}
+      )} */}
     </div>
   );
 }

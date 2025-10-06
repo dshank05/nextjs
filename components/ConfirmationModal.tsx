@@ -6,7 +6,7 @@ interface ConfirmationModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
-  showLoading?: boolean;
+  showLoading: boolean;
   loadingText?: string;
   cancelLoadingText?: string;
   onConfirm: () => void;
@@ -19,7 +19,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
   message,
   confirmText = "OK",
   cancelText = "Cancel",
-  showLoading = false,
+  showLoading,
   loadingText = "Saving...",
   cancelLoadingText = "Cancel",
   onConfirm,

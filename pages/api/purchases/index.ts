@@ -367,7 +367,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
-o
+
 function getPaymentModeId(paymentMode: string): number {
   const paymentModes: { [key: string]: number } = {
     'cash': 1,

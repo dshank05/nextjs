@@ -5,15 +5,107 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  if (req.method === 'GET') {
+    try {
+      const {
+        page = '1',
+        limit = '25',
+        search = ''
+      } = req.query;
+
+      const pageNum = parseInt(page as string);
+      const limitNum = parseInt(limit as string);
+      const skip = (pageNum - 1) * limitNum;
+
+      // Build where clause for search
+      const where: any = {};
+      if (search) {
+        where.OR = [
+          { vendor_name: { contains: search } },
+          { contact_no: { contains: search } },
+          { email: { contains: search } }
+        ];
+      }
+
+      // Get vendors with pagination
+      const [vendorsData, total] = await Promise.all([
+        prisma.vendor_details.findMany({
+          where,
+          select: {
+            id: true,
+            vendor_name: true,
+            address: true,
+            address_2: true,
+            tax_id: true,
+            contact_no: true,
+            email: true
+          },
+          skip,
+          take: limitNum,
+          orderBy: { vendor_name: 'asc' }
+        }),
+        prisma.vendor_details.count({ where })
+      ]);
+
+      const formattedVendors = vendorsData.map(vendor => ({
+        id: vendor.id.toString(),
+        vendor_name: vendor.vendor_name,
+        address: vendor.address || '',
+        address_2: vendor.address_2 || '',
+        tax_id: vendor.tax_id || '',
+        contact_no: vendor.contact_no || '',
+        email: vendor.email || ''
+      }));
+
+      const totalPages = Math.ceil(total / limitNum);
+
+      res.status(200).json({
+        vendors: formattedVendors,
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total,
+          totalPages,
+          hasMore: pageNum < totalPages,
+        }
+      });
+    } catch (error) {
+      console.error('Vendors fetch error:', error);
+      res.status(500).json({
+        message: 'Failed to fetch vendors data',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+    return;
+  }
+
   if (req.method === 'POST') {
     // Handle vendor creation
     try {
+      // Handle state data - state contains state name, state_code contains state id
+      let stateId = null;
+      let stateCode = null;
+
+      if (req.body.state && req.body.state_code) {
+        // If state is name and state_code is id, fetch the actual state data
+        const stateFromDb = await prisma.states.findUnique({
+          where: { id: parseInt(req.body.state_code) }
+        });
+        if (stateFromDb) {
+          // Verify the state name matches
+          if (stateFromDb.state_name === req.body.state) {
+            stateId = stateFromDb.id;
+            stateCode = stateFromDb.code;
+          }
+        }
+      }
+
       const vendorData = {
         vendor_name: req.body.vendor_name,
         address: req.body.address || null,
         address_2: req.body.address_2 || null,
-        state: req.body.state ? parseInt(req.body.state) : null,
-        state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
+        state: stateId,
+        state_code: stateCode,
         contact_no: req.body.contact_no,
         email: req.body.email,
         tax_id: req.body.tax_id,

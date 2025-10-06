@@ -248,7 +248,7 @@ export default function CustomerCreate() {
 
       if (response.ok) {
         console.log('Customer created successfully');
-        router.push('/customers'); // Redirect to customer list after successful creation
+        router.push('/entry/customerdetails'); // Redirect to customer list after successful creation
       } else {
         const errorData = await response.json();
         console.error('API Error:', errorData);
@@ -495,7 +495,7 @@ export default function CustomerCreate() {
           <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
             <button
               type="button"
-              onClick={() => router.push('/customers')}
+              onClick={() => router.push('/entry/customerdetails')}
               className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
               disabled={loading}
             >

@@ -89,7 +89,7 @@ export default function CreateVendor() {
       });
 
       if (response.ok) {
-        router.push('/vendors'); // Redirect back to vendors list
+        router.push('/entry/vendordetails'); // Redirect back to vendors list
       } else {
         const errorData = await response.json();
         setErrors({ submit: errorData.message || 'Failed to create vendor.' });
@@ -113,10 +113,7 @@ export default function CreateVendor() {
 
   return (
     <div className="space-y-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Create New Vendor</h1>
-        <p className="text-sm text-slate-400 mt-1">Add a new vendor to your database</p>
-      </div>
+    
 
       {errors.submit && (
         <div className="card border-red-500 bg-red-500/10 p-4">
@@ -182,6 +179,7 @@ export default function CreateVendor() {
                 value={formData.contact_no}
                 onChange={handleChange}
                 className="input w-full"
+                maxLength={10}
                 placeholder="+91-XXXXXXXXXX"
                 required
               />
@@ -213,6 +211,7 @@ export default function CreateVendor() {
                 onChange={handleChange}
                 className="input w-full"
                 placeholder="22AAAAA0000A1Z5"
+                maxLength={15}
               />
               {errors.tax_id && <span className="text-red-400 text-sm">{errors.tax_id}</span>}
             </div>
@@ -252,19 +251,20 @@ export default function CreateVendor() {
           {/* Action Buttons */}
           <div className="border-t border-slate-600 pt-4 mt-6">
             <div className="flex justify-end gap-3">
+              
+              <button
+                type="button"
+                onClick={() => router.push('/entry/vendordetails')}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
               <button
                 type="submit"
                 disabled={loading}
                 className="btn-primary"
               >
                 {loading ? 'Creating Vendor...' : 'Create Vendor'}
-              </button>
-              <button
-                type="button"
-                onClick={() => router.push('/vendors')}
-                className="btn-secondary"
-              >
-                Cancel
               </button>
             </div>
           </div>

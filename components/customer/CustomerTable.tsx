@@ -17,12 +17,29 @@ interface Customer {
   shipping_address_2?: string;
 }
 
-interface CustomerTableProps {
-  customers: Customer[];
-  loading?: boolean;
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
-export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, loading = false }) => {
+interface CustomerTableProps {
+  customers: Customer[];
+  pagination?: Pagination;
+  loading?: boolean;
+  onPageChange?: (newPage: number) => void;
+}
+
+export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange }) => {
+  const getPageNumbers = () => {
+    if (!pagination) return [];
+    const pages = [];
+    const start = Math.max(1, pagination.page - 2);
+    const end = Math.min(pagination.totalPages, pagination.page + 2);
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
   const [sortBy, setSortBy] = useState<string>('billing_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -59,6 +76,12 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, loading
 
   return (
     <div className="card">
+      {pagination && (
+        <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+          <div>Showing {customers.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} customers</div>
+          <div>Page {pagination.page} of {pagination.totalPages}</div>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="table">
           <thead>
@@ -134,6 +157,18 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, loading
           </div>
         )}
       </div>
+
+      {(pagination && pagination.totalPages > 1 && onPageChange) && (
+        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+          <button onClick={() => onPageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
+          <div className="flex space-x-2">
+            {pagination.page > 3 && <> <button onClick={() => onPageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
+            {getPageNumbers().map(p => <button key={p} onClick={() => onPageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
+            {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => onPageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
+          </div>
+          <button onClick={() => onPageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
+        </div>
+      )}
     </div>
   );
 };
