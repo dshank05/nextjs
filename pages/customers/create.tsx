@@ -34,12 +34,15 @@ interface Option {
 
 export default function CustomerCreate() {
   const router = useRouter();
+  const { id } = router.query;
   const [states, setStates] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmData, setConfirmData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [formData, setFormData] = useState<CustomerFormData>({
     billing_name: '',
@@ -74,6 +77,46 @@ export default function CustomerCreate() {
     };
     fetchStates();
   }, []);
+
+  // Load customer data for editing
+  useEffect(() => {
+    if (id && typeof id === 'string') {
+      setIsEditing(true);
+      fetchCustomer(id);
+    }
+  }, [id]);
+
+  const fetchCustomer = async (customerId: string) => {
+    setInitialLoading(true);
+    try {
+      const response = await fetch(`/api/customers/${customerId}`);
+      if (response.ok) {
+        const customerData = await response.json();
+        setFormData({
+          billing_name: customerData.billing_name || '',
+          billing_address: customerData.billing_address || '',
+          billing_address_2: customerData.billing_address_2 || '',
+          shipping_name: customerData.shipping_name || customerData.billing_name || '',
+          shipping_address: customerData.shipping_address || customerData.billing_address || '',
+          shipping_address_2: customerData.shipping_address_2 || customerData.billing_address_2 || '',
+          billing_state: customerData.billing_state || '',
+          billing_state_code: customerData.billing_state_code ? customerData.billing_state_code.toString() : '',
+          billing_gstin: customerData.billing_gstin || '',
+          shipping_state: customerData.shipping_state || customerData.billing_state || '',
+          shipping_state_code: customerData.shipping_state_code ? customerData.shipping_state_code.toString() : (customerData.billing_state_code ? customerData.billing_state_code.toString() : ''),
+          shipping_gstin: customerData.shipping_gstin || customerData.billing_gstin || '',
+          contact_no: customerData.contact_no || '',
+          email: customerData.email || '',
+          copyFromBilling: !customerData.shipping_name || customerData.shipping_name === customerData.billing_name
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching customer:', error);
+      setErrors({ submit: 'Failed to load customer data.' });
+    } finally {
+      setInitialLoading(false);
+    }
+  };
 
   // Handle copy from billing checkbox functionality
   const handleCopyFromBillingChange = (checked: boolean) => {
@@ -208,7 +251,6 @@ export default function CustomerCreate() {
     if (!confirmData) return;
 
     setIsSaving(true);
-    setShowConfirmModal(false);
 
     try {
       // Get state IDs from names for API submission
@@ -236,10 +278,13 @@ export default function CustomerCreate() {
         email: formData.email.trim()
       };
 
-      console.log('Creating customer with data:', submitData);
+      console.log(`${isEditing ? 'Updating' : 'Creating'} customer with data:`, submitData);
 
-      const response = await fetch('/api/customers', {
-        method: 'POST',
+      const url = isEditing ? `/api/customers/${id}` : '/api/customers';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -247,12 +292,12 @@ export default function CustomerCreate() {
       });
 
       if (response.ok) {
-        console.log('Customer created successfully');
-        router.push('/entry/customerdetails'); // Redirect to customer list after successful creation
+        console.log(`Customer ${isEditing ? 'updated' : 'created'} successfully`);
+        router.push(isEditing ? `/customers/view/${id}` : '/entry/customerdetails');
       } else {
         const errorData = await response.json();
         console.error('API Error:', errorData);
-        setErrors({ submit: errorData.message || 'Failed to create customer' });
+        setErrors({ submit: errorData.message || `Failed to ${isEditing ? 'update' : 'create'} customer` });
       }
     } catch (error) {
       console.error('Network error:', error);
@@ -261,6 +306,14 @@ export default function CustomerCreate() {
       setIsSaving(false);
     }
   };
+
+  if (initialLoading) {
+    return (
+      <div className="card h-96 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -464,6 +517,7 @@ export default function CustomerCreate() {
                   onChange={(e) => handleInputChange('contact_no', e.target.value)}
                   className="input w-full"
                   placeholder="Enter phone number"
+                  maxLength={10}
                 />
                 {errors.contact_no && <p className="text-red-400 text-xs mt-1">{errors.contact_no}</p>}
               </div>
@@ -506,7 +560,7 @@ export default function CustomerCreate() {
               disabled={loading}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'Creating...' : 'Create Customer'}
+              {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Customer' : 'Create Customer')}
             </button>
           </div>
         </form>
@@ -515,8 +569,9 @@ export default function CustomerCreate() {
       {/* Pre-Submit Confirmation Modal */}
       <ConfirmationModal
         isOpen={showConfirmModal}
-        title="Create Customer"
-        message={`Are you sure you want to create customer "${confirmData?.billing_name}"${formData.copyFromBilling ? ' with shipping address copied from billing?' : ' with separate shipping address?'}`}
+        title={isEditing ? 'Update Customer' : 'Create Customer'}
+        message={`Are you sure you want to ${isEditing ? 'update' : 'create'} customer "${confirmData?.billing_name}"${formData.copyFromBilling ? ' with shipping address copied from billing?' : ' with separate shipping address?'}`}
+
         showLoading={isSaving}
         onConfirm={async () => {
           await handleConfirmSubmit();

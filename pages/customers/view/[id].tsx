@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 interface Customer {
   id: string;
@@ -86,7 +87,7 @@ export default function CustomerView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">State:</span>
-              <span className="text-white font-medium">{customer.billing_state || 'Not provided'} ({customer.billing_state_code})</span>
+              <span className="text-white font-medium">{customer.billing_state || 'Not provided'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Contact:</span>
@@ -94,8 +95,12 @@ export default function CustomerView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button className="btn-primary">✏️ Edit Customer</button>
-              <button className="btn-danger">🗑️ Delete Customer</button>
+              <Link
+                href={`/customers/create?id=${customer.id}`}
+                className="btn-primary"
+              >
+                ✏️ Edit Customer
+              </Link>
             </div>
           </div>
         </div>
@@ -124,7 +129,7 @@ export default function CustomerView() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>
-                <span className="text-white font-medium">{customer.billing_state} ({customer.billing_state_code})</span>
+                <span className="text-white font-medium">{customer.billing_state}</span>
               </div>
             </div>
           </div>
@@ -175,7 +180,7 @@ export default function CustomerView() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">State:</span>
-                  <span className="text-white font-medium">{customer.shipping_state || customer.billing_state} ({customer.shipping_state_code || customer.billing_state_code})</span>
+                  <span className="text-white font-medium">{customer.shipping_state || customer.billing_state}</span>
                 </div>
               </div>
             </div>

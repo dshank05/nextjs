@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface State {
   id: number;
@@ -9,6 +10,7 @@ interface State {
 
 export default function CreateVendor() {
   const router = useRouter();
+  const { id } = router.query;
 
   const [formData, setFormData] = useState({
     vendor_name: '',
@@ -24,10 +26,48 @@ export default function CreateVendor() {
   const [states, setStates] = useState<State[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmData, setConfirmData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     fetchStates();
   }, []);
+
+  // Load vendor data for editing
+  useEffect(() => {
+    if (id && typeof id === 'string') {
+      setIsEditing(true);
+      fetchVendor(id);
+    }
+  }, [id]);
+
+  const fetchVendor = async (vendorId: string) => {
+    setInitialLoading(true);
+    try {
+      const response = await fetch(`/api/vendors/${vendorId}`);
+      if (response.ok) {
+        const vendorData = await response.json();
+        setFormData({
+          vendor_name: vendorData.vendor_name || '',
+          address: vendorData.address || '',
+          address_2: vendorData.address_2 || '',
+          contact_no: vendorData.contact_no || '',
+          email: vendorData.email || '',
+          tax_id: vendorData.tax_id || '',
+          state: vendorData.state || '',
+          state_code: vendorData.state_code ? vendorData.state_code.toString() : ''
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching vendor:', error);
+      setErrors({ submit: 'Failed to load vendor data.' });
+    } finally {
+      setInitialLoading(false);
+    }
+  };
 
   const fetchStates = async () => {
     try {
@@ -66,9 +106,9 @@ export default function CreateVendor() {
         return;
       }
 
-      // Validate GSTIN format (basic validation) - tax_id is GST for vendors
-      if (formData.tax_id && !/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(formData.tax_id)) {
-        setErrors({ tax_id: 'Please enter a valid GSTIN number.' });
+      // Validate GSTIN format (15 characters only)
+      if (formData.tax_id && formData.tax_id.length !== 15) {
+        setErrors({ tax_id: 'GSTIN must be exactly 15 characters.' });
         setLoading(false);
         return;
       }
@@ -80,8 +120,29 @@ export default function CreateVendor() {
         return;
       }
 
-      const response = await fetch('/api/vendors', {
-        method: 'POST',
+      // Show confirmation modal before submitting
+      setConfirmData({
+        vendor_name: formData.vendor_name
+      });
+      setShowConfirmModal(true);
+      setLoading(false);
+    } catch (error) {
+      setErrors({ submit: 'An error occurred while processing the form.' });
+      setLoading(false);
+    }
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!confirmData) return;
+
+    setIsSaving(true);
+
+    try {
+      const url = isEditing ? `/api/vendors/${id}` : '/api/vendors';
+      const method = isEditing ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -89,15 +150,19 @@ export default function CreateVendor() {
       });
 
       if (response.ok) {
-        router.push('/entry/vendordetails'); // Redirect back to vendors list
+        router.push(isEditing ? `/vendors/view/${id}` : '/entry/vendordetails');
       } else {
         const errorData = await response.json();
-        setErrors({ submit: errorData.message || 'Failed to create vendor.' });
+        console.error('API Error:', errorData);
+        setErrors({ submit: errorData.message || `Failed to ${isEditing ? 'update' : 'create'} vendor` });
       }
     } catch (error) {
-      setErrors({ submit: 'An error occurred while creating the vendor.' });
+      console.error('Network error:', error);
+      setErrors({ submit: 'Network error occurred' });
     } finally {
-      setLoading(false);
+      setIsSaving(false);
+      setShowConfirmModal(false);
+      setConfirmData(null);
     }
   };
 
@@ -111,9 +176,17 @@ export default function CreateVendor() {
     }
   };
 
+  if (initialLoading) {
+    return (
+      <div className="card h-96 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
-    
+
 
       {errors.submit && (
         <div className="card border-red-500 bg-red-500/10 p-4">
@@ -124,7 +197,7 @@ export default function CreateVendor() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="card">
           {/* Vendor Information */}
-          <h2 className="text-xl font-semibold text-white mb-4">Vendor Information</h2>
+          <h2 className="text-xl font-semibold text-white mb-4">{isEditing ? 'Edit Vendor' : 'Vendor Information'}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -233,19 +306,7 @@ export default function CreateVendor() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                State Code
-              </label>
-              <input
-                type="text"
-                name="state_code"
-                value={formData.state_code}
-                onChange={handleChange}
-                className="input w-full bg-slate-700"
-                readOnly
-              />
-            </div>
+
           </div>
 
           {/* Action Buttons */}
@@ -264,12 +325,27 @@ export default function CreateVendor() {
                 disabled={loading}
                 className="btn-primary"
               >
-                {loading ? 'Creating Vendor...' : 'Create Vendor'}
+                {loading ? (isEditing ? 'Updating Vendor...' : 'Creating Vendor...') : (isEditing ? 'Update Vendor' : 'Create Vendor')}
               </button>
             </div>
           </div>
         </div>
       </form>
+
+      {/* Pre-Submit Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={isEditing ? 'Update Vendor' : 'Create Vendor'}
+        message={`Are you sure you want to ${isEditing ? 'update' : 'create'} vendor "${confirmData?.vendor_name}"?`}
+        showLoading={isSaving}
+        onConfirm={async () => {
+          await handleConfirmSubmit();
+        }}
+        onCancel={() => {
+          setShowConfirmModal(false);
+          setConfirmData(null);
+        }}
+      />
     </div>
   );
 }

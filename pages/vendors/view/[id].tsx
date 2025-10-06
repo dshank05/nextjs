@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 
 interface Vendor {
   id: string;
@@ -147,7 +148,7 @@ export default function VendorView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">State:</span>
-              <span className="text-white font-medium">{vendor.state || 'Not provided'} ({vendor.state_code})</span>
+              <span className="text-white font-medium">{vendor.state || 'Not provided'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Contact:</span>
@@ -155,8 +156,12 @@ export default function VendorView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button className="btn-primary">✏️ Edit Vendor</button>
-              <button className="btn-danger">🗑️ Delete Vendor</button>
+              <Link
+                href={`/vendors/create?id=${vendor.id}`}
+                className="btn-primary"
+              >
+                ✏️ Edit Vendor
+              </Link>
             </div>
           </div>
         </div>
@@ -186,7 +191,7 @@ export default function VendorView() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>
-                <span className="text-white font-medium">{vendor.state} ({vendor.state_code})</span>
+                <span className="text-white font-medium">{vendor.state}</span>
               </div>
             </div>
           </div>

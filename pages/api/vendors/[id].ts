@@ -21,16 +21,13 @@ export default async function handler(
         return res.status(404).json({ message: 'Vendor not found' })
       }
 
-      // Fetch state name separately
-      const state = vendor.state ? await prisma.states.findUnique({ where: { id: vendor.state } }) : null
-
       const formattedVendor = {
         id: vendor.id.toString(),
         vendor_name: vendor.vendor_name,
         address: vendor.address,
         address_2: vendor.address_2,
-        state: state?.state_name || null,
-        state_code: state?.id || null, // Return state ID, not state's code
+        state: vendor.state, // State name is now directly stored
+        state_code: vendor.state_code, // State ID is now directly stored
         contact_no: vendor.contact_no,
         email: vendor.email,
         tax_id: vendor.tax_id
@@ -51,30 +48,12 @@ export default async function handler(
         return res.status(400).json({ message: 'Vendor ID is required' })
       }
 
-      // Handle state data - state contains state name, state_code contains state id
-      let stateId = null;
-      let stateCode = null;
-
-      if (req.body.state && req.body.state_code) {
-        // If state is name and state_code is id, fetch the actual state data
-        const stateFromDb = await prisma.states.findUnique({
-          where: { id: parseInt(req.body.state_code) }
-        });
-        if (stateFromDb) {
-          // Verify the state name matches
-          if (stateFromDb.state_name === req.body.state) {
-            stateId = stateFromDb.id;
-            stateCode = stateFromDb.code;
-          }
-        }
-      }
-
       const vendorData = {
         vendor_name: req.body.vendor_name,
         address: req.body.address,
         address_2: req.body.address_2 || null,
-        state: stateId,
-        state_code: stateCode,
+        state: req.body.state || null,
+        state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
         contact_no: req.body.contact_no || null,
         email: req.body.email || null,
         tax_id: req.body.tax_id || null,
@@ -85,16 +64,13 @@ export default async function handler(
         data: vendorData
       });
 
-      // Fetch state name separately
-      const state = vendor.state ? await prisma.states.findUnique({ where: { id: vendor.state } }) : null
-
       const formattedVendor = {
         id: vendor.id.toString(),
         vendor_name: vendor.vendor_name,
         address: vendor.address,
         address_2: vendor.address_2,
-        state: state?.state_name || null,
-        state_code: state?.id || null, // Return state ID, not state's code
+        state: vendor.state, // State name is now directly stored
+        state_code: vendor.state_code, // State ID is now directly stored
         contact_no: vendor.contact_no,
         email: vendor.email,
         tax_id: vendor.tax_id
