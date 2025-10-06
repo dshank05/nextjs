@@ -560,9 +560,10 @@ export default function PurchaseCreate() {
                   <input
                     type="text"
                     value={formData.contact_number}
-                    onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter contact number"
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
                   />
                 </div>
                 <div>
@@ -570,9 +571,10 @@ export default function PurchaseCreate() {
                   <input
                     type="email"
                     value={formData.email_id}
-                    onChange={(e) => handleInputChange('email_id', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter email"
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
                   />
                 </div>
                 <div>
@@ -580,9 +582,10 @@ export default function PurchaseCreate() {
                   <input
                     type="text"
                     value={formData.gst_number}
-                    onChange={(e) => handleInputChange('gst_number', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter GST number"
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
                   />
                 </div>
                 <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -591,9 +594,10 @@ export default function PurchaseCreate() {
                     <input
                       type="text"
                       value={formData.address}
-                      onChange={(e) => handleInputChange('address', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter address line 1"
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-filled from vendor"
+                      readOnly
+                      disabled
                     />
                   </div>
                   <div>
@@ -601,9 +605,10 @@ export default function PurchaseCreate() {
                     <input
                       type="text"
                       value={formData.address_2}
-                      onChange={(e) => handleInputChange('address_2', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter address line 2 (optional)"
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-filled from vendor"
+                      readOnly
+                      disabled
                     />
                   </div>
                   <div>
@@ -611,9 +616,10 @@ export default function PurchaseCreate() {
                     <input
                       type="text"
                       value={formData.city}
-                      onChange={(e) => handleInputChange('city', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter city"
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-filled from vendor"
+                      readOnly
+                      disabled
                     />
                   </div>
                   <div>
@@ -621,9 +627,10 @@ export default function PurchaseCreate() {
                     <input
                       type="text"
                       value={formData.state}
-                      onChange={(e) => handleInputChange('state', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter state"
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-filled from vendor"
+                      readOnly
+                      disabled
                     />
                   </div>
                 </div>

@@ -36,6 +36,9 @@ export default async function handler(
             vendor_name: true,
             address: true,
             address_2: true,
+            city: true,
+            state: true,
+            state_code: true,
             tax_id: true,
             contact_no: true,
             email: true
@@ -52,6 +55,9 @@ export default async function handler(
         vendor_name: vendor.vendor_name,
         address: vendor.address || '',
         address_2: vendor.address_2 || '',
+        city: vendor.city || '',
+        state: vendor.state || '',
+        state_code: vendor.state_code || null,
         tax_id: vendor.tax_id || '',
         contact_no: vendor.contact_no || '',
         email: vendor.email || ''
@@ -126,6 +132,9 @@ export default async function handler(
         vendor_name: true,
         address: true,
         address_2: true,
+        city: true,
+        state: true,
+        state_code: true,
         tax_id: true,
         contact_no: true,
         email: true
@@ -138,6 +147,9 @@ export default async function handler(
       vendor_name: vendor.vendor_name,
       address: vendor.address || '',
       address_2: vendor.address_2 || '',
+      city: vendor.city || '',
+      state: vendor.state || '',
+      state_code: vendor.state_code || null,
       tax_id: vendor.tax_id || '',
       contact_no: vendor.contact_no || '',
       email: vendor.email || ''
