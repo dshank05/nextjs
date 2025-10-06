@@ -103,11 +103,12 @@ export default async function handler(
         }
 
         const {
+          // ===== MAIN PRODUCT TABLE FIELDS (EXISTING) =====
           product_name,
           display_name,
           product_category_id,
           product_subcategory_id,
-          car_model_ids, // Changed from car_model_id
+          car_model_ids,
           company,
           part_no,
           min_stock,
@@ -115,13 +116,15 @@ export default async function handler(
           rate,
           hsn,
           notes,
+
+          // ===== FIELDS CURRENTLY NOT IN SCHEMA =====
           gst_rate,
           warehouse,
           rack_number,
           descriptions,
           mrp,
           discount,
-          sale_price,
+          sale_price, // Legacy naming from UI
         } = req.body
 
         // Validate required fields
@@ -129,24 +132,66 @@ export default async function handler(
           return res.status(400).json({ message: 'Product name is required' })
         }
 
+        // ===== FUTURE SCHEMA EXPANSION FIELDS =====
+        // These fields don't exist in current schema, handled separately
+        const extraFields = {
+          gst_rate,
+          warehouse,
+          rack_number,
+          descriptions,
+          mrp,
+          discount,
+          margin: sale_price, // Rename for consistency
+        };
+
+        // Build enhanced notes with extra fields
+        const extraFieldsString = Object.entries(extraFields)
+          .filter(([key, value]) => value !== null && value !== undefined && value !== '')
+          .map(([key, value]) => `${key}: ${value}`)
+          .join('\n');
+
+        const enhancedNotes = notes
+          ? `${notes}\n\nAdditional Fields:\n${extraFieldsString}`
+          : `Additional Fields:\n${extraFieldsString}`;
+
+        // ===== PRODUCT TABLE DATA =====
+        const productData = {
+          // Existing Product table fields only
+          product_name,
+          display_name: display_name || product_name,
+          product_category_id: product_category_id ? parseInt(product_category_id) : null,
+          product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
+          car_model_ids: car_model_ids || null,
+          company: company ? company.toString() : null,
+          part_no,
+          min_stock: min_stock ? parseInt(min_stock) : null,
+          stock: stock ? parseInt(stock) : null,
+          rate: rate ? parseFloat(rate) : null,
+          hsn,
+          notes: enhancedNotes, // Includes extra fields for now
+        };
+
+        // ===== FUTURE SCHEMA EXPANSION LOGGING =====
+        const futureExpansionData = {
+          product_enhancements: {
+            gst_rate: gst_rate ? parseFloat(gst_rate) : null,
+            warehouse,
+            rack_number,
+            descriptions,
+          },
+          pricing_info: {
+            mrp: mrp ? parseFloat(mrp) : null,
+            discount: discount ? parseFloat(discount) : null,
+            margin: sale_price ? parseFloat(sale_price) : null,
+          }
+        };
+
+        console.log('🔄 Product Update Data:', productData);
+        console.log('📋 Future Enhancement Data (not saved yet):', futureExpansionData);
+
         const updatedProduct = await prisma.product.update({
           where: { id: productId },
-          data: {
-            product_name,
-            display_name: display_name || product_name,
-            product_category_id: product_category_id ? parseInt(product_category_id) : null,
-            product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
-            car_model_ids: car_model_ids || null, // Changed from car_model_id
-            company,
-            part_no,
-            min_stock: min_stock ? parseInt(min_stock) : null,
-            stock: stock ? parseInt(stock) : null,
-            rate: rate ? parseFloat(rate) : null,
-            hsn,
-            notes,
-            // Note: Additional fields (gst_rate, warehouse, etc.) will be stored in notes
-            // until the database schema is updated to include them
-          }
+          data: productData,
         })
 
         const enhancedProduct = await enhanceProduct(updatedProduct)

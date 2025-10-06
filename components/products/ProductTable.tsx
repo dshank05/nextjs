@@ -126,9 +126,9 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
             <tr>
               <th>S.N</th>
               <th>UID</th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
+              {/* <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
                 Product Name {getSortIcon('product_name')}
-              </th>
+              </th> */}
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('categoryName')}>
                 Category {getSortIcon('categoryName')}
               </th>
@@ -155,7 +155,7 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
               <tr key={product.id}>
                 <td>{idx + 1}</td>
                 <td className="text-slate-400 text-sm">{product.id}</td>
-                <td className="font-medium text-white">{product.product_name}</td>
+                {/* <td className="font-medium text-white">{product.product_name}</td> */}
                 <td className="text-slate-300">{product.categoryName || '-'}</td>
                 <td className="text-slate-300">{(product as any).subcategoryName || '-'}</td>
                 <td className="text-slate-300 min-w-32">{(product as any).carModelsDisplay ? (

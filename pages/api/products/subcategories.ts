@@ -4,7 +4,56 @@ import { prisma } from '../../../lib/db';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc' } = req.query;
+      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc' } = req.query;
+
+      // Handle getting categories from product/category
+      if (type === 'categories') {
+        // Import logic from categories.ts
+        const categoriesPageNum = parseInt(page as string, 10);
+        const categoriesLimitNum = parseInt(limit as string, 10);
+        const categoriesSearchTerm = search as string;
+        const categoriesSortField = sortBy as string;
+        const categoriesSortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
+
+        const categoriesWhere = categoriesSearchTerm
+          ? { category_name: { contains: categoriesSearchTerm } }
+          : {};
+
+        const categoriesTotal = await prisma.product_category.count({ where: categoriesWhere });
+        const categoriesTotalPages = Math.ceil(categoriesTotal / categoriesLimitNum);
+
+        const categoriesOrderBy: any = {};
+        if (categoriesSortField === 'id') {
+          categoriesOrderBy.id = categoriesSortDirection;
+        } else {
+          categoriesOrderBy.category_name = categoriesSortDirection;
+        }
+
+        const categories = await prisma.product_category.findMany({
+          where: categoriesWhere,
+          skip: (categoriesPageNum - 1) * categoriesLimitNum,
+          take: categoriesLimitNum,
+          orderBy: categoriesOrderBy,
+        });
+
+        const categoriesStartIndex = (categoriesPageNum - 1) * categoriesLimitNum;
+        const categoriesWithIndex = categories.map((cat, idx) => ({
+          ...cat,
+          category_name: cat.category_name,
+          index: categoriesStartIndex + idx + 1,
+        }));
+
+        return res.status(200).json({
+          categories: categoriesWithIndex,
+          pagination: {
+            page: categoriesPageNum,
+            limit: categoriesLimitNum,
+            total: categoriesTotal,
+            totalPages: categoriesTotalPages,
+            hasMore: categoriesPageNum < categoriesTotalPages,
+          },
+        });
+      }
 
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
@@ -53,48 +102,96 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         },
       });
   } else if (req.method === 'POST') {
-      const { subcategory_name, category_id } = req.body;
-      if (!subcategory_name || !category_id) {
-        return res.status(400).json({ message: 'Subcategory name and category_id are required' });
+      const { subcategory_name, category_id, category_name } = req.body;
+      if (!subcategory_name || (!category_id && !category_name)) {
+        return res.status(400).json({ message: 'Subcategory name is required, and either category_id or category_name must be provided' });
       }
 
-      // Validate that the category exists
-      const category = await prisma.product_category.findUnique({
-        where: { id: parseInt(category_id) }
-      });
-      if (!category) {
-        return res.status(400).json({ message: 'Invalid category_id' });
+      let finalCategoryId;
+      if (category_id) {
+        // Validate that the category exists
+        const category = await prisma.product_category.findUnique({
+          where: { id: parseInt(category_id) }
+        });
+        if (!category) {
+          return res.status(400).json({ message: 'Invalid category_id' });
+        }
+        finalCategoryId = parseInt(category_id);
+      } else if (category_name) {
+        // Find existing category or create new
+        let category = await prisma.product_category.findFirst({
+          where: { category_name: category_name.trim() }
+        });
+        if (!category) {
+          category = await prisma.product_category.create({
+            data: { category_name: category_name.trim() }
+          });
+        }
+        finalCategoryId = category.id;
       }
 
       const subcategory = await prisma.product_subcategory.create({
         data: {
           subcategory_name,
-          category_id: parseInt(category_id)
+          category_id: finalCategoryId
         },
       });
       res.status(201).json(subcategory);
     } else if (req.method === 'PUT') {
-      const { id, subcategory_name, category_id } = req.body;
-      if (!id || !subcategory_name || !category_id) {
-        return res.status(400).json({ message: 'ID, subcategory name, and category_id are required' });
+      const { id, subcategory_name, category_id, category_name } = req.body;
+      if (!id || !subcategory_name || (!category_id && !category_name)) {
+        return res.status(400).json({ message: 'ID, subcategory name are required, and either category_id or category_name must be provided' });
       }
 
-      // Validate that the category exists
-      const category = await prisma.product_category.findUnique({
-        where: { id: parseInt(category_id) }
-      });
-      if (!category) {
-        return res.status(400).json({ message: 'Invalid category_id' });
+      let finalCategoryId;
+      if (category_id) {
+        // Validate that the category exists
+        const category = await prisma.product_category.findUnique({
+          where: { id: parseInt(category_id) }
+        });
+        if (!category) {
+          return res.status(400).json({ message: 'Invalid category_id' });
+        }
+        finalCategoryId = parseInt(category_id);
+      } else if (category_name) {
+        // Find existing category or create new
+        let category = await prisma.product_category.findFirst({
+          where: { category_name: category_name.trim() }
+        });
+        if (!category) {
+          category = await prisma.product_category.create({
+            data: { category_name: category_name.trim() }
+          });
+        }
+        finalCategoryId = category.id;
       }
 
       const subcategory = await prisma.product_subcategory.update({
         where: { id: parseInt(id, 10) },
         data: {
           subcategory_name,
-          category_id: parseInt(category_id)
+          category_id: finalCategoryId
         },
       });
       res.status(200).json(subcategory);
+    } else if (req.method === 'DELETE') {
+      const { id } = req.body;
+      if (!id) {
+        return res.status(400).json({ message: 'ID is required for delete' });
+      }
+
+      // Check if there are any products using this subcategory
+      const productsCount = await prisma.product.count({
+        where: { product_subcategory_id: parseInt(id) }
+      });
+      if (productsCount > 0) {
+        return res.status(400).json({ message: 'Cannot delete subcategory that has associated products' });
+      }
+
+      await prisma.product_subcategory.delete({
+        where: { id: parseInt(id, 10) },
+      });
+      res.status(204).end();
     } else {
       res.status(405).json({ message: 'Method not allowed' });
     }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit } from 'lucide-react';
 
 interface Product {
   id: number;
@@ -123,14 +123,10 @@ export default function ProductView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button className="btn-primary flex items-center gap-2" title="Edit Product">
+              <Link href={`/products/create?edit=${product.id}`} className="btn-primary flex items-center gap-2" title="Edit Product">
                 <Edit className="w-4 h-4" />
                 Edit
-              </button>
-              <button className="btn-danger flex items-center gap-2" title="Delete Product">
-                <Trash2 className="w-4 h-4" />
-                Delete
-              </button>
+              </Link>
             </div>
           </div>
         </div>

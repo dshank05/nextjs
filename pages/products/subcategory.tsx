@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Category {
@@ -34,7 +34,9 @@ export default function Subcategories() {
   const [pendingSubcategoryData, setPendingSubcategoryData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [editingSubcategory, setEditingSubcategory] = useState<Subcategory | null>(null);
-  const [formData, setFormData] = useState({ id: 0, subcategory_name: '', category_id: 0 });
+  const [formData, setFormData] = useState({ id: 0, subcategory_name: '', category_id: 0, category_name: '' });
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -59,6 +61,45 @@ export default function Subcategories() {
     fetchCategories();
     fetchSubcategories();
   }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+
+  // Close category dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if ((event.target as Element)?.closest('.category-dropdown') === null) {
+        setShowCategoryDropdown(false);
+        setCategorySearchTerm('');
+      }
+    };
+    if (showCategoryDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showCategoryDropdown]);
+
+  const filteredCategories = categories.filter(category =>
+    category.category_name.toLowerCase().includes(categorySearchTerm.toLowerCase())
+  );
+
+  const handleCategorySelect = (category: Category | null) => {
+    if (category) {
+      setFormData(prev => ({ ...prev, category_id: category.id, category_name: category.category_name }));
+    }
+    setShowCategoryDropdown(false);
+    setCategorySearchTerm('');
+  };
+
+  const handleCategoryInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setCategorySearchTerm(value);
+    setFormData(prev => ({ ...prev, category_name: value, category_id: 0 }));
+    setShowCategoryDropdown(true);
+  };
+
+  const handleCategoryInputFocus = () => {
+    setShowCategoryDropdown(true);
+  };
 
   const fetchCategories = async () => {
     try {
@@ -124,7 +165,7 @@ export default function Subcategories() {
 
   const handleAdd = () => {
     setEditingSubcategory(null);
-    setFormData({ id: 0, subcategory_name: '', category_id: 0 });
+    setFormData({ id: 0, subcategory_name: '', category_id: 0, category_name: '' });
     setShowModal(true);
   };
 
@@ -133,7 +174,8 @@ export default function Subcategories() {
     setFormData({
       id: subcategory.id,
       subcategory_name: subcategory.subcategory_name,
-      category_id: subcategory.category_id || 0
+      category_id: subcategory.category_id || 0,
+      category_name: subcategory.category?.category_name || ''
     });
     setShowModal(true);
   };
@@ -141,8 +183,8 @@ export default function Subcategories() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.category_id) {
-      alert('Please select a category');
+    if (!formData.category_name || !formData.subcategory_name) {
+      alert('Please fill in all required fields');
       return;
     }
 
@@ -243,10 +285,11 @@ export default function Subcategories() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
                       ID {getSortIcon('id')}
                     </th>
+                    <th>Category</th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
                       Subcategory Name {getSortIcon('subcategory_name')}
                     </th>
-                    <th>Category</th>
+                    
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -255,10 +298,10 @@ export default function Subcategories() {
                     <tr key={subcategory.id}>
                       <td>{subcategory.index}</td>
                       <td>{subcategory.id}</td>
-                      <td className="font-medium text-white">{subcategory.subcategory_name}</td>
                       <td className="text-slate-300">
                         {subcategory.category ? subcategory.category.category_name : 'N/A'}
                       </td>
+                      <td className="font-medium text-white">{subcategory.subcategory_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(subcategory)}>Edit</button>
                       </td>
@@ -305,21 +348,49 @@ export default function Subcategories() {
                 </div>
               )}
 
-              <div className="mb-6">
+              <div className="mb-6 category-dropdown">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Category *</label>
-                <select
-                  value={formData.category_id}
-                  onChange={(e) => setFormData(prev => ({ ...prev, category_id: parseInt(e.target.value) }))}
-                  className="select w-full"
-                  required
-                >
-                  <option value="">Select Category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id.toString()}>
-                      {category.category_name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={formData.category_name}
+                    onChange={handleCategoryInputChange}
+                    onFocus={handleCategoryInputFocus}
+                    className="input w-full pr-8"
+                    placeholder="Select or enter new category"
+                    required
+                  />
+                  <ChevronDown className="absolute right-2 top-2.5 w-5 h-5 text-slate-400 pointer-events-none" />
+                  {showCategoryDropdown && (
+                    <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-48 overflow-y-auto">
+                      <div className="py-1">
+                        {filteredCategories.length > 0 ? (
+                          filteredCategories.map((category) => (
+                            <button
+                              key={category.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                              onClick={() => handleCategorySelect(category)}
+                            >
+                              {category.category_name}
+                            </button>
+                          ))
+                        ) : (
+                          <div className="px-3 py-2 text-slate-500 text-sm">No categories found</div>
+                        )}
+                        {showCategoryDropdown && categorySearchTerm && (
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 hover:bg-slate-700 text-blue-400 hover:text-blue-300 transition-colors border-t border-slate-600"
+                            onClick={() => handleCategorySelect(null)}
+                          >
+                            Create "{categorySearchTerm}"
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="mb-6">

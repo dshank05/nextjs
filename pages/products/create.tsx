@@ -5,7 +5,6 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 
 interface ProductFormData {
-  product_name: string;
   product_category: string;
   product_subcategory: string;
   car_models: string[]; // Changed to array for multi-select
@@ -41,7 +40,6 @@ export default function ProductCreate() {
     models: []
   });
   const [formData, setFormData] = useState<ProductFormData>({
-    product_name: '',
     product_category: '',
     product_subcategory: '',
     car_models: [],
@@ -67,6 +65,8 @@ export default function ProductCreate() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
 
   // Multi-select state for car models
   const [isModelsDropdownOpen, setIsModelsDropdownOpen] = useState(false);
@@ -96,26 +96,17 @@ export default function ProductCreate() {
     fetchFilterOptions();
   }, []);
 
-  // Auto-generate product name from display name
+  // Check for edit mode and load product data
   useEffect(() => {
-    const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
-    const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
-    const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
-    
-    // Get first selected car model name
-    const firstCarModelId = formData.car_models.length > 0 ? formData.car_models[0] : '';
-    const firstCarModel = filterOptions.models.find(m => m.id.toString() === firstCarModelId)?.name || '';
-
-    const displayName = `${category}-${subcategory}-${firstCarModel}-${company}`.trim();
-    const cleanDisplayName = displayName
-      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
-      .replace(/-+/g, '-') // Replace multiple dashes with single dash
-      .trim();
-
-    if (cleanDisplayName && cleanDisplayName !== formData.product_name) {
-      setFormData(prev => ({ ...prev, product_name: cleanDisplayName }));
+    const editId = router.query.edit;
+    if (editId && typeof editId === 'string') {
+      setIsEditing(true);
+      setEditingProductId(parseInt(editId));
+      loadProductForEdit(parseInt(editId));
     }
-  }, [formData.product_category, formData.product_subcategory, formData.company, formData.car_models, filterOptions]);
+  }, [router.query.edit, filterOptions]);
+
+
 
   const fetchFilterOptions = async () => {
     try {
@@ -153,6 +144,38 @@ export default function ProductCreate() {
     return stock * rate;
   };
 
+  const loadProductForEdit = async (productId: number) => {
+    try {
+      const response = await fetch(`/api/products/${productId}`);
+      if (response.ok) {
+        const product = await response.json();
+
+        // Populate form with product data
+        setFormData({
+          product_category: product.product_category_id?.toString() || '',
+          product_subcategory: product.product_subcategory_id?.toString() || '',
+          car_models: product.car_model_ids ? product.car_model_ids.split(',').map((id: string) => id.trim()) : [],
+          company: product.company?.toString() || '',
+          part_no: product.part_no || '',
+          min_stock: product.min_stock?.toString() || '',
+          stock: product.stock?.toString() || '',
+          rate: product.rate?.toString() || '',
+          hsn: product.hsn || '',
+          gst_rate: product.gst_rate || '',
+          warehouse: product.warehouse || '',
+          rack_number: product.rack_number || '',
+          descriptions: product.descriptions || '',
+          notes: product.notes || '',
+          mrp: product.mrp?.toString() || '',
+          discount: product.discount?.toString() || '',
+          sale_price: product.margin?.toString() || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error loading product for edit:', error);
+    }
+  };
+
   const generateProductDisplay = () => {
     const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
     const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
@@ -168,19 +191,15 @@ export default function ProductCreate() {
       .replace(/-+/g, '-') // Replace multiple dashes with single dash
       .trim();
 
-    // Update formData.product_name whenever display is generated
-    if (cleanDisplayName && cleanDisplayName !== formData.product_name) {
-      setFormData(prev => ({ ...prev, product_name: cleanDisplayName }));
-    }
-
     return cleanDisplayName;
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.product_name.trim()) {
-      newErrors.product_name = 'Product name is required';
+    const displayName = generateProductDisplay();
+    if (!displayName.trim()) {
+      newErrors.product_category = 'Complete product details are required';
     }
     if (!formData.product_category) {
       newErrors.product_category = 'Category is required';
@@ -217,9 +236,12 @@ export default function ProductCreate() {
     setIsSaving(true);
 
     try {
+      // Generate display name first
+      const displayName = generateProductDisplay();
+
       // Log form data to verify all fields are being sent
       console.log('Submitting form data:', {
-        product_name: formData.product_name,
+        display_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
         car_models: formData.car_models, // Array of selected model IDs
@@ -240,12 +262,9 @@ export default function ProductCreate() {
         sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
       });
 
-      // Generate display name
-      const displayName = generateProductDisplay();
-
       // Use foreign key IDs instead of names
       const submitData = {
-        display_name: displayName,
+        product_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
         car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
@@ -267,8 +286,11 @@ export default function ProductCreate() {
 
       console.log('Submitting data to API:', submitData);
 
-      const response = await fetch('/api/products', {
-        method: 'POST',
+      const url = isEditing && editingProductId ? `/api/products/${editingProductId}` : '/api/products';
+      const method = isEditing && editingProductId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -280,11 +302,13 @@ export default function ProductCreate() {
       console.log('API Response data:', responseData);
 
       if (response.ok) {
-        console.log('Product created successfully');
+        const action = isEditing ? 'updated' : 'created';
+        console.log(`Product ${action} successfully`);
         router.push('/products'); // Redirect to products page after success
       } else {
         console.error('API Error:', responseData);
-        setErrors({ submit: responseData.message || 'Failed to create product' });
+        const action = isEditing ? 'update' : 'create';
+        setErrors({ submit: responseData.message || `Failed to ${action} product` });
       }
     } catch (error) {
       console.error('Network error:', error);
@@ -615,7 +639,7 @@ export default function ProductCreate() {
             disabled={loading}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Creating...' : 'Create Product'}
+            {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Product' : 'Create Product')}
           </button>
         </div>
       </form>
@@ -626,9 +650,8 @@ export default function ProductCreate() {
       isOpen={showCarModelsConfirmModal}
       title="Confirm Car Models Selection"
       message={`You have selected ${pendingCarModelsData?.length} car model${pendingCarModelsData && pendingCarModelsData.length > 1 ? 's' : ''}. Do you want to save this product?`}
-      showLoading={false}
+      showLoading={isSaving}
       onConfirm={async () => {
-        setShowCarModelsConfirmModal(false);
         await handleConfirmSubmit();
       }}
       onCancel={() => {

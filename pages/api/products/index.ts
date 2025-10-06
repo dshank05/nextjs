@@ -47,16 +47,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         where.OR = [
           // Original search for exact matches
           { product_name: { contains: search as string } },
-          { display_name: { contains: search as string } },
           { part_no: { contains: search as string } },
           // Normalized search for flexible matching
           {
             product_name: {
-              contains: normalizedSearch
-            }
-          },
-          {
-            display_name: {
               contains: normalizedSearch
             }
           },
@@ -111,22 +105,26 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
+      // ===== MAIN PRODUCT TABLE FIELDS =====
       product_name,
-      display_name,
       product_category_id,
       product_subcategory_id,
-      car_model_ids, // Changed from car_model_id
-      company, // This should be company_id (FK)
+      car_model_ids,
+      company,
       part_no,
       min_stock,
       stock,
       rate,
       hsn,
       notes,
+
+      // ===== FIELDS CURRENTLY NOT IN SCHEMA (STORED IN NOTES) =====
       gst_rate,
       warehouse,
       rack_number,
       descriptions,
+
+      // ===== PRICING FIELDS (NOT IN SCHEMA YET) =====
       mrp,
       discount,
       margin, // Changed from sale_price to match UI label
@@ -134,12 +132,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     console.log('📝 API Received POST data:', req.body);
 
-    // Validate required fields
+    // ===== VALIDATION =====
     if (!product_name) {
       return res.status(400).json({ message: 'Product name is required' })
     }
 
-    // Validate company FK if provided
+    // Validate company FK if provided (integer input expected)
     if (company && !isNaN(parseInt(company))) {
       const companyExists = await prisma.product_company.findUnique({
         where: { id: parseInt(company) }
@@ -149,44 +147,75 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // For now, store additional fields in notes or skip them since they don't exist in schema
-    // We'll need to update the schema to add these fields later
-    const enhancedNotes = notes ? `${notes}
+    // ===== FUTURE SCHEMA EXPANSION FIELDS =====
+    // These fields don't exist in current Product table, stored in notes for now
+    // TODO: Add these fields to Product schema when ready:
+    // - gst_rate: Float?
+    // - warehouse: String?
+    // - rack_number: String?
+    // - descriptions: String? (different from notes)
+    // - mrp: Float?
+    // - discount: Float?
+    // - margin: Float?
+    const extraFields = {
+      gst_rate,
+      warehouse,
+      rack_number,
+      descriptions,
+      mrp,
+      discount,
+      margin,
+    };
 
-Additional Data:
-${gst_rate ? `GST Rate: ${gst_rate}` : ''}
-${warehouse ? `Warehouse: ${warehouse}` : ''}
-${rack_number ? `Rack: ${rack_number}` : ''}
-${descriptions ? `Desc: ${descriptions}` : ''}
-${mrp ? `MRP: ${mrp}` : ''}
-${discount ? `Discount: ${discount}` : ''}
-${margin ? `Margin: ${margin}` : ''}` :
-    `Additional Data:
-${gst_rate ? `GST Rate: ${gst_rate}` : ''}
-${warehouse ? `Warehouse: ${warehouse}` : ''}
-${rack_number ? `Rack: ${rack_number}` : ''}
-${descriptions ? `Desc: ${descriptions}` : ''}
-${mrp ? `MRP: ${mrp}` : ''}
-${discount ? `Discount: ${discount}` : ''}
-${margin ? `Margin: ${margin}` : ''}`;
+    // Build enhanced notes with extra fields for now
+    const extraFieldsString = Object.entries(extraFields)
+      .filter(([key, value]) => value !== null && value !== undefined && value !== '')
+      .map(([key, value]) => `${key}: ${value}`)
+      .join('\n');
+
+    const enhancedNotes = notes
+      ? `${notes}\n\nAdditional Fields:\n${extraFieldsString}`
+      : `Additional Fields:\n${extraFieldsString}`;
+
+    // ===== PRODUCT TABLE DATA =====
+    const productData = {
+      // Core Product fields (goes to Product table)
+      product_name: product_name,
+      product_category_id: product_category_id ? parseInt(product_category_id) : null,
+      product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
+      car_model_ids: car_model_ids || null, // Comma-separated car model IDs
+      company: company ? company.toString() : null, // Convert to string for schema
+      part_no: part_no || null,
+      min_stock: min_stock ? parseInt(min_stock) : null,
+      stock: stock ? parseInt(stock) : null,
+      rate: rate ? parseFloat(rate) : null,
+      hsn: hsn || null,
+      notes: enhancedNotes,
+    };
+
+    // ===== FUTURE SCHEMA EXPANSION =====
+    // Data collection for fields not yet in schema:
+    const futureTableFields = {
+      product_pricing: { // Could be separate pricing table
+        mrp: mrp ? parseFloat(mrp) : null,
+        discount: discount ? parseFloat(discount) : null,
+        margin: margin ? parseFloat(margin) : null,
+      },
+      product_location: { // Could be separate warehouse/location table
+        warehouse,
+        rack_number,
+        gst_rate: gst_rate ? parseFloat(gst_rate) : null,
+      },
+      product_details: { // Additional product metadata
+        descriptions,
+      }
+    };
+
+    console.log('🏗️ Main Product Table Data:', productData);
+    console.log('📋 Future Schema Expansion Data:', futureTableFields);
 
     const product = await prisma.product.create({
-      data: {
-        product_name,
-        display_name: display_name || product_name,
-        product_category_id: product_category_id ? parseInt(product_category_id) : null,
-        product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
-        // Store car_model_ids as comma-separated string (schema expects this)
-        car_model_ids: car_model_ids || null,
-        // For now keep company as string, but we should update schema to make it FK
-        company: company ? company.toString() : null,
-        part_no: part_no || null,
-        min_stock: min_stock ? parseInt(min_stock) : null,
-        stock: stock ? parseInt(stock) : null,
-        rate: rate ? parseFloat(rate) : null,
-        hsn: hsn || null,
-        notes: enhancedNotes,
-      },
+      data: productData,
     })
 
     console.log('✅ Product created successfully:', product);
