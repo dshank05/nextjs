@@ -60,9 +60,18 @@ model Product {
   rate                   Int?
   notes                  String?   @db.VarChar(255)
 
+  // ===== NEW FK FIELDS =====
+  warehouse_id           Int?                    // FK to warehouse table
+  gst_rate_id            Int?                    // FK to gst_tax_rate table
+
   // Foreign key relationships (references new tables)
-  category_ref    product_category?    @relation(fields: [product_category_id], references: [id])
-  subcategory_ref product_subcategory? @relation(fields: [product_subcategory_id], references: [id])
+  category_ref    product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
+  subcategory_ref product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
+
+  // ===== NEW RELATIONS =====
+  warehouse      warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
+  gst_rate       gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
+
   // car_model_ids is comma-separated, so no direct FK relationship
 
   @@index([product_category], map: "idx_product_category")
@@ -448,4 +457,29 @@ model vendor_details {
   // Backward relations to purchases and purchase items
   purchases     Purchase[]
   purchaseItems Purchaseitems[]
+}
+
+model warehouse {
+  id        Int     @id @default(autoincrement())
+  name      String  @db.VarChar(255)
+  location  String  @db.VarChar(255)
+  status    String  @db.VarChar(50) @default("Active")
+
+  // Relations
+  products Product[]
+
+  @@map("warehouse")
+}
+
+model gst_tax_rate {
+  id             Int     @id @default(autoincrement())
+  description    String  @db.VarChar(255)
+  rate           Float
+  hsn_code       String  @db.VarChar(50)
+  applicable_for String  @db.Text
+
+  // Relations
+  products Product[]
+
+  @@map("gst_tax_rate")
 }

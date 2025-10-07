@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface GSTTaxRate {
   id: number;
   description: string;
   rate: number;
-  hsnCode: string;
-  applicableFor: string;
-  isActive: boolean;
+  hsn_code: string;
+  applicable_for: string;
   index: number;
 }
 
@@ -23,7 +23,10 @@ export default function GSTTaxRate() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<GSTTaxRate | null>(null);
-  const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsnCode: '', applicableFor: '' });
+  const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -40,51 +43,26 @@ export default function GSTTaxRate() {
   const fetchGSTRates = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData: GSTTaxRateResponse = {
-        gstRates: [
-          {
-            id: 1,
-            description: 'Standard Rate - 18%',
-            rate: 18,
-            hsnCode: '8431',
-            applicableFor: 'Most spare parts and services',
-            isActive: true,
-            index: 1
-          },
-          {
-            id: 2,
-            description: 'Reduced Rate - 12%',
-            rate: 12,
-            hsnCode: '8708',
-            applicableFor: 'Certain automotive parts',
-            isActive: true,
-            index: 2
-          },
-          {
-            id: 3,
-            description: 'Lower Rate - 5%',
-            rate: 5,
-            hsnCode: '8471',
-            applicableFor: 'Computer components',
-            isActive: true,
-            index: 3
-          },
-          {
-            id: 4,
-            description: 'Exempted - 0%',
-            rate: 0,
-            hsnCode: '8517',
-            applicableFor: 'Exempted telecommunications equipment',
-            isActive: false,
-            index: 4
-          },
-        ],
-        pagination: { page: 1, limit: 50, total: 4, totalPages: 1, hasMore: false }
-      };
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm
+      });
 
-      setGstRates(mockData.gstRates);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/gst-rates?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Add index to each GST rate for display
+        const gstRatesWithIndex = data.gstRates.map((rate: GSTTaxRate, index: number) => ({
+          ...rate,
+          index: (pagination.page - 1) * pagination.limit + index + 1
+        }));
+
+        setGstRates(gstRatesWithIndex);
+        setPagination(data.pagination);
+      } else {
+        console.error('Failed to fetch GST rates');
+      }
     } catch (error) {
       console.error('Error fetching GST rates:', error);
     } finally {
@@ -112,7 +90,7 @@ export default function GSTTaxRate() {
 
   const handleAdd = () => {
     setEditingRate(null);
-    setFormData({ id: 0, description: '', rate: '', hsnCode: '', applicableFor: '' });
+    setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
     setShowModal(true);
   };
 
@@ -122,30 +100,64 @@ export default function GSTTaxRate() {
       id: rate.id,
       description: rate.description,
       rate: rate.rate.toString(),
-      hsnCode: rate.hsnCode,
-      applicableFor: rate.applicableFor
+      hsn_code: rate.hsn_code,
+      applicable_for: rate.applicable_for
     });
     setShowModal(true);
   };
 
-  const handleToggleActive = (id: number) => {
-    setGstRates(rates =>
-      rates.map(rate =>
-        rate.id === id ? { ...rate, isActive: !rate.isActive } : rate
-      )
-    );
+  // Removed handleToggleActive - no longer need is_active logic
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Show confirmation modal before saving
+    setPendingData(formData);
+    setShowConfirmModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConfirmSubmit = async () => {
+    if (!pendingData) return;
+
+    setIsSaving(true);  // Start loading state while modal is still open
+
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving GST rate:', formData);
-      setShowModal(false);
-      fetchGSTRates(); // Refresh the list
+      const method = editingRate ? 'PUT' : 'POST';
+      const url = '/api/gst-rates';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(pendingData),
+      });
+
+      if (response.ok) {
+        // Success - close modals and refresh
+        setShowConfirmModal(false);
+        setShowModal(false);
+        setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
+        setPendingData(null);
+        fetchGSTRates(); // Refresh the list
+      } else {
+        // Error - keep modals open and show error
+        const error = await response.json();
+        console.error('Error saving GST rate:', error);
+        alert(error.message || 'Failed to save GST rate');
+        setShowConfirmModal(false); // Close confirmation modal, keep form modal open
+      }
     } catch (error) {
       console.error('Error saving GST rate:', error);
+      alert('Network error occurred');
+      setShowConfirmModal(false); // Close confirmation modal on network error
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const handleCancelSubmit = () => {
+    setShowConfirmModal(false);
+    setPendingData(null);
   };
 
   return (
@@ -205,11 +217,10 @@ export default function GSTTaxRate() {
                   <tr>
                     <th>S.N</th>
                     <th>ID</th>
-                    <th>Description</th>
-                    <th>Rate (%)</th>
                     <th>HSN Code</th>
+                    <th>Rate (%)</th>
                     <th>Applicable For</th>
-                    <th>Status</th>
+                    <th>Description</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -218,25 +229,14 @@ export default function GSTTaxRate() {
                     <tr key={rate.id}>
                       <td>{rate.index}</td>
                       <td>{rate.id}</td>
-                      <td className="font-medium text-white">{rate.description}</td>
+                      <td className="text-slate-300 font-mono">{rate.hsn_code}</td>
                       <td>
                         <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded text-sm font-medium">
                           {rate.rate}%
                         </span>
                       </td>
-                      <td className="text-slate-300 font-mono">{rate.hsnCode}</td>
-                      <td className="text-slate-300">{rate.applicableFor}</td>
-                      <td>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={rate.isActive}
-                            onChange={() => handleToggleActive(rate.id)}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-slate-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                        </label>
-                      </td>
+                      <td className="text-slate-300">{rate.applicable_for}</td>
+                      <td className="font-medium text-white">{rate.description}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(rate)}>Edit</button>
                       </td>
@@ -259,18 +259,6 @@ export default function GSTTaxRate() {
             )}
           </>
         )}
-      </div>
-
-      <div className="card">
-        <div className="p-4 bg-slate-700/30 rounded-lg">
-          <h3 className="text-lg font-semibold text-white mb-2">GST Calculation Information</h3>
-          <div className="text-slate-400 text-sm space-y-2">
-            <p>• GST rates are applied based on HSN codes and state-specific rules</p>
-            <p>• Interstate sales: CGST and SGST (0.5% each for 1% total)</p>
-            <p>• Interstate sales: IGST (full rate)</p>
-            <p>• Reverse charge mechanism applies to certain transactions</p>
-          </div>
-        </div>
       </div>
 
       {showModal && (
@@ -318,8 +306,8 @@ export default function GSTTaxRate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
                 <input
                   type="text"
-                  value={formData.hsnCode}
-                  onChange={(e) => setFormData(prev => ({ ...prev, hsnCode: e.target.value }))}
+                  value={formData.hsn_code}
+                  onChange={(e) => setFormData(prev => ({ ...prev, hsn_code: e.target.value }))}
                   className="input w-full"
                   placeholder="Enter HSN code"
                   required
@@ -328,8 +316,8 @@ export default function GSTTaxRate() {
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Applicable For</label>
                 <textarea
-                  value={formData.applicableFor}
-                  onChange={(e) => setFormData(prev => ({ ...prev, applicableFor: e.target.value }))}
+                  value={formData.applicable_for}
+                  onChange={(e) => setFormData(prev => ({ ...prev, applicable_for: e.target.value }))}
                   className="input w-full"
                   rows={3}
                   placeholder="Describe what this rate applies to"
@@ -344,6 +332,19 @@ export default function GSTTaxRate() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={`${editingRate ? 'Update' : 'Create'} GST Rate?`}
+        message={`Are you sure you want to ${editingRate ? 'update' : 'create'} this GST rate?`}
+        confirmText={editingRate ? 'Update GST Rate' : 'Create GST Rate'}
+        cancelText="Cancel"
+        showLoading={isSaving}
+        loadingText={editingRate ? 'Updating GST Rate...' : 'Creating GST Rate...'}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelSubmit}
+      />
     </div>
   );
 }

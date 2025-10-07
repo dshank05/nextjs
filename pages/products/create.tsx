@@ -39,6 +39,10 @@ export default function ProductCreate() {
     companies: [],
     models: []
   });
+
+  // ===== NEW STATE FOR WAREHOUSE AND GST =====
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [gstRates, setGstRates] = useState<any[]>([]);
   const [formData, setFormData] = useState<ProductFormData>({
     product_category: '',
     product_subcategory: '',
@@ -91,9 +95,11 @@ export default function ProductCreate() {
 
 
 
-  // Fetch filter options on mount
+  // Fetch all options on mount
   useEffect(() => {
     fetchFilterOptions();
+    fetchWarehouses();
+    fetchGstRates();
   }, []);
 
   // Check for edit mode and load product data
@@ -115,10 +121,38 @@ export default function ProductCreate() {
     } catch (error) { console.error('Error fetching filter options:', error); }
   };
 
+  const fetchWarehouses = async () => {
+    try {
+      const response = await fetch('/api/warehouses');
+      if (response.ok) {
+        const data = await response.json();
+        setWarehouses(data.warehouses || []);
+      }
+    } catch (error) { console.error('Error fetching warehouses:', error); }
+  };
+
+  const fetchGstRates = async () => {
+    try {
+      const response = await fetch('/api/gst-rates');
+      if (response.ok) {
+        const data = await response.json();
+        setGstRates(data.gstRates || []);
+      }
+    } catch (error) { console.error('Error fetching GST rates:', error); }
+  };
+
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+
+    // Auto-fill GST rate when HSN is selected
+    if (field === 'hsn' && value) {
+      const selectedGstRate = gstRates.find(rate => rate.hsn_code === value);
+      if (selectedGstRate) {
+        setFormData(prev => ({ ...prev, gst_rate: selectedGstRate.id.toString() }));
+      }
     }
   };
 
@@ -142,6 +176,13 @@ export default function ProductCreate() {
     const stock = parseFloat(formData.stock) || 0;
     const rate = parseFloat(formData.rate) || 0;
     return stock * rate;
+  };
+
+  const calculateSellingPrice = () => {
+    const mrp = parseFloat(formData.mrp) || 0;
+    const discount = parseFloat(formData.discount) || 0;
+    const margin = parseFloat(formData.sale_price) || 0;
+    return mrp - discount + margin; // SP = MRP - Discount + Margin
   };
 
   const loadProductForEdit = async (productId: number) => {
@@ -274,14 +315,18 @@ export default function ProductCreate() {
         stock: formData.stock ? parseInt(formData.stock) : null,
         rate: formData.rate ? parseFloat(formData.rate) : null,
         hsn: formData.hsn || null,
-        gst_rate: formData.gst_rate || null,
-        warehouse: formData.warehouse || null,
+
+        // ===== NEW FK FIELDS =====
+        warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
+        gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
+
+        // ===== LEGACY FIELDS (KEEP IN NOTES FOR NOW) =====
         rack_number: formData.rack_number || null,
         descriptions: formData.descriptions || null,
         notes: formData.notes || null,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
         discount: formData.discount ? parseFloat(formData.discount) : null,
-        margin: formData.sale_price ? parseFloat(formData.sale_price) : null, // Changed from sale_price to margin
+        margin: formData.sale_price ? parseFloat(formData.sale_price) : null, // Keep margin in notes
       };
 
       console.log('Submitting data to API:', submitData);
@@ -480,8 +525,28 @@ export default function ProductCreate() {
                 value={formData.sale_price}
                 onChange={(e) => handleInputChange('sale_price', e.target.value)}
                 className="input w-full"
-                placeholder="0.00"
+                placeholder="Profit margin in ₹"
               />
+            </div>
+          </div>
+
+          {/* Selling Price Display */}
+          <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-blue-300 font-medium">SELLING PRICE</span>
+                <div className="text-xs text-blue-400 mt-1">
+                  Auto-calculated: MRP - Discount + Margin
+                </div>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-bold text-blue-300">
+                  ₹{calculateSellingPrice().toFixed(2)}
+                </span>
+                <div className="text-xs text-blue-400 mt-1">
+                  Taxable Value
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -492,36 +557,49 @@ export default function ProductCreate() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
-              <input
-                type="text"
+              <select
                 value={formData.hsn}
                 onChange={(e) => handleInputChange('hsn', e.target.value)}
-                className="input w-full"
-                placeholder="Enter HSN code"
-              />
+                className="select w-full"
+              >
+                <option value="">Select HSN Code</option>
+                {gstRates.map((rate) => (
+                  <option key={rate.id} value={rate.hsn_code}>
+                    {rate.hsn_code}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE (%)</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.gst_rate}
-                onChange={(e) => handleInputChange('gst_rate', e.target.value)}
-                className="input w-full"
-                placeholder="Enter GST rate (e.g., 18.00)"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">WARE HOUSE</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE</label>
               <input
                 type="text"
+                value={(() => {
+                  const selectedRate = gstRates.find(rate => rate.id.toString() === formData.gst_rate);
+                  return selectedRate ? `${selectedRate.rate}%` : '';
+                })()}
+                className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                placeholder="Auto-filled from HSN"
+                readOnly
+                disabled
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE</label>
+              <select
                 value={formData.warehouse}
                 onChange={(e) => handleInputChange('warehouse', e.target.value)}
-                className="input w-full"
-                placeholder="Enter warehouse"
-              />
+                className="select w-full"
+              >
+                <option value="">Select Warehouse</option>
+                {warehouses.map((warehouse) => (
+                  <option key={warehouse.id} value={warehouse.id}>
+                    {warehouse.name} - {warehouse.location}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

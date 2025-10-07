@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface Warehouse {
   id: number;
   name: string;
   location: string;
-  capacity: number;
-  status: string;
   index: number;
 }
 
@@ -22,7 +21,10 @@ export default function Warehouse() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
-  const [formData, setFormData] = useState({ id: 0, name: '', location: '', capacity: '' });
+  const [formData, setFormData] = useState({ id: 0, name: '', location: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -39,31 +41,26 @@ export default function Warehouse() {
   const fetchWarehouses = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData: WarehouseResponse = {
-        warehouses: [
-          {
-            id: 1,
-            name: 'Main Warehouse',
-            location: 'New Delhi',
-            capacity: 10000,
-            status: 'Active',
-            index: 1
-          },
-          {
-            id: 2,
-            name: 'Branch Warehouse',
-            location: 'Mumbai',
-            capacity: 5000,
-            status: 'Active',
-            index: 2
-          },
-        ],
-        pagination: { page: 1, limit: 50, total: 2, totalPages: 1, hasMore: false }
-      };
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm
+      });
 
-      setWarehouses(mockData.warehouses);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/warehouses?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Add index to each warehouse for display
+        const warehousesWithIndex = data.warehouses.map((warehouse: Warehouse, index: number) => ({
+          ...warehouse,
+          index: (pagination.page - 1) * pagination.limit + index + 1
+        }));
+
+        setWarehouses(warehousesWithIndex);
+        setPagination(data.pagination);
+      } else {
+        console.error('Failed to fetch warehouses');
+      }
     } catch (error) {
       console.error('Error fetching warehouses:', error);
     } finally {
@@ -91,7 +88,7 @@ export default function Warehouse() {
 
   const handleAdd = () => {
     setEditingWarehouse(null);
-    setFormData({ id: 0, name: '', location: '', capacity: '' });
+    setFormData({ id: 0, name: '', location: '' });
     setShowModal(true);
   };
 
@@ -100,22 +97,61 @@ export default function Warehouse() {
     setFormData({
       id: warehouse.id,
       name: warehouse.name,
-      location: warehouse.location,
-      capacity: warehouse.capacity.toString()
+      location: warehouse.location
     });
     setShowModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Show confirmation modal before saving
+    setPendingData(formData);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingData) return;
+
+    setIsSaving(true);  // Start loading state while modal is still open
+
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving warehouse:', formData);
-      setShowModal(false);
-      fetchWarehouses(); // Refresh the list
+      const method = editingWarehouse ? 'PUT' : 'POST';
+      const url = '/api/warehouses';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(pendingData),
+      });
+
+      if (response.ok) {
+        // Success - close modals and refresh
+        setShowConfirmModal(false);
+        setShowModal(false);
+        setFormData({ id: 0, name: '', location: '' });
+        setPendingData(null);
+        fetchWarehouses(); // Refresh the list
+      } else {
+        // Error - keep modals open and show error
+        const error = await response.json();
+        console.error('Error saving warehouse:', error);
+        alert(error.message || 'Failed to save warehouse');
+        setShowConfirmModal(false); // Close confirmation modal, keep form modal open
+      }
     } catch (error) {
       console.error('Error saving warehouse:', error);
+      alert('Network error occurred');
+      setShowConfirmModal(false); // Close confirmation modal on network error
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const handleCancelSubmit = () => {
+    setShowConfirmModal(false);
+    setPendingData(null);
   };
 
   return (
@@ -177,8 +213,6 @@ export default function Warehouse() {
                     <th>ID</th>
                     <th>Name</th>
                     <th>Location</th>
-                    <th>Capacity</th>
-                    <th>Status</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -189,16 +223,6 @@ export default function Warehouse() {
                       <td>{warehouse.id}</td>
                       <td className="font-medium text-white">{warehouse.name}</td>
                       <td className="text-white">{warehouse.location}</td>
-                      <td className="text-slate-300">{warehouse.capacity.toLocaleString()}</td>
-                      <td>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          warehouse.status === 'Active'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {warehouse.status}
-                        </span>
-                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(warehouse)}>Edit</button>
                       </td>
@@ -259,16 +283,6 @@ export default function Warehouse() {
                   required
                 />
               </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Capacity</label>
-                <input
-                  type="number"
-                  value={formData.capacity}
-                  onChange={(e) => setFormData(prev => ({ ...prev, capacity: e.target.value }))}
-                  className="input w-full"
-                  required
-                />
-              </div>
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>
@@ -277,6 +291,19 @@ export default function Warehouse() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={`${editingWarehouse ? 'Update' : 'Create'} Warehouse?`}
+        message={`Are you sure you want to ${editingWarehouse ? 'update' : 'create'} this warehouse?`}
+        confirmText={editingWarehouse ? 'Update Warehouse' : 'Create Warehouse'}
+        cancelText="Cancel"
+        showLoading={isSaving}
+        loadingText={editingWarehouse ? 'Updating Warehouse...' : 'Creating Warehouse...'}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelSubmit}
+      />
     </div>
   );
 }

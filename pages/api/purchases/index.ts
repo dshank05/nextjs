@@ -213,43 +213,58 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
-      // ===== MAIN PURCHASE TABLE FIELDS =====
-      invoice_number,
-      bill_reference,
-      staff_details,
-      date,
+      // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
+      invoice_number,           // ✓ Purchase.invoice_no
+      bill_reference,           // ✓ Purchase.bill_reference
+      staff_details,            // ✓ Purchase.staff_details
+      date,                     // ✓ Purchase.invoice_date
 
-      // ===== VENDOR RELATIONSHIP (ONLY vendor_id - NO vendor data creation/update) =====
-      vendor_id, // FK to vendor_details table - vendor must already exist
+      // ===== VENDOR RELATIONSHIP (ONLY FK STORED - NO VENDOR MANAGEMENT HERE) =====
+      vendor_id,                // ✓ Purchase.vendor_id (FK to vendor_details)
 
-      // ===== TRANSPORT FIELDS =====
-      transport_name,
-      vehicle_number,
-      transport_cost,
+      // ===== TRANSPORT FIELDS (ALL STORED) =====
+      transport_name,           // ✓ Purchase.transport_name
+      vehicle_number,           // ✓ Purchase.vehicle_number
+      transport_cost,           // ✓ Purchase.freight
 
-      // ===== ITEMS AND CALCULATIONS =====
-      items, // Array of purchase items
-      descriptions,
-      packing_forwarding_qty,
-      packing_forwarding_rate,
-      packing_forwarding_total,
-      tax_rate,
-      basic_value,
-      total_cgst,
-      total_sgst,
-      total_igst,
-      notes,
-      total_tax,
-      payment_status,
-      payment_mode,
-      grand_total,
+      // ===== ITEMS AND CALCULATIONS (ALL STORED) =====
+      items,                    // ✓ PurchaseItems table (multiple records)
+      descriptions,             // ✓ Purchase.descriptions
+      packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
+      packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
+      packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
+      tax_rate,                 // ✓ Purchase.taxrate
+      basic_value,              // ✓ Purchase.basic_value
+      total_cgst,               // ✓ Purchase.total_cgst
+      total_sgst,               // ✓ Purchase.total_sgst
+      total_igst,               // ✓ Purchase.total_igst
+      notes,                    // ✓ Purchase.notes
+      total_tax,                // ✓ Purchase.total_tax
+      payment_status,           // ✓ Purchase.status
+      payment_mode,             // ✓ Purchase.payment_mode
+      grand_total,              // ❌ NOT STORED (calculated field)
 
-      // ===== LEGACY FIELDS (UNCLEAR PURPOSE) =====
-      bill,  // Stored in purchase.bill - unclear what this represents
-      tax,   // Stored in purchase.tax - unclear what this represents
+      // ===== LEGACY FIELDS (UNCLEAR PURPOSE - STILL STORED) =====
+      bill,                     // ✓ Purchase.bill - meaning unclear, kept for compatibility
+      tax,                      // ✓ Purchase.tax - meaning unclear, kept for compatibility
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
+
+    // ===== FUTURE SCHEMA EXPANSION FIELDS =====
+    // These fields don't exist in current Purchase/PurchaseItems tables, similar to Product API approach:
+    // TODO: Add these fields to Purchase/PurchaseItems schemas when ready:
+    // - approved_by: String? (user who approved the purchase)
+    // - approval_date: DateTime? (when purchase was approved)
+    // - expected_delivery_date: DateTime? (for purchase order tracking)
+    // - supplier_rating: Int? (1-5 star supplier performance)
+    // - purchase_order_no: String? (link to PO system)
+    // - delivery_status: String? ("pending", "partial", "complete")
+    // - quality_check_status: String? ("pending", "passed", "failed")
+    // - payment_terms: String? ("net_30", "net_60", custom terms)
+    // - discount_amount: Float? (separate from item-level discounts)
+    // - additional_charges: Json? (misc fees, insurance, etc.)
+    // - internal_notes: String? (separate from customer-facing notes)
 
     // ===== VALIDATION =====
     if (!invoice_number || !vendor_id || !items || items.length === 0) {

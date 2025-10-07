@@ -37,6 +37,8 @@ interface Product {
   category_name?: string;
   subcategory_name?: string;
   gst_rate?: number;
+  selling_price?: number; // SP from MRP - discount + margin
+  gst_rate_percentage?: number; // Actual GST percentage
 }
 
 interface PurchaseItem {
@@ -50,7 +52,10 @@ interface PurchaseItem {
   part_number: string;
   qty: number;
   rate: number;
-  tax: number;
+  tax: number; // Total tax amount
+  cgst: number;
+  sgst: number;
+  igst: number;
   total: number;
 }
 
@@ -180,6 +185,42 @@ export default function PurchaseCreate() {
     fetchLastInvoiceNumber();
   }, []);
 
+  // Auto-calculate tax totals when products or vendor state changes
+  useEffect(() => {
+    if (selectedProducts.length === 0) return;
+
+    // Determine if intra-state or inter-state
+    const businessState = 'Uttar Pradesh'; // TODO: Make this a configurable business setting
+    const isIntraState = formData.state === businessState;
+
+    // Calculate totals from current products (don't modify products themselves)
+    const totalCgst = selectedProducts.reduce((sum, item) => {
+      const subtotal = item.qty * item.rate;
+      const totalTaxAmount = (subtotal * item.tax) / 100;
+      return sum + (isIntraState ? totalTaxAmount / 2 : 0);
+    }, 0);
+
+    const totalSgst = selectedProducts.reduce((sum, item) => {
+      const subtotal = item.qty * item.rate;
+      const totalTaxAmount = (subtotal * item.tax) / 100;
+      return sum + (isIntraState ? totalTaxAmount / 2 : 0);
+    }, 0);
+
+    const totalIgst = selectedProducts.reduce((sum, item) => {
+      const subtotal = item.qty * item.rate;
+      const totalTaxAmount = (subtotal * item.tax) / 100;
+      return sum + (isIntraState ? 0 : totalTaxAmount);
+    }, 0);
+
+    // Auto-populate tax fields
+    setFormData(prev => ({
+      ...prev,
+      total_cgst: totalCgst.toFixed(2),
+      total_sgst: totalSgst.toFixed(2),
+      total_igst: totalIgst.toFixed(2)
+    }));
+  }, [selectedProducts, formData.state]);
+
   // Filter products based on row filters for the dropdown
   useEffect(() => {
     let filtered = [...products];
@@ -306,6 +347,25 @@ export default function PurchaseCreate() {
   };
 
   const addProductToPurchase = (product: Product) => {
+    // Determine if intra-state or inter-state
+    const businessState = 'Uttar Pradesh'; // TODO: Make this a configurable business setting
+    const isIntraState = formData.state === businessState;
+
+    const qty = 1;
+    const rate = product.selling_price || product.rate || 0;
+    const taxPercent = product.gst_rate_percentage || product.gst_rate || 0;
+    const subtotal = qty * rate;
+    const totalTaxAmount = (subtotal * taxPercent) / 100;
+
+    // Split tax based on intra/inter-state
+    let cgst = 0, sgst = 0, igst = 0;
+    if (isIntraState) {
+      cgst = totalTaxAmount / 2;
+      sgst = totalTaxAmount / 2;
+    } else {
+      igst = totalTaxAmount;
+    }
+
     const newItem: PurchaseItem = {
       id: Date.now().toString(),
       product_id: product.id,
@@ -315,10 +375,13 @@ export default function PurchaseCreate() {
       sub_category: product.subcategory_name || '',
       company: product.company || '',
       part_number: product.part_no || '',
-      qty: 1,
-      rate: product.rate,
-      tax: product.gst_rate || 0,
-      total: product.rate
+      qty: qty,
+      rate: rate,
+      tax: totalTaxAmount,
+      cgst: cgst,
+      sgst: sgst,
+      igst: igst,
+      total: subtotal + totalTaxAmount
     };
 
     setSelectedProducts(prev => [...prev, newItem]);
@@ -725,7 +788,47 @@ export default function PurchaseCreate() {
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
                           value={selectedRowProduct}
-                          onChange={(e) => setSelectedRowProduct(e.target.value)}
+                          onChange={(e) => {
+                            const productId = e.target.value;
+                            setSelectedRowProduct(productId);
+
+                            // Auto-fill all product details when product is selected
+                            if (productId) {
+                              const selectedProduct = products.find(p => p.id.toString() === productId);
+                              if (selectedProduct) {
+                                // Auto-fill filters
+                                setProductRowFilters(prev => ({
+                                  ...prev,
+                                  category: selectedProduct.product_category_id ? selectedProduct.product_category_id.toString() : '',
+                                  subcategory: selectedProduct.product_subcategory_id ? selectedProduct.product_subcategory_id.toString() : '',
+                                  carModels: selectedProduct.car_model_ids ? selectedProduct.car_model_ids.split(',').map(id => id.trim()) : [],
+                                  company: selectedProduct.company || '',
+                                  partNo: selectedProduct.part_no || ''
+                                }));
+
+                                // Auto-fill template row
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  rate: selectedProduct.selling_price ? selectedProduct.selling_price.toString() : '',
+                                  tax: selectedProduct.gst_rate_percentage ? selectedProduct.gst_rate_percentage.toString() : '0'
+                                }));
+                              }
+                            } else {
+                              // Clear when no product selected
+                              setProductRowFilters(prev => ({
+                                category: '',
+                                subcategory: '',
+                                carModels: [],
+                                company: '',
+                                partNo: ''
+                              }));
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: '',
+                                tax: '0'
+                              }));
+                            }
+                          }}
                         >
                           <option value="">Select Product</option>
                           {filteredRowProducts.map((product) => (
@@ -847,15 +950,11 @@ export default function PurchaseCreate() {
                         <input
                           type="number"
                           step="0.01"
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          className="w-full px-2 py-2 bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 rounded text-xs text-slate-400 text-center cursor-not-allowed"
                           placeholder="18%"
                           value={templateRow.tax}
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              tax: e.target.value
-                            }));
-                          }}
+                          readOnly
+                          disabled
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-20">
@@ -875,19 +974,24 @@ export default function PurchaseCreate() {
                         <button
                           onClick={() => {
                             if (selectedRowProduct) {
-                              const product = products.find(p => p.id.toString() === selectedRowProduct);
-                              if (product) {
-                                // Calculate tax amount (percentage of rate * qty)
+                              const selectedProduct = products.find(p => p.id.toString() === selectedRowProduct);
+                              if (selectedProduct) {
+                                // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
-                                const rate = parseFloat(templateRow.rate) || 0;
-                                const taxPercent = parseFloat(templateRow.tax) || 0;
+                                const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
+                                const taxPercent = parseFloat(templateRow.tax) || selectedProduct.gst_rate_percentage || 0;
                                 const subtotal = qty * rate;
                                 const taxAmount = (subtotal * taxPercent) / 100;
 
+                                // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
+                                const cgst = taxAmount / 2;
+                                const sgst = taxAmount / 2;
+                                const igst = 0;
+
                                 const newItem: PurchaseItem = {
                                   id: Date.now().toString(),
-                                  product_id: product.id,
-                                  product_name: product.product_name,
+                                  product_id: selectedProduct.id,
+                                  product_name: selectedProduct.product_name,
                                   car_model: productRowFilters.carModels.join(', '),
                                   category: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
                                   sub_category: filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '',
@@ -896,6 +1000,9 @@ export default function PurchaseCreate() {
                                   qty: qty,
                                   rate: rate,
                                   tax: taxAmount,
+                                  cgst: cgst,
+                                  sgst: sgst,
+                                  igst: igst,
                                   total: subtotal + taxAmount
                                 };
 
@@ -913,7 +1020,7 @@ export default function PurchaseCreate() {
                                 setTemplateRow({
                                   qty: '1',
                                   rate: '',
-                                  tax: '18'
+                                  tax: '0'
                                 });
                               }
                             }
@@ -1039,27 +1146,15 @@ export default function PurchaseCreate() {
             <div className="border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Tax & Payment Information</h3>
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">BILL</label>
-                    <input
-                      type="text"
-                      value={formData.bill}
-                      onChange={(e) => handleInputChange('bill', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter bill"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
-                    <input
-                      type="text"
-                      value={formData.tax}
-                      onChange={(e) => handleInputChange('tax', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter tax"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
+                  <input
+                    type="text"
+                    value={formData.tax}
+                    onChange={(e) => handleInputChange('tax', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter tax (optional)"
+                  />
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
