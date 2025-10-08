@@ -276,6 +276,28 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // Validate payment_status and payment_mode are valid integers
+    const validPaymentStatuses = [0, 1];
+    const validPaymentModes = [1, 2, 3];
+
+    console.log('🔍 DEBUG - Received payment values:', { payment_status, payment_mode, payment_status_type: typeof payment_status, payment_mode_type: typeof payment_mode });
+
+    if (!validPaymentStatuses.includes(payment_status)) {
+      console.log('❌ DEBUG - Invalid payment_status:', payment_status);
+      return res.status(400).json({
+        message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
+      })
+    }
+
+    if (!validPaymentModes.includes(payment_mode)) {
+      console.log('❌ DEBUG - Invalid payment_mode:', payment_mode);
+      return res.status(400).json({
+        message: 'Invalid payment_mode: must be 1 (Cash), 2 (Cheque), or 3 (Online)'
+      })
+    }
+
+    console.log('✅ DEBUG - Payment validation passed');
+
     // ===== VALIDATE VENDOR EXISTS =====
     // Vendor must already exist - purchase only stores the relationship
     const existingVendor = await prisma.vendor_details.findUnique({
@@ -329,8 +351,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tax: tax,
         invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
         updated_at: new Date().toISOString().split('T')[0], // Current date
-        status: payment_status === 'paid' ? 1 : 0,
-        payment_mode: getPaymentModeId(payment_mode),
+        status: payment_status,
+        payment_mode: payment_mode,
         fy: financialYear,
         transport: transport_name || '',
         transport_name: transport_name,
@@ -534,8 +556,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           tax: tax,
           invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
           updated_at: new Date().toISOString().split('T')[0], // Current date
-          status: payment_status === 'paid' ? 1 : 0,
-          payment_mode: getPaymentModeId(payment_mode),
+          status: payment_status,
+          payment_mode: payment_mode,
           fy: financialYear,
           transport: transport_name || '',
           transport_name: transport_name,

@@ -89,8 +89,8 @@ interface PurchaseFormData {
   total_igst: string;
   notes: string;
   total_tax: string;
-  payment_status: string;
-  payment_mode: string;
+  payment_status: number;
+  payment_mode: number;
   grand_total: string;
 }
 
@@ -191,8 +191,8 @@ export default function PurchaseCreate() {
     total_igst: '',
     notes: '',
     total_tax: '',
-    payment_status: 'unpaid',
-    payment_mode: 'cash',
+    payment_status: 0,
+    payment_mode: 1,
     grand_total: ''
   });
 
@@ -432,10 +432,8 @@ export default function PurchaseCreate() {
           total_igst: purchase.total_igst?.toString() || '',
           notes: purchase.notes || '',
           total_tax: purchase.total_tax?.toString() || '',
-          payment_status: purchase.status === 1 ? 'paid' : 'unpaid',
-          payment_mode: purchase.payment_mode === 1 ? 'cash' :
-                      purchase.payment_mode === 2 ? 'cheque' :
-                      purchase.payment_mode === 3 ? 'online' : 'cash',
+          payment_status: purchase.status || 0,
+          payment_mode: purchase.payment_mode || 1,
           grand_total: purchase.total?.toString() || ''
         });
 
@@ -514,7 +512,14 @@ export default function PurchaseCreate() {
   };
 
   const handleInputChange = (field: keyof PurchaseFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let processedValue: string | number = value;
+
+    // Convert numeric fields to numbers
+    if (field === 'payment_status' || field === 'payment_mode') {
+      processedValue = parseInt(value) || 0;
+    }
+
+    setFormData(prev => ({ ...prev, [field]: processedValue }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -1396,26 +1401,26 @@ export default function PurchaseCreate() {
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
                     <select
-                      value={formData.payment_status}
+                      value={formData.payment_status.toString()}
                       onChange={(e) => handleInputChange('payment_status', e.target.value)}
                       className="select w-full"
                       required
                     >
-                      <option value="paid">Paid</option>
-                      <option value="unpaid">Unpaid</option>
+                      <option value="0">Unpaid</option>
+                      <option value="1">Paid</option>
                     </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
                     <select
-                      value={formData.payment_mode}
+                      value={formData.payment_mode.toString()}
                       onChange={(e) => handleInputChange('payment_mode', e.target.value)}
                       className="select w-full"
                       required
                     >
-                      <option value="cash">Cash</option>
-                      <option value="card">Card</option>
-                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="1">Cash</option>
+                      <option value="2">Cheque</option>
+                      <option value="3">Online</option>
                     </select>
                   </div>
                 </div>

@@ -157,7 +157,7 @@ model Purchase {
   tax                      String? @db.VarChar(255)
   invoice_date             String  @db.VarChar(30)
   updated_at               String  @db.VarChar(100)
-  status                   Int?
+  status                   Int?      @map("payment_status")
   payment_mode             Int?
   transport                String? @db.VarChar(255)
   transport_name           String? @db.VarChar(255)
