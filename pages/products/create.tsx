@@ -11,8 +11,8 @@ interface ProductFormData {
   company: string;
   part_no: string;
   min_stock: string;
-  stock: string;
-  rate: string;
+  opening_stock: string;
+  opening_rate: string;
   hsn: string;
   gst_rate: string; // Keep as string, change to input field
   warehouse: string;
@@ -50,8 +50,8 @@ export default function ProductCreate() {
     company: '',
     part_no: '',
     min_stock: '',
-    stock: '',
-    rate: '',
+    opening_stock: '',
+    opening_rate: '',
     hsn: '',
     gst_rate: '',
     warehouse: '',
@@ -173,9 +173,9 @@ export default function ProductCreate() {
   };
 
   const calculateTotalAmount = () => {
-    const stock = parseFloat(formData.stock) || 0;
-    const rate = parseFloat(formData.rate) || 0;
-    return stock * rate;
+    const stock = parseFloat(formData.opening_stock) || 0;
+    const openingRate = parseFloat(formData.opening_rate) || 0;
+    return stock * openingRate;
   };
 
   const calculateSellingPrice = () => {
@@ -199,8 +199,8 @@ export default function ProductCreate() {
           company: product.company?.toString() || '',
           part_no: product.part_no || '',
           min_stock: product.min_stock?.toString() || '',
-          stock: product.stock?.toString() || '',
-          rate: product.rate?.toString() || '',
+          opening_stock: product.opening_stock?.toString() || '',
+          opening_rate: product.opening_rate?.toString() || '',
           hsn: product.hsn || '',
           gst_rate: product.gst_rate || '',
           warehouse: product.warehouse || '',
@@ -290,8 +290,8 @@ export default function ProductCreate() {
         company: formData.company ? parseInt(formData.company) : null,
         part_no: formData.part_no,
         min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
-        stock: formData.stock ? parseInt(formData.stock) : null,
-        rate: formData.rate ? parseFloat(formData.rate) : null,
+        opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
+        opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
         hsn: formData.hsn,
         gst_rate: formData.gst_rate,
         warehouse: formData.warehouse,
@@ -312,8 +312,9 @@ export default function ProductCreate() {
         company: formData.company ? parseInt(formData.company) : null, // Company should be FK to product_company table
         part_no: formData.part_no || null,
         min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
-        stock: formData.stock ? parseInt(formData.stock) : null,
-        rate: formData.rate ? parseFloat(formData.rate) : null,
+        opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
+        stock: formData.opening_stock ? parseInt(formData.opening_stock) : null, // Set initial stock = opening_stock
+        opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
         hsn: formData.hsn || null,
 
         // ===== NEW FK FIELDS =====
@@ -662,20 +663,20 @@ export default function ProductCreate() {
               <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
               <input
                 type="number"
-                value={formData.stock}
-                onChange={(e) => handleInputChange('stock', e.target.value)}
+                value={formData.opening_stock}
+                onChange={(e) => handleInputChange('opening_stock', e.target.value)}
                 className="input w-full"
                 placeholder="0"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">OPENING RATE</label>
               <input
                 type="number"
                 step="0.01"
-                value={formData.rate}
-                onChange={(e) => handleInputChange('rate', e.target.value)}
+                value={formData.opening_rate}
+                onChange={(e) => handleInputChange('opening_rate', e.target.value)}
                 className="input w-full"
                 placeholder="0.00"
               />

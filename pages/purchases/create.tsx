@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Search, Plus, Trash2, Calculator, Loader } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
@@ -52,6 +52,7 @@ interface PurchaseItem {
   part_number: string;
   qty: number;
   rate: number;
+  gst_percentage: number; // GST percentage (e.g., 18)
   tax: number; // Total tax amount
   cgst: number;
   sgst: number;
@@ -111,8 +112,13 @@ export default function PurchaseCreate() {
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
   const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
+  const [vendorStateForTax, setVendorStateForTax] = useState<string>(''); // Separate state for tax calculations
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Edit mode state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
 
   // State for the product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -123,11 +129,13 @@ export default function PurchaseCreate() {
     partNo: ''
   });
 
-  // Filtered products based on row filters
-  const [filteredRowProducts, setFilteredRowProducts] = useState<Product[]>([]);
-
   // State for selected product in the table row
-  const [selectedRowProduct, setSelectedRowProduct] = useState('');
+  const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(null);
+
+  // State for product selection side panel
+  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -136,6 +144,9 @@ export default function PurchaseCreate() {
     tax: '18'
   });
 
+  // State for selected vendor details (fetched on-demand, not stored in formData)
+  const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
+
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     subcategories: [],
@@ -143,13 +154,21 @@ export default function PurchaseCreate() {
     models: []
   });
 
+  // Memoize the filterOptions to prevent unnecessary re-renders
+  const memoizedFilterOptions = useMemo(() => filterOptions, [
+    filterOptions.categories,
+    filterOptions.subcategories,
+    filterOptions.companies,
+    filterOptions.models
+  ]);
+
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
     bill_reference: '',
     staff_details: '',
     date: new Date().toISOString().split('T')[0],
-    vendor_name: '',
-    contact_number: '',
+    vendor_name: '', // Keep for backward compatibility with validation
+    contact_number: '', // Remove these after validation is updated
     email_id: '',
     address: '',
     address_2: '',
@@ -177,102 +196,143 @@ export default function PurchaseCreate() {
     grand_total: ''
   });
 
+  // Check for edit mode and fetch data
+  useEffect(() => {
+    const { edit } = router.query;
+    if (edit && typeof edit === 'string') {
+      setIsEditMode(true);
+      setEditPurchaseId(parseInt(edit));
+      fetchPurchaseForEdit(parseInt(edit));
+    }
+  }, [router.query]);
+
   // Fetch vendors and products on mount
   useEffect(() => {
     fetchVendors();
     fetchProducts();
     fetchFilterOptions();
-    fetchLastInvoiceNumber();
-  }, []);
+    // Only fetch last invoice number in create mode, not edit mode
+    if (!isEditMode) {
+      fetchLastInvoiceNumber();
+    }
+  }, [isEditMode]);
 
-  // Auto-calculate tax totals when products or vendor state changes
+  // Clear validation errors when side panel closes
   useEffect(() => {
-    if (selectedProducts.length === 0) return;
+    if (!isProductPanelOpen) {
+      setErrors({});
+    }
+  }, [isProductPanelOpen]);
 
-    // Determine if intra-state or inter-state
-    const businessState = 'Uttar Pradesh'; // TODO: Make this a configurable business setting
-    const isIntraState = formData.state === businessState;
+  // Handle product search with normalized text
+  useEffect(() => {
+    if (productSearchTerm.trim()) {
+      const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
+      const filtered = products.filter(product => {
+        const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
+        const productIdString = product.id.toString();
+        const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
+        const partNoNormalized = product.part_no?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
+        const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
+        // Also search by product UID (ID)
+        return productNameNormalized.includes(searchTermNormalized) ||
+               productIdString.includes(searchTermNormalized) ||
+               displayNameNormalized.includes(searchTermNormalized) ||
+               partNoNormalized.includes(searchTermNormalized) ||
+               companyNameNormalized.includes(searchTermNormalized);
+      });
+      setSearchedProducts(filtered);
+    } else {
+      setSearchedProducts(products);
+    }
+  }, [productSearchTerm, products]);
 
-    // Calculate totals from current products (don't modify products themselves)
-    const totalCgst = selectedProducts.reduce((sum, item) => {
+  // Auto-calculate tax totals ONLY when vendor state changes and not in edit mode
+  // Don't recalculate existing purchase data, preserve what's in the database
+  useEffect(() => {
+    // Don't auto-recalculate in edit mode - preserve existing calculations
+    if (isEditMode || selectedProducts.length === 0) return;
+
+    // Only recalculate if vendor state actually changed due to vendor selection
+    // Check if we need to update tax breakdowns
+    const businessState = 'Uttar Pradesh';
+    const isIntraState = vendorStateForTax === businessState;
+
+    const needsUpdate = selectedProducts.some(item => {
       const subtotal = item.qty * item.rate;
-      const totalTaxAmount = (subtotal * item.tax) / 100;
-      return sum + (isIntraState ? totalTaxAmount / 2 : 0);
-    }, 0);
+      const taxAmount = (subtotal * item.gst_percentage) / 100;
 
-    const totalSgst = selectedProducts.reduce((sum, item) => {
+      if (isIntraState) {
+        // Should have CGST + SGST, no IGST
+        return item.cgst !== taxAmount / 2 || item.sgst !== taxAmount / 2 || item.igst !== 0;
+      } else {
+        // Should have IGST, no CGST + SGST
+        return item.igst !== taxAmount || item.cgst !== 0 || item.sgst !== 0;
+      }
+    });
+
+    if (!needsUpdate) return;
+
+    // Recalculate tax breakdowns for ALL products based on current vendor state
+    const updatedProducts = selectedProducts.map(item => {
       const subtotal = item.qty * item.rate;
-      const totalTaxAmount = (subtotal * item.tax) / 100;
-      return sum + (isIntraState ? totalTaxAmount / 2 : 0);
-    }, 0);
+      const taxAmount = (subtotal * item.gst_percentage) / 100;
 
-    const totalIgst = selectedProducts.reduce((sum, item) => {
-      const subtotal = item.qty * item.rate;
-      const totalTaxAmount = (subtotal * item.tax) / 100;
-      return sum + (isIntraState ? 0 : totalTaxAmount);
-    }, 0);
+      // Reset tax breakdown values
+      let cgst = 0, sgst = 0, igst = 0;
 
-    // Auto-populate tax fields
+      // Apply correct tax split based on current vendor state
+      if (isIntraState) {
+        cgst = taxAmount / 2;
+        sgst = taxAmount / 2;
+      } else {
+        igst = taxAmount;
+      }
+
+      // Return updated item with correct tax breakdown
+      return { ...item, cgst, sgst, igst, tax: taxAmount };
+    });
+
+    // Update products with corrected tax breakdowns
+    setSelectedProducts(updatedProducts);
+  }, [selectedProducts, vendorStateForTax, isEditMode]);
+
+  // Separate effect to update tax fields from product changes
+  // Important: Always runs when products change to ensure tax fields are populated
+  useEffect(() => {
+    // If no products, reset tax fields to empty
+    if (selectedProducts.length === 0) {
+      setFormData(prev => ({
+        ...prev,
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+      return;
+    }
+
+    // In edit mode, only recalculate if tax fields are empty (first load) or if user has modified products
+    // Don't overwrite existing tax values from database during initial edit load
+    if (isEditMode && (formData.total_cgst || formData.total_sgst || formData.total_igst)) {
+      // Skip recalculation in edit mode if tax fields already have database values
+      return;
+    }
+
+    // Calculate totals from current products
+    const totalCgst = selectedProducts.reduce((sum, item) => sum + item.cgst, 0);
+    const totalSgst = selectedProducts.reduce((sum, item) => sum + item.sgst, 0);
+    const totalIgst = selectedProducts.reduce((sum, item) => sum + item.igst, 0);
+
+    // Auto-populate tax fields - ensure they always get updated
     setFormData(prev => ({
       ...prev,
       total_cgst: totalCgst.toFixed(2),
       total_sgst: totalSgst.toFixed(2),
       total_igst: totalIgst.toFixed(2)
     }));
-  }, [selectedProducts, formData.state]);
+  }, [selectedProducts, isEditMode, formData.total_cgst, formData.total_sgst, formData.total_igst]);
 
-  // Filter products based on row filters for the dropdown
-  useEffect(() => {
-    let filtered = [...products];
 
-    // Filter by category ID
-    if (productRowFilters.category) {
-      filtered = filtered.filter(product =>
-        product.product_category_id === parseInt(productRowFilters.category)
-      );
-    }
-
-    // Filter by subcategory ID
-    if (productRowFilters.subcategory) {
-      filtered = filtered.filter(product =>
-        product.product_subcategory_id === parseInt(productRowFilters.subcategory)
-      );
-    }
-
-    // Filter by car models (check intersection with product car_model_ids)
-    if (productRowFilters.carModels.length > 0) {
-      filtered = filtered.filter(product => {
-        const productCarModelIds = product.car_model_ids?.split(',').map(id => id.trim()) || [];
-        return productRowFilters.carModels.some(selectedId =>
-          productCarModelIds.includes(selectedId)
-        );
-      });
-    }
-
-    // Filter by company ID (company field stores company ID string)
-    if (productRowFilters.company) {
-      filtered = filtered.filter(product =>
-        product.company === productRowFilters.company
-      );
-    }
-
-    // Filter by part number (case-insensitive partial match)
-    if (productRowFilters.partNo) {
-      const searchPartNo = productRowFilters.partNo.toLowerCase().trim();
-      filtered = filtered.filter(product =>
-        product.part_no?.toLowerCase().trim().includes(searchPartNo)
-      );
-    }
-
-    setFilteredRowProducts(filtered);
-
-    // Auto-select product if only one match remains
-    if (filtered.length === 1) {
-      setSelectedRowProduct(filtered[0].id.toString());
-    } else {
-      setSelectedRowProduct('');
-    }
-  }, [productRowFilters, products, filterOptions]);
 
   const fetchVendors = async () => {
     try {
@@ -321,6 +381,138 @@ export default function PurchaseCreate() {
     }
   };
 
+  const fetchPurchaseForEdit = async (purchaseId: number) => {
+    try {
+      const response = await fetch(`/api/purchases/${purchaseId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const purchase = data.purchase || data;
+
+        // Convert Unix timestamp to date string if needed
+        const formatDateForInput = (dateValue: number | string) => {
+          if (typeof dateValue === 'string') {
+            if (/^\d+$/.test(dateValue)) {
+              const timestamp = parseInt(dateValue);
+              if (timestamp > 1000000000) {
+                return new Date(timestamp * 1000).toISOString().split('T')[0];
+              }
+            }
+            return new Date(dateValue).toISOString().split('T')[0];
+          }
+          return new Date(dateValue * 1000).toISOString().split('T')[0];
+        };
+
+        // Prefill form data
+        setFormData({
+          invoice_number: purchase.invoice_no?.toString() || '',
+          bill_reference: purchase.bill_reference || '',
+          staff_details: purchase.staff_details || '',
+          date: formatDateForInput(purchase.invoice_date),
+          vendor_name: purchase.vendor_name || '',
+          contact_number: purchase.contact_number || '',
+          email_id: purchase.email_id || '',
+          address: purchase.vendor_address || '',
+          address_2: '',
+          city: '',
+          state: purchase.vendor_gstin ? 'Uttar Pradesh' : '', // Approximate based on GSTIN
+          gst_number: purchase.vendor_gstin || '',
+          transport_name: purchase.transport || '',
+          vehicle_number: '',
+          transport_cost: purchase.freight?.toString() || '',
+          bill: '',
+          tax: purchase.total_tax?.toString() || '',
+          descriptions: purchase.descriptions || '',
+          packing_forwarding_qty: '',
+          packing_forwarding_rate: '',
+          packing_forwarding_total: '',
+          tax_rate: purchase.taxrate?.toString() || '',
+          basic_value: purchase.total_taxable_value?.toString() || '',
+          total_cgst: purchase.total_cgst?.toString() || '',
+          total_sgst: purchase.total_sgst?.toString() || '',
+          total_igst: purchase.total_igst?.toString() || '',
+          notes: purchase.notes || '',
+          total_tax: purchase.total_tax?.toString() || '',
+          payment_status: purchase.status === 1 ? 'paid' : 'unpaid',
+          payment_mode: purchase.payment_mode === 1 ? 'cash' :
+                      purchase.payment_mode === 2 ? 'cheque' :
+                      purchase.payment_mode === 3 ? 'online' : 'cash',
+          grand_total: purchase.total?.toString() || ''
+        });
+
+        // Set vendor data - fetch from vendor table or use data from purchase API
+        if (purchase.vendor_id) {
+          setSelectedVendorId(purchase.vendor_id.toString());
+          setVendorIdToSave(purchase.vendor_id);
+
+          // Try to find vendor in already loaded vendors list, or create from purchase data
+          let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
+
+          // If not found in vendors list, create vendor object from purchase data
+          if (!vendor && purchase.vendor_name) {
+            vendor = {
+              id: purchase.vendor_id.toString(),
+              vendor_name: purchase.vendor_name,
+              contact_no: purchase.contact_number || '',
+              email: purchase.email_id || '',
+              address: purchase.vendor_address || '',
+              address_2: '',
+              city: '',
+              state: purchase.vendor_gstin ? 'Uttar Pradesh' : '',
+              state_code: 0,
+              tax_id: purchase.vendor_gstin || ''
+            };
+          }
+
+          if (vendor) {
+            setSelectedVendor(vendor);
+            setVendorStateForTax(vendor.state || '');
+          }
+        }
+
+        // Convert purchase items to local format - preserve existing calculations
+        if (purchase.items && purchase.items.length > 0) {
+          const convertedItems: PurchaseItem[] = purchase.items.map((item: any, index: number) => {
+            const qty = item.qty || 1;
+            const rate = item.rate || 0;
+
+            // Use existing tax breakdown from database if available, otherwise calculate
+            const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
+            const total = item.total || item.subtotal || (qty * rate + tax);
+
+            // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
+            const cgst = item.cgst || 0;
+            const sgst = item.sgst || 0;
+            const igst = item.igst || 0;
+
+            return {
+              id: (index + 1).toString(),
+              product_id: item.product_id || item.category_id || 1,
+              product_name: item.product_name || item.name_of_product || '',
+              car_model: item.car_model || (item.model_id ? `Model ${item.model_id}` : ''),
+              category: item.category || '',
+              sub_category: item.sub_category || '',
+              company: item.company || (item.company_id ? `Company ${item.company_id}` : ''),
+              part_number: item.part_number || item.part || '',
+              qty: qty,
+              rate: rate,
+              gst_percentage: item.gst_percentage || item.gst_rate || 0, // Preserve existing GST percentage
+              tax: tax,
+              cgst: cgst,
+              sgst: sgst,
+              igst: igst,
+              total: total
+            };
+          });
+          setSelectedProducts(convertedItems);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching purchase for edit:', error);
+    } finally {
+      setInvoiceNumberLoading(false);
+    }
+  };
+
   const handleInputChange = (field: keyof PurchaseFormData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
@@ -332,24 +524,32 @@ export default function PurchaseCreate() {
     const vendor = vendors.find(v => v.id === vendorId);
     if (vendor) {
       setVendorIdToSave(parseInt(vendor.id)); // Store vendor ID for API
+      setSelectedVendor(vendor); // Store vendor object for UI display
+
+      // Clear existing tax calculations and selected products when vendor changes
+      setSelectedProducts([]); // Clear all selected products
+      setSelectedRowProduct(null); // Clear selected product in form
+
       setFormData(prev => ({
+        // Reset tax fields to empty so GST can be recalculated
         ...prev,
-        vendor_name: vendor.vendor_name,
-        contact_number: vendor.contact_no || '',
-        email_id: vendor.email || '',
-        address: vendor.address || '',
-        address_2: vendor.address_2 || '',
-        city: vendor.city || '',
-        state: vendor.state || '',
-        gst_number: vendor.tax_id || ''
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
       }));
+      setVendorStateForTax(vendor.state || ''); // Set separate state for tax calculations
+    } else {
+      // Clear vendor selection
+      setVendorIdToSave(null);
+      setSelectedVendor(null);
+      setVendorStateForTax('');
     }
   };
 
   const addProductToPurchase = (product: Product) => {
     // Determine if intra-state or inter-state
     const businessState = 'Uttar Pradesh'; // TODO: Make this a configurable business setting
-    const isIntraState = formData.state === businessState;
+    const isIntraState = vendorStateForTax === businessState;
 
     const qty = 1;
     const rate = product.selling_price || product.rate || 0;
@@ -377,6 +577,7 @@ export default function PurchaseCreate() {
       part_number: product.part_no || '',
       qty: qty,
       rate: rate,
+      gst_percentage: taxPercent,
       tax: totalTaxAmount,
       cgst: cgst,
       sgst: sgst,
@@ -402,31 +603,29 @@ export default function PurchaseCreate() {
     setSelectedProducts(prev => prev.filter(item => item.id !== id));
   };
 
-  const calculateSubtotal = () => {
-    return selectedProducts.reduce((sum, item) => sum + item.total, 0);
-  };
+  const subtotal = useMemo(() => {
+    return selectedProducts.reduce((sum, item) => sum + (item.qty * item.rate), 0);
+  }, [selectedProducts]);
 
-  const calculateTotalTax = () => {
-    const subtotal = calculateSubtotal();
+  const totalTax = useMemo(() => {
+    // If user has manually set tax values, use those
+    if (formData.total_cgst || formData.total_sgst || formData.total_igst) {
+      const cgst = parseFloat(formData.total_cgst) || 0;
+      const sgst = parseFloat(formData.total_sgst) || 0;
+      const igst = parseFloat(formData.total_igst) || 0;
+      return cgst + sgst + igst;
+    }
+
+    // Otherwise calculate from items
+    return selectedProducts.reduce((sum, item) => sum + item.cgst + item.sgst + item.igst, 0);
+  }, [selectedProducts, formData.total_cgst, formData.total_sgst, formData.total_igst]);
+
+  const grandTotal = useMemo(() => {
     const packingTotal = parseFloat(formData.packing_forwarding_total) || 0;
     const transportCost = parseFloat(formData.transport_cost) || 0;
-    const basicValue = subtotal + packingTotal + transportCost;
-
-    const cgst = (basicValue * parseFloat(formData.total_cgst || '0')) / 100;
-    const sgst = (basicValue * parseFloat(formData.total_sgst || '0')) / 100;
-    const igst = (basicValue * parseFloat(formData.total_igst || '0')) / 100;
-
-    return cgst + sgst + igst;
-  };
-
-  const calculateGrandTotal = () => {
-    const subtotal = calculateSubtotal();
-    const packingTotal = parseFloat(formData.packing_forwarding_total) || 0;
-    const transportCost = parseFloat(formData.transport_cost) || 0;
-    const totalTax = calculateTotalTax();
 
     return subtotal + packingTotal + transportCost + totalTax;
-  };
+  }, [subtotal, totalTax, formData.packing_forwarding_total, formData.transport_cost]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -434,8 +633,8 @@ export default function PurchaseCreate() {
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
-    if (!formData.vendor_name.trim()) {
-      newErrors.vendor_name = 'Vendor name is required';
+    if (!selectedVendorId || !selectedVendor) {
+      newErrors.vendor_name = 'Please select a vendor';
     }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
@@ -456,7 +655,6 @@ export default function PurchaseCreate() {
   };
 
   const handleConfirmSubmit = async () => {
-    setShowConfirmationModal(false);
     setLoading(true);
 
     try {
@@ -495,14 +693,17 @@ export default function PurchaseCreate() {
         total_sgst: parseFloat(formData.total_sgst) || 0,
         total_igst: parseFloat(formData.total_igst) || 0,
         notes: formData.notes,
-        total_tax: calculateTotalTax(),
+        total_tax: totalTax,
         payment_status: formData.payment_status,
         payment_mode: formData.payment_mode,
-        grand_total: calculateGrandTotal()
+        grand_total: grandTotal
       };
 
-      const response = await fetch('/api/purchases', {
-        method: 'POST',
+      const method = isEditMode ? 'PUT' : 'POST';
+      const url = isEditMode ? `/api/purchases/${editPurchaseId}` : '/api/purchases';
+
+      const response = await fetch(url, {
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -510,13 +711,16 @@ export default function PurchaseCreate() {
       });
 
       if (response.ok) {
+        setShowConfirmationModal(false); // Close modal on success
         router.push('/purchases');
       } else {
         const error = await response.json();
-        setErrors({ submit: error.message || 'Failed to create purchase' });
+        setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase` });
+        // Keep modal open on error so user can see the error
       }
     } catch (error) {
       setErrors({ submit: 'Network error occurred' });
+      // Keep modal open on error
     } finally {
       setLoading(false);
     }
@@ -615,7 +819,7 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
                     type="text"
-                    value={formData.contact_number}
+                    value={selectedVendor?.contact_no || ''}
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     placeholder="Auto-filled from vendor"
                     readOnly
@@ -626,7 +830,7 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={formData.email_id}
+                    value={selectedVendor?.email || ''}
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     placeholder="Auto-filled from vendor"
                     readOnly
@@ -637,7 +841,7 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={formData.gst_number}
+                    value={selectedVendor?.tax_id || ''}
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     placeholder="Auto-filled from vendor"
                     readOnly
@@ -649,7 +853,7 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 1</label>
                     <input
                       type="text"
-                      value={formData.address}
+                      value={selectedVendor?.address || ''}
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                       placeholder="Auto-filled from vendor"
                       readOnly
@@ -660,7 +864,7 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
                     <input
                       type="text"
-                      value={formData.address_2}
+                      value={selectedVendor?.address_2 || ''}
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                       placeholder="Auto-filled from vendor"
                       readOnly
@@ -671,7 +875,7 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                     <input
                       type="text"
-                      value={formData.city}
+                      value={selectedVendor?.city || ''}
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                       placeholder="Auto-filled from vendor"
                       readOnly
@@ -682,7 +886,7 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
                     <input
                       type="text"
-                      value={formData.state}
+                      value={selectedVendor?.state || ''}
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                       placeholder="Auto-filled from vendor"
                       readOnly
@@ -785,58 +989,31 @@ export default function PurchaseCreate() {
                         {selectedProducts.length > 0 ? selectedProducts.length + 1 : 1}
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={selectedRowProduct}
-                          onChange={(e) => {
-                            const productId = e.target.value;
-                            setSelectedRowProduct(productId);
-
-                            // Auto-fill all product details when product is selected
-                            if (productId) {
-                              const selectedProduct = products.find(p => p.id.toString() === productId);
-                              if (selectedProduct) {
-                                // Auto-fill filters
-                                setProductRowFilters(prev => ({
-                                  ...prev,
-                                  category: selectedProduct.product_category_id ? selectedProduct.product_category_id.toString() : '',
-                                  subcategory: selectedProduct.product_subcategory_id ? selectedProduct.product_subcategory_id.toString() : '',
-                                  carModels: selectedProduct.car_model_ids ? selectedProduct.car_model_ids.split(',').map(id => id.trim()) : [],
-                                  company: selectedProduct.company || '',
-                                  partNo: selectedProduct.part_no || ''
-                                }));
-
-                                // Auto-fill template row
-                                setTemplateRow(prev => ({
-                                  ...prev,
-                                  rate: selectedProduct.selling_price ? selectedProduct.selling_price.toString() : '',
-                                  tax: selectedProduct.gst_rate_percentage ? selectedProduct.gst_rate_percentage.toString() : '0'
-                                }));
-                              }
-                            } else {
-                              // Clear when no product selected
-                              setProductRowFilters(prev => ({
-                                category: '',
-                                subcategory: '',
-                                carModels: [],
-                                company: '',
-                                partNo: ''
-                              }));
-                              setTemplateRow(prev => ({
-                                ...prev,
-                                rate: '',
-                                tax: '0'
-                              }));
-                            }
+                        <button
+                          type="button"
+                          onClick={() => {
+    // Clear any existing validation errors when opening panel
+    setErrors({});
+    setProductSearchTerm(''); // Clear search when opening panel
+    setIsProductPanelOpen(true);
                           }}
+                          disabled={!selectedVendorId}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${
+                            selectedVendorId
+                              ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                              : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                          }`}
+                          title={!selectedVendorId ? 'Please select a vendor first' : ''}
                         >
-                          <option value="">Select Product</option>
-                          {filteredRowProducts.map((product) => (
-                            <option key={product.id} value={product.id}>
-                              {product.product_name}
-                            </option>
-                          ))}
-                        </select>
+                          {selectedRowProduct ? (
+                            selectedRowProduct.product_name || 'Select Product'
+                          ) : (
+                            <span className="text-slate-400">Select Product</span>
+                          )}
+                        </button>
+                        {!selectedVendorId && (
+                          <p className="text-xs text-amber-400 mt-1">Select a vendor first</p>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <select
@@ -950,11 +1127,15 @@ export default function PurchaseCreate() {
                         <input
                           type="number"
                           step="0.01"
-                          className="w-full px-2 py-2 bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 rounded text-xs text-slate-400 text-center cursor-not-allowed"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="18%"
                           value={templateRow.tax}
-                          readOnly
-                          disabled
+                          onChange={(e) => {
+                            setTemplateRow(prev => ({
+                              ...prev,
+                              tax: e.target.value
+                            }));
+                          }}
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-20">
@@ -972,9 +1153,10 @@ export default function PurchaseCreate() {
                       </td>
                       <td className="px-4 py-3 text-center w-20">
                         <button
+                          type="button"
                           onClick={() => {
-                            if (selectedRowProduct) {
-                              const selectedProduct = products.find(p => p.id.toString() === selectedRowProduct);
+                            if (selectedRowProduct !== null) {
+                              const selectedProduct = selectedRowProduct;
                               if (selectedProduct) {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
@@ -983,22 +1165,32 @@ export default function PurchaseCreate() {
                                 const subtotal = qty * rate;
                                 const taxAmount = (subtotal * taxPercent) / 100;
 
-                                // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
-                                const cgst = taxAmount / 2;
-                                const sgst = taxAmount / 2;
-                                const igst = 0;
+                        // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
+                        const cgst = taxAmount / 2;
+                        const sgst = taxAmount / 2;
+                        const igst = 0;
+
+                                // Convert car model IDs to names for display
+                                const carModelNames = productRowFilters.carModels
+                                  .map(id => {
+                                    const model = filterOptions.models.find(m => m.id.toString() === id);
+                                    return model ? model.name : id;
+                                  })
+                                  .filter(name => name)
+                                  .join(', ');
 
                                 const newItem: PurchaseItem = {
                                   id: Date.now().toString(),
                                   product_id: selectedProduct.id,
                                   product_name: selectedProduct.product_name,
-                                  car_model: productRowFilters.carModels.join(', '),
+                                  car_model: carModelNames || '',
                                   category: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
                                   sub_category: filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '',
                                   company: filterOptions.companies.find(c => c.id.toString() === productRowFilters.company)?.name || '',
                                   part_number: productRowFilters.partNo,
                                   qty: qty,
                                   rate: rate,
+                                  gst_percentage: taxPercent,
                                   tax: taxAmount,
                                   cgst: cgst,
                                   sgst: sgst,
@@ -1009,7 +1201,7 @@ export default function PurchaseCreate() {
                                 setSelectedProducts(prev => [...prev, newItem]);
 
                                 // Reset form
-                                setSelectedRowProduct('');
+                                setSelectedRowProduct(null);
                                 setProductRowFilters({
                                   category: '',
                                   subcategory: '',
@@ -1093,7 +1285,7 @@ export default function PurchaseCreate() {
                           SUBTOTAL
                         </td>
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200" colSpan={2}>
-                          ₹{calculateSubtotal().toFixed(2)}
+                          ₹{subtotal.toFixed(2)}
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
@@ -1149,11 +1341,18 @@ export default function PurchaseCreate() {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
                   <input
-                    type="text"
-                    value={formData.tax}
-                    onChange={(e) => handleInputChange('tax', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter tax (optional)"
+                    type="number"
+                    step="0.01"
+                    value={(formData.total_cgst !== '' || formData.total_sgst !== '' || formData.total_igst !== '')
+                      ? (parseFloat(formData.total_cgst) + parseFloat(formData.total_sgst) + parseFloat(formData.total_igst)).toFixed(2)
+                      : vendorStateForTax === 'Uttar Pradesh'
+                        ? (parseFloat(formData.total_cgst) + parseFloat(formData.total_sgst)).toFixed(2)
+                        : formData.total_igst
+                    }
+                    readOnly
+                    disabled
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-calculated tax"
                   />
                 </div>
 
@@ -1227,7 +1426,7 @@ export default function PurchaseCreate() {
                     <div className="flex items-center space-x-2">
                       <Calculator className="w-4 h-4 text-slate-400" />
                       <span className="text-white font-semibold text-lg">
-                        ₹{calculateGrandTotal().toFixed(2)}
+                       ₹{grandTotal.toFixed(2)}
                       </span>
                     </div>
                   </div>
@@ -1259,22 +1458,122 @@ export default function PurchaseCreate() {
                 disabled={loading}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Creating...' : 'Create Purchase'}
+                {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Purchase' : 'Create Purchase')}
               </button>
             </div>
           </div>
         </div>
       </form>
 
+      {/* Product Selection Side Panel */}
+      {isProductPanelOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            onClick={() => setIsProductPanelOpen(false)}
+          />
+
+          {/* Panel */}
+          <div className="fixed top-0 right-0 w-3/12 h-full bg-slate-900 shadow-lg flex flex-col z-50">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-700">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-slate-200">Select Product</h3>
+                <button
+                  onClick={() => setIsProductPanelOpen(false)}
+                  className="p-1 hover:bg-slate-800 rounded"
+                >
+                  <span className="text-slate-400 text-xl">×</span>
+                </button>
+              </div>
+
+              {/* Search Input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search products..."
+                  value={productSearchTerm}
+                  onChange={(e) => setProductSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Product List */}
+            <div className="flex-1 overflow-y-auto">
+              {searchedProducts.length > 0 ? (
+                <div className="p-4 space-y-2">
+                  {searchedProducts.map((product) => (
+                    <div
+                      key={product.id}
+                      className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-750 cursor-pointer transition-colors"
+                      onClick={() => {
+                        setSelectedRowProduct(product);
+                        setProductRowFilters({
+                          category: product.product_category_id ? product.product_category_id.toString() : '',
+                          subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
+                          carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
+                          company: product.company || '',
+                          partNo: product.part_no || ''
+                        });
+                        setTemplateRow({
+                          qty: '1',
+                          rate: '0',
+                          tax: '0'
+                        });
+
+                        // Close panel and reset search
+                        setIsProductPanelOpen(false);
+                        setProductSearchTerm('');
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <h4 className="text-slate-200 font-bold text-sm">{product.id} - {product.product_name}</h4>
+                          <div className="flex items-center justify-between mt-1">
+                            <div className="flex items-center">
+                              <span className="text-green-400 font-semibold text-sm mr-2">Stock:</span>
+                              <span className="text-white font-bold text-sm">{product.stock || 0} units</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-8 text-center">
+                  <p className="text-slate-400 text-sm">
+                    {productSearchTerm ? 'No products found' : 'Loading products...'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-700">
+              <button
+                onClick={() => setIsProductPanelOpen(false)}
+                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={showConfirmationModal}
-        title="Create Purchase?"
-        message={`Are you sure you want to create this purchase for ₹${calculateGrandTotal().toFixed(2)}? This action cannot be undone.`}
-        confirmText="Create Purchase"
+        title={isEditMode ? "Update Purchase?" : "Create Purchase?"}
+        message={`Are you sure you want to ${isEditMode ? 'update' : 'create'} this purchase for ₹${grandTotal.toFixed(2)}? ${isEditMode ? 'This will update the existing purchase.' : 'This action cannot be undone.'}`}
+        confirmText={isEditMode ? "Update Purchase" : "Create Purchase"}
         cancelText="Cancel"
         showLoading={loading}
-        loadingText="Creating Purchase..."
+        loadingText={isEditMode ? "Updating Purchase..." : "Creating Purchase..."}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
       />

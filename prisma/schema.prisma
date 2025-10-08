@@ -57,7 +57,8 @@ model Product {
   part_no                String?   @db.VarChar(100)
   min_stock              Int?
   stock                  Int?
-  rate                   Int?
+  opening_stock          Int?
+  opening_rate           Int?
   notes                  String?   @db.VarChar(255)
 
   // ===== NEW FK FIELDS =====

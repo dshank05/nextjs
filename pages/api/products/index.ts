@@ -150,8 +150,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       company,
       part_no,
       min_stock,
+      opening_stock,
       stock,
-      rate,
+      opening_rate,
       hsn,
       notes,
 
@@ -238,7 +239,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       part_no: part_no || null,
       min_stock: min_stock ? parseInt(min_stock) : null,
       stock: stock ? parseInt(stock) : null,
-      rate: rate ? parseFloat(rate) : null,
+      opening_stock: opening_stock ? parseInt(opening_stock) : null,
+      opening_rate: opening_rate ? parseFloat(opening_rate) : null,
       hsn: hsn || null,
 
       // ===== NEW FK FIELDS =====

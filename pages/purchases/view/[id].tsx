@@ -179,13 +179,13 @@ export default function PurchaseView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button className="btn-primary flex items-center gap-2" title="Edit Purchase">
+              <button
+                onClick={() => router.push(`/purchases/create?edit=${purchase.id}`)}
+                className="btn-primary flex items-center gap-2"
+                title="Edit Purchase"
+              >
                 <Edit className="w-4 h-4" />
                 Edit
-              </button>
-              <button className="btn-danger flex items-center gap-2" title="Delete Purchase">
-                <Trash2 className="w-4 h-4" />
-                Delete
               </button>
             </div>
           </div>
