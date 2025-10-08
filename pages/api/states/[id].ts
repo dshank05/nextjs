@@ -1,4 +1,4 @@
-import type { NextApiRequest, NextApiResponse } from 'next'
+ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
 export default async function handler(
@@ -120,7 +120,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
     })
 
     const vendorsUsingState = await prisma.vendor_details.findFirst({
-      where: { state: stateId }
+      where: { state: stateId.toString() }
     })
 
     if (customersUsingState || vendorsUsingState) {

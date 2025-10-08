@@ -141,7 +141,7 @@ export default function PurchaseCreate() {
   const [templateRow, setTemplateRow] = useState({
     qty: '1',
     rate: '',
-    tax: '18'
+    tax: '0'
   });
 
   // State for selected vendor details (fetched on-demand, not stored in formData)

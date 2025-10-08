@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
+import { FileText, Download, Printer } from 'lucide-react'
+import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils'
 
 // Define types for purchase data (matching the Purchase and Purchaseitems tables)
 interface PurchaseItem {
@@ -208,13 +210,64 @@ export default function PurchasesPage() {
   // In proper implementation, API would filter by vendor ID or client would have ID mapping
   const purchasesAsTransactions = allTransactions
 
+  // Export functions
+  const handleExportPDF = async () => {
+    console.log('Exporting purchases to PDF...')
+    const tableElement = getTableForExport()
+    if (tableElement && purchasesAsTransactions.length > 0) {
+      await exportToPDF(tableElement, purchasesAsTransactions, {
+        title: 'Purchases Report',
+        fileName: 'purchases_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  const handleExportExcel = () => {
+    console.log('Exporting purchases to Excel...')
+    if (purchasesAsTransactions.length > 0) {
+      exportToExcel(purchasesAsTransactions, {
+        title: 'Purchases Report',
+        fileName: 'purchases_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  // Print individual purchase
+  const handlePrintPurchase = (transaction: any) => {
+    console.log('Printing purchase:', transaction.id)
+    // TODO: Implement print functionality (will print view page)
+    alert(`Print functionality for purchase ${transaction.invoice_no} will be implemented`)
+  }
+
   return (
     <div className="space-y-6">
-      {/* <div className="flex items-center justify-end">
-        <button className="btn-primary">
+      {/* Header with Export Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={handleExportPDF}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Export as PDF</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export as Excel</span>
+          </button>
+        </div>
+
+        {/* <button className="btn-primary">
           New Purchase Invoice
-        </button>
-      </div> */}
+        </button> */}
+      </div>
 
       {/* Filters */}
       <div>
@@ -249,6 +302,7 @@ export default function PurchasesPage() {
         loading={loading}
         onPageChange={handlePageChange}
         onViewDetails={handleViewDetails}
+        onPrintDetails={handlePrintPurchase}
         hideTypeColumn={true}
       />
 

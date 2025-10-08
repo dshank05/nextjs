@@ -123,23 +123,51 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
-      invoice_no,
-      invoice_date,
-      select_customer,
-      items_total,
-      freight,
-      total_taxable_value,
-      total_cgst,
-      total_sgst,
-      total_igst,
-      total_tax,
-      total,
-      notes,
-      fy,
-      invoiceItems,
-      billingDetails,
-      shippingDetails,
-      transportDetails
+      // ===== MAIN INVOICE FIELDS (CURRENTLY STORED IN DATABASE) =====
+      invoice_no,                        // ✓ Invoice.invoice_no
+      invoice_date,                      // ✓ Invoice.invoice_date (converted to timestamp)
+      select_customer,                   // ✓ Invoice.select_customer
+      items_total,                       // ✓ Invoice.items_total
+      freight,                           // ✓ Invoice.freight
+      total_taxable_value,               // ✓ Invoice.total_taxable_value
+      total_cgst,                        // ✓ Invoice.total_cgst
+      total_sgst,                        // ✓ Invoice.total_sgst
+      total_igst,                        // ✓ Invoice.total_igst
+      total_tax,                         // ✓ Invoice.total_tax
+      total,                             // ✓ Invoice.total
+      notes,                             // ✓ Invoice.notes
+      fy,                                // ✓ Invoice.fy
+
+      // ===== RELATIONAL DATA (CURRENTLY STORED IN DATABASE) =====
+      invoiceItems,                      // ✓ InvoiceItems table (multiple records)
+      billingDetails,                    // ✓ BillToSales table (single record)
+      shippingDetails,                   // ✓ ShipTo table (single record)
+      transportDetails,                  // ✓ TransportDetails table (single record)
+
+      // ===== FIELDS COLLECTED BUT NOT YET SAVED IN DATABASE =====
+      // These fields are collected in UI but current schema doesn't have space for them:
+      bill_reference,                    // ❌ NOT SAVED - Future: Invoice.bill_reference
+      staff_details,                     // ❌ NOT SAVED - Future: Invoice.staff_details
+      staff_id,                          // ❌ NOT SAVED - Future: Invoice.staff_id (relation)
+      mechanic_id,                       // ❌ NOT SAVED - Future: Invoice.mechanic_id (relation)
+      commission,                        // ❌ NOT SAVED - Future: Invoice.commission
+      discount,                          // ❌ NOT SAVED - Future: Invoice.discount (invoice-level)
+      tax,                               // ❌ NOT SAVED - Future: Invoice.tax_description
+      descriptions,                      // ❌ NOT SAVED - Future: Invoice.descriptions
+      packing_forwarding_qty,            // ❌ NOT SAVED - Future: Invoice.packing_forwarding_qty
+      packing_forwarding_rate,           // ❌ NOT SAVED - Future: Invoice.packing_forwarding_rate
+      packing_forwarding_total,          // ❌ NOT SAVED - Future: Invoice.packing_forwarding_total
+      tax_rate,                          // ❌ NOT SAVED - Future: Invoice.tax_rate_percentage
+      basic_value,                       // ❌ NOT SAVED - Future: Invoice.basic_value
+
+      // ===== PAYMENT FIELDS (UI vs DB NAMING ISSUES) =====
+      payment_status,                    // ❌ NOT SAVED - UI sends payment_status, DB has status field (1=Paid)
+      payment_mode,                      // ✓ Invoice.payment_mode
+
+      // ===== CALCULATED FIELDS (REDUNDANT, NOT SAVED) =====
+      total_discount,                    // ❌ NOT SAVED - Calculated field, will compute from items
+      subtotal,                          // ❌ NOT SAVED - Redundant, same as items_total
+      grand_total                        // ❌ NOT SAVED - Redundant, same as total
     } = req.body
 
     // Validate required fields
@@ -147,87 +175,137 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Required fields missing' })
     }
 
+    console.log('� INVOICE API RECEIVED PAYLOAD:');
+    console.log('✅ FIELDS BEING STORED IN DATABASE:', {
+      invoice_no, invoice_date, select_customer, items_total, freight,
+      total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, fy,
+      has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems
+    });
+    console.log('❌ FIELDS COLLECTED BUT NOT CURRENTLY SAVED:', {
+      bill_reference, staff_details, staff_id, mechanic_id, commission, discount, tax,
+      descriptions, packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total,
+      tax_rate, basic_value, payment_status, total_discount, subtotal, grand_total
+    });
+
+    // ===== FUTURE SCHEMA EXPANSION FIELDS =====
+    // These fields don't exist in current Invoice/InvoiceItems tables, similar to Product API approach:
+    // TODO: Add these fields to Invoice/InvoiceItems schemas when ready:
+    // - approved_by: String? (user who approved the invoice)
+    // - approval_date: DateTime? (when invoice was approved)
+    // - delivery_status: String? ("pending", "shipped", "delivered")
+    // - payment_terms: String? ("net_15", "net_30", "cod")
+    // - invoice_discount: Float? (separate from item-level discounts)
+    // - due_date: DateTime? (calculated based on payment terms)
+    // - eway_bill_no: String? (for interstate sales)
+    // - credit_period_days: Int? (number of days for credit)
+    // - salesperson_id: Int? (who sold this invoice)
+    // - delivery_notes: String? (separate from general notes)
+    // - quality_check_status: String? ("pending", "passed", "failed")
+    // - return_policy: String? (terms for returns/exchanges)
+    // - warranty_period: String? (warranty information)
+
+    // ===== DATABASE CREATION MAPPING =====
     // Start transaction
     const result = await prisma.$transaction(async (tx: any) => {
-      // Create invoice
+      // ===== INVOICE TABLE CREATION =====
+      // Maps to: Invoice table
       const invoice = await tx.invoice.create({
         data: {
-          invoice_no,
-          invoice_date: Math.floor(new Date(invoice_date).getTime() / 1000),
-          select_customer,
-          items_total: items_total || 0,
-          freight: freight || 0,
-          total_taxable_value,
-          total_cgst: total_cgst || 0,
-          total_sgst: total_sgst || 0,
-          total_igst: total_igst || 0,
-          total_tax: total_tax || 0,
-          total,
-          notes,
-          fy,
-          status: 1,
-          payment_mode: 1,
-          updated_at: new Date().toISOString()
+          invoice_no,                                    // Invoice.invoice_no
+          invoice_date: Math.floor(new Date(invoice_date).getTime() / 1000), // Invoice.invoice_date (converted to timestamp)
+          select_customer,                               // Invoice.select_customer
+          items_total: items_total || 0,                 // Invoice.items_total
+          freight: freight || 0,                         // Invoice.freight
+          total_taxable_value,                           // Invoice.total_taxable_value
+          total_cgst: total_cgst || 0,                   // Invoice.total_cgst
+          total_sgst: total_sgst || 0,                   // Invoice.total_sgst
+          total_igst: total_igst || 0,                   // Invoice.total_igst
+          total_tax: total_tax || 0,                     // Invoice.total_tax
+          total,                                         // Invoice.total
+          notes,                                         // Invoice.notes
+          fy,                                            // Invoice.fy
+          status: 1,                                     // Invoice.status (default: Paid)
+          payment_mode: 1,                               // Invoice.payment_mode (default: Cash)
+          updated_at: new Date().toISOString()           // Invoice.updated_at
         }
       })
 
-      // Create billing details
+      // ===== BILLING DETAILS CREATION =====
+      // Maps to: BillToSales table
       if (billingDetails) {
         await tx.billtosales.create({
           data: {
-            invoice_no: invoice.id,
-            ...billingDetails
+            invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
+            user_name: billingDetails.user_name,          // BillToSales.user_name
+            address: billingDetails.address,              // BillToSales.address
+            address2: billingDetails.address2,            // BillToSales.address2
+            mobile: billingDetails.mobile,                // BillToSales.mobile
+            email: billingDetails.email,                  // BillToSales.email
+            state: billingDetails.state,                  // BillToSales.state
+            state_code: billingDetails.state_code,        // BillToSales.state_code
+            gstin: billingDetails.gstin                   // BillToSales.gstin
           }
         })
       }
 
-      // Create shipping details
+      // ===== SHIPPING DETAILS CREATION =====
+      // Maps to: ShipTo table
       if (shippingDetails) {
         await tx.shipto.create({
           data: {
-            invoice_no: invoice.id,
-            ...shippingDetails
+            invoice_no: invoice.id,                       // ShipTo.invoice_no (FK to invoice)
+            user_name: shippingDetails.user_name,          // ShipTo.user_name
+            address: shippingDetails.address,              // ShipTo.address
+            state: shippingDetails.state,                  // ShipTo.state
+            state_code: shippingDetails.state_code,        // ShipTo.state_code
+            gstin: shippingDetails.gstin                   // ShipTo.gstin
           }
         })
       }
 
-      // Create transport details
+      // ===== TRANSPORT DETAILS CREATION =====
+      // Maps to: TransportDetails table
       if (transportDetails) {
         await tx.transportdetails.create({
           data: {
-            invoice_id: invoice.id,
-            ...transportDetails
+            invoice_id: invoice.id,                       // TransportDetails.invoice_id (FK to invoice)
+            trans_mode: transportDetails.trans_mode,      // TransportDetails.trans_mode
+            vehicle_no: transportDetails.vehicle_no,       // TransportDetails.vehicle_no
+            supply_date: transportDetails.supply_date,    // TransportDetails.supply_date
+            place_of_supply: transportDetails.place_of_supply // TransportDetails.place_of_supply
           }
         })
       }
 
-      // Create invoice items and update stock
+      // ===== INVOICE ITEMS CREATION =====
+      // Maps to: InvoiceItems table (multiple records)
       if (invoiceItems && invoiceItems.length > 0) {
         for (const item of invoiceItems) {
-          // Create invoice item
+          // Create invoice item record
           await tx.invoiceitems.create({
             data: {
-              invoice_no: invoice.id,
-              name_of_product: parseInt(item.name_of_product),
-              qty: item.qty,
-              rate: item.rate,
-              subtotal: item.subtotal,
-              hsn: item.hsn,
-              part: item.part,
-              category_id: item.category_id,
-              model_id: item.model_id,
-              company_id: item.company_id,
-              invoice_date: invoice.invoice_date,
-              fy: invoice.fy
+              invoice_no: invoice.id,                     // InvoiceItems.invoice_no (FK to invoice)
+              name_of_product: parseInt(item.name_of_product), // InvoiceItems.name_of_product (product name/ID)
+              qty: item.qty,                              // InvoiceItems.qty
+              rate: item.rate,                            // InvoiceItems.rate
+              subtotal: item.subtotal,                    // InvoiceItems.subtotal
+              hsn: item.hsn,                              // InvoiceItems.hsn
+              part: item.part,                            // InvoiceItems.part
+              category_id: item.category_id,              // InvoiceItems.category_id
+              model_id: item.model_id,                    // InvoiceItems.model_id
+              company_id: item.company_id,                // InvoiceItems.company_id
+              invoice_date: invoice.invoice_date,         // copied from invoice
+              fy: invoice.fy                             // copied from invoice
             }
           })
 
+          // ===== STOCK MANAGEMENT =====
           // Update product stock (decrease for sales)
           await tx.product.update({
             where: { id: parseInt(item.name_of_product) },
             data: {
               stock: {
-                decrement: item.qty
+                decrement: item.qty                      // Product.stock -= item.qty
               }
             }
           })
@@ -236,6 +314,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       return invoice
     })
+
+    console.log('✅ INVOICE CREATED SUCCESSFULLY:', { id: result.id, invoice_no: result.invoice_no, total: result.total });
 
     res.status(201).json(result)
   } catch (error) {

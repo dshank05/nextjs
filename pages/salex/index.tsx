@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
+import { FileText, Download, Printer } from 'lucide-react'
+import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils'
 
 // Define types for salex data (matching the invoicex and invoice_itemsx tables)
 interface SalexItem {
@@ -201,9 +203,60 @@ export default function SalexPage() {
   // In proper implementation, API would filter by customer ID or client would have ID mapping
   const salexAsTransactions = allTransactions
 
+  // Export functions
+  const handleExportPDF = async () => {
+    console.log('Exporting salex to PDF...')
+    const tableElement = getTableForExport()
+    if (tableElement && salexAsTransactions.length > 0) {
+      await exportToPDF(tableElement, salexAsTransactions, {
+        title: 'Invoice C Report',
+        fileName: 'invoice_c_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  const handleExportExcel = () => {
+    console.log('Exporting salex to Excel...')
+    if (salexAsTransactions.length > 0) {
+      exportToExcel(salexAsTransactions, {
+        title: 'Invoice C Report',
+        fileName: 'invoice_c_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  // Print individual salex
+  const handlePrintSalex = (transaction: any) => {
+    console.log('Printing salex:', transaction.id)
+    // TODO: Implement print functionality (will print view page)
+    alert(`Print functionality for salex ${transaction.invoice_no} will be implemented`)
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      {/* Header with Export Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={handleExportPDF}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Export as PDF</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export as Excel</span>
+          </button>
+        </div>
+
         <button className="btn-primary">
           New SALEX
         </button>
@@ -242,6 +295,7 @@ export default function SalexPage() {
         loading={loading}
         onPageChange={handlePageChange}
         onViewDetails={handleViewDetails}
+        onPrintDetails={handlePrintSalex}
         hideTypeColumn={true}
       />
 

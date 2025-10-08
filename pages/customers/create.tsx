@@ -262,18 +262,14 @@ export default function CustomerCreate() {
     setIsSaving(true);
 
     try {
-      // Get state IDs from names for API submission
-      const billingState = states.find(s => s.state_name === formData.billing_state);
-      const shippingState = states.find(s => s.state_name === formData.shipping_state);
-
       const submitData = {
         billing_name: formData.billing_name.trim(),
         // ===== BILLING ADDRESS FIELDS =====
         billing_address: formData.billing_address.trim(),
         billing_address_2: formData.billing_address_2.trim(),
         billing_city: formData.billing_city.trim(),
-        billing_state: billingState ? billingState.id : null,
-        billing_state_code: formData.billing_state_code,
+        billing_state: formData.billing_state,  // Send state name as string
+        billing_state_code: parseInt(formData.billing_state_code) || 0,  // Send state code as number
         billing_gstin: formData.billing_gstin.trim(),
 
         shipping_name: formData.shipping_name.trim(),
@@ -281,8 +277,8 @@ export default function CustomerCreate() {
         shipping_address: formData.shipping_address.trim(),
         shipping_address_2: formData.shipping_address_2.trim(),
         shipping_city: formData.shipping_city.trim(),
-        shipping_state: shippingState ? shippingState.id : null,
-        shipping_state_code: formData.shipping_state_code,
+        shipping_state: formData.shipping_state,  // Send state name as string
+        shipping_state_code: parseInt(formData.shipping_state_code) || 0,  // Send state code as number
         shipping_gstin: formData.shipping_gstin.trim(),
 
         contact_no: formData.contact_no.trim(),

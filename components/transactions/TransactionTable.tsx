@@ -1,6 +1,6 @@
 import { ReactNode, useState, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Truck } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Truck, Printer } from 'lucide-react';
 
 // Define types for transaction data
 interface TransactionItem {
@@ -59,6 +59,7 @@ interface TransactionTableProps {
   loading: boolean;
   onPageChange: (newPage: number) => void;
   onViewDetails: (transaction: Transaction) => void;
+  onPrintDetails?: (transaction: Transaction) => void; // New optional callback for print action
   hideTypeColumn?: boolean; // New optional prop to hide type column
 }
 
@@ -71,6 +72,7 @@ export const TransactionTable = ({
   loading,
   onPageChange,
   onViewDetails,
+  onPrintDetails,
   hideTypeColumn = false
 }: TransactionTableProps) => {
   const [sortBy, setSortBy] = useState<SortField>('invoice_date');
@@ -192,20 +194,11 @@ export const TransactionTable = ({
   };
 
   const getStatusBadge = (status?: number, type?: string) => {
-    // Use Paid (green), Unpaid (yellow), or Unknown (gray) statuses
-    if (type === 'purchase') {
-      switch (status) {
-        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
-        case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-        default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
-      }
+    // Use only Paid (green) or Unpaid (yellow) statuses - no Unknown
+    if (status === 1) {
+      return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
     } else {
-      switch (status) {
-        case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
-        case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-        case 2: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
-        default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
-      }
+      return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
     }
   };
 
@@ -290,13 +283,24 @@ export const TransactionTable = ({
                 <td className="text-slate-300">{formatDate(transaction.invoice_date)}</td>
                 <td>{getStatusBadge(transaction.status, transaction.type)}</td>
                 <td>
-                  <Link
-                    href={`/purchases/view/${transaction.id}`}
-                    title="View Purchase Details"
-                    className="btn-icon text-slate-300"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Link>
+                  <div className="flex items-center space-x-2">
+                    <Link
+                      href={`/${transaction.type === 'purchase' ? 'purchases' : transaction.type}/view/${transaction.id}`}
+                      title={`View ${transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)} Details`}
+                      className="btn-icon text-slate-300"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                    {onPrintDetails && (
+                      <button
+                        onClick={() => onPrintDetails(transaction)}
+                        title={`Print ${transaction.type.charAt(0).toUpperCase() + transaction.type.slice(1)} Details`}
+                        className="btn-icon text-slate-300 hover:text-blue-400"
+                      >
+                        <Printer className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

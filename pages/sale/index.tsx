@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
+import { FileText, Download, Printer } from 'lucide-react'
+import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils'
 
 // Define types for sales data (matching the Invoice and Invoiceitems tables)
 interface SaleItem {
@@ -201,9 +203,60 @@ export default function SalePage() {
   // In proper implementation, API would filter by customer ID or client would have ID mapping
   const salesAsTransactions = allTransactions
 
+  // Export functions
+  const handleExportPDF = async () => {
+    console.log('Exporting sales to PDF...')
+    const tableElement = getTableForExport()
+    if (tableElement && salesAsTransactions.length > 0) {
+      await exportToPDF(tableElement, salesAsTransactions, {
+        title: 'Invoice Report',
+        fileName: 'invoice_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  const handleExportExcel = () => {
+    console.log('Exporting sales to Excel...')
+    if (salesAsTransactions.length > 0) {
+      exportToExcel(salesAsTransactions, {
+        title: 'Invoice Report',
+        fileName: 'invoice_report'
+      })
+    } else {
+      alert('No data to export. Please ensure there are records visible.')
+    }
+  }
+
+  // Print individual sale
+  const handlePrintSale = (transaction: any) => {
+    console.log('Printing sale:', transaction.id)
+    // TODO: Implement print functionality (will print view page)
+    alert(`Print functionality for sale ${transaction.invoice_no} will be implemented`)
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-end">
+      {/* Header with Export Buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={handleExportPDF}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <FileText className="w-4 h-4" />
+            <span>Export as PDF</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            className="btn-secondary flex items-center space-x-2"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export as Excel</span>
+          </button>
+        </div>
+
         <button className="btn-primary">
           New Sales Invoice
         </button>
@@ -242,6 +295,7 @@ export default function SalePage() {
         loading={loading}
         onPageChange={handlePageChange}
         onViewDetails={handleViewDetails}
+        onPrintDetails={handlePrintSale}
         hideTypeColumn={true}
       />
 
