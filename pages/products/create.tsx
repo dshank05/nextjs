@@ -147,11 +147,16 @@ export default function ProductCreate() {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
 
-    // Auto-fill GST rate when HSN is selected
-    if (field === 'hsn' && value) {
-      const selectedGstRate = gstRates.find(rate => rate.hsn_code === value);
-      if (selectedGstRate) {
-        setFormData(prev => ({ ...prev, gst_rate: selectedGstRate.id.toString() }));
+    // Auto-fill GST rate when HSN is selected, clear when unselected
+    if (field === 'hsn') {
+      if (value) {
+        const selectedGstRate = gstRates.find(rate => rate.hsn_code === value);
+        if (selectedGstRate) {
+          setFormData(prev => ({ ...prev, gst_rate: selectedGstRate.id.toString() }));
+        }
+      } else {
+        // Clear GST rate when HSN is unselected
+        setFormData(prev => ({ ...prev, gst_rate: '' }));
       }
     }
   };

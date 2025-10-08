@@ -677,12 +677,6 @@ export default function PurchaseCreate() {
         tax: formData.tax,
         items: selectedProducts.map(item => ({
           product_id: item.product_id,
-          product_name: item.product_name,
-          car_model: item.car_model,
-          category: item.category,
-          sub_category: item.sub_category,
-          company: item.company,
-          part_number: item.part_number,
           qty: item.qty,
           rate: item.rate,
           tax: item.tax,
@@ -973,11 +967,11 @@ export default function PurchaseCreate() {
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         QTY
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         RATE
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-16">
-                        TAX AMOUNT
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                        TAX (%)
                       </th>
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                         TOTAL
@@ -1113,7 +1107,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-20">
+                      <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
                           step="0.01"
@@ -1128,12 +1122,12 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-16">
+                      <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
                           step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="18%"
+                          placeholder="0%"
                           value={templateRow.tax}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
@@ -1166,7 +1160,7 @@ export default function PurchaseCreate() {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const taxPercent = parseFloat(templateRow.tax) || selectedProduct.gst_rate_percentage || 0;
+                                const taxPercent = templateRow.tax !== '0' ? parseFloat(templateRow.tax) : 0;
                                 const subtotal = qty * rate;
                                 const taxAmount = (subtotal * taxPercent) / 100;
 
@@ -1368,9 +1362,10 @@ export default function PurchaseCreate() {
                       type="number"
                       step="0.01"
                       value={formData.total_cgst}
-                      onChange={(e) => handleInputChange('total_cgst', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-calculated CGST"
                     />
                   </div>
                   <div>
@@ -1379,9 +1374,10 @@ export default function PurchaseCreate() {
                       type="number"
                       step="0.01"
                       value={formData.total_sgst}
-                      onChange={(e) => handleInputChange('total_sgst', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-calculated SGST"
                     />
                   </div>
                   <div>
@@ -1390,9 +1386,10 @@ export default function PurchaseCreate() {
                       type="number"
                       step="0.01"
                       value={formData.total_igst}
-                      onChange={(e) => handleInputChange('total_igst', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-calculated IGST"
                     />
                   </div>
                 </div>

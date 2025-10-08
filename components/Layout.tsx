@@ -67,7 +67,7 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'INVOICE PAGE', href: '/sale' },
         { name: 'INVOICE CREATION PAGE', href: '/sale/create' },
-        { name: 'INVOICE VIEW PAGE', href: '/invoice/view' },
+        // { name: 'INVOICE VIEW PAGE', href: '/invoice/view' },
       ],
     },
     {
@@ -76,7 +76,7 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'INVOICE C PAGE', href: '/salex' },
         { name: 'INVOICE C CREATION PAGE', href: '/salex/create' },
-        { name: 'INVOICE C VIEW PAGE', href: '/invoicec/view' },
+        // { name: 'INVOICE C VIEW PAGE', href: '/invoicec/view' },
       ],
     },
     {

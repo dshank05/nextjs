@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
 import { TransactionTable } from '../../components/transactions/TransactionTable'
 import { TransactionFilters } from '../../components/transactions/TransactionFilters'
 import { FileText, Download, Printer } from 'lucide-react'
@@ -56,6 +57,9 @@ interface Pagination {
 }
 
 export default function SalexPage() {
+  // Router for navigation
+  const router = useRouter()
+
   // Filter states
   const [searchTerm, setSearchTerm] = useState('')
   const [customerVendorFilter, setCustomerVendorFilter] = useState('')
@@ -179,9 +183,9 @@ export default function SalexPage() {
   }
 
   // Handle view details
-  const handleViewDetails = (sale: Salex) => {
-    console.log('View details for salex:', sale)
-    alert(`Viewing details for SALEX Invoice #${sale.invoice_no}`)
+  const handleViewDetails = (transaction: any) => {
+    console.log('View details for salex:', transaction)
+    router.push(`/salex/view/${transaction.id}`)
   }
 
   // Initial load and when filters change

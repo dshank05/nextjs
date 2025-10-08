@@ -1,14 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ message: 'Method not allowed' })
-  }
-
+async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
       page = '1',
@@ -166,5 +159,153 @@ export default async function handler(
       message: 'Failed to fetch salex data',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
+  }
+}
+
+async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const {
+      invoice_no,
+      invoice_date,
+      select_customer,
+      invoiceItems,
+      billingDetails,
+      shippingDetails,
+      transportDetails,
+      items_total,
+      freight = 0,
+      total_taxable_value,
+      total,
+      notes = '',
+      payment_status = 1,
+      payment_mode = 1,
+      descriptions = ''
+    } = req.body
+
+    // Validate required fields
+    if (!invoice_no || !invoice_date || !select_customer || !invoiceItems || invoiceItems.length === 0) {
+      return res.status(400).json({ message: 'Missing required fields' })
+    }
+
+    // Convert date to timestamp
+    const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
+    const fy = new Date().getFullYear()
+
+    // Start transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create main invoice record in invoicex table
+      const invoice = await tx.invoicex.create({
+        data: {
+          invoice_no: parseInt(invoice_no),
+          select_customer: parseInt(select_customer),
+          items_total: parseFloat(items_total) || 0,
+          freight: parseFloat(freight) || 0,
+          total_taxable_value: parseFloat(total_taxable_value),
+          taxrate: 0, // No tax for salex
+          total_cgst: 0,
+          total_sgst: 0,
+          total_igst: 0,
+          total_tax: 0,
+          total: parseFloat(total),
+          notes: notes || '',
+          // Note: invoicex table doesn't have descriptions field, only notes
+          invoice_date: invoiceDateTimestamp,
+          updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
+          status: parseInt(payment_status),
+          payment_mode: parseInt(payment_mode),
+          fy: fy
+        }
+      })
+
+      // 2. Create invoice items in invoice_itemsx table
+      if (invoiceItems && invoiceItems.length > 0) {
+        await tx.invoice_itemsx.createMany({
+          data: invoiceItems.map((item: any) => ({
+            invoice_no: invoice.id, // Use the created invoice ID
+            name_of_product: item.name_of_product,
+            qty: parseFloat(item.qty),
+            rate: parseFloat(item.rate),
+            subtotal: parseFloat(item.subtotal),
+            hsn: item.hsn || '',
+            part: item.part || '',
+            category_id: item.category_id || null,
+            model_id: item.model_id || null,
+            company_id: item.company_id || null,
+            fy: fy,
+            invoice_date: invoiceDateTimestamp
+          }))
+        })
+      }
+
+      // 3. Create billing details in bill_tosalesx table
+      if (billingDetails) {
+        await tx.bill_tosalesx.create({
+          data: {
+            invoice_no: invoice.id,
+            user_name: billingDetails.user_name,
+            address: billingDetails.address,
+            address2: billingDetails.address2 || null,
+            mobile: billingDetails.mobile || null,
+            email: billingDetails.email || null,
+            state: billingDetails.state || null,
+            state_code: billingDetails.state_code || null,
+            gstin: billingDetails.gstin || null
+          }
+        })
+      }
+
+      // 4. Create shipping details in ship_tox table
+      if (shippingDetails) {
+        await tx.ship_tox.create({
+          data: {
+            invoice_no: invoice.id,
+            user_name: shippingDetails.user_name,
+            address: shippingDetails.address,
+            state: shippingDetails.state || null,
+            state_code: shippingDetails.state_code || null,
+            gstin: shippingDetails.gstin || null
+          }
+        })
+      }
+
+      // 5. Create transport details in transport_detailsx table
+      if (transportDetails) {
+        await tx.transport_detailsx.create({
+          data: {
+            invoice_id: invoice.id,
+            trans_mode: transportDetails.trans_mode || null,
+            vehicle_no: transportDetails.vehicle_no || null,
+            supply_date: transportDetails.supply_date || null,
+            place_of_supply: transportDetails.place_of_supply || null
+          }
+        })
+      }
+
+      return invoice
+    })
+
+    res.status(201).json({
+      message: 'Salex invoice created successfully',
+      invoice: result
+    })
+  } catch (error) {
+    console.error('Salex creation error:', error)
+    res.status(500).json({
+      message: 'Failed to create salex invoice',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method === 'GET') {
+    return handleGet(req, res)
+  } else if (req.method === 'POST') {
+    return handlePost(req, res)
+  } else {
+    return res.status(405).json({ message: 'Method not allowed' })
   }
 }

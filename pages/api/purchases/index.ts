@@ -362,18 +362,39 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Create purchase items
     for (const item of items) {
+      // Fetch product details from database
+      const product = await prisma.product.findUnique({
+        where: { id: parseInt(item.product_id) }
+      })
+
+      if (!product) {
+        throw new Error(`Product with ID ${item.product_id} not found`)
+      }
+
+      // Get product details from database
+      const productName = product.product_name || ''
+      const categoryId = product.product_category_id || 0
+      const subcategoryId = product.product_subcategory_id || 0
+      const hsn = product.hsn || ''
+      const part = product.part_no || ''
+      const modelId = 0 // For now, we'll use 0 since it's not directly available
+
+      // For company_id in purchase_items, we'll use a default or try to map from company name
+      // Since company is just a string field, we'll set company_id to 0 for now
+      const companyId = 0
+
       await prisma.purchaseitems.create({
         data: {
           invoice_no: purchase.invoice_no,
-          name_of_product: item.product_name,
-          category_id: item.category_id,
-          subcategory_id: item.subcategory_id,
-          model_id: item.model_id,
-          company_id: item.company_id,
-          car_model: item.car_model,
+          name_of_product: productName,
+          category_id: categoryId,
+          subcategory_id: subcategoryId,
+          model_id: modelId,
+          company_id: companyId,
+          car_model: '', // For now, empty string since we don't have direct car model mapping
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
-          hsn: item.hsn,
-          part: item.part_number,
+          hsn: hsn,
+          part: part,
           qty: item.qty,
           unit: 1, // Default unit
           rate: item.rate,
@@ -385,16 +406,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // Increase product stock when purchase is created
-      if (item.product_id) {
-        await prisma.product.update({
-          where: { id: parseInt(item.product_id) },
-          data: {
-            stock: {
-              increment: item.qty
-            }
+      await prisma.product.update({
+        where: { id: parseInt(item.product_id) },
+        data: {
+          stock: {
+            increment: item.qty
           }
-        })
-      }
+        }
+      })
     }
 
     res.status(201).json({

@@ -78,6 +78,15 @@ interface InvoiceItem {
   tax: number;
   discount_amount: number;
   total: number;
+  // New pricing fields from product create
+  hsn: string;
+  mrp: number;
+  discount: number;
+  margin: number;
+  // GST breakdown like purchase create
+  cgst: number;
+  sgst: number;
+  igst: number;
 }
 
 interface InvoiceFormData {
@@ -125,6 +134,10 @@ interface FilterOptions {
 
 export default function InvoiceCreate() {
   const router = useRouter();
+
+  // Business state hardcoded to Uttar Pradesh (assuming state code 9)
+  const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
@@ -156,6 +169,91 @@ export default function InvoiceCreate() {
   // State for selected product in the table row
   const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(null);
 
+  // State for filtered car models based on selected product
+  const [filteredCarModels, setFilteredCarModels] = useState<any[]>([]);
+
+  // Function to generate dynamic product name based on car model selection
+  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
+    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
+    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
+    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company || 'COMPANY';
+
+    // If no specific car model is selected, show base product name
+    if (selectedCarModelIds.length === 0) {
+      return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
+    }
+
+    // Use the first selected car model for the product name
+    const firstCarModelId = selectedCarModelIds[0];
+    const selectedCarModel = filterOptions.models.find(model => model.id.toString() === firstCarModelId);
+    const carModelName = selectedCarModel?.name || firstCarModelId;
+
+    return `${categoryName}-${subcategoryName}-${carModelName}-${companyName}`;
+  };
+
+  // Function to filter car models based on product compatibility
+  const getFilteredCarModelsForProduct = (product: Product): any[] => {
+    if (!product.car_model_ids || !product.car_model_ids.trim()) {
+      return filterOptions.models; // If no specific models, allow all
+    }
+
+    const compatibleModelIds = product.car_model_ids.split(',').map(id => id.trim());
+    return filterOptions.models.filter(model =>
+      compatibleModelIds.includes(model.id.toString())
+    );
+  };
+
+  // Function to calculate GST breakdown based on state comparison
+  const calculateGSTBreakdown = (taxAmount: number, customerStateCode: number | null) => {
+    const isIntraState = customerStateCode === BUSINESS_STATE_CODE;
+
+    if (isIntraState) {
+      // Intra-state: CGST + SGST (50-50 split)
+      return {
+        cgst: taxAmount / 2,
+        sgst: taxAmount / 2,
+        igst: 0
+      };
+    } else {
+      // Inter-state: IGST only
+      return {
+        cgst: 0,
+        sgst: 0,
+        igst: taxAmount
+      };
+    }
+  };
+
+  // Function to handle product selection and update filters
+  const handleProductSelection = (product: Product) => {
+    setSelectedRowProduct(product);
+
+    // Filter car models for this product
+    const compatibleModels = getFilteredCarModelsForProduct(product);
+    setFilteredCarModels(compatibleModels);
+
+    // Initially set car models to unselected
+    setProductRowFilters(prev => ({
+      ...prev,
+      category: product.product_category_id ? product.product_category_id.toString() : '',
+      subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
+      carModels: [], // Initially unselected
+      company: product.company || '',
+      partNo: product.part_no || ''
+    }));
+
+    console.log('🔄 PRODUCT SELECTED:', {
+      product: product.product_name,
+      compatibleCarModels: compatibleModels.map(m => m.name),
+      initialFilters: {
+        category: product.product_category_id,
+        subcategory: product.product_subcategory_id,
+        carModels: [], // unselected
+        company: product.company
+      }
+    });
+  };
+
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
@@ -165,12 +263,21 @@ export default function InvoiceCreate() {
   const [templateRow, setTemplateRow] = useState({
     qty: '1',
     rate: '',
-    tax: '0',
+    gst: '0',
     discount: '0'
   });
 
+  // State for discount toggle
+  const [enableDiscount, setEnableDiscount] = useState(false);
+
   // State for selected customer details (fetched on-demand, not stored in formData)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+
+  // New state for GST rates (from product create)
+  const [gstRates, setGstRates] = useState<any[]>([]);
+
+  // State for customer state (like vendor state in purchase create)
+  const [customerStateForTax, setCustomerStateForTax] = useState<string>(''); // Track customer's state for tax calculations
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -240,6 +347,7 @@ export default function InvoiceCreate() {
     fetchMechanics();
     fetchProducts();
     fetchFilterOptions();
+    fetchGstRates(); // Add GST rates fetch
     // Only fetch last invoice number in create mode, not edit mode
     if (!isEditMode) {
       fetchLastInvoiceNumber();
@@ -275,6 +383,20 @@ export default function InvoiceCreate() {
       setSearchedProducts(products);
     }
   }, [productSearchTerm, products]);
+
+  // Calculate and update GST totals whenever selectedProducts change
+  useEffect(() => {
+    const totalCgst = selectedProducts.reduce((sum, item) => sum + item.cgst, 0);
+    const totalSgst = selectedProducts.reduce((sum, item) => sum + item.sgst, 0);
+    const totalIgst = selectedProducts.reduce((sum, item) => sum + item.igst, 0);
+
+    setFormData(prev => ({
+      ...prev,
+      total_cgst: totalCgst.toFixed(2),
+      total_sgst: totalSgst.toFixed(2),
+      total_igst: totalIgst.toFixed(2)
+    }));
+  }, [selectedProducts]);
 
   const fetchCustomers = async () => {
     try {
@@ -325,6 +447,16 @@ export default function InvoiceCreate() {
       const response = await fetch('/api/products/filters');
       if (response.ok) setFilterOptions(await response.json());
     } catch (error) { console.error('Error fetching filter options:', error); }
+  };
+
+  const fetchGstRates = async () => {
+    try {
+      const response = await fetch('/api/gst-rates');
+      if (response.ok) {
+        const data = await response.json();
+        setGstRates(data.gstRates || []);
+      }
+    } catch (error) { console.error('Error fetching GST rates:', error); }
   };
 
   const fetchLastInvoiceNumber = async () => {
@@ -439,7 +571,16 @@ export default function InvoiceCreate() {
             discount_percentage: item.discount_percentage || 0,
             tax: item.tax || 0,
             discount_amount: item.discount_amount || 0,
-            total: item.total || 0
+            total: item.total || 0,
+            // New pricing fields - defaults for edit mode
+            hsn: item.hsn || '',
+            mrp: item.mrp || 0,
+            discount: item.discount || 0,
+            margin: item.margin || 0,
+            // GST breakdown - defaults for edit mode
+            cgst: item.cgst || item.tax / 2 || 0,
+            sgst: item.sgst || item.tax / 2 || 0,
+            igst: item.igst || 0
           }));
           setSelectedProducts(convertedItems);
         }
@@ -462,11 +603,19 @@ export default function InvoiceCreate() {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
+      setCustomerStateForTax(customer.billing_state?.toString() || ''); // Set customer's state for tax calculations
 
       // Clear tax calculations when customer changes
       setSelectedProducts([]);
+      setFormData(prev => ({
+        ...prev,
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
     } else {
       setSelectedCustomer(null);
+      setCustomerStateForTax('');
     }
   };
 
@@ -476,6 +625,9 @@ export default function InvoiceCreate() {
     const taxPercent = product.gst_rate_percentage || product.gst_rate || 0;
     const subtotal = qty * rate;
     const totalTaxAmount = (subtotal * taxPercent) / 100;
+
+    // Calculate GST breakdown based on customer's state
+    const gstBreakdown = calculateGSTBreakdown(totalTaxAmount, selectedCustomer?.billing_state_code);
 
     const newItem: InvoiceItem = {
       id: Date.now().toString(),
@@ -496,7 +648,16 @@ export default function InvoiceCreate() {
       discount_percentage: 0,
       tax: totalTaxAmount,
       discount_amount: 0,
-      total: subtotal + totalTaxAmount
+      total: subtotal + totalTaxAmount,
+      // New pricing fields
+      hsn: product.hsn || '',
+      mrp: 0, // Default MRP
+      discount: 0, // Default discount
+      margin: 0, // Default margin
+      // GST breakdown - use calculated values based on state
+      cgst: gstBreakdown.cgst,
+      sgst: gstBreakdown.sgst,
+      igst: gstBreakdown.igst
     };
 
     setSelectedProducts(prev => [...prev, newItem]);
@@ -510,6 +671,10 @@ export default function InvoiceCreate() {
         const newDiscountAmount = (newSubtotal * item.discount_percentage) / 100;
         const taxableAmount = newSubtotal - newDiscountAmount;
         const newTax = (taxableAmount * item.gst_percentage) / 100;
+
+        // Recalculate GST breakdown
+        const gstBreakdown = calculateGSTBreakdown(newTax, selectedCustomer?.billing_state_code);
+
         const newTotal = taxableAmount + newTax;
 
         return {
@@ -517,7 +682,10 @@ export default function InvoiceCreate() {
           qty,
           discount_amount: newDiscountAmount,
           tax: newTax,
-          total: newTotal
+          total: newTotal,
+          cgst: gstBreakdown.cgst,
+          sgst: gstBreakdown.sgst,
+          igst: gstBreakdown.igst
         };
       }
       return item;
@@ -531,6 +699,10 @@ export default function InvoiceCreate() {
         const newDiscountAmount = (subtotal * discountPercentage) / 100;
         const taxableAmount = subtotal - newDiscountAmount;
         const newTax = (taxableAmount * item.gst_percentage) / 100;
+
+        // Recalculate GST breakdown
+        const gstBreakdown = calculateGSTBreakdown(newTax, selectedCustomer?.billing_state_code);
+
         const newTotal = taxableAmount + newTax;
 
         return {
@@ -538,7 +710,10 @@ export default function InvoiceCreate() {
           discount_percentage: discountPercentage,
           discount_amount: newDiscountAmount,
           tax: newTax,
-          total: newTotal
+          total: newTotal,
+          cgst: gstBreakdown.cgst,
+          sgst: gstBreakdown.sgst,
+          igst: gstBreakdown.igst
         };
       }
       return item;
@@ -580,7 +755,7 @@ export default function InvoiceCreate() {
 
   // Calculations
   const subtotal = useMemo(() => {
-    return selectedProducts.reduce((sum, item) => sum + (item.qty * item.rate), 0);
+    return selectedProducts.reduce((sum, item) => sum + (item.qty * item.rate - item.discount_amount), 0);
   }, [selectedProducts]);
 
   const totalDiscount = useMemo(() => {
@@ -592,8 +767,8 @@ export default function InvoiceCreate() {
   }, [selectedProducts]);
 
   const grandTotal = useMemo(() => {
-    return subtotal - totalDiscount + totalTax;
-  }, [subtotal, totalDiscount, totalTax]);
+    return selectedProducts.reduce((sum, item) => sum + item.total, 0);
+  }, [selectedProducts]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -824,7 +999,16 @@ export default function InvoiceCreate() {
               <h3 className="text-lg font-medium text-slate-200 mb-6">Customer Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CUSTOMER NAME *</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/customers/create?from=sale')}
+                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
+                    >
+                      + Add New Customer
+                    </button>
+                  </div>
                   <select
                     value={selectedCustomerId}
                     onChange={(e) => {
@@ -964,6 +1148,23 @@ export default function InvoiceCreate() {
               </div>
             </div>
 
+            {/* Discount Section */}
+            <div className="mb-6 border-t border-slate-600 pt-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-medium text-slate-200">Discount</h3>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableDiscount}
+                    onChange={(e) => setEnableDiscount(e.target.checked)}
+                    className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
+                  />
+                  <span className="text-sm text-slate-300">Enable Discount</span>
+                </label>
+              </div>
+
+            </div>
+
             {/* Product Selection */}
             <div className="mb-6 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Product Selection</h3>
@@ -997,12 +1198,17 @@ export default function InvoiceCreate() {
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         QTY
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-32">
                         RATE
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-16">
-                        TAX AMOUNT
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-32">
+                        GST (%)
                       </th>
+                      {enableDiscount && (
+                        <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                          DISCOUNT (%)
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                         TOTAL
                       </th>
@@ -1038,7 +1244,9 @@ export default function InvoiceCreate() {
                           title={!selectedCustomerId ? 'Please select a customer first' : ''}
                         >
                           {selectedRowProduct ? (
-                            selectedRowProduct.product_name || 'Select Product'
+                            productRowFilters.carModels.length > 0
+                              ? generateDynamicProductName(selectedRowProduct, productRowFilters.carModels)
+                              : (selectedRowProduct.product_name || 'Select Product')
                           ) : (
                             <span className="text-slate-400">Select Product</span>
                           )}
@@ -1083,7 +1291,7 @@ export default function InvoiceCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
-                          options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                          options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
                           selectedValues={productRowFilters.carModels}
                           onSelectionChange={(values) => {
                             setProductRowFilters(prev => ({
@@ -1140,7 +1348,7 @@ export default function InvoiceCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-20">
+                      <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
                           step="0.01"
@@ -1155,30 +1363,52 @@ export default function InvoiceCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-16">
+                      <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
                           step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="18%"
-                          value={templateRow.tax}
+                          placeholder="0.00"
+                          value={templateRow.gst}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
                               ...prev,
-                              tax: e.target.value
+                              gst: e.target.value
                             }));
                           }}
                         />
                       </td>
+                      {enableDiscount && (
+                        <td className="px-4 py-3 text-center w-20">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max="100"
+                            className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                            placeholder="0.00"
+                            value={templateRow.discount}
+                            onChange={(e) => {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                discount: e.target.value
+                              }));
+                            }}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-center w-20">
                         <div className="px-2 py-2 bg-slate-800 rounded text-xs text-green-400 text-center font-medium">
                           ₹{(() => {
                             const qty = parseFloat(templateRow.qty) || 0;
                             const rate = parseFloat(templateRow.rate) || 0;
-                            const taxPercent = parseFloat(templateRow.tax) || 0;
+                            const gstPercent = parseFloat(templateRow.gst) || 0;
+                            const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
                             const subtotal = qty * rate;
-                            const taxAmount = (subtotal * taxPercent) / 100;
-                            const total = subtotal + taxAmount;
+                            const discountAmount = (subtotal * discountPercent) / 100;
+                            const taxableAmount = subtotal - discountAmount;
+                            const tax = (taxableAmount * gstPercent) / 100;
+                            const total = taxableAmount + tax;
                             return total.toFixed(2);
                           })()}
                         </div>
@@ -1202,14 +1432,20 @@ export default function InvoiceCreate() {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const taxPercent = parseFloat(templateRow.tax) || selectedProduct.gst_rate_percentage || 0;
-                                const subtotal = qty * rate;
-                                const taxAmount = (subtotal * taxPercent) / 100;
+                                const gstPercent = parseFloat(templateRow.gst) || 0;
+                                const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
-                                // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
-                                const cgst = taxAmount / 2;
-                                const sgst = taxAmount / 2;
-                                const igst = 0;
+                                // Calculate amounts
+                                const subtotal = qty * rate;
+                                const discountAmount = (subtotal * discountPercent) / 100;
+                                const taxableAmount = subtotal - discountAmount;
+                                const tax = (taxableAmount * gstPercent) / 100; // Tax on discounted price
+
+                                // Calculate tax breakdown based on customer's state
+                                const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
+                                const cgst = gstBreakdown.cgst;
+                                const sgst = gstBreakdown.sgst;
+                                const igst = gstBreakdown.igst;
 
                                 const newItem: InvoiceItem = {
                                   id: Date.now().toString(),
@@ -1226,11 +1462,20 @@ export default function InvoiceCreate() {
                                   part_number: productRowFilters.partNo,
                                   qty: qty,
                                   rate: rate,
-                                  gst_percentage: taxPercent,
-                                  discount_percentage: 0,
-                                  tax: taxAmount,
-                                  discount_amount: 0,
-                                  total: subtotal + taxAmount
+                                  gst_percentage: gstPercent, // Store GST percentage
+                                  discount_percentage: discountPercent,
+                                  tax: tax,
+                                  discount_amount: discountAmount,
+                                  total: taxableAmount + tax,
+                                  // New pricing fields
+                                  hsn: selectedProduct.hsn || '',
+                                  mrp: 0, // Default MRP
+                                  discount: discountPercent, // Store discount percentage
+                                  margin: 0, // Default margin
+                                  // GST breakdown
+                                  cgst: cgst,
+                                  sgst: sgst,
+                                  igst: igst
                                 };
 
                                 setSelectedProducts(prev => [...prev, newItem]);
@@ -1247,7 +1492,7 @@ export default function InvoiceCreate() {
                                 setTemplateRow({
                                   qty: '1',
                                   rate: '0',
-                                  tax: '0',
+                                  gst: '0',
                                   discount: '0'
                                 });
                               }
@@ -1275,13 +1520,13 @@ export default function InvoiceCreate() {
                           {product.product_name}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          {product.car_model_names.join(', ') || '-'}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.category_name || '-'}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.subcategory_name || '-'}
+                        </td>
+                        <td className="px-3 py-2 text-center text-xs text-slate-200">
+                          {product.car_model_names.join(', ') || '-'}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.company_name || '-'}
@@ -1296,13 +1541,20 @@ export default function InvoiceCreate() {
                           ₹{product.rate.toFixed(2)}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          {product.discount_percentage.toFixed(2)}%
+                          ₹{product.tax.toFixed(2)}
                         </td>
+                        {enableDiscount && (
+                        <td className="px-3 py-2 text-center text-xs text-slate-200">
+                          ₹{product.discount_amount.toFixed(2)}
+                        </td>
+                        )}
                         <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
                           ₹{product.total.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-2 text-center">
                           <button
                             onClick={() => removeProduct(product.id)}
-                            className="ml-2 px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
                             title="Remove product"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -1314,17 +1566,18 @@ export default function InvoiceCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={5} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
+                        <td className="px-4 py-3"></td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={6} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-center">
+                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 4 : 3} className="px-4 py-3 text-center">
                           <button
                             type="button"
                             onClick={() => setSelectedProducts([])}
@@ -1383,8 +1636,9 @@ export default function InvoiceCreate() {
                         type="number"
                         step="0.01"
                         value={formData.total_cgst}
-                        onChange={(e) => handleInputChange('total_cgst', e.target.value)}
-                        className="input w-full"
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -1394,8 +1648,9 @@ export default function InvoiceCreate() {
                         type="number"
                         step="0.01"
                         value={formData.total_sgst}
-                        onChange={(e) => handleInputChange('total_sgst', e.target.value)}
-                        className="input w-full"
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -1405,8 +1660,9 @@ export default function InvoiceCreate() {
                         type="number"
                         step="0.01"
                         value={formData.total_igst}
-                        onChange={(e) => handleInputChange('total_igst', e.target.value)}
-                        className="input w-full"
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -1482,17 +1738,6 @@ export default function InvoiceCreate() {
                 {/* Additional Calculations */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.discount}
-                      onChange={(e) => handleInputChange('discount', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">BASIC VALUE</label>
                     <input
                       type="number"
@@ -1501,6 +1746,17 @@ export default function InvoiceCreate() {
                       onChange={(e) => handleInputChange('basic_value', e.target.value)}
                       className="input w-full"
                       placeholder="0.00"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={totalDiscount.toFixed(2)}
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     />
                   </div>
                 </div>
@@ -1633,18 +1889,11 @@ export default function InvoiceCreate() {
                       key={product.id}
                       className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
                       onClick={() => {
-                        setSelectedRowProduct(product);
-                        setProductRowFilters({
-                          category: product.product_category_id ? product.product_category_id.toString() : '',
-                          subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
-                          carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-                          company: product.company || '',
-                          partNo: product.part_no || ''
-                        });
+                        handleProductSelection(product);
                         setTemplateRow({
                           qty: '1',
                           rate: product.selling_price?.toString() || '',
-                          tax: product.gst_rate_percentage?.toString() || '18',
+                          gst: product.gst_rate_percentage?.toString() || '18',
                           discount: '0'
                         });
                         setIsProductPanelOpen(false);
