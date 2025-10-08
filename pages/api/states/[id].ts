@@ -110,11 +110,16 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
     }
 
     // Check if state is being used by any customers or vendors
+    // Get state name for customer filtering (customers store state names as strings)
+    const stateRecord = await prisma.states.findUnique({
+      where: { id: stateId }
+    })
+
     const customersUsingState = await prisma.customer_details.findFirst({
       where: {
         OR: [
-          { billing_state: stateId },
-          { shipping_state: stateId }
+          { billing_state: stateRecord?.state_name || '' },
+          { shipping_state: stateRecord?.state_name || '' }
         ]
       }
     })
