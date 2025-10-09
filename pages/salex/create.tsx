@@ -634,7 +634,7 @@ export default function InvoiceCCreate() {
           user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name,
           address: selectedCustomer.shipping_address || selectedCustomer.billing_address,
           state: selectedCustomer.shipping_state || selectedCustomer.billing_state,
-          state_code: selectedCustomer.shipping_state_code || null,
+          state_code: selectedCustomer.shipping_state_code || selectedCustomer.billing_state_code || 0,
           gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin
         } : null,
 
