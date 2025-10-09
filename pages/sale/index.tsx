@@ -241,7 +241,7 @@ export default function SalePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header with Export Buttons */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">

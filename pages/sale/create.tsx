@@ -369,10 +369,10 @@ export default function InvoiceCreate() {
         const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
         // Also search by product UID (ID)
         return productNameNormalized.includes(searchTermNormalized) ||
-               productIdString.includes(searchTermNormalized) ||
-               displayNameNormalized.includes(searchTermNormalized) ||
-               partNoNormalized.includes(searchTermNormalized) ||
-               companyNameNormalized.includes(searchTermNormalized);
+          productIdString.includes(searchTermNormalized) ||
+          displayNameNormalized.includes(searchTermNormalized) ||
+          partNoNormalized.includes(searchTermNormalized) ||
+          companyNameNormalized.includes(searchTermNormalized);
       });
       setSearchedProducts(filtered);
     } else {
@@ -1020,7 +1020,7 @@ export default function InvoiceCreate() {
             {/* Customer Information */}
             <div className="mb-6 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Customer Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
@@ -1081,54 +1081,56 @@ export default function InvoiceCreate() {
                     disabled
                   />
                 </div>
-                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-5 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
-                    <input
-                      type="text"
-                      value={selectedCustomer?.billing_address || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from customer"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
-                    <input
-                      type="text"
-                      value={selectedCustomer?.billing_address_2 || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from customer"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
-                    <input
-                      type="text"
-                      value={selectedCustomer?.billing_city || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from customer"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                    <input
-                      type="text"
-                      value={selectedCustomer?.billing_state || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from customer"
-                      readOnly
-                      disabled
-                    />
-                  </div>
+              </div>
+
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4 mt-3">
+                <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
+                  <input
+                    type="text"
+                    value={selectedCustomer?.billing_address || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from customer"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
+                  <input
+                    type="text"
+                    value={selectedCustomer?.billing_address_2 || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from customer"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
+                  <input
+                    type="text"
+                    value={selectedCustomer?.billing_city || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from customer"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                  <input
+                    type="text"
+                    value={selectedCustomer?.billing_state || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from customer"
+                    readOnly
+                    disabled
+                  />
                 </div>
               </div>
             </div>
+
 
             {/* Customer Service Details */}
             <div className="mb-6 border-t border-slate-600 pt-8">
@@ -1168,6 +1170,7 @@ export default function InvoiceCreate() {
                     placeholder="0.00"
                   />
                 </div>
+                <div></div> {/* Empty column for 4-column layout */}
               </div>
             </div>
 
@@ -1259,11 +1262,10 @@ export default function InvoiceCreate() {
                             setIsProductPanelOpen(true);
                           }}
                           disabled={!selectedCustomerId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${
-                            selectedCustomerId
-                              ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                              : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                          }`}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedCustomerId
+                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
                           title={!selectedCustomerId ? 'Please select a customer first' : ''}
                         >
                           {selectedRowProduct ? (
@@ -1522,11 +1524,10 @@ export default function InvoiceCreate() {
                             }
                           }}
                           disabled={!selectedRowProduct}
-                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
-                            selectedRowProduct
-                              ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                              : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                          }`}
+                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                            }`}
                         >
                           Add
                         </button>
@@ -1567,9 +1568,9 @@ export default function InvoiceCreate() {
                           ₹{product.tax.toFixed(2)}
                         </td>
                         {enableDiscount && (
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          ₹{product.discount_amount.toFixed(2)}
-                        </td>
+                          <td className="px-3 py-2 text-center text-xs text-slate-200">
+                            ₹{product.discount_amount.toFixed(2)}
+                          </td>
                         )}
                         <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
                           ₹{product.total.toFixed(2)}
@@ -1620,8 +1621,8 @@ export default function InvoiceCreate() {
             {/* Additional Information */}
             <div className="mb-6 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Additional Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
                   <textarea
                     value={formData.descriptions}
@@ -1631,7 +1632,7 @@ export default function InvoiceCreate() {
                     placeholder="Enter additional descriptions or comments"
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
                   <textarea
                     value={formData.notes}
@@ -1652,7 +1653,7 @@ export default function InvoiceCreate() {
                 {/* Tax Breakdown */}
                 <div>
                   <h4 className="text-sm font-medium text-slate-300 mb-3">Tax Breakdown</h4>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                       <input
@@ -1688,6 +1689,19 @@ export default function InvoiceCreate() {
                         className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
+                    </div>
+                    <div className="grid gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={totalDiscount.toFixed(2)}
+                          readOnly
+                          disabled
+                          className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1760,19 +1774,7 @@ export default function InvoiceCreate() {
                 </div>
 
                 {/* Additional Calculations */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={totalDiscount.toFixed(2)}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    />
-                  </div>
-                </div>
+
 
                 {/* Payment Details */}
                 <div className="border-t border-slate-600 pt-4">
@@ -1812,7 +1814,7 @@ export default function InvoiceCreate() {
                     <div className="flex items-center space-x-2">
                       <Calculator className="w-4 h-4 text-slate-400" />
                       <span className="text-white font-semibold text-lg">
-                       ₹{grandTotal.toFixed(2)}
+                        ₹{grandTotal.toFixed(2)}
                       </span>
                     </div>
                   </div>

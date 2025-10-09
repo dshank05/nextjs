@@ -61,7 +61,7 @@ a {
   }
   
   .card {
-    @apply bg-slate-800 border border-slate-700 rounded-lg p-6 shadow-lg;
+    @apply bg-slate-800 border border-slate-700 rounded-lg p-4 shadow-lg;
   }
   
   .input {

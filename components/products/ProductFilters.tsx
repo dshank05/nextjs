@@ -118,7 +118,7 @@ export const ProductFilters = ({
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-white mb-4">Search & Filter Products</h3>
+      <h3 className="text-lg font-semibold text-white mb-3">Search & Filter Products</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4">
         {/* Search */}
         <div>

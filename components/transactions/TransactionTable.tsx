@@ -223,7 +223,7 @@ export const TransactionTable = ({
 
   return (
     <div className="card">
-      <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+      <div className="mb-3 flex justify-between items-center text-sm text-slate-400">
         <div>Showing {transactions.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions</div>
         <div>Page {pagination.page} of {pagination.totalPages}</div>
       </div>

@@ -112,7 +112,7 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
 
   if (loading) {
     return (
-      <div className="card h-[600px] flex items-center justify-center">
+      <div className="card h-[550px] flex items-center justify-center">
         <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
       </div>
     );

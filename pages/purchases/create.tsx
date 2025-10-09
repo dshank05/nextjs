@@ -250,10 +250,10 @@ export default function PurchaseCreate() {
         const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
         // Also search by product UID (ID)
         return productNameNormalized.includes(searchTermNormalized) ||
-               productIdString.includes(searchTermNormalized) ||
-               displayNameNormalized.includes(searchTermNormalized) ||
-               partNoNormalized.includes(searchTermNormalized) ||
-               companyNameNormalized.includes(searchTermNormalized);
+          productIdString.includes(searchTermNormalized) ||
+          displayNameNormalized.includes(searchTermNormalized) ||
+          partNoNormalized.includes(searchTermNormalized) ||
+          companyNameNormalized.includes(searchTermNormalized);
       });
       setSearchedProducts(filtered);
     } else {
@@ -851,7 +851,7 @@ export default function PurchaseCreate() {
             {/* Vendor Information */}
             <div className="mb-10 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Vendor Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
                   <select
@@ -903,54 +903,44 @@ export default function PurchaseCreate() {
                     disabled
                   />
                 </div>
-                <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 1</label>
-                    <input
-                      type="text"
-                      value={selectedVendor?.address || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from vendor"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
-                    <input
-                      type="text"
-                      value={selectedVendor?.address_2 || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from vendor"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
-                    <input
-                      type="text"
-                      value={selectedVendor?.city || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from vendor"
-                      readOnly
-                      disabled
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                    <input
-                      type="text"
-                      value={selectedVendor?.state || ''}
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-filled from vendor"
-                      readOnly
-                      disabled
-                    />
-                  </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
+                  <input
+                    type="text"
+                    value={selectedVendor?.address || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
+                  <input
+                    type="text"
+                    value={selectedVendor?.city || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                  <input
+                    type="text"
+                    value={selectedVendor?.state || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
+                  />
                 </div>
               </div>
             </div>
+
 
             {/* Transport Information */}
             <div className="mb-10 border-t border-slate-600 pt-8">
@@ -987,6 +977,7 @@ export default function PurchaseCreate() {
                     placeholder="0.00"
                   />
                 </div>
+                <div></div> {/* Empty column for 4-column layout */}
               </div>
             </div>
 
@@ -1047,17 +1038,16 @@ export default function PurchaseCreate() {
                         <button
                           type="button"
                           onClick={() => {
-    // Clear any existing validation errors when opening panel
-    setErrors({});
-    setProductSearchTerm(''); // Clear search when opening panel
-    setIsProductPanelOpen(true);
+                            // Clear any existing validation errors when opening panel
+                            setErrors({});
+                            setProductSearchTerm(''); // Clear search when opening panel
+                            setIsProductPanelOpen(true);
                           }}
                           disabled={!selectedVendorId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${
-                            selectedVendorId
-                              ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                              : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                          }`}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedVendorId
+                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
                           title={!selectedVendorId ? 'Please select a vendor first' : ''}
                         >
                           {selectedRowProduct ? (
@@ -1220,10 +1210,10 @@ export default function PurchaseCreate() {
                                 const subtotal = qty * rate;
                                 const taxAmount = (subtotal * taxPercent) / 100;
 
-                        // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
-                        const cgst = taxAmount / 2;
-                        const sgst = taxAmount / 2;
-                        const igst = 0;
+                                // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
+                                const cgst = taxAmount / 2;
+                                const sgst = taxAmount / 2;
+                                const igst = 0;
 
                                 // Convert car model IDs to names for display
                                 const carModelNames = productRowFilters.carModels
@@ -1273,11 +1263,10 @@ export default function PurchaseCreate() {
                             }
                           }}
                           disabled={!selectedRowProduct}
-                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
-                            selectedRowProduct
-                              ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                              : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                          }`}
+                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                            }`}
                         >
                           Add
                         </button>
@@ -1365,8 +1354,8 @@ export default function PurchaseCreate() {
             {/* Additional Information */}
             <div className="mb-10 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Additional Information</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
                   <textarea
                     value={formData.descriptions}
@@ -1376,7 +1365,7 @@ export default function PurchaseCreate() {
                     placeholder="Enter descriptions"
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
                   <textarea
                     value={formData.notes}
@@ -1483,7 +1472,7 @@ export default function PurchaseCreate() {
                     <div className="flex items-center space-x-2">
                       <Calculator className="w-4 h-4 text-slate-400" />
                       <span className="text-white font-semibold text-lg">
-                       ₹{grandTotal.toFixed(2)}
+                        ₹{grandTotal.toFixed(2)}
                       </span>
                     </div>
                   </div>

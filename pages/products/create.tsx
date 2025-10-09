@@ -263,25 +263,18 @@ export default function ProductCreate() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
       return;
     }
 
-    // Show confirmation modal if car models are selected
-    if (formData.car_models.length > 0) {
-      setPendingCarModelsData(formData.car_models);
-      setShowCarModelsConfirmModal(true);
-      return;
-    }
-
-    // Proceed with submission if no car models selected
-    await handleConfirmSubmit();
+    setShowConfirmModal(true);
   };
 
   const handleConfirmSubmit = async () => {
+    setShowConfirmModal(false);
     if (isSaving) return;
 
     setIsSaving(true);
@@ -361,6 +354,7 @@ export default function ProductCreate() {
         const action = isEditing ? 'updated' : 'created';
         console.log(`Product ${action} successfully`);
         showSnackbar('success', `Product ${action} successfully!`);
+        setShowConfirmModal(false);
         setShowCarModelsConfirmModal(false);
         setPendingCarModelsData(null);
         router.push('/products'); // Redirect to products page after success
@@ -433,9 +427,9 @@ export default function ProductCreate() {
         </div>
 
         {/* Row 2: Basic Product Information */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">📦 Product Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="mb-6 space-y-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Product Information</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
               <select
@@ -479,7 +473,9 @@ export default function ProductCreate() {
               </select>
               {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}
             </div>
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
               <SearchableMultiSelect
@@ -505,7 +501,7 @@ export default function ProductCreate() {
 
         {/* Row 4: Pricing */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">💰 Pricing</h3>
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Pricing</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
@@ -567,8 +563,8 @@ export default function ProductCreate() {
 
         {/* Row 5: Location & Tax */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">🏢 Location & Tax</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Location & Tax</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
               <select
@@ -632,7 +628,7 @@ export default function ProductCreate() {
 
         {/* Row 6: Additional Information */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">� Additional Information</h3>
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Additional Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -660,7 +656,7 @@ export default function ProductCreate() {
 
         {/* Row 7: Stock & Inventory */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">📦 Stock & Inventory</h3>
+          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Stock & Inventory</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
@@ -752,6 +748,20 @@ export default function ProductCreate() {
         setPendingCarModelsData(null);
       }}
     />
+
+    {/* Main Confirmation Modal */}
+    <ConfirmationModal
+      isOpen={showConfirmModal}
+      title={isEditing ? "Update Product?" : "Create Product?"}
+      message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? 'This will update the existing product.' : 'This action cannot be undone.'}`}
+      confirmText={isEditing ? "Update Product" : "Create Product"}
+      cancelText="Cancel"
+      showLoading={isSaving}
+      loadingText={isEditing ? "Updating Product..." : "Creating Product..."}
+      onConfirm={handleConfirmSubmit}
+      onCancel={() => setShowConfirmModal(false)}
+    />
+
     </div>
   );
 }

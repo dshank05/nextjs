@@ -104,7 +104,7 @@ export const TransactionFilters = ({
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-white mb-4">Search & Filter Transactions</h3>
+      <h3 className="text-lg font-semibold text-white mb-3">Search & Filter Transactions</h3>
       <div className={`grid grid-cols-1 md:grid-cols-2 ${hideTransactionType ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4`}>
         {/* Search */}
         <div>
