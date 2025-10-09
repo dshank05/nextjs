@@ -43,44 +43,63 @@ model States {
 }
 
 model Product {
+  // ===== MAIN PRODUCT TABLE FIELDS =====
   id                     Int       @id @default(autoincrement())
-  product_name           String    @db.VarChar(255) // Will be moved to display_name
-  display_name           String?   @db.VarChar(255) // New field for product display
-  hsn                    String?   @db.VarChar(50)
-  product_category       String?   @db.VarChar(100) // Legacy - will be migrated to FK
-  product_subcategory    String?   @db.VarChar(100) // Legacy - will be migrated to FK
-  product_category_id    Int?                    // New FK to product_category
-  product_subcategory_id Int?                    // New FK to product_subcategory
-  car_model_ids          String?                 // New: comma-separated car model IDs
-  company                String?   @db.VarChar(255)
-  pic                    String?   @db.VarChar(255)
-  part_no                String?   @db.VarChar(100)
-  min_stock              Int?
-  stock                  Int?
-  opening_stock          Int?
-  opening_rate           Int?
-  notes                  String?   @db.VarChar(255)
-  is_active              Boolean   @default(true) // Active/Inactive status
+  product_name           String    @db.VarChar(255) // ✅ Display name (auto-generated)
+  display_name           String?   @db.VarChar(255) // ✅ Alternative display name
+  part_no                String?   @db.VarChar(100) // ✅ Part number for identification
 
-  // ===== NEW FK FIELDS =====
-  warehouse_id           Int?                    // FK to warehouse table
-  gst_rate_id            Int?                    // FK to gst_tax_rate table
+  // ===== PRODUCT CLASSIFICATION =====
+  // New FK relationships (preferred)
+  product_category_id    Int?                     // ✅ FK to product_category
+  product_subcategory_id Int?                     // ✅ FK to product_subcategory
+  car_model_ids          String?                  // ✅ Comma-separated car model IDs
 
-  // Foreign key relationships (references new tables)
+  // Legacy string fields (will be migrated)
+  product_category       String?   @db.VarChar(100) // @deprecated - will be removed after migration
+  product_subcategory    String?   @db.VarChar(100) // @deprecated - will be removed after migration
+
+  // ===== PRODUCT DETAILS =====
+  company                String?   @db.VarChar(255) // ✅ Company/manufacturer name
+  hsn                    String?   @db.VarChar(50)  // ✅ HSN code for GST
+  descriptions           String?   @db.Text         // ✅ Product description
+  notes                  String?   @db.VarChar(255) // ✅ Additional notes
+
+  // ===== INVENTORY MANAGEMENT =====
+  min_stock              Int?                     // ✅ Minimum stock level
+  stock                  Int?                     // ✅ Current stock quantity
+  opening_stock          Int?                     // ✅ Opening stock at FY start
+  opening_rate           Float?                   // ✅ Opening rate per unit
+
+  // ===== PRICING INFORMATION =====
+  mrp                    Float?                   // ✅ Maximum Retail Price
+  discount               Float?                   // ✅ Discount amount
+  margin                 Float?                   // ✅ Profit margin amount
+
+  // ===== WAREHOUSE & TAX RELATIONSHIPS =====
+  warehouse_id           Int?                     // ✅ FK to warehouse table
+  gst_rate_id            Int?                     // ✅ FK to gst_tax_rate table
+
+  // ===== SYSTEM FIELDS =====
+  pic                    String?   @db.VarChar(255) // ✅ Product image path
+  is_active              Boolean   @default(true)  // ✅ Active/Inactive status
+
+  // ===== LEGACY FIELDS (KEEP FOR BACKWARD COMPATIBILITY) =====
+  rack_number            String?   @db.VarChar(100) // @deprecated - TODO: unused field, remove later
+
+  // ===== RELATIONSHIPS =====
   category_ref    product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
   subcategory_ref product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
-
-  // ===== NEW RELATIONS =====
-  warehouse      warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
-  gst_rate       gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
-
-  // car_model_ids is comma-separated, so no direct FK relationship
+  warehouse       warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
+  gst_rate        gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
 
   @@index([product_category], map: "idx_product_category")
   @@index([company], map: "idx_product_company")
   @@index([product_name], map: "idx_product_name")
   @@index([part_no], map: "idx_product_part_no")
   @@index([stock, min_stock], map: "idx_product_stock")
+  @@index([mrp], map: "idx_product_mrp")
+  @@index([is_active], map: "idx_product_active")
   @@map("product")
 }
 
@@ -142,43 +161,50 @@ model Invoiceitems {
 }
 
 model Purchase {
+  // ===== MAIN PURCHASE TABLE FIELDS =====
   id                       Int     @id @default(autoincrement())
-  invoice_no               Int
-  bill_reference           String? @db.VarChar(255)
-  staff_details            String? @db.VarChar(255)
-  staff_id                 Int?                    // New FK to staff table (nullable)
-  vendor_id                Int?
-  items_total              Float?
-  freight                  Float?
-  total_taxable_value      Float
-  taxrate                  Int?
-  total_cgst               Float?
-  total_sgst               Float?
-  total_igst               Float?
-  total_tax                Float?
-  total                    Float
-  notes                    String? @db.VarChar(255)
-  descriptions             String? @db.Text
-  packing_forwarding_qty    Float?
-  packing_forwarding_rate   Float?
-  packing_forwarding_total  Float?
-  basic_value              Float?
-  bill                     String? @db.VarChar(255)
-  tax                      String? @db.VarChar(255)
-  invoice_date             String  @db.VarChar(30)
-  updated_at               String  @db.VarChar(100)
-  status                   Int?      @map("payment_status")
-  payment_mode             Int?
-  transport                String? @db.VarChar(255)
-  transport_name           String? @db.VarChar(255)
-  vehicle_number           String? @db.VarChar(100)
-  fy                       Int
+  invoice_no               Int                    // Invoice number
+  bill_reference           String? @db.VarChar(255) // Bill reference (separate from vendor)
+  staff_details            String? @db.VarChar(255) // Legacy string field (keep for backward compatibility)
+  staff_id                 Int?                    // FK to staff table (nullable - optional)
+  vendor_id                Int?                    // FK to vendor_details table
 
-  // Foreign key relationship to vendor_details
+  // ===== TRANSPORT FIELDS =====
+  transport                String? @db.VarChar(255) // Legacy transport field
+  transport_name           String? @db.VarChar(255) // Transport name
+  vehicle_number           String? @db.VarChar(100) // Vehicle number
+  freight                  Float?                  // Transport/freight cost
+
+  // ===== ITEMS AND CALCULATIONS =====
+  items_total              Float?                  // Total of all items (qty * rate)
+  total_taxable_value      Float                   // Taxable value (same as items_total)
+  total_cgst               Float?                  // Total CGST amount
+  total_sgst               Float?                  // Total SGST amount
+  total_igst               Float?                  // Total IGST amount
+  total_tax                Float?                  // Total tax amount
+  total                    Float                   // Grand total (calculated field)
+  packing_forwarding_qty    Float?                 // Packing/forwarding quantity
+  packing_forwarding_rate   Float?                 // Packing/forwarding rate
+  packing_forwarding_total  Float?                 // Packing/forwarding total
+
+  // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
+  taxrate                  Int?    // @deprecated - legacy field, unclear purpose, no UI element
+  basic_value              Float?  // @deprecated - legacy field, unclear purpose, no UI element
+  bill                     String? @db.VarChar(255) // @deprecated - legacy field, unclear purpose, no UI element
+  tax                      String? @db.VarChar(255) // @deprecated - legacy field, unclear purpose, no UI element
+
+  // ===== OTHER FIELDS =====
+  notes                    String? @db.VarChar(255) // Purchase notes
+  descriptions             String? @db.Text         // Purchase descriptions
+  invoice_date             String  @db.VarChar(30)  // Invoice date
+  updated_at               String  @db.VarChar(100) // Last updated timestamp
+  status                   Int?      @map("payment_status") // Payment status (0=unpaid, 1=paid)
+  payment_mode             Int?                     // Payment mode (1=cash, 2=bank)
+  fy                       Int                     // Financial year
+
+  // ===== RELATIONSHIPS =====
   vendor vendor_details? @relation(fields: [vendor_id], references: [id])
-
-  // New staff relationship (optional)
-  staff  staff? @relation(fields: [staff_id], references: [id])
+  staff  staff?          @relation(fields: [staff_id], references: [id])
 
   @@map("purchase")
 }

@@ -95,25 +95,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       let sellingPrice = null
       let gstRatePercentage = product.gst_rate?.rate || 0
 
-      // Parse notes to extract MRP, discount, margin for SP calculation
-      if (product.notes && product.notes.includes('Legacy Fields:')) {
-        const legacySection = product.notes.split('Legacy Fields:')[1]
-        const legacyFields = legacySection.split('\n').reduce((acc, line) => {
-          const [key, value] = line.split(': ').map(s => s.trim())
-          if (key && value) {
-            acc[key] = value
-          }
-          return acc
-        }, {} as Record<string, string>)
-
-        const mrp = parseFloat(legacyFields.mrp) || 0
-        const discount = parseFloat(legacyFields.discount) || 0
-        const margin = parseFloat(legacyFields.margin) || 0
-
-        // SP = MRP - Discount + Margin
-        if (mrp > 0) {
-          sellingPrice = mrp - discount + margin
-        }
+      // Calculate selling price directly from schema fields (SP = MRP - Discount + Margin)
+      if (product.mrp && product.mrp > 0) {
+        const discount = product.discount || 0
+        const margin = product.margin || 0
+        sellingPrice = product.mrp - discount + margin
       }
 
       return {
@@ -163,18 +149,20 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       notes,
 
       // ===== NEW FK FIELDS (STORED IN DATABASE) =====
-      warehouse_id,
-      gst_rate_id,
+      warehouse_id,              // ✓ Product.warehouse_id (FK to warehouse)
+      gst_rate_id,               // ✓ Product.gst_rate_id (FK to gst_tax_rate)
 
-      // ===== LEGACY FIELDS (KEEP IN NOTES FOR NOW) =====
-      rack_number,
-      descriptions,
+      // ===== PRODUCT DETAILS =====
+      descriptions,              // ✓ Product.descriptions
 
-      // ===== PRICING FIELDS (NOT IN SCHEMA YET - MARGIN KEEPS IN NOTES) =====
+      // ===== PRICING FIELDS (STORED IN PROPER SCHEMA FIELDS) =====
       // SP = MRP - Discount + Margin (absolute INR values)
-      mrp,
-      discount,
-      margin, // Changed from sale_price to match UI label
+      mrp,                       // ✓ Product.mrp
+      discount,                  // ✓ Product.discount
+      margin,                    // ✓ Product.margin
+
+      // ===== LEGACY FIELDS (KEEP FOR BACKWARD COMPATIBILITY) =====
+      rack_number,               // TODO: unused field, will be removed later
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
@@ -219,24 +207,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // ===== BUILD ENHANCED NOTES =====
-    // Keep legacy fields and margin in notes for now
-    const legacyFields = {
-      rack_number,
-      descriptions,
-      mrp,
-      discount,
-      margin, // Keep margin in notes as requested
-    };
-
-    const legacyFieldsString = Object.entries(legacyFields)
-      .filter(([key, value]) => value !== null && value !== undefined && value !== '')
-      .map(([key, value]) => `${key}: ${value}`)
-      .join('\n');
-
-    const enhancedNotes = notes
-      ? `${notes}\n\nLegacy Fields:\n${legacyFieldsString}`
-      : `Legacy Fields:\n${legacyFieldsString}`;
+    // ===== NOTES =====
+    // Store notes directly - no need to append legacy fields
 
     // ===== PRODUCT TABLE DATA =====
     const productData = {
@@ -253,29 +225,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       opening_rate: opening_rate ? parseFloat(opening_rate) : null,
       hsn: hsn || null,
 
-      // ===== NEW FK FIELDS =====
+      // ===== PRODUCT DETAILS =====
+      descriptions: descriptions || null, // Now stored in proper schema field
+
+      // ===== PRICING INFORMATION =====
+      mrp: mrp ? parseFloat(mrp) : null,        // Maximum Retail Price
+      discount: discount ? parseFloat(discount) : null, // Discount amount
+      margin: margin ? parseFloat(margin) : null,       // Profit margin amount
+
+      // ===== WAREHOUSE & TAX RELATIONSHIPS =====
       warehouse_id: warehouse_id ? parseInt(warehouse_id) : null,
       gst_rate_id: gst_rate_id ? parseInt(gst_rate_id) : null,
 
-      notes: enhancedNotes, // Keep legacy fields in notes
+      // ===== LEGACY/NOTES =====
+      notes: notes || null, // General notes (separate from legacy fields)
+      rack_number: rack_number || null, // @deprecated - TODO: remove this unused field
     };
 
-    // ===== FUTURE SCHEMA EXPANSION =====
-    // Data collection for fields not yet in schema (keeping margin here):
-    const futureTableFields = {
-      product_pricing: { // Could be separate pricing table later
-        mrp: mrp ? parseFloat(mrp) : null,
-        discount: discount ? parseFloat(discount) : null,
-        margin: margin ? parseFloat(margin) : null, // Margin stays in notes for now
-      },
-      product_legacy: { // Legacy fields kept in notes
-        rack_number,
-        descriptions,
-      }
-    };
-
-    console.log('🏗️ Main Product Table Data:', productData);
-    console.log('📋 Future Schema Expansion Data:', futureTableFields);
+    console.log('🏗️ Product Table Data:', productData);
 
     const product = await prisma.product.create({
       data: productData,

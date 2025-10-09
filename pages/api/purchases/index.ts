@@ -237,8 +237,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
       packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
       packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      tax_rate,                 // ✓ Purchase.taxrate
-      basic_value,              // ✓ Purchase.basic_value
+      tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
+      basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
       total_cgst,               // ✓ Purchase.total_cgst
       total_sgst,               // ✓ Purchase.total_sgst
       total_igst,               // ✓ Purchase.total_igst
@@ -248,9 +248,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       payment_mode,             // ✓ Purchase.payment_mode
       grand_total,              // ❌ NOT STORED (calculated field)
 
-      // ===== LEGACY FIELDS (UNCLEAR PURPOSE - STILL STORED) =====
-      bill,                     // ✓ Purchase.bill - meaning unclear, kept for compatibility
-      tax,                      // ✓ Purchase.tax - meaning unclear, kept for compatibility
+      // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
+      bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
+      tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
@@ -476,8 +476,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
       packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
       packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      tax_rate,                 // ✓ Purchase.taxrate
-      basic_value,              // ✓ Purchase.basic_value
+      tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
+      basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
       total_cgst,               // ✓ Purchase.total_cgst
       total_sgst,               // ✓ Purchase.total_sgst
       total_igst,               // ✓ Purchase.total_igst
@@ -487,9 +487,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       payment_mode,             // ✓ Purchase.payment_mode
       grand_total,              // ❌ NOT STORED (calculated field)
 
-      // ===== LEGACY FIELDS (UNCLEAR PURPOSE - STILL STORED) =====
-      bill,                     // ✓ Purchase.bill - meaning unclear, kept for compatibility
-      tax,                      // ✓ Purchase.tax - meaning unclear, kept for compatibility
+      // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
+      bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
+      tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
     console.log('🔄 API Received PUT data:', req.body);

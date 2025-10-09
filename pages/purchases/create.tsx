@@ -85,14 +85,15 @@ interface PurchaseFormData {
   transport_name: string;
   vehicle_number: string;
   transport_cost: string;
-  bill: string;
-  tax: string;
+  // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
+  bill: string;         // @deprecated - legacy field, unclear purpose
+  tax: string;          // @deprecated - legacy field, unclear purpose
+  tax_rate: string;     // @deprecated - legacy field, unclear purpose
+  basic_value: string;  // @deprecated - legacy field, unclear purpose
   descriptions: string;
   packing_forwarding_qty: string;
   packing_forwarding_rate: string;
   packing_forwarding_total: string;
-  tax_rate: string;
-  basic_value: string;
   total_cgst: string;
   total_sgst: string;
   total_igst: string;
@@ -100,7 +101,7 @@ interface PurchaseFormData {
   total_tax: string;
   payment_status: number;
   payment_mode: number;
-  grand_total: string;
+  // grand_total: string; // @deprecated - calculated field, removed from payload
 }
 
 interface FilterOptions {
@@ -189,22 +190,23 @@ export default function PurchaseCreate() {
     transport_name: '',
     vehicle_number: '',
     transport_cost: '',
-    bill: '',
-    tax: '',
+    // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
+    bill: '',        // @deprecated - legacy field, unclear purpose
+    tax: '',         // @deprecated - legacy field, unclear purpose
+    tax_rate: '',    // @deprecated - legacy field, unclear purpose
+    basic_value: '', // @deprecated - legacy field, unclear purpose
     descriptions: '',
     packing_forwarding_qty: '',
     packing_forwarding_rate: '',
     packing_forwarding_total: '',
-    tax_rate: '',
-    basic_value: '',
     total_cgst: '',
     total_sgst: '',
     total_igst: '',
     notes: '',
     total_tax: '',
     payment_status: 0,
-    payment_mode: 1,
-    grand_total: ''
+    payment_mode: 1
+    // grand_total: '' // @deprecated - calculated field, removed from payload
   });
 
   // Check for edit mode and fetch data
@@ -477,7 +479,6 @@ export default function PurchaseCreate() {
           total_tax: purchase.total_tax?.toString() || '',
           payment_status: purchase.status || 0,
           payment_mode: purchase.payment_mode || 1,
-          grand_total: purchase.total?.toString() || ''
         });
 
         // Set vendor data - fetch from vendor table or use data from purchase API

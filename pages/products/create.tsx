@@ -22,7 +22,7 @@ interface ProductFormData {
   notes: string;
   mrp: string;
   discount: string;
-  sale_price: string;
+  margin: string; // Changed from sale_price to match API expectations
 }
 
 interface FilterOptions {
@@ -62,7 +62,7 @@ export default function ProductCreate() {
     notes: '',
     mrp: '',
     discount: '',
-    sale_price: ''
+    margin: ''
   });
 
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -188,7 +188,7 @@ export default function ProductCreate() {
   const calculateSellingPrice = () => {
     const mrp = parseFloat(formData.mrp) || 0;
     const discount = parseFloat(formData.discount) || 0;
-    const margin = parseFloat(formData.sale_price) || 0;
+    const margin = parseFloat(formData.margin) || 0;
     return mrp - discount + margin; // SP = MRP - Discount + Margin
   };
 
@@ -216,7 +216,7 @@ export default function ProductCreate() {
           notes: product.notes || '',
           mrp: product.mrp?.toString() || '',
           discount: product.discount?.toString() || '',
-          sale_price: product.margin?.toString() || '',
+          margin: product.margin?.toString() || '',
         });
       }
     } catch (error) {
@@ -310,7 +310,7 @@ export default function ProductCreate() {
         notes: formData.notes,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
         discount: formData.discount ? parseFloat(formData.discount) : null,
-        sale_price: formData.sale_price ? parseFloat(formData.sale_price) : null,
+        margin: formData.margin ? parseFloat(formData.margin) : null,
       });
 
       // Use foreign key IDs instead of names
@@ -337,7 +337,7 @@ export default function ProductCreate() {
         notes: formData.notes || null,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
         discount: formData.discount ? parseFloat(formData.discount) : null,
-        margin: formData.sale_price ? parseFloat(formData.sale_price) : null, // Keep margin in notes
+        margin: formData.margin ? parseFloat(formData.margin) : null,
       };
 
       console.log('Submitting data to API:', submitData);
@@ -536,8 +536,8 @@ export default function ProductCreate() {
               <input
                 type="number"
                 step="0.01"
-                value={formData.sale_price}
-                onChange={(e) => handleInputChange('sale_price', e.target.value)}
+                value={formData.margin}
+                onChange={(e) => handleInputChange('margin', e.target.value)}
                 className="input w-full"
                 placeholder="Profit margin in ₹"
               />
