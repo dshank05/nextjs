@@ -33,11 +33,11 @@ interface ProductTableProps {
   onPageChange: (newPage: number) => void;
 }
 
-type SortField = 'product_name' | 'categoryName' | 'companyName' | 'part_no' | 'stock' | 'rate';
+type SortField = 'id' | 'categoryName' | 'companyName' | 'subcategoryName' | 'part_no' | 'stock' | 'rate';
 type SortOrder = 'asc' | 'desc';
 
 export const ProductTable = ({ products, pagination, loading, onPageChange }: ProductTableProps) => {
-  const [sortBy, setSortBy] = useState<SortField>('product_name');
+  const [sortBy, setSortBy] = useState<SortField>('id');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   const getPageNumbers = () => {
@@ -63,9 +63,9 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
       let bValue: any;
 
       switch (sortBy) {
-        case 'product_name':
-          aValue = a.product_name?.toString().toLowerCase() || '';
-          bValue = b.product_name?.toString().toLowerCase() || '';
+        case 'id':
+          aValue = a.id || 0;
+          bValue = b.id || 0;
           break;
         case 'categoryName':
           aValue = a.categoryName?.toString().toLowerCase() || '';
@@ -74,6 +74,10 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
         case 'companyName':
           aValue = a.companyName?.toString().toLowerCase() || '';
           bValue = b.companyName?.toString().toLowerCase() || '';
+          break;
+        case 'subcategoryName':
+          aValue = (a as any).subcategoryName?.toString().toLowerCase() || '';
+          bValue = (b as any).subcategoryName?.toString().toLowerCase() || '';
           break;
         case 'part_no':
           aValue = a.part_no?.toString().toLowerCase() || '';
@@ -125,14 +129,18 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
           <thead>
             <tr>
               <th>S.N</th>
-              <th>UID</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                UID {getSortIcon('id')}
+              </th>
               {/* <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
                 Product Name {getSortIcon('product_name')}
               </th> */}
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('categoryName')}>
                 Category {getSortIcon('categoryName')}
               </th>
-              <th>Subcategory</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategoryName')}>
+                Subcategory {getSortIcon('subcategoryName')}
+              </th>
               <th>Car Models</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('companyName')}>
                 Company {getSortIcon('companyName')}
@@ -146,7 +154,6 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
                 Rate {getSortIcon('rate')}
               </th>
-              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -176,19 +183,6 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                 <td className="text-slate-300">{product.part_no || '-'}</td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
-                <td>{(product.stock || 0) === 0 ? (
-                  <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full font-semibold">
-                    🚨 Out of Stock
-                  </span>
-                ) : (product.stock || 0) < 2 || (product.stock || 0) < (product.min_stock || 0) ? (
-                  <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">
-                    ⚠️ Low Stock
-                  </span>
-                ) : (
-                  <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">
-                    ✅ In Stock
-                  </span>
-                )}</td>
                 <td>
                   <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
                     <Eye className="w-4 h-4" />

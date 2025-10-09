@@ -17,12 +17,13 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { 
-      page = '1', 
-      limit = '50', 
-      search = '', 
-      category = '', 
-      lowStock = 'false' 
+    const {
+      page = '1',
+      limit = '50',
+      search = '',
+      category = '',
+      lowStock = 'false',
+      includeInactive = 'false' // New parameter to include inactive products
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -31,7 +32,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Build where clause
     const where: any = {}
-    
+
+    // Filter active products by default unless explicitly requested to include inactive
+    if (includeInactive !== 'true') {
+      where.is_active = true
+    }
+
       if (search) {
         // Search normalization function
         const normalizeSearchText = (text: string): string => {
@@ -176,6 +182,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // ===== VALIDATION =====
     if (!product_name) {
       return res.status(400).json({ message: 'Product name is required' })
+    }
+
+    if (!warehouse_id) {
+      return res.status(400).json({ message: 'Warehouse is required' })
     }
 
     // Validate company FK if provided (integer input expected)

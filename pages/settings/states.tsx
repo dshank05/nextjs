@@ -19,7 +19,7 @@ interface StateResponse {
 }
 
 export default function States() {
-  const [states, setStates] = useState<Array<{id: number, state_name: string}>>([]);
+  const [states, setStates] = useState<Array<{id: number, state_name: string, code: number}>>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -201,7 +201,7 @@ export default function States() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
+                    <th>Code</th>
                     <th>State Name</th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -210,7 +210,7 @@ export default function States() {
                   {states.map((state, index) => (
                     <tr key={state.id}>
                       <td>{index + 1}</td>
-                      <td>{state.id}</td>
+                      <td>{state.code}</td>
                       <td className="font-medium text-white">{state.state_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(state)}>Edit</button>

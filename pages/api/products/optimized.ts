@@ -122,9 +122,12 @@ export default async function handler(
         }
       }
 
-      // Get all products that match database filters
+      // Get all products that match database filters (only active products)
       let allProducts = await prisma.product.findMany({
-        where,
+        where: {
+          ...where,
+          is_active: true  // Only fetch active products
+        },
         orderBy: { id: 'desc' },
       })
 
@@ -236,15 +239,23 @@ export default async function handler(
         }
       }
 
-      // Get products with efficient pagination
+      // Get products with efficient pagination (only active products)
       const [products, total] = await Promise.all([
         prisma.product.findMany({
-          where,
+          where: {
+            ...where,
+            is_active: true  // Only fetch active products
+          },
           skip,
           take: limitNum,
           orderBy: { id: 'desc' },
         }),
-        prisma.product.count({ where }),
+        prisma.product.count({
+          where: {
+            ...where,
+            is_active: true  // Only count active products
+          }
+        }),
       ])
 
       // Get enhanced data

@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { Upload, Calculator, ChevronDown, X, Check } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface ProductFormData {
   product_category: string;
@@ -32,6 +33,7 @@ interface FilterOptions {
 }
 
 export default function ProductCreate() {
+  const { showSnackbar } = useSnackbar();
   const router = useRouter();
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -253,6 +255,9 @@ export default function ProductCreate() {
     if (!formData.company) {
       newErrors.company = 'Company is required';
     }
+    if (!formData.warehouse) {
+      newErrors.warehouse = 'Warehouse is required';
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -355,15 +360,18 @@ export default function ProductCreate() {
       if (response.ok) {
         const action = isEditing ? 'updated' : 'created';
         console.log(`Product ${action} successfully`);
+        showSnackbar('success', `Product ${action} successfully!`);
+        setShowCarModelsConfirmModal(false);
+        setPendingCarModelsData(null);
         router.push('/products'); // Redirect to products page after success
       } else {
         console.error('API Error:', responseData);
         const action = isEditing ? 'update' : 'create';
-        setErrors({ submit: responseData.message || `Failed to ${action} product` });
+        showSnackbar('error', responseData.message || `Failed to ${action} product`);
       }
     } catch (error) {
       console.error('Network error:', error);
-      setErrors({ submit: 'Network error occurred' });
+      showSnackbar('error', 'Network error occurred');
     } finally {
       setLoading(false);
     }
@@ -593,7 +601,7 @@ export default function ProductCreate() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE *</label>
               <select
                 value={formData.warehouse}
                 onChange={(e) => handleInputChange('warehouse', e.target.value)}
@@ -606,6 +614,7 @@ export default function ProductCreate() {
                   </option>
                 ))}
               </select>
+              {errors.warehouse && <p className="text-red-400 text-xs mt-1">{errors.warehouse}</p>}
             </div>
 
             <div>

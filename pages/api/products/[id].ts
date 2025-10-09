@@ -116,10 +116,13 @@ export default async function handler(
           rate,
           hsn,
           notes,
+          is_active, // Add is_active field
 
           // ===== FIELDS CURRENTLY NOT IN SCHEMA =====
           gst_rate,
           warehouse,
+          warehouse_id, // FK field
+          gst_rate_id, // FK field
           rack_number,
           descriptions,
           mrp,
@@ -127,9 +130,17 @@ export default async function handler(
           sale_price, // Legacy naming from UI
         } = req.body
 
-        // Validate required fields
-        if (!product_name) {
+        // Validate required fields - skip product_name validation if we're only updating is_active
+        const requestFields = Object.keys(req.body);
+        const isOnlyStatusUpdate = requestFields.length === 1 && requestFields[0] === 'is_active';
+
+        if (!product_name && !isOnlyStatusUpdate) {
           return res.status(400).json({ message: 'Product name is required' })
+        }
+
+        // Validate warehouse is required for non-status updates
+        if (!isOnlyStatusUpdate && warehouse_id !== undefined && warehouse_id === null) {
+          return res.status(400).json({ message: 'Warehouse is required' })
         }
 
         // ===== FUTURE SCHEMA EXPANSION FIELDS =====
@@ -155,21 +166,31 @@ export default async function handler(
           : `Additional Fields:\n${extraFieldsString}`;
 
         // ===== PRODUCT TABLE DATA =====
-        const productData = {
-          // Existing Product table fields only
-          product_name,
-          display_name: display_name || product_name,
-          product_category_id: product_category_id ? parseInt(product_category_id) : null,
-          product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
-          car_model_ids: car_model_ids || null,
-          company: company ? company.toString() : null,
-          part_no,
-          min_stock: min_stock ? parseInt(min_stock) : null,
-          stock: stock ? parseInt(stock) : null,
-          rate: rate ? parseFloat(rate) : null,
-          hsn,
-          notes: enhancedNotes, // Includes extra fields for now
-        };
+        // Only include fields that were actually sent in the request
+        const productData: any = {};
+
+        // Handle main product fields - only include if they were sent
+        if (product_name !== undefined) productData.product_name = product_name;
+        if (display_name !== undefined || product_name !== undefined) {
+          productData.display_name = display_name || product_name;
+        }
+        if (product_category_id !== undefined) productData.product_category_id = product_category_id ? parseInt(product_category_id) : null;
+        if (product_subcategory_id !== undefined) productData.product_subcategory_id = product_subcategory_id ? parseInt(product_subcategory_id) : null;
+        if (car_model_ids !== undefined) productData.car_model_ids = car_model_ids || null;
+        if (company !== undefined) productData.company = company ? company.toString() : null;
+        if (part_no !== undefined) productData.part_no = part_no;
+        if (min_stock !== undefined) productData.min_stock = min_stock ? parseInt(min_stock) : null;
+        if (stock !== undefined) productData.stock = stock ? parseInt(stock) : null;
+        if (rate !== undefined) productData.rate = rate ? parseFloat(rate) : null;
+        if (hsn !== undefined) productData.hsn = hsn;
+        if (is_active !== undefined) productData.is_active = Boolean(is_active); // Handle active status toggle
+        if (notes !== undefined || Object.keys(extraFields).length > 0) {
+          productData.notes = notes ? `${notes}\n\nAdditional Fields:\n${extraFieldsString}` : `Additional Fields:\n${extraFieldsString}`;
+        }
+
+        // Handle FK fields
+        if (warehouse_id !== undefined) productData.warehouse_id = warehouse_id ? parseInt(warehouse_id) : null;
+        if (gst_rate_id !== undefined) productData.gst_rate_id = gst_rate_id ? parseInt(gst_rate_id) : null;
 
         // ===== FUTURE SCHEMA EXPANSION LOGGING =====
         const futureExpansionData = {

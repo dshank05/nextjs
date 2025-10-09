@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit } from 'lucide-react';
+import { ConfirmationModal } from '../../../components/ConfirmationModal';
+import { useSnackbar } from '../../../components/SnackbarProvider';
 
 interface Product {
   id: number;
@@ -24,13 +26,17 @@ interface Product {
   mrp?: string;
   discount?: string;
   sale_price?: string;
+  is_active?: boolean;
 }
 
 export default function ProductView() {
+  const { showSnackbar } = useSnackbar();
   const router = useRouter();
   const { id } = router.query;
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -49,6 +55,51 @@ export default function ProductView() {
       console.error('Error fetching product:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleProductStatus = () => {
+    if (!product) return;
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmProductStatusToggle = async () => {
+    if (!product) return;
+
+    setConfirmLoading(true);
+    const newStatus = !product.is_active;
+    const action = newStatus ? 'reactivate' : 'deactivate';
+
+    try {
+      const response = await fetch(`/api/products/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ is_active: newStatus }),
+      });
+
+      if (response.ok) {
+        setProduct(prev => prev ? { ...prev, is_active: newStatus } : null);
+        showSnackbar('success', `Product ${action}d successfully!`);
+        setShowConfirmModal(false);
+        // Navigate back to product index page after successful deactivation
+        router.push('/products');
+      } else {
+        const errorData = await response.json();
+        showSnackbar('error', `Failed to ${action} product: ${errorData.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error toggling product status:', error);
+      showSnackbar('error', `Failed to ${action} product: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setConfirmLoading(false);
+    }
+  };
+
+  const handleCancelProductStatusToggle = () => {
+    if (!confirmLoading) {
+      setShowConfirmModal(false);
     }
   };
 
@@ -123,6 +174,13 @@ export default function ProductView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
+              <button
+                onClick={toggleProductStatus}
+                className={`btn-secondary flex items-center gap-2 ${product.is_active ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
+                title={product.is_active ? 'Make Product Inactive' : 'Reactivate Product'}
+              >
+                {product.is_active ? '🚫 Inactive' : '✅ Reactivate'}
+              </button>
               <Link href={`/products/create?edit=${product.id}`} className="btn-primary flex items-center gap-2" title="Edit Product">
                 <Edit className="w-4 h-4" />
                 Edit
@@ -515,6 +573,17 @@ export default function ProductView() {
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={product?.is_active ? 'Deactivate Product' : 'Reactivate Product'}
+        message={`Are you sure you want to ${product?.is_active ? 'deactivate' : 'reactivate'} this product?`}
+        confirmText={product?.is_active ? 'Deactivate' : 'Reactivate'}
+        showLoading={confirmLoading}
+        onConfirm={handleConfirmProductStatusToggle}
+        onCancel={handleCancelProductStatusToggle}
+      />
     </div>
   );
 }

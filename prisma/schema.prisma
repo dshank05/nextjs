@@ -60,6 +60,7 @@ model Product {
   opening_stock          Int?
   opening_rate           Int?
   notes                  String?   @db.VarChar(255)
+  is_active              Boolean   @default(true) // Active/Inactive status
 
   // ===== NEW FK FIELDS =====
   warehouse_id           Int?                    // FK to warehouse table
