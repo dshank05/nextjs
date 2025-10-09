@@ -108,9 +108,12 @@ model Invoice {
   type                Int?
   staff_details       String? @db.VarChar(255)  // Keep for backward compatibility
   staff_id            Int?                    // New FK to staff table (nullable - optional)
+  mechanic_id         Int?                    // New FK to mechanic table (nullable - optional)
+  commission          Float?                  // Commission amount (nullable - optional)
 
-  // New staff relationship (optional)
-  staff               staff?  @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
+  // Relationships
+  staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
+  mechanic           mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
 
   @@map("invoice")
 }
@@ -361,9 +364,12 @@ model invoicex {
   type                Int?
   staff_details       String? @db.VarChar(255)  // Keep for backward compatibility
   staff_id            Int?                    // New FK to staff table (nullable - optional)
+  mechanic_id         Int?                    // New FK to mechanic table (nullable - optional)
+  commission          Float?                  // Commission amount (nullable - optional)
 
-  // New staff relationship (optional)
-  staff               staff?  @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
+  // Relationships
+  staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
+  mechanic           mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
 }
 
 model migration {
@@ -515,4 +521,19 @@ model staff {
   invoicexs  invoicex[]  // Salex invoices
 
   @@map("staff")
+}
+
+model mechanic {
+  id         Int      @id @default(autoincrement())
+  name       String   @db.VarChar(255)  // Mechanic full name (mandatory)
+  phone      String   @db.VarChar(20)   // Mechanic phone number (mandatory)
+  status     String   @default("Active") @db.VarChar(20) // Active/Inactive status
+  created_at DateTime @default(now())   // Record creation timestamp
+  updated_at DateTime @updatedAt        // Record update timestamp
+
+  // Relations - mechanic can be associated with multiple invoices
+  invoices   Invoice[]   // Sale invoices
+  invoicexs  invoicex[]  // Salex invoices
+
+  @@map("mechanic")
 }

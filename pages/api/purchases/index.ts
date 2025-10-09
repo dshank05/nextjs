@@ -279,7 +279,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Validate payment_status and payment_mode are valid integers
     const validPaymentStatuses = [0, 1];
-    const validPaymentModes = [1, 2, 3];
+    const validPaymentModes = [1, 2];
 
     console.log('🔍 DEBUG - Received payment values:', { payment_status, payment_mode, payment_status_type: typeof payment_status, payment_mode_type: typeof payment_mode });
 
@@ -293,7 +293,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     if (!validPaymentModes.includes(payment_mode)) {
       console.log('❌ DEBUG - Invalid payment_mode:', payment_mode);
       return res.status(400).json({
-        message: 'Invalid payment_mode: must be 1 (Cash), 2 (Cheque), or 3 (Online)'
+        message: 'Invalid payment_mode: must be 1 (Cash) or 2 (Bank)'
       })
     }
 

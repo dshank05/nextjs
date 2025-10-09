@@ -65,12 +65,11 @@ const getStatusText = (status?: number, type?: string): string => {
   }
 };
 
-// Helper function to get payment mode text (only Cash, Cheque, or Online)
+// Helper function to get payment mode text (only Cash or Bank)
 const getPaymentModeText = (mode?: number): string => {
   switch (mode) {
     case 1: return 'Cash';
-    case 2: return 'Cheque';
-    case 3: return 'Online';
+    case 2: return 'Bank';
     default: return 'N/A';
   }
 };

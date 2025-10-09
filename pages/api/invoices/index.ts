@@ -157,8 +157,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,            // ❌ NOT SAVED - Future: Invoice.packing_forwarding_qty
       packing_forwarding_rate,           // ❌ NOT SAVED - Future: Invoice.packing_forwarding_rate
       packing_forwarding_total,          // ❌ NOT SAVED - Future: Invoice.packing_forwarding_total
-      tax_rate,                          // ❌ NOT SAVED - Future: Invoice.tax_rate_percentage
-      basic_value,                       // ❌ NOT SAVED - Future: Invoice.basic_value
+
+      // ===== UNUSED FIELDS (removed from UI, kept for API backward compatibility) =====
+      tax_rate,                          // ❌ UNUSED - Removed from invoice create UI, kept for backward compatibility
+      basic_value,                       // ❌ UNUSED - Removed from invoice create UI, kept for backward compatibility
 
       // ===== PAYMENT FIELDS (UI vs DB NAMING ISSUES) =====
       payment_status,                    // ❌ NOT SAVED - UI sends payment_status, DB has status field (1=Paid)
@@ -228,7 +230,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: 1,                               // Invoice.payment_mode (default: Cash)
           updated_at: new Date().toISOString(),          // Invoice.updated_at
           staff_details,                                 // Invoice.staff_details (optional, for backward compatibility)
-          staff_id: staff_id ? parseInt(staff_id) : null // Invoice.staff_id (optional, FK to staff table)
+          staff_id: staff_id ? parseInt(staff_id) : null, // Invoice.staff_id (optional, FK to staff table)
+          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Invoice.mechanic_id (optional, FK to mechanic table)
+          commission: commission || 0                    // Invoice.commission (optional, commission amount)
         }
       })
 

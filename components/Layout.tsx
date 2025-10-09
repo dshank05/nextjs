@@ -106,6 +106,7 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'FINANCIAL YEAR', href: '/settings/financialyear' },
         { name: 'GST TAX RATE', href: '/settings/gsttaxrate' },
         { name: 'STATES', href: '/settings/states' },
+        { name: 'MECHANIC DETAILS', href: '/settings/mechanics' },
         { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
       ],
     },

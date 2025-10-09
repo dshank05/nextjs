@@ -40,6 +40,7 @@ interface Transaction {
   notes?: string;
   status?: number;
   payment_mode?: number;
+  bill_reference?: string;
   transport?: string;
   items?: TransactionItem[];
   item_count?: number;
@@ -205,8 +206,8 @@ export const TransactionTable = ({
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
       case 1: return 'Cash';
-      case 2: return 'Cheque';
-      case 3: return 'Online';
+      case 2:
+      case 3: return 'Bank';
       case 4: return 'Credit';
       default: return 'N/A';
     }
@@ -236,6 +237,7 @@ export const TransactionTable = ({
                 Invoice No {getSortIcon('invoice_no')}
               </th>
               {!hideTypeColumn && <th>Type</th>}
+              <th>Bill Ref</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_vendor_name')}>
                 Customer/Vendor {getSortIcon('customer_vendor_name')}
               </th>
@@ -246,6 +248,7 @@ export const TransactionTable = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_date')}>
                 Date {getSortIcon('invoice_date')}
               </th>
+              <th>Payment Mode</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
                 Status {getSortIcon('status')}
               </th>
@@ -270,6 +273,7 @@ export const TransactionTable = ({
                     </span>
                   </td>
                 )}
+                <td className="text-slate-300">{transaction.bill_reference || 'N/A'}</td>
                 <td className="text-slate-300">
                   <div className="font-medium">{transaction.customer_vendor_name || 'N/A'}</div>
                 </td>
@@ -281,6 +285,7 @@ export const TransactionTable = ({
                 </td>
                 <td className="text-slate-300 font-semibold">₹{transaction.total.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(transaction.invoice_date)}</td>
+                <td className="text-slate-300">{getPaymentModeText(transaction.payment_mode)}</td>
                 <td>{getStatusBadge(transaction.status, transaction.type)}</td>
                 <td>
                   <div className="flex items-center space-x-2">

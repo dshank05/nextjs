@@ -118,8 +118,6 @@ interface InvoiceFormData {
   packing_forwarding_qty: string;
   packing_forwarding_rate: string;
   packing_forwarding_total: string;
-  tax_rate: string;
-  basic_value: string;
   total_cgst: string;
   total_sgst: string;
   total_igst: string;
@@ -323,8 +321,6 @@ export default function InvoiceCreate() {
     packing_forwarding_qty: '',
     packing_forwarding_rate: '',
     packing_forwarding_total: '',
-    tax_rate: '',
-    basic_value: '',
     total_cgst: '',
     total_sgst: '',
     total_igst: ''
@@ -398,6 +394,20 @@ export default function InvoiceCreate() {
     }));
   }, [selectedProducts]);
 
+  // Auto-calculate packing and forwarding total
+  useEffect(() => {
+    const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+    const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+    const total = qty * rate;
+
+    if (total !== parseFloat(formData.packing_forwarding_total)) {
+      setFormData(prev => ({
+        ...prev,
+        packing_forwarding_total: total.toFixed(2)
+      }));
+    }
+  }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
+
   const fetchCustomers = async () => {
     try {
       // Assuming there's a customers API or we get them from somewhere
@@ -423,10 +433,21 @@ export default function InvoiceCreate() {
 
   const fetchMechanics = async () => {
     try {
-      // Placeholder - implement mechanics API
-      setMechanics([]);
+      const response = await fetch('/api/mechanics');
+      if (response.ok) {
+        const data = await response.json();
+        // Transform mechanic data to match expected format
+        const transformedMechanics = data.mechanics.map((mechanic: any) => ({
+          id: mechanic.id.toString(),
+          mechanic_name: mechanic.name
+        }));
+        setMechanics(transformedMechanics);
+      } else {
+        setMechanics([]);
+      }
     } catch (error) {
       console.error('Error fetching mechanics:', error);
+      setMechanics([]);
     }
   };
 
@@ -532,8 +553,6 @@ export default function InvoiceCreate() {
           packing_forwarding_qty: invoice.packing_forwarding_qty || '',
           packing_forwarding_rate: invoice.packing_forwarding_rate || '',
           packing_forwarding_total: invoice.packing_forwarding_total || '',
-          tax_rate: invoice.tax_rate || '',
-          basic_value: invoice.basic_value || '',
           total_cgst: invoice.total_cgst || '',
           total_sgst: invoice.total_sgst || '',
           total_igst: invoice.total_igst || ''
@@ -767,8 +786,10 @@ export default function InvoiceCreate() {
   }, [selectedProducts]);
 
   const grandTotal = useMemo(() => {
-    return selectedProducts.reduce((sum, item) => sum + item.total, 0);
-  }, [selectedProducts]);
+    const productTotal = selectedProducts.reduce((sum, item) => sum + item.total, 0);
+    const packingTotal = parseFloat(formData.packing_forwarding_total) || 0;
+    return productTotal + packingTotal;
+  }, [selectedProducts, formData.packing_forwarding_total]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -885,8 +906,6 @@ export default function InvoiceCreate() {
         packing_forwarding_qty: formData.packing_forwarding_qty, // ❌ NOT SAVED - not in current schema
         packing_forwarding_rate: formData.packing_forwarding_rate, // ❌ NOT SAVED - not in current schema
         packing_forwarding_total: formData.packing_forwarding_total, // ❌ NOT SAVED - not in current schema
-        tax_rate: formData.tax_rate,                            // ❌ NOT SAVED - not in current schema
-        basic_value: formData.basic_value,                      // ❌ NOT SAVED - not in current schema
 
         // ===== PAYMENT FIELDS (currently stored) =====
         payment_status: formData.payment_status,                // ❌ NOT SAVED - Invoice has status field but UI uses payment_status
@@ -1731,8 +1750,9 @@ export default function InvoiceCreate() {
                         type="number"
                         step="0.01"
                         value={formData.packing_forwarding_total}
-                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
-                        className="input w-full"
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -1741,17 +1761,6 @@ export default function InvoiceCreate() {
 
                 {/* Additional Calculations */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">BASIC VALUE</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.basic_value}
-                      onChange={(e) => handleInputChange('basic_value', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
-                    />
-                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                     <input
@@ -1763,18 +1772,6 @@ export default function InvoiceCreate() {
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     />
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">TAX RATE</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.tax_rate}
-                    onChange={(e) => handleInputChange('tax_rate', e.target.value)}
-                    className="input w-full"
-                    placeholder="0.00"
-                  />
                 </div>
 
                 {/* Payment Details */}
@@ -1802,8 +1799,7 @@ export default function InvoiceCreate() {
                         required
                       >
                         <option value="1">Cash</option>
-                        <option value="2">Cheque</option>
-                        <option value="3">Online</option>
+                        <option value="2">Bank</option>
                       </select>
                     </div>
                   </div>

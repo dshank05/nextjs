@@ -181,7 +181,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       payment_mode = 1,
       descriptions = '',
       staff_details,     // New field for backward compatibility
-      staff_id          // New field as FK to staff table (optional)
+      staff_id,         // New field as FK to staff table (optional)
+      mechanic_id,      // New field as FK to mechanic table (optional)
+      commission,       // New field for commission amount (optional)
+
+      // ===== UNUSED FIELDS (removed from UI, kept for API backward compatibility) =====
+      tax_rate,         // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
+      basic_value       // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
     } = req.body
 
     // Validate required fields
@@ -217,7 +223,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: parseInt(payment_mode),
           fy: fy,
           staff_details,                             // Optional string field for backward compatibility
-          staff_id: staff_id ? parseInt(staff_id) : null // Optional FK to staff table
+          staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
+          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
+          commission: commission || 0                // Optional commission amount
         }
       })
 

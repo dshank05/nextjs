@@ -118,8 +118,6 @@ interface InvoiceFormData {
   packing_forwarding_qty: string;
   packing_forwarding_rate: string;
   packing_forwarding_total: string;
-  tax_rate: string;
-  basic_value: string;
   // Removed GST fields for salex
   // total_cgst: string;
   // total_sgst: string;
@@ -349,6 +347,20 @@ export default function InvoiceCCreate() {
     }
   }, [productSearchTerm, products]);
 
+  // Auto-calculate packing and forwarding total
+  useEffect(() => {
+    const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+    const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+    const total = qty * rate;
+
+    if (total !== parseFloat(formData.packing_forwarding_total)) {
+      setFormData(prev => ({
+        ...prev,
+        packing_forwarding_total: total.toFixed(2)
+      }));
+    }
+  }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
+
   const fetchCustomers = async () => {
     try {
       const response = await fetch('/api/customers');
@@ -547,8 +559,10 @@ export default function InvoiceCCreate() {
   }, [selectedProducts]);
 
   const grandTotal = useMemo(() => {
-    return selectedProducts.reduce((sum, item) => sum + item.total, 0);
-  }, [selectedProducts]);
+    const productTotal = selectedProducts.reduce((sum, item) => sum + item.total, 0);
+    const packingTotal = parseFloat(formData.packing_forwarding_total) || 0;
+    return productTotal + packingTotal;
+  }, [selectedProducts, formData.packing_forwarding_total]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -1403,17 +1417,6 @@ export default function InvoiceCCreate() {
                       placeholder="0.00"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">BASIC VALUE</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={formData.basic_value}
-                      onChange={(e) => handleInputChange('basic_value', e.target.value)}
-                      className="input w-full"
-                      placeholder="0.00"
-                    />
-                  </div>
                 </div>
 
                 {/* Packing & Forwarding */}
@@ -1448,8 +1451,9 @@ export default function InvoiceCCreate() {
                         type="number"
                         step="0.01"
                         value={formData.packing_forwarding_total}
-                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
-                        className="input w-full"
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                         placeholder="0.00"
                       />
                     </div>
@@ -1481,8 +1485,7 @@ export default function InvoiceCCreate() {
                         required
                       >
                         <option value="1">Cash</option>
-                        <option value="2">Cheque</option>
-                        <option value="3">Online</option>
+                        <option value="2">Bank</option>
                       </select>
                     </div>
                   </div>

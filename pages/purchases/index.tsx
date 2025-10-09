@@ -48,6 +48,7 @@ interface Purchase {
   items?: PurchaseItem[]
   item_count?: number
   formattedDate?: string
+  bill_reference?: string
 }
 
 interface Pagination {
@@ -201,6 +202,7 @@ export default function PurchasesPage() {
     customer_vendor_name: purchase.vendor_name,
     customer_vendor_address: purchase.vendor_address,
     customer_vendor_gstin: purchase.vendor_gstin,
+    bill_reference: purchase.bill_reference,
     invoice_date: purchase.formattedDate ||
                   (typeof purchase.invoice_date === 'number' ? purchase.invoice_date :
                    (purchase.invoice_date && purchase.invoice_date.trim() !== '') ? purchase.invoice_date : null)

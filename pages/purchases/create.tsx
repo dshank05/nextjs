@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { Search, Plus, Trash2, Calculator, Loader } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface Vendor {
   id: string;
@@ -111,6 +112,7 @@ interface FilterOptions {
 
 export default function PurchaseCreate() {
   const router = useRouter();
+  const { showSnackbar } = useSnackbar();
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -350,9 +352,12 @@ export default function PurchaseCreate() {
       if (response.ok) {
         const data = await response.json();
         setVendors(data.vendors || []);
+      } else {
+        showSnackbar('error', 'Failed to load vendors. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching vendors:', error);
+      showSnackbar('error', 'Failed to load vendors. Please try again.');
     }
   };
 
@@ -362,17 +367,27 @@ export default function PurchaseCreate() {
       if (response.ok) {
         const data = await response.json();
         setProducts(data.products || []);
+      } else {
+        showSnackbar('error', 'Failed to load products. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+      showSnackbar('error', 'Failed to load products. Please try again.');
     }
   };
 
   const fetchFilterOptions = async () => {
     try {
       const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) { console.error('Error fetching filter options:', error); }
+      if (response.ok) {
+        setFilterOptions(await response.json());
+      } else {
+        showSnackbar('error', 'Failed to load filter options. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error fetching filter options:', error);
+      showSnackbar('error', 'Failed to load filter options. Please try again.');
+    }
   };
 
   const fetchStaff = async () => {
@@ -381,9 +396,12 @@ export default function PurchaseCreate() {
       if (response.ok) {
         const data = await response.json();
         setStaff(data.staff || []);
+      } else {
+        showSnackbar('error', 'Failed to load staff. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching staff:', error);
+      showSnackbar('error', 'Failed to load staff. Please try again.');
     }
   };
 
@@ -395,9 +413,12 @@ export default function PurchaseCreate() {
         const lastInvoiceNum = data.lastInvoiceNumber || 0;
         const nextInvoiceNum = lastInvoiceNum + 1;
         setFormData(prev => ({ ...prev, invoice_number: nextInvoiceNum.toString() }));
+      } else {
+        showSnackbar('error', 'Failed to generate invoice number. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching last invoice number:', error);
+      showSnackbar('error', 'Failed to generate invoice number. Please try again.');
     } finally {
       setInvoiceNumberLoading(false);
     }
@@ -525,9 +546,12 @@ export default function PurchaseCreate() {
           });
           setSelectedProducts(convertedItems);
         }
+      } else {
+        showSnackbar('error', 'Failed to load purchase data. Please try again.');
       }
     } catch (error) {
       console.error('Error fetching purchase for edit:', error);
+      showSnackbar('error', 'Failed to load purchase data. Please try again.');
     } finally {
       setInvoiceNumberLoading(false);
     }
@@ -731,17 +755,21 @@ export default function PurchaseCreate() {
         body: JSON.stringify(submitData),
       });
 
+      // Always close modal after API call completes
+      setShowConfirmationModal(false);
+
       if (response.ok) {
-        setShowConfirmationModal(false); // Close modal on success
+        // Show success snackbar after modal closes and navigate
+        showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);
         router.push('/purchases');
       } else {
         const error = await response.json();
-        setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase` });
-        // Keep modal open on error so user can see the error
+        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase`);
       }
     } catch (error) {
-      setErrors({ submit: 'Network error occurred' });
-      // Keep modal open on error
+      // Always close modal on network error
+      setShowConfirmationModal(false);
+      showSnackbar('error', 'Network error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -1443,8 +1471,7 @@ export default function PurchaseCreate() {
                       required
                     >
                       <option value="1">Cash</option>
-                      <option value="2">Cheque</option>
-                      <option value="3">Online</option>
+                      <option value="2">Bank</option>
                     </select>
                   </div>
                 </div>
