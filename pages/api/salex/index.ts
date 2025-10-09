@@ -179,7 +179,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       notes = '',
       payment_status = 1,
       payment_mode = 1,
-      descriptions = ''
+      descriptions = '',
+      staff_details,     // New field for backward compatibility
+      staff_id          // New field as FK to staff table (optional)
     } = req.body
 
     // Validate required fields
@@ -213,7 +215,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
           status: parseInt(payment_status),
           payment_mode: parseInt(payment_mode),
-          fy: fy
+          fy: fy,
+          staff_details,                             // Optional string field for backward compatibility
+          staff_id: staff_id ? parseInt(staff_id) : null // Optional FK to staff table
         }
       })
 

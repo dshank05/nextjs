@@ -226,7 +226,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           fy,                                            // Invoice.fy
           status: 1,                                     // Invoice.status (default: Paid)
           payment_mode: 1,                               // Invoice.payment_mode (default: Cash)
-          updated_at: new Date().toISOString()           // Invoice.updated_at
+          updated_at: new Date().toISOString(),          // Invoice.updated_at
+          staff_details,                                 // Invoice.staff_details (optional, for backward compatibility)
+          staff_id: staff_id ? parseInt(staff_id) : null // Invoice.staff_id (optional, FK to staff table)
         }
       })
 

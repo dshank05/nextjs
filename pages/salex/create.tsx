@@ -92,7 +92,7 @@ interface InvoiceItem {
 interface InvoiceFormData {
   invoice_number: string;
   bill_reference: string;
-  staff_details: string;
+  staff_id?: number | null;
   date: string;
   customer_name: string;
   contact_number: string;
@@ -271,7 +271,7 @@ export default function InvoiceCCreate() {
   const [formData, setFormData] = useState<InvoiceFormData>({
     invoice_number: '',
     bill_reference: '',
-    staff_details: '',
+    staff_id: null,
     date: new Date().toISOString().split('T')[0],
     customer_name: '',
     contact_number: '',
@@ -716,14 +716,19 @@ export default function InvoiceCCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF DETAILS</label>
-                  <input
-                    type="text"
-                    value={formData.staff_details}
-                    onChange={(e) => handleInputChange('staff_details', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter staff name"
-                  />
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
+                  <select
+                    value={formData.staff_id || ''}
+                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
+                    className="select w-full"
+                  >
+                    <option value="">Select Staff</option>
+                    {staffList.map((staff) => (
+                      <option key={staff.id} value={staff.id.toString()}>
+                        {staff.staff_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>

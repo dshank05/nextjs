@@ -92,7 +92,7 @@ interface InvoiceItem {
 interface InvoiceFormData {
   invoice_number: string;
   bill_reference: string;
-  staff_details: string;
+  staff_id?: number | null;
   date: string;
   customer_name: string;
   contact_number: string;
@@ -297,7 +297,7 @@ export default function InvoiceCreate() {
   const [formData, setFormData] = useState<InvoiceFormData>({
     invoice_number: '',
     bill_reference: '',
-    staff_details: '',
+    staff_id: null,
     date: new Date().toISOString().split('T')[0],
     customer_name: '',
     contact_number: '',
@@ -506,7 +506,7 @@ export default function InvoiceCreate() {
         setFormData({
           invoice_number: invoice.invoice_no?.toString() || '',
           bill_reference: invoice.bill_reference || '',
-          staff_details: invoice.staff_details || '',
+          staff_id: invoice.staff_id || null,
           date: formatDateForInput(invoice.invoice_date),
           customer_name: invoice.customer_name || '',
           contact_number: invoice.contact_number || '',
@@ -876,8 +876,7 @@ export default function InvoiceCreate() {
         // ===== FIELDS COLLECTED BUT NOT CURRENTLY SAVED =====
         // These fields are collected in UI but not stored due to schema limitations:
         bill_reference: formData.bill_reference,                // ❌ NOT SAVED - not in current schema
-        staff_details: formData.staff_details,                  // ❌ NOT SAVED - not in current schema
-        staff_id: selectedStaffId ? parseInt(selectedStaffId) : null, // ❌ NOT SAVED - not in current schema
+        staff_id: formData.staff_id,                            // ❌ NOT SAVED - not in current schema
         mechanic_id: selectedMechanicId ? parseInt(selectedMechanicId) : null, // ❌ NOT SAVED - not in current schema
         commission: parseFloat(formData.commission) || 0,       // ❌ NOT SAVED - not in current schema
         discount: parseFloat(formData.discount) || 0,           // ❌ NOT SAVED - invoice-level discount not in schema
@@ -973,14 +972,19 @@ export default function InvoiceCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF DETAILS</label>
-                  <input
-                    type="text"
-                    value={formData.staff_details}
-                    onChange={(e) => handleInputChange('staff_details', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter staff name"
-                  />
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
+                  <select
+                    value={formData.staff_id || ''}
+                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
+                    className="select w-full"
+                  >
+                    <option value="">Select Staff</option>
+                    {staffList.map((staff) => (
+                      <option key={staff.id} value={staff.id.toString()}>
+                        {staff.staff_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>

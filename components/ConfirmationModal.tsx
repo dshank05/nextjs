@@ -51,10 +51,9 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
           </button>
           <button
             onClick={onCancel}
-            disabled={showLoading}
-            className="btn-secondary px-6 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-secondary px-6"
           >
-            {showLoading ? cancelLoadingText : cancelText}
+            {cancelText}
           </button>
         </div>
       </div>

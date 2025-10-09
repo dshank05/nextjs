@@ -219,7 +219,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
       bill_reference,           // ✓ Purchase.bill_reference
-      staff_details,            // ✓ Purchase.staff_details
+      staff_details,            // ✓ Purchase.staff_details (string for backward compatibility)
+      staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
       // ===== VENDOR RELATIONSHIP (ONLY FK STORED - NO VENDOR MANAGEMENT HERE) =====
@@ -330,7 +331,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: {
         invoice_no: parseInt(invoice_number),
         bill_reference: bill_reference, // Keep bill reference separate from vendor name
-        staff_details: staff_details,
+        staff_details: staff_details,    // Keep for backward compatibility
+        staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
         vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
         items_total: itemsTotal,
         freight: transport_cost || 0,
@@ -456,7 +458,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
       bill_reference,           // ✓ Purchase.bill_reference
-      staff_details,            // ✓ Purchase.staff_details
+      staff_details,            // ✓ Purchase.staff_details (string for backward compatibility)
+      staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
       // ===== VENDOR RELATIONSHIP (ONLY FK STORED - NO VENDOR MANAGEMENT HERE) =====
@@ -554,7 +557,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         data: {
           invoice_no: parseInt(invoice_number),
           bill_reference: bill_reference, // Keep bill reference separate from vendor name
-          staff_details: staff_details,
+          staff_details: staff_details,    // Keep for backward compatibility
+          staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
           items_total: itemsTotal,
           freight: transport_cost || 0,

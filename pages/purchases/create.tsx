@@ -60,10 +60,18 @@ interface PurchaseItem {
   total: number;
 }
 
+interface Staff {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  status: string;
+}
+
 interface PurchaseFormData {
   invoice_number: string;
   bill_reference: string;
-  staff_details: string;
+  staff_id?: number | null;
   date: string;
   vendor_name: string;
   contact_number: string;
@@ -104,6 +112,7 @@ interface FilterOptions {
 export default function PurchaseCreate() {
   const router = useRouter();
   const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<PurchaseItem[]>([]);
@@ -165,7 +174,7 @@ export default function PurchaseCreate() {
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
     bill_reference: '',
-    staff_details: '',
+    staff_id: null,
     date: new Date().toISOString().split('T')[0],
     vendor_name: '', // Keep for backward compatibility with validation
     contact_number: '', // Remove these after validation is updated
@@ -206,9 +215,10 @@ export default function PurchaseCreate() {
     }
   }, [router.query]);
 
-  // Fetch vendors and products on mount
+  // Fetch vendors, staff, and products on mount
   useEffect(() => {
     fetchVendors();
+    fetchStaff();
     fetchProducts();
     fetchFilterOptions();
     // Only fetch last invoice number in create mode, not edit mode
@@ -365,6 +375,18 @@ export default function PurchaseCreate() {
     } catch (error) { console.error('Error fetching filter options:', error); }
   };
 
+  const fetchStaff = async () => {
+    try {
+      const response = await fetch('/api/staff');
+      if (response.ok) {
+        const data = await response.json();
+        setStaff(data.staff || []);
+      }
+    } catch (error) {
+      console.error('Error fetching staff:', error);
+    }
+  };
+
   const fetchLastInvoiceNumber = async () => {
     try {
       const response = await fetch('/api/purchases/last-invoice');
@@ -406,7 +428,7 @@ export default function PurchaseCreate() {
         setFormData({
           invoice_number: purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
-          staff_details: purchase.staff_details || '',
+          staff_id: purchase.staff_id || null,
           date: formatDateForInput(purchase.invoice_date),
           vendor_name: purchase.vendor_name || '',
           contact_number: purchase.contact_number || '',
@@ -666,7 +688,7 @@ export default function PurchaseCreate() {
       const submitData = {
         invoice_number: formData.invoice_number,
         bill_reference: formData.bill_reference,
-        staff_details: formData.staff_details,
+        staff_id: formData.staff_id,
         date: formData.date,
         vendor_id: vendorIdToSave, // Only send vendor relationship ID
         // Removed all vendor detail fields - they're only for UI display
@@ -771,14 +793,19 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF DETAILS</label>
-                  <input
-                    type="text"
-                    value={formData.staff_details}
-                    onChange={(e) => handleInputChange('staff_details', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter staff details"
-                  />
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
+                  <select
+                    value={formData.staff_id || ''}
+                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
+                    className="select w-full"
+                  >
+                    <option value="">Select Staff</option>
+                    {staff.map((member) => (
+                      <option key={member.id} value={member.id.toString()}>
+                        {member.name} - {member.phone}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>
