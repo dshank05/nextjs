@@ -118,6 +118,8 @@ interface InvoiceFormData {
   packing_forwarding_qty: string;
   packing_forwarding_rate: string;
   packing_forwarding_total: string;
+  tax_rate: string;
+  basic_value: string;
   // Removed GST fields for salex
   // total_cgst: string;
   // total_sgst: string;
