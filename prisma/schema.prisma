@@ -121,6 +121,8 @@ model Invoice {
 
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
+  @@index([invoice_date], map: "idx_invoice_invoice_date")
+  @@index([status], map: "idx_invoice_status")
   @@map("invoice")
 }
 
@@ -144,6 +146,7 @@ model Invoiceitems {
   invoice_date    Int
   fy              Int
 
+  @@index([invoice_date], map: "idx_invoiceitems_invoice_date")
   @@map("invoice_items")
 }
 
@@ -226,6 +229,9 @@ model Incexp {
   fy           Int?
   notes        String? @db.VarChar(100)
 
+  @@index([incexp_date], map: "idx_incexp_date")
+  @@index([type], map: "idx_incexp_type")
+  @@index([user_id], map: "idx_incexp_user_id")
   @@map("incexp")
 }
 
@@ -322,6 +328,10 @@ model incexpx {
   incexp_date  String  @db.VarChar(30)
   fy           Int?
   notes        String? @db.VarChar(100)
+
+  @@index([incexp_date], map: "idx_incexpx_date")
+  @@index([type], map: "idx_incexpx_type")
+  @@index([user_id], map: "idx_incexpx_user_id")
 }
 
 model invoice_itemsx {
@@ -343,6 +353,8 @@ model invoice_itemsx {
   part_show       Int?
   invoice_date    Int
   fy              Int
+
+  @@index([invoice_date], map: "idx_invoice_itemsx_invoice_date")
 }
 
 model invoicex {
@@ -376,6 +388,8 @@ model invoicex {
 
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")
+  @@index([invoice_date], map: "idx_invoicex_invoice_date")
+  @@index([status], map: "idx_invoicex_status")
 }
 
 model migration {
@@ -482,6 +496,10 @@ model vendor_details {
   city          String?         @db.VarChar(100)
   purchases     Purchase[]
   purchaseItems Purchaseitems[]
+
+  @@index([vendor_name], map: "idx_vendor_name")
+  @@index([contact_no], map: "idx_vendor_contact_no")
+  @@index([email], map: "idx_vendor_email")
 }
 
 model warehouse_racks {
@@ -496,6 +514,7 @@ model warehouse_racks {
   warehouse    warehouse @relation(fields: [warehouse_id], references: [id])
 
   @@unique([warehouse_id, rack_number], map: "unique_warehouse_rack")
+  @@index([warehouse_id], map: "warehouse_racks_warehouse_id_fkey")
   @@map("warehouse_racks")
 }
 
@@ -507,6 +526,9 @@ model warehouse {
   products Product[]
   racks    warehouse_racks[]
 
+  @@index([name], map: "idx_warehouse_name")
+  @@index([location], map: "idx_warehouse_location")
+  @@index([status], map: "idx_warehouse_status")
   @@map("warehouse")
 }
 
@@ -519,6 +541,9 @@ model gst_tax_rate {
   status         String    @default("Active") @db.VarChar(20)
   products       Product[]
 
+  @@index([description], map: "idx_gst_tax_rate_description")
+  @@index([hsn_code], map: "idx_gst_tax_rate_hsn_code")
+  @@index([status], map: "idx_gst_tax_rate_status")
   @@map("gst_tax_rate")
 }
 
@@ -534,6 +559,9 @@ model staff {
   invoicexs  invoicex[]
   purchases  Purchase[]
 
+  @@index([name], map: "idx_staff_name")
+  @@index([phone], map: "idx_staff_phone")
+  @@index([status], map: "idx_staff_status")
   @@map("staff")
 }
 
@@ -547,5 +575,8 @@ model mechanic {
   invoices   Invoice[]
   invoicexs  invoicex[]
 
+  @@index([name], map: "idx_mechanic_name")
+  @@index([phone], map: "idx_mechanic_phone")
+  @@index([status], map: "idx_mechanic_status")
   @@map("mechanic")
 }
