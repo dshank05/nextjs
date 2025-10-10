@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface BankAccount {
   id: number;
@@ -16,6 +18,7 @@ interface BankResponse {
 }
 
 export default function BankDetails() {
+  const { showSnackbar } = useSnackbar();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
@@ -23,6 +26,9 @@ export default function BankDetails() {
   const [showModal, setShowModal] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [formData, setFormData] = useState({ id: 0, bank_name: '', account_number: '', bank_address: '', ifsc: '' });
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -39,19 +45,29 @@ export default function BankDetails() {
   const fetchBankAccounts = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData: BankResponse = {
-        bankAccounts: [
-          { id: 1, bank_name: 'State Bank of India', account_number: '123456789', bank_address: 'Main Branch, Delhi', ifsc: 'SBIN0001234', index: 1 },
-          { id: 2, bank_name: 'HDFC Bank', account_number: '987654321', bank_address: 'Branch Office, Mumbai', ifsc: 'HDFC0004321', index: 2 },
-        ],
-        pagination: { page: 1, limit: 50, total: 2, totalPages: 1, hasMore: false }
-      };
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm
+      });
 
-      setBankAccounts(mockData.bankAccounts);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/bank-details?${params}`);
+      if (response.ok) {
+        const data = await response.json();
+        // Add index to each bank account for display
+        const bankAccountsWithIndex = data.bankAccounts.map((bankAccount: BankAccount, index: number) => ({
+          ...bankAccount,
+          index: (pagination.page - 1) * pagination.limit + index + 1
+        }));
+
+        setBankAccounts(bankAccountsWithIndex);
+        setPagination(data.pagination);
+      } else {
+        showSnackbar('error', 'Failed to load bank accounts');
+      }
     } catch (error) {
       console.error('Error fetching bank accounts:', error);
+      showSnackbar('error', 'Network error while loading bank accounts');
     } finally {
       setLoading(false);
     }
@@ -93,16 +109,57 @@ export default function BankDetails() {
     setShowModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Show confirmation modal before saving
+    setPendingData(formData);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingData) return;
+
+    setIsSaving(true);
+
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving bank account:', formData);
-      setShowModal(false);
-      fetchBankAccounts(); // Refresh the list
+      const method = editingBank ? 'PUT' : 'POST';
+      const url = '/api/bank-details';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(pendingData),
+      });
+
+      if (response.ok) {
+        // Success - close modals and refresh
+        setShowConfirmModal(false);
+        setShowModal(false);
+        setFormData({ id: 0, bank_name: '', account_number: '', bank_address: '', ifsc: '' });
+        setPendingData(null);
+        fetchBankAccounts(); // Refresh the list
+        showSnackbar('success', `Bank account ${editingBank ? 'updated' : 'created'} successfully!`);
+      } else {
+        // Error - keep modals open and show error
+        const error = await response.json();
+        console.error('Error saving bank account:', error);
+        showSnackbar('error', error.message || 'Failed to save bank account');
+        setShowConfirmModal(false); // Close confirmation modal, keep form modal open
+      }
     } catch (error) {
       console.error('Error saving bank account:', error);
+      showSnackbar('error', `Failed to ${editingBank ? 'update' : 'create'} bank account: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setShowConfirmModal(false); // Close confirmation modal on network error
+    } finally {
+      setIsSaving(false);
     }
+  };
+
+  const handleCancelSubmit = () => {
+    setShowConfirmModal(false);
+    setPendingData(null);
   };
 
   return (
@@ -266,6 +323,19 @@ export default function BankDetails() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={`${editingBank ? 'Update' : 'Create'} Bank Account?`}
+        message={`Are you sure you want to ${editingBank ? 'update' : 'create'} this bank account?`}
+        confirmText={editingBank ? 'Update Bank Account' : 'Create Bank Account'}
+        cancelText="Cancel"
+        showLoading={isSaving}
+        loadingText={editingBank ? 'Updating Bank Account...' : 'Creating Bank Account...'}
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelSubmit}
+      />
     </div>
   );
 }

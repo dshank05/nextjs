@@ -39,6 +39,7 @@ model States {
   state_name String @db.VarChar(100)
   code       Int
 
+  @@index([state_name], map: "idx_states_name")
   @@map("states")
 }
 
@@ -241,6 +242,8 @@ model bank_details {
   account_number String  @db.VarChar(100)
   bank_address   String? @db.VarChar(255)
   ifsc           String? @db.VarChar(30)
+
+  @@index([bank_name], map: "idx_bank_details_name")
 }
 
 model bill_to {
@@ -316,6 +319,8 @@ model customer_details {
 model financial_year {
   id Int    @id @default(autoincrement())
   fy String @db.VarChar(30)
+
+  @@index([fy], map: "idx_financial_year_fy")
 }
 
 model incexpx {
@@ -481,6 +486,10 @@ model user {
   status               Int     @default(10) @db.SmallInt
   created_at           Int
   updated_at           Int
+
+  @@index([username], map: "idx_user_username")
+  @@index([email], map: "idx_user_email")
+  @@index([status], map: "idx_user_status")
 }
 
 model vendor_details {
@@ -544,6 +553,7 @@ model gst_tax_rate {
   @@index([description], map: "idx_gst_tax_rate_description")
   @@index([hsn_code], map: "idx_gst_tax_rate_hsn_code")
   @@index([status], map: "idx_gst_tax_rate_status")
+  @@index([status, description], map: "idx_gst_status_description") 
   @@map("gst_tax_rate")
 }
 
