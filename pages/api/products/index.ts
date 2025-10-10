@@ -39,32 +39,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }
 
       if (search) {
-        // Search normalization function
-        const normalizeSearchText = (text: string): string => {
-          return text
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, '') // Remove all whitespace
-            .replace(/[^a-z0-9]/g, '') // Remove special characters except alphanumeric
-        }
-
-        const normalizedSearch = normalizeSearchText(search as string)
-
+        const searchTerm = (search as string).trim()
         where.OR = [
-          // Original search for exact matches
-          { product_name: { contains: search as string } },
-          { part_no: { contains: search as string } },
-          // Normalized search for flexible matching
-          {
-            product_name: {
-              contains: normalizedSearch
-            }
-          },
-          {
-            part_no: {
-              contains: normalizedSearch
-            }
-          }
+          { product_name: { contains: searchTerm, mode: 'insensitive' } },
+          { part_no: { contains: searchTerm, mode: 'insensitive' } },
+          { company: { contains: searchTerm, mode: 'insensitive' } }
         ]
       }
 
@@ -161,11 +140,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       discount,                  // ✓ Product.discount
       margin,                    // ✓ Product.margin
 
-      // ===== LEGACY FIELDS (KEEP FOR BACKWARD COMPATIBILITY) =====
-      rack_number,               // TODO: unused field, will be removed later
+      // ===== RACK FIELDS =====
+      rack_id,                   // ✓ Foreign key to warehouse_racks (e.g., 1, 2, 3)
+      rack_number,               // ✓ Text value of selected rack (e.g., "A1", "B2")
     } = req.body
 
-    console.log('📝 API Received POST data:', req.body);
+
 
     // ===== VALIDATION =====
     if (!product_name) {
@@ -207,8 +187,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // ===== NOTES =====
-    // Store notes directly - no need to append legacy fields
+    // ===== NOTES FIELD LOGIC =====
+    // The notes field contains pure user notes without legacy field mixing.
+    // Previously, we appended extra fields like margin, discount, etc. to notes.
+    // Now we have proper schema fields for everything, so notes is kept clean.
+    // Legacy products may still have mixed content in their notes field.
 
     // ===== PRODUCT TABLE DATA =====
     const productData = {
@@ -236,19 +219,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== WAREHOUSE & TAX RELATIONSHIPS =====
       warehouse_id: warehouse_id ? parseInt(warehouse_id) : null,
       gst_rate_id: gst_rate_id ? parseInt(gst_rate_id) : null,
+      rack_id: rack_id ? parseInt(rack_id) : null, // Foreign key to warehouse_racks table
 
-      // ===== LEGACY/NOTES =====
-      notes: notes || null, // General notes (separate from legacy fields)
-      rack_number: rack_number || null, // @deprecated - TODO: remove this unused field
+      // ===== LEGACY FIELDS =====
+      rack_number: rack_number || null, // Text value of selected rack (e.g., "A1", "B2")
+      notes: notes || null, // General notes (clean field, no legacy field mixing)
     };
-
-    console.log('🏗️ Product Table Data:', productData);
 
     const product = await prisma.product.create({
       data: productData,
     })
-
-    console.log('✅ Product created successfully:', product);
 
     res.status(201).json(product)
   } catch (error) {

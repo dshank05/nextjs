@@ -4,7 +4,7 @@ import { prisma } from '../../../lib/db';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc' } = req.query;
+      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id } = req.query;
 
       // Handle getting categories from product/category
       if (type === 'categories') {
@@ -61,9 +61,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const sortField = sortBy as string;
       const sortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
 
-      const where = searchTerm
-        ? { subcategory_name: { contains: searchTerm } }
-        : {};
+      const where: any = {};
+
+      // Add search filter if provided
+      if (searchTerm) {
+        where.subcategory_name = { contains: searchTerm };
+      }
+
+      // Add category filter if provided
+      if (category_id && category_id !== '') {
+        where.category_id = parseInt(category_id as string);
+      }
 
       const total = await prisma.product_subcategory.count({ where });
       const totalPages = Math.ceil(total / limitNum);
@@ -79,10 +87,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy,
-        include: {
-          category: true
-        }
+        orderBy
+        // Removed unnecessary include: { category: true } - frontend only uses subcategory fields
       });
 
       const startIndex = (pageNum - 1) * limitNum;

@@ -141,6 +141,115 @@ export default function PurchaseCreate() {
     partNo: ''
   });
 
+  // State for dynamic subcategories in filters
+  const [filterSubcategories, setFilterSubcategories] = useState<any[]>([]);
+  const [filterSubcategoriesLoading, setFilterSubcategoriesLoading] = useState(false);
+
+  // Fetch subcategories for table filters
+  const fetchSubcategoriesForTable = async (categoryId: string) => {
+    if (!categoryId) {
+      setFilterSubcategories([]);
+      return;
+    }
+
+    setFilterSubcategoriesLoading(true);
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFilterSubcategories(data.subcategories || []);
+      } else {
+        setFilterSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subcategories for table:', error);
+      setFilterSubcategories([]);
+    } finally {
+      setFilterSubcategoriesLoading(false);
+    }
+  };
+
+  // Populate filters from existing purchase items (for edit mode)
+  const populateFiltersFromPurchaseItems = async (items: PurchaseItem[]) => {
+    if (items.length === 0) return;
+
+    // Extract unique category names from items
+    const uniqueCategories = Array.from(new Set(items.map(item => item.category).filter(Boolean)));
+
+    // Map category names to IDs from filterOptions
+    const categoryMappings = uniqueCategories.map(categoryName => {
+      const matchingCategory = filterOptions.categories.find(cat =>
+        cat.name.toLowerCase() === categoryName.toLowerCase()
+      );
+      return matchingCategory ? { name: categoryName, id: matchingCategory.id.toString() } : null;
+    }).filter(Boolean);
+
+    // If we found category mappings, set up the filters in cascading order
+    if (categoryMappings.length > 0) {
+      // Set the first category (most common case)
+      const firstCategoryId = categoryMappings[0].id;
+      setProductRowFilters(prev => ({
+        ...prev,
+        category: firstCategoryId
+      }));
+
+      // Fetch subcategories for this category
+      await fetchSubcategoriesForTable(firstCategoryId);
+
+      // After fetching subcategories, map subcategory names to IDs
+      setTimeout(() => {
+        const subcategoryMappings = items.map(item => {
+          const matchingSubcategory = filterSubcategories.find(sub =>
+            sub.subcategory_name.toLowerCase() === item.sub_category?.toLowerCase()
+          );
+          return matchingSubcategory ? matchingSubcategory.id.toString() : '';
+        }).filter(Boolean);
+
+        // Set subcategory if found
+        if (subcategoryMappings.length > 0) {
+          setProductRowFilters(prev => ({
+            ...prev,
+            subcategory: subcategoryMappings[0]
+          }));
+        }
+
+        // Extract car models (they are stored as comma-separated names in items)
+        const allCarModelNames = items
+          .flatMap(item => item.car_model?.split(',').map(name => name.trim()) || [])
+          .filter(Boolean)
+          .filter((value, index, self) => self.indexOf(value) === index); // unique
+
+        // Map car model names to IDs
+        const carModelIds = allCarModelNames.map(modelName => {
+          const matchingModel = filterOptions.models.find(model =>
+            model.name.toLowerCase() === modelName.toLowerCase()
+          );
+          return matchingModel ? matchingModel.id.toString() : null;
+        }).filter(Boolean) as string[];
+
+        // Extract unique companies
+        const uniqueCompanies = Array.from(new Set(items.map(item => item.company).filter(Boolean)));
+        const companyMappings = uniqueCompanies.map(companyName => {
+          const matchingCompany = filterOptions.companies.find(comp =>
+            comp.name.toLowerCase() === companyName.toLowerCase()
+          );
+          return matchingCompany ? matchingCompany.id.toString() : '';
+        }).filter(Boolean);
+
+        // Extract unique part numbers
+        const uniquePartNumbers = Array.from(new Set(items.map(item => item.part_number).filter(Boolean)));
+
+        // Update filters with mapped values
+        setProductRowFilters(prev => ({
+          ...prev,
+          carModels: carModelIds,
+          company: companyMappings.length > 0 ? companyMappings[0] : '',
+          partNo: uniquePartNumbers.length > 0 ? uniquePartNumbers[0] : ''
+        }));
+      }, 100); // Small delay to ensure subcategories are loaded
+    }
+  };
+
   // State for selected product in the table row
   const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(null);
 
@@ -237,6 +346,11 @@ export default function PurchaseCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
+
+  // Fetch subcategories for table filters when category changes
+  useEffect(() => {
+    fetchSubcategoriesForTable(productRowFilters.category);
+  }, [productRowFilters.category]);
 
   // Handle product search with normalized text
   useEffect(() => {
@@ -545,6 +659,10 @@ export default function PurchaseCreate() {
               total: total
             };
           });
+
+          // Cascade populate filters from existing purchase items
+          await populateFiltersFromPurchaseItems(convertedItems);
+
           setSelectedProducts(convertedItems);
         }
       } else {
@@ -722,13 +840,38 @@ export default function PurchaseCreate() {
         transport_cost: parseFloat(formData.transport_cost) || 0,
         bill: formData.bill,
         tax: formData.tax,
-        items: selectedProducts.map(item => ({
-          product_id: item.product_id,
-          qty: item.qty,
-          rate: item.rate,
-          tax: item.tax,
-          total: item.total
-        })),
+        items: selectedProducts.map(item => {
+          // Map category name to ID
+          const categoryMatch = memoizedFilterOptions.categories.find(cat =>
+            cat.name.toLowerCase() === item.category?.toLowerCase()
+          );
+          const categoryId = categoryMatch ? categoryMatch.id : null;
+
+          // Map company name to ID
+          const companyMatch = memoizedFilterOptions.companies.find(comp =>
+            comp.name.toLowerCase() === item.company?.toLowerCase()
+          );
+          const companyId = companyMatch ? companyMatch.id : null;
+
+          return {
+            product_id: item.product_id,
+            product_name: item.product_name,
+            category_id: categoryId,
+            subcategory_id: null, // Will be handled by API using category_id + subcategory name
+            company_id: companyId,
+            car_model: item.car_model, // Keep as string for now
+            hsn: '', // Will be fetched by API from product
+            part: item.part_number,
+            qty: item.qty,
+            rate: item.rate,
+            tax: item.tax,
+            total: item.total,
+            // Include original string names for API to use as fallback
+            category_name: item.category,
+            subcategory_name: item.sub_category,
+            company_name: item.company
+          };
+        }),
         descriptions: formData.descriptions,
         packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,
         packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0,
@@ -1079,7 +1222,7 @@ export default function PurchaseCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
                           value={productRowFilters.subcategory}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
@@ -1087,10 +1230,18 @@ export default function PurchaseCreate() {
                               subcategory: e.target.value
                             }));
                           }}
+                          disabled={!productRowFilters.category || filterSubcategoriesLoading}
                         >
-                          <option value="">Select Sub Category</option>
-                          {filterOptions.subcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.name}</option>
+                          <option value="">
+                            {!productRowFilters.category
+                              ? "Please select a category first"
+                              : filterSubcategoriesLoading
+                                ? "Loading subcategories..."
+                                : "Select Sub Category"
+                            }
+                          </option>
+                          {filterSubcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
                           ))}
                         </select>
                       </td>
@@ -1555,15 +1706,40 @@ export default function PurchaseCreate() {
                     <div
                       key={product.id}
                       className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-750 cursor-pointer transition-colors"
-                      onClick={() => {
+                      onClick={async () => {
                         setSelectedRowProduct(product);
-                        setProductRowFilters({
-                          category: product.product_category_id ? product.product_category_id.toString() : '',
-                          subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
-                          carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-                          company: product.company || '',
-                          partNo: product.part_no || ''
-                        });
+
+                        // Set category first
+                        const categoryId = product.product_category_id ? product.product_category_id.toString() : '';
+                        setProductRowFilters(prev => ({
+                          ...prev,
+                          category: categoryId
+                        }));
+
+                        // If category exists, fetch subcategories and wait for completion
+                        if (categoryId) {
+                          await fetchSubcategoriesForTable(categoryId);
+
+                          // Now set subcategory after subcategories are loaded
+                          const subcategoryId = product.product_subcategory_id ? product.product_subcategory_id.toString() : '';
+                          setProductRowFilters(prev => ({
+                            ...prev,
+                            subcategory: subcategoryId,
+                            carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
+                            company: product.company || '',
+                            partNo: product.part_no || ''
+                          }));
+                        } else {
+                          // No category, just set the rest
+                          setProductRowFilters(prev => ({
+                            ...prev,
+                            subcategory: '',
+                            carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
+                            company: product.company || '',
+                            partNo: product.part_no || ''
+                          }));
+                        }
+
                         setTemplateRow({
                           qty: '1',
                           rate: '0',

@@ -247,7 +247,7 @@ export default function MechanicDetails() {
                           Edit
                         </button>
                         <button
-                          className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary'}
+                          className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
                           onClick={() => handleStatusChange(mechanic.id, mechanic.name, mechanic.status as 'Active' | 'Inactive')}
                         >
                           {mechanic.status === 'Active' ? 'Deactivate' : 'Activate'}
@@ -298,7 +298,7 @@ export default function MechanicDetails() {
                 />
               </div>
 
-              <div>
+              {/* <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Status
                 </label>
@@ -310,7 +310,7 @@ export default function MechanicDetails() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-              </div>
+              </div> */}
 
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface Warehouse {
   id: number;
   name: string;
   location: string;
+  status: string;
   index: number;
 }
 
@@ -15,6 +17,7 @@ interface WarehouseResponse {
 }
 
 export default function Warehouse() {
+  const { showSnackbar } = useSnackbar();
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
@@ -25,6 +28,9 @@ export default function Warehouse() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
+  const [toggleConfirmLoading, setToggleConfirmLoading] = useState(false);
+  const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -44,7 +50,8 @@ export default function Warehouse() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm
+        search: searchTerm,
+        includeInactive: 'true'
       });
 
       const response = await fetch(`/api/warehouses?${params}`);
@@ -133,16 +140,17 @@ export default function Warehouse() {
         setFormData({ id: 0, name: '', location: '' });
         setPendingData(null);
         fetchWarehouses(); // Refresh the list
+        showSnackbar('success', `Warehouse ${editingWarehouse ? 'updated' : 'created'} successfully!`);
       } else {
         // Error - keep modals open and show error
         const error = await response.json();
         console.error('Error saving warehouse:', error);
-        alert(error.message || 'Failed to save warehouse');
+        showSnackbar('error', error.message || 'Failed to save warehouse');
         setShowConfirmModal(false); // Close confirmation modal, keep form modal open
       }
     } catch (error) {
       console.error('Error saving warehouse:', error);
-      alert('Network error occurred');
+      showSnackbar('error', `Failed to ${editingWarehouse ? 'update' : 'create'} warehouse: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setShowConfirmModal(false); // Close confirmation modal on network error
     } finally {
       setIsSaving(false);
@@ -152,6 +160,51 @@ export default function Warehouse() {
   const handleCancelSubmit = () => {
     setShowConfirmModal(false);
     setPendingData(null);
+  };
+
+  const handleToggleActive = (warehouse: Warehouse) => {
+    setSelectedWarehouse(warehouse);
+    setShowToggleConfirmModal(true);
+  };
+
+  const handleConfirmToggle = async () => {
+    if (!selectedWarehouse) return;
+
+    setToggleConfirmLoading(true);
+
+    try {
+      const newStatus = selectedWarehouse.status === 'Active' ? 'Inactive' : 'Active';
+      const response = await fetch(`/api/warehouses?id=${selectedWarehouse.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (response.ok) {
+        setShowToggleConfirmModal(false);
+        setSelectedWarehouse(null);
+        fetchWarehouses();
+        showSnackbar('success', `Warehouse ${selectedWarehouse.status === 'Active' ? 'deactivated' : 'activated'} successfully!`);
+      } else {
+        const errorData = await response.json();
+        console.error('Error toggling warehouse status:', errorData);
+        showSnackbar('error', errorData.message || 'Failed to toggle warehouse status');
+      }
+    } catch (error) {
+      console.error('Error toggling warehouse status:', error);
+      showSnackbar('error', `Failed to toggle warehouse status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setToggleConfirmLoading(false);
+    }
+  };
+
+  const handleCancelToggle = () => {
+    if (!toggleConfirmLoading) {
+      setShowToggleConfirmModal(false);
+      setSelectedWarehouse(null);
+    }
   };
 
   return (
@@ -213,6 +266,7 @@ export default function Warehouse() {
                     <th>ID</th>
                     <th>Name</th>
                     <th>Location</th>
+                    <th>Status</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -223,8 +277,24 @@ export default function Warehouse() {
                       <td>{warehouse.id}</td>
                       <td className="font-medium text-white">{warehouse.name}</td>
                       <td className="text-white">{warehouse.location}</td>
+                      <td>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          warehouse.status === 'Active'
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {warehouse.status}
+                        </span>
+                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(warehouse)}>Edit</button>
+                        <button
+                          className={warehouse.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
+                          onClick={() => handleToggleActive(warehouse)}
+                          title={warehouse.status === 'Active' ? 'Deactivate Warehouse' : 'Activate Warehouse'}
+                        >
+                          {warehouse.status === 'Active' ? 'Deactivate' : 'Activate'}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -303,6 +373,18 @@ export default function Warehouse() {
         loadingText={editingWarehouse ? 'Updating Warehouse...' : 'Creating Warehouse...'}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
+      />
+
+      {/* Toggle Status Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showToggleConfirmModal}
+        title={selectedWarehouse ? `${selectedWarehouse.status === 'Active' ? 'Deactivate' : 'Activate'} Warehouse?` : ''}
+        message={selectedWarehouse ? `Are you sure you want to ${selectedWarehouse.status === 'Active' ? 'deactivate' : 'activate'} "${selectedWarehouse.name}"?` : ''}
+        confirmText={selectedWarehouse?.status === 'Active' ? 'Deactivate Warehouse' : 'Activate Warehouse'}
+        cancelText="Cancel"
+        showLoading={toggleConfirmLoading}
+        onConfirm={handleConfirmToggle}
+        onCancel={handleCancelToggle}
       />
     </div>
   );

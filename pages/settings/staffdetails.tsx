@@ -23,7 +23,7 @@ export default function StaffDetails() {
     name: '',
     email: '',
     phone: '',
-    status: 'Active' as 'Active' | 'Inactive'
+    // status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
 
@@ -71,7 +71,7 @@ export default function StaffDetails() {
       name: '',
       email: '',
       phone: '',
-      status: 'Active'
+      // status: 'Active'
     });
     setShowModal(true);
   };
@@ -82,7 +82,7 @@ export default function StaffDetails() {
       name: staffMember.name,
       email: staffMember.email || '',
       phone: staffMember.phone,
-      status: staffMember.status as 'Active' | 'Inactive'
+      // status: staffMember.status as 'Active' | 'Inactive'
     });
     setShowModal(true);
   };
@@ -253,7 +253,7 @@ export default function StaffDetails() {
                           Edit
                         </button>
                         <button
-                          className={member.status === 'Active' ? 'btn-danger' : 'btn-success'}
+                          className={member.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
                           onClick={() => handleStatusChange(member.id, member.name, member.status as 'Active' | 'Inactive')}
                         >
                           {member.status === 'Active' ? 'Deactivate' : 'Activate'}
@@ -317,7 +317,7 @@ export default function StaffDetails() {
                 />
               </div>
 
-              <div>
+              {/* <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Status
                 </label>
@@ -329,7 +329,7 @@ export default function StaffDetails() {
                   <option value="Active">Active</option>
                   <option value="Inactive">Inactive</option>
                 </select>
-              </div>
+              </div> */}
 
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button

@@ -22,7 +22,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const {
       page = '1',
       limit = '50',
-      search = ''
+      search = '',
+      includeInactive = 'false'
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -38,6 +39,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         { hsn_code: { contains: search as string } },
         { applicable_for: { contains: search as string } }
       ]
+    }
+
+    // Filter for active records by default, unless includeInactive is true
+    if (includeInactive !== 'true') {
+      where.status = 'Active'
     }
 
     const [gstRates, total] = await Promise.all([
@@ -73,7 +79,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { description, rate, hsn_code, applicable_for } = req.body
+    const { description, rate, hsn_code, applicable_for, status } = req.body
 
     // Validation
     if (!description || !rate || !hsn_code) {
@@ -98,8 +104,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         description,
         rate: parseFloat(rate),
         hsn_code,
-        applicable_for: applicable_for || ''
-        // No is_active field - GST rates are always active
+        applicable_for: applicable_for || '',
+        status: status || 'Active'
       }
     })
 
@@ -115,14 +121,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { id, description, rate, hsn_code, applicable_for } = req.body
-
-    // Validation - accept snake_case field names like the frontend sends
-    if (!id || !description || rate === undefined || !hsn_code) {
-      return res.status(400).json({
-        message: 'ID, description, rate, and HSN code are required'
-      })
-    }
+    const { id, description, rate, hsn_code, applicable_for, status } = req.body
 
     // Check if GST rate exists
     const existingRate = await prisma.gst_tax_rate.findUnique({
@@ -132,6 +131,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     if (!existingRate) {
       return res.status(404).json({
         message: 'GST rate not found'
+      })
+    }
+
+    // Handle status-only update (for toggle functionality)
+    if (description === undefined && rate === undefined && hsn_code === undefined && applicable_for === undefined && status) {
+      const updatedRate = await prisma.gst_tax_rate.update({
+        where: { id: parseInt(id) },
+        data: { status }
+      })
+      return res.status(200).json(updatedRate)
+    }
+
+    // Full update validation - accept snake_case field names like the frontend sends
+    if (!description || rate === undefined || !hsn_code) {
+      return res.status(400).json({
+        message: 'Description, rate, and HSN code are required'
       })
     }
 
@@ -149,15 +164,21 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    const updateData: any = {
+      description,
+      rate: parseFloat(rate),
+      hsn_code, // Frontend sends snake_case, store as snake_case
+      applicable_for: applicable_for || '' // Frontend sends snake_case, store as snake_case
+    }
+
+    // Include status if provided
+    if (status) {
+      updateData.status = status
+    }
+
     const updatedRate = await prisma.gst_tax_rate.update({
       where: { id: parseInt(id) },
-      data: {
-        description,
-        rate: parseFloat(rate),
-        hsn_code, // Frontend sends snake_case, store as snake_case
-        applicable_for: applicable_for || '' // Frontend sends snake_case, store as snake_case
-        // Keep existing is_active value by not updating it
-      }
+      data: updateData
     })
 
     res.status(200).json(updatedRate)

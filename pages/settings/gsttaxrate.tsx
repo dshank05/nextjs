@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface GSTTaxRate {
   id: number;
@@ -8,6 +9,7 @@ interface GSTTaxRate {
   rate: number;
   hsn_code: string;
   applicable_for: string;
+  status: string;
   index: number;
 }
 
@@ -17,16 +19,28 @@ interface GSTTaxRateResponse {
 }
 
 export default function GSTTaxRate() {
+  const { showSnackbar } = useSnackbar();
   const [gstRates, setGstRates] = useState<GSTTaxRate[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<GSTTaxRate | null>(null);
-  const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
+  const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' as 'Active' | 'Inactive' });
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Confirmation modal states for status changes
+  const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
+  const [changingRate, setChangingRate] = useState<{
+    id: number;
+    description: string;
+    currentStatus: 'Active' | 'Inactive';
+    newStatus: 'Active' | 'Inactive';
+  } | null>(null);
+  const [changingLoading, setChangingLoading] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -61,10 +75,11 @@ export default function GSTTaxRate() {
         setGstRates(gstRatesWithIndex);
         setPagination(data.pagination);
       } else {
-        console.error('Failed to fetch GST rates');
+        showSnackbar('error', 'Failed to load GST rates');
       }
     } catch (error) {
       console.error('Error fetching GST rates:', error);
+      showSnackbar('error', 'Network error while loading GST rates');
     } finally {
       setLoading(false);
     }
@@ -90,7 +105,7 @@ export default function GSTTaxRate() {
 
   const handleAdd = () => {
     setEditingRate(null);
-    setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
+    setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' });
     setShowModal(true);
   };
 
@@ -101,7 +116,8 @@ export default function GSTTaxRate() {
       description: rate.description,
       rate: rate.rate.toString(),
       hsn_code: rate.hsn_code,
-      applicable_for: rate.applicable_for
+      applicable_for: rate.applicable_for,
+      status: rate.status as 'Active' | 'Inactive'
     });
     setShowModal(true);
   };
@@ -136,19 +152,19 @@ export default function GSTTaxRate() {
         // Success - close modals and refresh
         setShowConfirmModal(false);
         setShowModal(false);
-        setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '' });
+        setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' });
         setPendingData(null);
         fetchGSTRates(); // Refresh the list
       } else {
         // Error - keep modals open and show error
         const error = await response.json();
         console.error('Error saving GST rate:', error);
-        alert(error.message || 'Failed to save GST rate');
+        showSnackbar('error', error.message || 'Failed to save GST rate');
         setShowConfirmModal(false); // Close confirmation modal, keep form modal open
       }
     } catch (error) {
       console.error('Error saving GST rate:', error);
-      alert('Network error occurred');
+      showSnackbar('error', 'Network error occurred');
       setShowConfirmModal(false); // Close confirmation modal on network error
     } finally {
       setIsSaving(false);
@@ -158,6 +174,69 @@ export default function GSTTaxRate() {
   const handleCancelSubmit = () => {
     setShowConfirmModal(false);
     setPendingData(null);
+  };
+
+  const handleStatusChange = (rateId: number, rateDescription: string, currentStatus: 'Active' | 'Inactive') => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    const actionText = newStatus === 'Active' ? 'activate' : 'deactivate';
+
+    setChangingRate({
+      id: rateId,
+      description: rateDescription,
+      currentStatus,
+      newStatus
+    });
+    setShowStatusChangeModal(true);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!changingRate) return;
+
+    setChangingLoading(true);
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    try {
+      const statusValue = changingRate.newStatus;
+      const response = await fetch(`/api/gst-rates/${changingRate.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: statusValue }),
+        signal: controller.signal
+      });
+
+      if (response.ok) {
+        fetchGSTRates();
+        showSnackbar('success', `GST rate ${changingRate.newStatus === 'Active' ? 'activated' : 'deactivated'} successfully`);
+      } else {
+        const errorData = await response.json();
+        showSnackbar('error', errorData.message || `Failed to ${changingRate.newStatus === 'Active' ? 'activate' : 'deactivate'} GST rate`);
+      }
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        showSnackbar('info', 'Operation cancelled');
+      } else {
+        console.error('Error changing GST rate status:', error);
+        showSnackbar('error', 'Network error while changing GST rate status');
+      }
+    } finally {
+      setChangingLoading(false);
+      setShowStatusChangeModal(false);
+      setChangingRate(null);
+      setAbortController(null);
+    }
+  };
+
+  const cancelStatusChange = () => {
+    // Cancel any pending API call
+    if (abortController) {
+      abortController.abort();
+    }
+
+    setShowStatusChangeModal(false);
+    setChangingRate(null);
+    setChangingLoading(false);
+    setAbortController(null);
   };
 
   return (
@@ -221,6 +300,7 @@ export default function GSTTaxRate() {
                     <th>Rate (%)</th>
                     <th>Applicable For</th>
                     <th>Description</th>
+                    <th>Status</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -237,8 +317,23 @@ export default function GSTTaxRate() {
                       </td>
                       <td className="text-slate-300">{rate.applicable_for}</td>
                       <td className="font-medium text-white">{rate.description}</td>
+                      <td>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          rate.status === 'Active'
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {rate.status}
+                        </span>
+                      </td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(rate)}>Edit</button>
+                        <button
+                          className={rate.status === 'Active' ? 'btn-danger' : 'btn-primary'}
+                          onClick={() => handleStatusChange(rate.id, rate.description, rate.status as 'Active' | 'Inactive')}
+                        >
+                          {rate.status === 'Active' ? 'Deactivate' : 'Activate'}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -324,6 +419,18 @@ export default function GSTTaxRate() {
                   required
                 />
               </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'Active' | 'Inactive' }))}
+                  className="select w-full"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>
@@ -344,6 +451,19 @@ export default function GSTTaxRate() {
         loadingText={editingRate ? 'Updating GST Rate...' : 'Creating GST Rate...'}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
+      />
+
+      <ConfirmationModal
+        isOpen={showStatusChangeModal}
+        title={`${changingRate?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} GST Rate`}
+        message={`Are you sure you want to ${changingRate?.newStatus === 'Active' ? 'activate' : 'deactivate'} ${changingRate?.description}?`}
+        confirmText={changingRate?.newStatus === 'Active' ? 'Activate' : 'Deactivate'}
+        cancelText="Cancel"
+        showLoading={changingLoading}
+        loadingText={`${changingRate?.newStatus === 'Active' ? 'Activating' : 'Deactivating'}...`}
+        cancelLoadingText="Canceling..."
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
       />
     </div>
   );

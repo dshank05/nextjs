@@ -92,9 +92,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
-    // Vendor filtering is complex because vendor names are looked up after fetching
-    // For now, we'll skip vendor filtering as it requires joining with vendor_details table
-    // This would need to be implemented with a JOIN operation
+    // Vendor filtering by name - use JOIN with vendor_details table for name search
+    if (vendor && vendor !== '') {
+      where.vendor = {
+        vendor_name: { contains: vendor as string, mode: 'insensitive' }
+      }
+    }
 
     // Get purchase invoices with related vendor data
     const [purchaseInvoices, total] = await Promise.all([
@@ -178,7 +181,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         total: invoice.total,
         notes: invoice.notes || '',
         invoice_date: invoice.invoice_date, // Raw date - let frontend format it
-        status: invoice.status || 0,
+        payment_status: invoice.status || 0,
         payment_mode: invoice.payment_mode || 0,
         fy: invoice.fy,
         transport: invoice.transport || '',
@@ -597,42 +600,82 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           where: { invoice_no: purchase.invoice_no }
         })
 
-        // Create new purchase items
-        for (const item of items) {
-          await tx.purchaseitems.create({
+      // Create new purchase items
+      for (const item of items) {
+        // Get product details for HSN and other missing fields
+        let productData = null;
+        if (item.product_id) {
+          productData = await tx.product.findUnique({
+            where: { id: parseInt(item.product_id) },
+            select: {
+              hsn: true,
+              product_category_id: true,
+              product_subcategory_id: true,
+              car_model_ids: true,
+              company: true
+            }
+          });
+        }
+
+        // Handle subcategory_id mapping if not provided
+        let subcategoryId = item.subcategory_id;
+        if (!subcategoryId && item.category_id && item.subcategory_name) {
+          // Find subcategory by name and category_id
+          const subcategory = await tx.product_subcategory.findFirst({
+            where: {
+              category_id: parseInt(item.category_id),
+              subcategory_name: item.subcategory_name
+            }
+          });
+          subcategoryId = subcategory?.id || null;
+        }
+
+        // Handle company_id mapping if not provided
+        let companyId = item.company_id;
+        if (!companyId && item.company_name) {
+          // Find company by name
+          const company = await tx.product_company.findFirst({
+            where: {
+              company_name: item.company_name
+            }
+          });
+          companyId = company?.id || null;
+        }
+
+        await tx.purchaseitems.create({
+          data: {
+            invoice_no: purchase.invoice_no,
+            name_of_product: item.product_name,
+            category_id: item.category_id ? parseInt(item.category_id) : (productData?.product_category_id || null),
+            subcategory_id: subcategoryId,
+            model_id: null, // Will be handled separately if needed
+            company_id: companyId,
+            car_model: item.car_model || '',
+            vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
+            hsn: item.hsn || productData?.hsn || '',
+            part: item.part,
+            qty: item.qty,
+            unit: 1, // Default unit
+            rate: item.rate,
+            tax: item.tax || 0,
+            subtotal: item.total,
+            fy: financialYear,
+            invoice_date: invoiceDate
+          }
+        })
+
+        // Add stock back for new items
+        if (item.product_id) {
+          await tx.product.update({
+            where: { id: parseInt(item.product_id) },
             data: {
-              invoice_no: purchase.invoice_no,
-              name_of_product: item.product_name,
-              category_id: item.category_id,
-              subcategory_id: item.subcategory_id,
-              model_id: item.model_id,
-              company_id: item.company_id,
-              car_model: item.car_model,
-              vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
-              hsn: item.hsn,
-              part: item.part_number,
-              qty: item.qty,
-              unit: 1, // Default unit
-              rate: item.rate,
-              tax: item.tax || 0,
-              subtotal: item.total,
-              fy: financialYear,
-              invoice_date: invoiceDate
+              stock: {
+                increment: item.qty
+              }
             }
           })
-
-          // Add stock back for new items
-          if (item.product_id) {
-            await tx.product.update({
-              where: { id: parseInt(item.product_id) },
-              data: {
-                stock: {
-                  increment: item.qty
-                }
-              }
-            })
-          }
         }
+      }
       }
 
       return purchase

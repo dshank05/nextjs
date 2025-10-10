@@ -170,6 +170,34 @@ export default function InvoiceCreate() {
   // State for filtered car models based on selected product
   const [filteredCarModels, setFilteredCarModels] = useState<any[]>([]);
 
+  // State for dynamic subcategories in filters
+  const [filterSubcategories, setFilterSubcategories] = useState<any[]>([]);
+  const [filterSubcategoriesLoading, setFilterSubcategoriesLoading] = useState(false);
+
+  // Fetch subcategories for table filters
+  const fetchSubcategoriesForTable = async (categoryId: string) => {
+    if (!categoryId) {
+      setFilterSubcategories([]);
+      return;
+    }
+
+    setFilterSubcategoriesLoading(true);
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFilterSubcategories(data.subcategories || []);
+      } else {
+        setFilterSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subcategories for table:', error);
+      setFilterSubcategories([]);
+    } finally {
+      setFilterSubcategoriesLoading(false);
+    }
+  };
+
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
@@ -356,6 +384,11 @@ export default function InvoiceCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
+
+  // Fetch subcategories for table filters when category changes
+  useEffect(() => {
+    fetchSubcategoriesForTable(productRowFilters.category);
+  }, [productRowFilters.category]);
 
   // Handle product search with normalized text
   useEffect(() => {
@@ -1299,7 +1332,7 @@ export default function InvoiceCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
                           value={productRowFilters.subcategory}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
@@ -1307,25 +1340,20 @@ export default function InvoiceCreate() {
                               subcategory: e.target.value
                             }));
                           }}
+                          disabled={!productRowFilters.category || filterSubcategoriesLoading}
                         >
-                          <option value="">Select Sub Category</option>
-                          {filterOptions.subcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.name}</option>
+                          <option value="">
+                            {!productRowFilters.category
+                              ? "Please select a category first"
+                              : filterSubcategoriesLoading
+                                ? "Loading subcategories..."
+                                : "Select Sub Category"
+                            }
+                          </option>
+                          {filterSubcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <SearchableMultiSelect
-                          options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
-                          selectedValues={productRowFilters.carModels}
-                          onSelectionChange={(values) => {
-                            setProductRowFilters(prev => ({
-                              ...prev,
-                              carModels: values
-                            }));
-                          }}
-                          placeholder="Select car models..."
-                        />
                       </td>
                       <td className="px-4 py-3">
                         <select

@@ -49,47 +49,36 @@ export default async function handler(
       }),
     ])
 
-    // Build category options - use the actual category ID and name
-    const categoryOptions = categories
-      .filter(cat => cat.category_name)
-      .map((cat) => ({
-        id: cat.id,
-        name: cat.category_name,
-        source: 'products'
-      }))
+    // Build filter options directly (database already sorted, no need for JS sorting)
+    const categoryOptions = categories.map((cat) => ({
+      id: cat.id,
+      name: cat.category_name || '',
+      source: 'products'
+    }))
 
-    // Build subcategory options (Car Models) - use the actual subcategory ID and name
-    const subcategoryOptions = subcategories
-      .filter(sub => sub.subcategory_name)
-      .map((sub) => ({
-        id: sub.id,
-        name: sub.subcategory_name,
-        source: 'products'
-      }))
+    const subcategoryOptions = subcategories.map((sub) => ({
+      id: sub.id,
+      name: sub.subcategory_name || '',
+      source: 'products'
+    }))
 
-    // Build company options - use the actual company ID and name
-    const companyOptions = companies
-      .filter(comp => comp.company_name)
-      .map((comp) => ({
-        id: comp.id,
-        name: comp.company_name,
-        source: 'products'
-      }))
+    const companyOptions = companies.map((comp) => ({
+      id: comp.id,
+      name: comp.company_name || '',
+      source: 'products'
+    }))
 
-    // Build model options - use the actual model ID and name
-    const modelOptions = models
-      .filter(model => model.model_name)
-      .map((model) => ({
-        id: model.id,
-        name: model.model_name,
-        source: 'products'
-      }))
+    const modelOptions = models.map((model) => ({
+      id: model.id,
+      name: model.model_name || '',
+      source: 'products'
+    }))
 
     res.status(200).json({
-      categories: categoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
-      subcategories: subcategoryOptions.sort((a, b) => a.name.localeCompare(b.name)),
-      companies: companyOptions.sort((a, b) => a.name.localeCompare(b.name)),
-      models: modelOptions.sort((a, b) => a.name.localeCompare(b.name))
+      categories: categoryOptions,
+      subcategories: subcategoryOptions,
+      companies: companyOptions,
+      models: modelOptions
     })
   } catch (error) {
     console.error('Filter options fetch error:', error)

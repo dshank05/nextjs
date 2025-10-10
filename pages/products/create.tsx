@@ -17,6 +17,7 @@ interface ProductFormData {
   hsn: string;
   gst_rate: string; // Keep as string, change to input field
   warehouse: string;
+  rack_id: string;
   rack_number: string;
   descriptions: string;
   notes: string;
@@ -45,6 +46,8 @@ export default function ProductCreate() {
   // ===== NEW STATE FOR WAREHOUSE AND GST =====
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [gstRates, setGstRates] = useState<any[]>([]);
+  const [racks, setRacks] = useState<any[]>([]);
+  const [racksLoading, setRacksLoading] = useState(false);
   const [formData, setFormData] = useState<ProductFormData>({
     product_category: '',
     product_subcategory: '',
@@ -57,6 +60,7 @@ export default function ProductCreate() {
     hsn: '',
     gst_rate: '',
     warehouse: '',
+    rack_id: '',
     rack_number: '',
     descriptions: '',
     notes: '',
@@ -78,6 +82,10 @@ export default function ProductCreate() {
   const [isModelsDropdownOpen, setIsModelsDropdownOpen] = useState(false);
   const [modelSearchQuery, setModelSearchQuery] = useState('');
   const modelsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // State for dynamic subcategories
+  const [subcategories, setSubcategories] = useState<any[]>([]);
+  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
 
   // Confirmation modal state for car models
   const [showCarModelsConfirmModal, setShowCarModelsConfirmModal] = useState(false);
@@ -114,6 +122,28 @@ export default function ProductCreate() {
     }
   }, [router.query.edit, filterOptions]);
 
+  // Fetch subcategories when category changes
+  useEffect(() => {
+    if (formData.product_category) {
+      fetchSubcategories(formData.product_category);
+      // Clear subcategory selection when category changes
+      setFormData(prev => ({ ...prev, product_subcategory: '' }));
+    } else {
+      setSubcategories([]);
+    }
+  }, [formData.product_category]);
+
+  // Fetch racks when warehouse changes
+  useEffect(() => {
+    if (formData.warehouse) {
+      fetchRacks(formData.warehouse);
+      // Clear rack selection when warehouse changes
+      setFormData(prev => ({ ...prev, rack_id: '' }));
+    } else {
+      setRacks([]);
+    }
+  }, [formData.warehouse]);
+
 
 
   const fetchFilterOptions = async () => {
@@ -141,6 +171,54 @@ export default function ProductCreate() {
         setGstRates(data.gstRates || []);
       }
     } catch (error) { console.error('Error fetching GST rates:', error); }
+  };
+
+  // Fetch subcategories based on selected category
+  const fetchSubcategories = async (categoryId: string) => {
+    if (!categoryId) {
+      setSubcategories([]);
+      return;
+    }
+
+    setSubcategoriesLoading(true);
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setSubcategories(data.subcategories || []);
+      } else {
+        setSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subcategories:', error);
+      setSubcategories([]);
+    } finally {
+      setSubcategoriesLoading(false);
+    }
+  };
+
+  // Fetch racks based on selected warehouse
+  const fetchRacks = async (warehouseId: string) => {
+    if (!warehouseId) {
+      setRacks([]);
+      return;
+    }
+
+    setRacksLoading(true);
+    try {
+      const response = await fetch(`/api/warehouses/${warehouseId}/racks`);
+      if (response.ok) {
+        const data = await response.json();
+        setRacks(data.racks || []);
+      } else {
+        setRacks([]);
+      }
+    } catch (error) {
+      console.error('Error fetching racks:', error);
+      setRacks([]);
+    } finally {
+      setRacksLoading(false);
+    }
   };
 
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
@@ -199,6 +277,7 @@ export default function ProductCreate() {
         const product = await response.json();
 
         // Populate form with product data
+
         setFormData({
           product_category: product.product_category_id?.toString() || '',
           product_subcategory: product.product_subcategory_id?.toString() || '',
@@ -210,14 +289,20 @@ export default function ProductCreate() {
           opening_rate: product.opening_rate?.toString() || '',
           hsn: product.hsn || '',
           gst_rate: product.gst_rate || '',
-          warehouse: product.warehouse || '',
-          rack_number: product.rack_number || '',
+          warehouse: product.warehouse_id?.toString() || '', // Use original FK ID directly
+          rack_id: product.rack_id?.toString() || '', // Use original FK ID directly
+          rack_number: product.rack_number || '', // Direct text value
           descriptions: product.descriptions || '',
           notes: product.notes || '',
           mrp: product.mrp?.toString() || '',
           discount: product.discount?.toString() || '',
           margin: product.margin?.toString() || '',
         });
+
+        // Load racks for the selected warehouse
+        if (product.warehouse_id) {
+          fetchRacks(product.warehouse_id.toString());
+        }
       }
     } catch (error) {
       console.error('Error loading product for edit:', error);
@@ -226,7 +311,7 @@ export default function ProductCreate() {
 
   const generateProductDisplay = () => {
     const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
-    const subcategory = filterOptions.subcategories.find(s => s.id.toString() === formData.product_subcategory)?.name || '';
+    const subcategory = subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
     const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
 
     // Get first selected car model name
@@ -274,7 +359,8 @@ export default function ProductCreate() {
   };
 
   const handleConfirmSubmit = async () => {
-    setShowConfirmModal(false);
+    // Don't close modal immediately - wait for API completion
+    // setShowConfirmModal(false); // Remove this line
     if (isSaving) return;
 
     setIsSaving(true);
@@ -298,7 +384,8 @@ export default function ProductCreate() {
         hsn: formData.hsn,
         gst_rate: formData.gst_rate,
         warehouse: formData.warehouse,
-        rack_number: formData.rack_number,
+        rack_id: formData.rack_id,
+        rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
         descriptions: formData.descriptions,
         notes: formData.notes,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
@@ -324,8 +411,8 @@ export default function ProductCreate() {
         warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
         gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
 
-        // ===== LEGACY FIELDS (KEEP IN NOTES FOR NOW) =====
-        rack_number: formData.rack_number || null,
+        rack_id: formData.rack_id ? parseInt(formData.rack_id) : null,
+        rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
         descriptions: formData.descriptions || null,
         notes: formData.notes || null,
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
@@ -362,6 +449,7 @@ export default function ProductCreate() {
         console.error('API Error:', responseData);
         const action = isEditing ? 'update' : 'create';
         showSnackbar('error', responseData.message || `Failed to ${action} product`);
+        setShowConfirmModal(false); // Close modal on error too
       }
     } catch (error) {
       console.error('Network error:', error);
@@ -450,11 +538,19 @@ export default function ProductCreate() {
               <select
                 value={formData.product_subcategory}
                 onChange={(e) => handleInputChange('product_subcategory', e.target.value)}
-                className="select w-full"
+                disabled={!formData.product_category || subcategoriesLoading}
+                className="select w-full disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
               >
-                <option value="">Select Sub Category</option>
-                {filterOptions.subcategories.map((sub) => (
-                  <option key={sub.id} value={sub.id}>{sub.name}</option>
+                <option value="">
+                  {!formData.product_category
+                    ? "Please select a category first"
+                    : subcategoriesLoading
+                      ? "Loading subcategories..."
+                      : "Select Sub Category"
+                  }
+                </option>
+                {subcategories.map((sub) => (
+                  <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
                 ))}
               </select>
             </div>
@@ -614,14 +710,27 @@ export default function ProductCreate() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">RACK NUMBER</label>
-              <input
-                type="text"
-                value={formData.rack_number}
-                onChange={(e) => handleInputChange('rack_number', e.target.value)}
-                className="input w-full"
-                placeholder="Enter rack number"
-              />
+              <label className="block text-sm font-medium text-slate-300 mb-2">RACK</label>
+              <select
+                value={formData.rack_id}
+                onChange={(e) => handleInputChange('rack_id', e.target.value)}
+                disabled={!formData.warehouse || racksLoading}
+                className="select w-full disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
+              >
+                <option value="">
+                  {!formData.warehouse
+                    ? "Please select a warehouse first"
+                    : racksLoading
+                      ? "Loading racks..."
+                      : "Select Rack"
+                  }
+                </option>
+                {racks.filter(rack => rack.status === 'Active').map((rack) => (
+                  <option key={rack.id} value={rack.id}>
+                    {rack.rack_number} {rack.description ? `(${rack.description})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>

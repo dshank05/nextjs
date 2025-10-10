@@ -100,26 +100,14 @@ export default async function handler(
         ]
       }
 
-      // Convert category name to foreign key ID for database filtering
+      // Handle category filtering with ID directly
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category.findFirst({
-          where: { category_name: category as string },
-          select: { id: true }
-        });
-        if (categoryRecord) {
-          where.product_category_id = categoryRecord.id
-        }
+        where.product_category_id = parseInt(category as string)
       }
 
-      // Convert company name to ID for database filtering
+      // Handle company filtering with ID directly
       if (company && company !== '') {
-        const companyRecord = await prisma.product_company.findFirst({
-          where: { company_name: company as string },
-          select: { id: true }
-        });
-        if (companyRecord) {
-          where.company = companyRecord.id.toString()
-        }
+        where.company = company as string
       }
 
       // Get all products that match database filters (only active products)
@@ -217,26 +205,14 @@ export default async function handler(
         ]
       }
 
-      // Convert category name to foreign key ID for database filtering
+      // Handle category filtering with ID directly
       if (category && category !== '') {
-        const categoryRecord = await prisma.product_category.findFirst({
-          where: { category_name: category as string },
-          select: { id: true }
-        });
-        if (categoryRecord) {
-          where.product_category_id = categoryRecord.id
-        }
+        where.product_category_id = parseInt(category as string)
       }
 
-      // Convert company name to ID for database filtering
+      // Handle company filtering with ID directly
       if (company && company !== '') {
-        const companyRecord = await prisma.product_company.findFirst({
-          where: { company_name: company as string },
-          select: { id: true }
-        });
-        if (companyRecord) {
-          where.company = companyRecord.id.toString()
-        }
+        where.company = company as string
       }
 
       // Get products with efficient pagination (only active products)

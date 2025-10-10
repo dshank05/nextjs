@@ -12,9 +12,11 @@ async function enhanceProduct(product: any) {
     product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id))
     : []
   const companyIds = product.company ? [parseInt(product.company)].filter(id => !isNaN(id)) : []
+  const warehouseIds = product.warehouse_id ? [product.warehouse_id] : []
+  const rackIds = product.rack_id ? [product.rack_id] : []
 
   // Batch fetch names using foreign key relationships
-  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
+  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, warehouseRecords, rackRecords] = await Promise.all([
     categoryIds.length > 0 ? prisma.product_category.findMany({
       where: { id: { in: categoryIds } },
       select: { id: true, category_name: true }
@@ -30,6 +32,14 @@ async function enhanceProduct(product: any) {
     companyIds.length > 0 ? prisma.product_company.findMany({
       where: { id: { in: companyIds } },
       select: { id: true, company_name: true }
+    }) : Promise.resolve([]),
+    warehouseIds.length > 0 ? prisma.warehouse.findMany({
+      where: { id: { in: warehouseIds } },
+      select: { id: true, name: true, location: true }
+    }) : Promise.resolve([]),
+    rackIds.length > 0 ? prisma.warehouse_racks.findMany({
+      where: { id: { in: rackIds } },
+      select: { id: true, rack_number: true }
     }) : Promise.resolve([])
   ])
 
@@ -38,11 +48,16 @@ async function enhanceProduct(product: any) {
   const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]))
   const carModelMap = new Map(carModelRecords.map(model => [model.id, model.model_name]))
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]))
+  const warehouseMap = new Map(warehouseRecords.map(wh => [wh.id, { name: wh.name, location: wh.location }]))
+  const rackMap = new Map(rackRecords.map(rack => [rack.id, rack.rack_number]))
 
   // Look up names using foreign key maps
   const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : ''
   const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : ''
   const companyName = product.company ? companyMap.get(product.company) || '' : ''
+  const warehouseData = product.warehouse_id ? warehouseMap.get(product.warehouse_id) : null
+  const warehouseName = warehouseData ? `${warehouseData.name} - ${warehouseData.location}` : ''
+  const rackNumber = product.rack_id ? rackMap.get(product.rack_id) || '' : ''
 
   // Handle comma-separated car model IDs
   let carModelNames: string[] = [];
@@ -61,6 +76,8 @@ async function enhanceProduct(product: any) {
     companyName,
     subcategoryName: subcategoryDisplay, // Separate subcategory field
     carModelsDisplay, // Separate car models field
+    warehouse: warehouseName, // Warehouse name with location
+    rack_number: rackNumber, // Rack number
   }
 }
 
@@ -143,27 +160,8 @@ export default async function handler(
           return res.status(400).json({ message: 'Warehouse is required' })
         }
 
-        // ===== FUTURE SCHEMA EXPANSION FIELDS =====
-        // These fields don't exist in current schema, handled separately
-        const extraFields = {
-          gst_rate,
-          warehouse,
-          rack_number,
-          descriptions,
-          mrp,
-          discount,
-          margin: sale_price, // Rename for consistency
-        };
-
-        // Build enhanced notes with extra fields
-        const extraFieldsString = Object.entries(extraFields)
-          .filter(([key, value]) => value !== null && value !== undefined && value !== '')
-          .map(([key, value]) => `${key}: ${value}`)
-          .join('\n');
-
-        const enhancedNotes = notes
-          ? `${notes}\n\nAdditional Fields:\n${extraFieldsString}`
-          : `Additional Fields:\n${extraFieldsString}`;
+        // ===== CLEAN NOTES HANDLING =====
+        // Notes field should contain only pure user notes
 
         // ===== PRODUCT TABLE DATA =====
         // Only include fields that were actually sent in the request
@@ -184,31 +182,24 @@ export default async function handler(
         if (rate !== undefined) productData.rate = rate ? parseFloat(rate) : null;
         if (hsn !== undefined) productData.hsn = hsn;
         if (is_active !== undefined) productData.is_active = Boolean(is_active); // Handle active status toggle
-        if (notes !== undefined || Object.keys(extraFields).length > 0) {
-          productData.notes = notes ? `${notes}\n\nAdditional Fields:\n${extraFieldsString}` : `Additional Fields:\n${extraFieldsString}`;
-        }
 
         // Handle FK fields
         if (warehouse_id !== undefined) productData.warehouse_id = warehouse_id ? parseInt(warehouse_id) : null;
         if (gst_rate_id !== undefined) productData.gst_rate_id = gst_rate_id ? parseInt(gst_rate_id) : null;
+        if (req.body.rack_id !== undefined) productData.rack_id = req.body.rack_id ? parseInt(req.body.rack_id) : null;
 
-        // ===== FUTURE SCHEMA EXPANSION LOGGING =====
-        const futureExpansionData = {
-          product_enhancements: {
-            gst_rate: gst_rate ? parseFloat(gst_rate) : null,
-            warehouse,
-            rack_number,
-            descriptions,
-          },
-          pricing_info: {
-            mrp: mrp ? parseFloat(mrp) : null,
-            discount: discount ? parseFloat(discount) : null,
-            margin: sale_price ? parseFloat(sale_price) : null,
-          }
-        };
+        // Handle all new DB fields directly
+        if (req.body.rack_number !== undefined) productData.rack_number = req.body.rack_number;
+        if (descriptions !== undefined) productData.descriptions = descriptions;
+        if (mrp !== undefined) productData.mrp = mrp ? parseFloat(mrp) : null;
+        if (discount !== undefined) productData.discount = discount ? parseFloat(discount) : null;
+        if (sale_price !== undefined) productData.margin = sale_price ? parseFloat(sale_price) : null;
 
-        console.log('🔄 Product Update Data:', productData);
-        console.log('📋 Future Enhancement Data (not saved yet):', futureExpansionData);
+        // ===== NOTES HANDLING =====
+        // Keep notes clean - no extra field appending
+        if (notes !== undefined) {
+          productData.notes = notes; // Store pure user notes
+        }
 
         const updatedProduct = await prisma.product.update({
           where: { id: productId },

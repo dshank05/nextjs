@@ -43,55 +43,37 @@ model States {
 }
 
 model Product {
-  // ===== MAIN PRODUCT TABLE FIELDS =====
-  id                     Int       @id @default(autoincrement())
-  product_name           String    @db.VarChar(255) // ✅ Display name (auto-generated)
-  display_name           String?   @db.VarChar(255) // ✅ Alternative display name
-  part_no                String?   @db.VarChar(100) // ✅ Part number for identification
-
-  // ===== PRODUCT CLASSIFICATION =====
-  // New FK relationships (preferred)
-  product_category_id    Int?                     // ✅ FK to product_category
-  product_subcategory_id Int?                     // ✅ FK to product_subcategory
-  car_model_ids          String?                  // ✅ Comma-separated car model IDs
-
-  // Legacy string fields (will be migrated)
-  product_category       String?   @db.VarChar(100) // @deprecated - will be removed after migration
-  product_subcategory    String?   @db.VarChar(100) // @deprecated - will be removed after migration
-
-  // ===== PRODUCT DETAILS =====
-  company                String?   @db.VarChar(255) // ✅ Company/manufacturer name
-  hsn                    String?   @db.VarChar(50)  // ✅ HSN code for GST
-  descriptions           String?   @db.Text         // ✅ Product description
-  notes                  String?   @db.VarChar(255) // ✅ Additional notes
-
-  // ===== INVENTORY MANAGEMENT =====
-  min_stock              Int?                     // ✅ Minimum stock level
-  stock                  Int?                     // ✅ Current stock quantity
-  opening_stock          Int?                     // ✅ Opening stock at FY start
-  opening_rate           Float?                   // ✅ Opening rate per unit
-
-  // ===== PRICING INFORMATION =====
-  mrp                    Float?                   // ✅ Maximum Retail Price
-  discount               Float?                   // ✅ Discount amount
-  margin                 Float?                   // ✅ Profit margin amount
-
-  // ===== WAREHOUSE & TAX RELATIONSHIPS =====
-  warehouse_id           Int?                     // ✅ FK to warehouse table
-  gst_rate_id            Int?                     // ✅ FK to gst_tax_rate table
-
-  // ===== SYSTEM FIELDS =====
-  pic                    String?   @db.VarChar(255) // ✅ Product image path
-  is_active              Boolean   @default(true)  // ✅ Active/Inactive status
-
-  // ===== LEGACY FIELDS (KEEP FOR BACKWARD COMPATIBILITY) =====
-  rack_number            String?   @db.VarChar(100) // @deprecated - TODO: unused field, remove later
-
-  // ===== RELATIONSHIPS =====
-  category_ref    product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
-  subcategory_ref product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
-  warehouse       warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
-  gst_rate        gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
+  id                     Int                  @id @default(autoincrement())
+  product_name           String               @db.VarChar(255)
+  display_name           String?              @db.VarChar(255)
+  hsn                    String?              @db.VarChar(50)
+  product_category       String?              @db.VarChar(100)
+  product_subcategory    String?              @db.VarChar(100)
+  product_category_id    Int?
+  product_subcategory_id Int?
+  car_model_ids          String?
+  company                String?              @db.VarChar(255)
+  pic                    String?              @db.VarChar(255)
+  part_no                String?              @db.VarChar(100)
+  min_stock              Int?
+  stock                  Int?
+  opening_rate           Float?
+  notes                  String?              @db.VarChar(255)
+  warehouse_id           Int?
+  gst_rate_id            Int?
+  opening_stock          Int?
+  is_active              Boolean              @default(true)
+  descriptions           String?              @db.Text
+  discount               Float?
+  margin                 Float?
+  mrp                    Float?
+  rack_number            String?              @db.VarChar(100)
+  rack_id                Int?
+  category_ref           product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
+  gst_rate               gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
+  rack                   warehouse_racks?     @relation(fields: [rack_id], references: [id], map: "product_rack_fkey")
+  subcategory_ref        product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
+  warehouse              warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
 
   @@index([product_category], map: "idx_product_category")
   @@index([company], map: "idx_product_company")
@@ -100,11 +82,16 @@ model Product {
   @@index([stock, min_stock], map: "idx_product_stock")
   @@index([mrp], map: "idx_product_mrp")
   @@index([is_active], map: "idx_product_active")
+  @@index([product_category_id], map: "product_category_fkey")
+  @@index([gst_rate_id], map: "product_gst_rate_fkey")
+  @@index([rack_id], map: "product_rack_fkey")
+  @@index([product_subcategory_id], map: "product_subcategory_fkey")
+  @@index([warehouse_id], map: "product_warehouse_fkey")
   @@map("product")
 }
 
 model Invoice {
-  id                  Int     @id @default(autoincrement())
+  id                  Int       @id @default(autoincrement())
   invoice_no          Int
   select_customer     Int
   items_total         Float?
@@ -116,24 +103,24 @@ model Invoice {
   total_igst          Float?
   total_tax           Float?
   total               Float
-  notes               String? @db.VarChar(255)
+  notes               String?   @db.VarChar(255)
   notes_show          Int?
   invoice_date        Int
-  updated_at          String  @db.VarChar(100)
+  updated_at          String    @db.VarChar(100)
   status              Int?
   payment_mode        Int?
   fy                  Int
   mode                Int?
   type                Int?
-  staff_details       String? @db.VarChar(255)  // Keep for backward compatibility
-  staff_id            Int?                    // New FK to staff table (nullable - optional)
-  mechanic_id         Int?                    // New FK to mechanic table (nullable - optional)
-  commission          Float?                  // Commission amount (nullable - optional)
-
-  // Relationships
+  staff_details       String?   @db.VarChar(255)
+  staff_id            Int?
+  commission          Float?
+  mechanic_id         Int?
+  mechanic            mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
   staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
-  mechanic           mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
 
+  @@index([mechanic_id], map: "invoice_mechanic_fkey")
+  @@index([staff_id], map: "invoice_staff_fkey")
   @@map("invoice")
 }
 
@@ -161,66 +148,59 @@ model Invoiceitems {
 }
 
 model Purchase {
-  // ===== MAIN PURCHASE TABLE FIELDS =====
-  id                       Int     @id @default(autoincrement())
-  invoice_no               Int                    // Invoice number
-  bill_reference           String? @db.VarChar(255) // Bill reference (separate from vendor)
-  staff_details            String? @db.VarChar(255) // Legacy string field (keep for backward compatibility)
-  staff_id                 Int?                    // FK to staff table (nullable - optional)
-  vendor_id                Int?                    // FK to vendor_details table
+  id                       Int             @id @default(autoincrement())
+  invoice_no               Int
+  bill_reference           String?         @db.VarChar(255)
+  staff_details            String?         @db.VarChar(255)
+  vendor_id                Int?
+  items_total              Float?
+  freight                  Float?
+  total_taxable_value      Float
+  taxrate                  Int?
+  total_cgst               Float?
+  total_sgst               Float?
+  total_igst               Float?
+  total_tax                Float?
+  total                    Float
+  notes                    String?         @db.VarChar(255)
+  descriptions             String?         @db.Text
+  packing_forwarding_qty   Float?
+  packing_forwarding_rate  Float?
+  packing_forwarding_total Float?
+  basic_value              Float?
+  bill                     String?         @db.VarChar(255)
+  tax                      String?         @db.VarChar(255)
+  invoice_date             String          @db.VarChar(30)
+  updated_at               String          @db.VarChar(100)
+  payment_mode             Int?
+  transport                String?         @db.VarChar(255)
+  transport_name           String?         @db.VarChar(255)
+  vehicle_number           String?         @db.VarChar(100)
+  fy                       Int
+  status                   Int?            @map("payment_status")
+  staff_id                 Int?
+  staff                    staff?          @relation(fields: [staff_id], references: [id])
+  vendor                   vendor_details? @relation(fields: [vendor_id], references: [id])
 
-  // ===== TRANSPORT FIELDS =====
-  transport                String? @db.VarChar(255) // Legacy transport field
-  transport_name           String? @db.VarChar(255) // Transport name
-  vehicle_number           String? @db.VarChar(100) // Vehicle number
-  freight                  Float?                  // Transport/freight cost
-
-  // ===== ITEMS AND CALCULATIONS =====
-  items_total              Float?                  // Total of all items (qty * rate)
-  total_taxable_value      Float                   // Taxable value (same as items_total)
-  total_cgst               Float?                  // Total CGST amount
-  total_sgst               Float?                  // Total SGST amount
-  total_igst               Float?                  // Total IGST amount
-  total_tax                Float?                  // Total tax amount
-  total                    Float                   // Grand total (calculated field)
-  packing_forwarding_qty    Float?                 // Packing/forwarding quantity
-  packing_forwarding_rate   Float?                 // Packing/forwarding rate
-  packing_forwarding_total  Float?                 // Packing/forwarding total
-
-  // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-  taxrate                  Int?    // @deprecated - legacy field, unclear purpose, no UI element
-  basic_value              Float?  // @deprecated - legacy field, unclear purpose, no UI element
-  bill                     String? @db.VarChar(255) // @deprecated - legacy field, unclear purpose, no UI element
-  tax                      String? @db.VarChar(255) // @deprecated - legacy field, unclear purpose, no UI element
-
-  // ===== OTHER FIELDS =====
-  notes                    String? @db.VarChar(255) // Purchase notes
-  descriptions             String? @db.Text         // Purchase descriptions
-  invoice_date             String  @db.VarChar(30)  // Invoice date
-  updated_at               String  @db.VarChar(100) // Last updated timestamp
-  status                   Int?      @map("payment_status") // Payment status (0=unpaid, 1=paid)
-  payment_mode             Int?                     // Payment mode (1=cash, 2=bank)
-  fy                       Int                     // Financial year
-
-  // ===== RELATIONSHIPS =====
-  vendor vendor_details? @relation(fields: [vendor_id], references: [id])
-  staff  staff?          @relation(fields: [staff_id], references: [id])
-
+  @@index([invoice_date], map: "idx_purchase_invoice_date")
+  @@index([status], map: "idx_purchase_status")
+  @@index([staff_id], map: "purchase_staff_id_fkey")
+  @@index([vendor_id], map: "purchase_vendor_id_fkey")
   @@map("purchase")
 }
 
 model Purchaseitems {
-  id              Int     @id @default(autoincrement())
+  id              Int             @id @default(autoincrement())
   invoice_no      Int
-  name_of_product String  @db.VarChar(255)
+  name_of_product String          @db.VarChar(255)
   category_id     Int?
   subcategory_id  Int?
   model_id        Int?
   company_id      Int?
-  car_model       String? @db.VarChar(255)
+  car_model       String?         @db.VarChar(255)
   vendor_id       Int?
-  hsn             String? @db.VarChar(50)
-  part            String? @db.VarChar(100)
+  hsn             String?         @db.VarChar(50)
+  part            String?         @db.VarChar(100)
   qty             Float?
   unit            Int?
   rate            Float?
@@ -228,11 +208,10 @@ model Purchaseitems {
   subtotal        Float
   fy              Int
   invoice_date    Int
-
-  // Foreign key relationship to vendor_details
-  vendor vendor_details? @relation(fields: [vendor_id], references: [id])
+  vendor          vendor_details? @relation(fields: [vendor_id], references: [id])
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
+  @@index([vendor_id], map: "purchase_items_vendor_id_fkey")
   @@map("purchase_items")
 }
 
@@ -311,21 +290,21 @@ model business_details {
 model customer_details {
   id                  Int     @id @default(autoincrement())
   billing_name        String  @db.VarChar(200)
-  billing_address     String  @db.VarChar(255)  // Main billing address line
-  billing_address_2   String? @db.VarChar(255)  // Additional billing address line (ADDED for consistency)
-  billing_city        String? @db.VarChar(100)  // Billing city
-  billing_state       String? @db.VarChar(100) // State name
-  billing_state_code  Int?                   // State code
+  billing_address     String  @db.VarChar(255)
+  billing_address_2   String? @db.VarChar(255)
+  billing_state       String? @db.VarChar(100)
+  billing_state_code  Int?
   billing_gstin       String? @db.VarChar(30)
   contact_no          String? @db.VarChar(20)
   email               String? @db.VarChar(100)
   shipping_name       String? @db.VarChar(200)
-  shipping_address    String  @db.VarChar(255)  // Main shipping address line
-  shipping_address_2  String? @db.VarChar(255)  // Additional shipping address line (ADDED for consistency)
-  shipping_city       String? @db.VarChar(100)  // Shipping city
-  shipping_state      String? @db.VarChar(100) // State name
-  shipping_state_code Int?                   // State code
+  shipping_address    String  @db.VarChar(255)
+  shipping_address_2  String? @db.VarChar(255)
+  shipping_state      String? @db.VarChar(100)
+  shipping_state_code Int?
   shipping_gstin      String? @db.VarChar(30)
+  billing_city        String? @db.VarChar(100)
+  shipping_city       String? @db.VarChar(100)
 }
 
 model financial_year {
@@ -367,7 +346,7 @@ model invoice_itemsx {
 }
 
 model invoicex {
-  id                  Int     @id @default(autoincrement())
+  id                  Int       @id @default(autoincrement())
   invoice_no          Int
   select_customer     Int?
   items_total         Float?
@@ -379,23 +358,24 @@ model invoicex {
   total_igst          Float?
   total_tax           Float?
   total               Float
-  notes               String? @db.VarChar(255)
+  notes               String?   @db.VarChar(255)
   notes_show          Int?
   invoice_date        Int
-  updated_at          String  @db.VarChar(100)
+  updated_at          String    @db.VarChar(100)
   status              Int?
   payment_mode        Int?
   fy                  Int
   mode                Int?
   type                Int?
-  staff_details       String? @db.VarChar(255)  // Keep for backward compatibility
-  staff_id            Int?                    // New FK to staff table (nullable - optional)
-  mechanic_id         Int?                    // New FK to mechanic table (nullable - optional)
-  commission          Float?                  // Commission amount (nullable - optional)
-
-  // Relationships
+  staff_details       String?   @db.VarChar(255)
+  staff_id            Int?
+  commission          Float?
+  mechanic_id         Int?
+  mechanic            mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
   staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
-  mechanic           mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
+
+  @@index([mechanic_id], map: "invoicex_mechanic_fkey")
+  @@index([staff_id], map: "invoicex_staff_fkey")
 }
 
 model migration {
@@ -404,40 +384,39 @@ model migration {
 }
 
 model product_category {
-  id           Int    @id @default(autoincrement())
-  category_name String @db.VarChar(255)
-
-  // Relations to subcategories and products
+  id            Int                   @id @default(autoincrement())
+  category_name String                @db.VarChar(255)
+  products      Product[]
   subcategories product_subcategory[]
-  products Product[]
 
+  @@index([category_name], map: "idx_product_category_name")
   @@map("product_category")
 }
 
 model product_subcategory {
-  id               Int                 @id @default(autoincrement())
-  subcategory_name String              @db.VarChar(255)
-  category_id      Int                  // Foreign key to product_category
+  id               Int              @id @default(autoincrement())
+  subcategory_name String           @db.VarChar(255)
+  category_id      Int
+  products         Product[]
+  category         product_category @relation(fields: [category_id], references: [id])
 
-  // Relations
-  category product_category @relation(fields: [category_id], references: [id])
-  products Product[]
-
+  @@index([category_id], map: "idx_product_subcategory_category_id")
   @@map("product_subcategory")
 }
 
 model car_models {
-  id        Int    @id @default(autoincrement())
+  id         Int    @id @default(autoincrement())
   model_name String @db.VarChar(255)
 
-  // No direct FK relation since car_model_ids is comma-separated
-
+  @@index([model_name], map: "idx_car_models_name")
   @@map("car_models")
 }
 
 model product_company {
   id           Int    @id @default(autoincrement())
   company_name String @db.VarChar(255)
+
+  @@index([company_name], map: "idx_product_company_name")
 }
 
 model ship_to {
@@ -491,75 +470,82 @@ model user {
 }
 
 model vendor_details {
-  id          Int     @id @default(autoincrement())
-  vendor_name String  @db.VarChar(255)
-  address     String? @db.VarChar(255)
-  address_2   String? @db.VarChar(255)
-  city        String? @db.VarChar(100)
-  state       String?
-  state_code  Int?
-  contact_no  String? @db.VarChar(20)
-  email       String? @db.VarChar(100)
-  tax_id      String? @db.VarChar(50)
-
-  // Backward relations to purchases and purchase items
+  id            Int             @id @default(autoincrement())
+  vendor_name   String          @db.VarChar(255)
+  address       String?         @db.VarChar(255)
+  address_2     String?         @db.VarChar(255)
+  state         String?
+  state_code    Int?
+  contact_no    String?         @db.VarChar(20)
+  email         String?         @db.VarChar(100)
+  tax_id        String?         @db.VarChar(50)
+  city          String?         @db.VarChar(100)
   purchases     Purchase[]
   purchaseItems Purchaseitems[]
 }
 
-model warehouse {
-  id        Int     @id @default(autoincrement())
-  name      String  @db.VarChar(255)
-  location  String  @db.VarChar(255)
-  status    String  @db.VarChar(50) @default("Active")
+model warehouse_racks {
+  id           Int       @id @default(autoincrement())
+  warehouse_id Int
+  rack_number  String    @db.VarChar(50)
+  description  String?   @db.VarChar(255)
+  status       String    @default("Active") @db.VarChar(20)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  products     Product[]
+  warehouse    warehouse @relation(fields: [warehouse_id], references: [id])
 
-  // Relations
+  @@unique([warehouse_id, rack_number], map: "unique_warehouse_rack")
+  @@map("warehouse_racks")
+}
+
+model warehouse {
+  id       Int               @id @default(autoincrement())
+  name     String            @db.VarChar(255)
+  location String            @db.VarChar(255)
+  status   String            @default("Active") @db.VarChar(50)
   products Product[]
+  racks    warehouse_racks[]
 
   @@map("warehouse")
 }
 
 model gst_tax_rate {
-  id             Int     @id @default(autoincrement())
-  description    String  @db.VarChar(255)
+  id             Int       @id @default(autoincrement())
+  description    String    @db.VarChar(255)
   rate           Float
-  hsn_code       String  @db.VarChar(50)
-  applicable_for String  @db.Text
-
-  // Relations
-  products Product[]
+  hsn_code       String    @db.VarChar(50)
+  applicable_for String    @db.Text
+  status         String    @default("Active") @db.VarChar(20)
+  products       Product[]
 
   @@map("gst_tax_rate")
 }
 
 model staff {
-  id         Int      @id @default(autoincrement())
-  name       String   @db.VarChar(255)  // Staff full name (mandatory)
-  email      String?  @db.VarChar(255)  // Staff email address (optional)
-  phone      String   @db.VarChar(20)   // Staff phone number (mandatory)
-  status     String   @default("Active") @db.VarChar(20) // Active/Inactive status
-  created_at DateTime @default(now())   // Record creation timestamp
-  updated_at DateTime @updatedAt        // Record update timestamp
-
-  // Relations - staff can be associated with multiple transactions
-  purchases  Purchase[]  // Purchase transactions
-  invoices   Invoice[]   // Sale invoices
-  invoicexs  invoicex[]  // Salex invoices
+  id         Int        @id @default(autoincrement())
+  name       String     @db.VarChar(255)
+  email      String?    @db.VarChar(255)
+  phone      String     @db.VarChar(20)
+  status     String     @default("Active") @db.VarChar(20)
+  created_at DateTime   @default(now())
+  updated_at DateTime   @updatedAt
+  invoices   Invoice[]
+  invoicexs  invoicex[]
+  purchases  Purchase[]
 
   @@map("staff")
 }
 
 model mechanic {
-  id         Int      @id @default(autoincrement())
-  name       String   @db.VarChar(255)  // Mechanic full name (mandatory)
-  phone      String   @db.VarChar(20)   // Mechanic phone number (mandatory)
-  status     String   @default("Active") @db.VarChar(20) // Active/Inactive status
-  created_at DateTime @default(now())   // Record creation timestamp
-  updated_at DateTime @updatedAt        // Record update timestamp
-
-  // Relations - mechanic can be associated with multiple invoices
-  invoices   Invoice[]   // Sale invoices
-  invoicexs  invoicex[]  // Salex invoices
+  id         Int        @id @default(autoincrement())
+  name       String     @db.VarChar(255)
+  phone      String     @db.VarChar(20)
+  status     String     @default("Active") @db.VarChar(20)
+  created_at DateTime   @default(now())
+  updated_at DateTime   @updatedAt
+  invoices   Invoice[]
+  invoicexs  invoicex[]
 
   @@map("mechanic")
 }

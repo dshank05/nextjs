@@ -14,6 +14,12 @@ interface FilterOptions {
   models: { id: string; name: string }[]; // Car models separated
 }
 
+// Added dynamic subcategory state interface
+interface DynamicSubcategories {
+  options: { id: string; name: string }[];
+  loading: boolean;
+}
+
 interface ProductFiltersProps {
   searchTerm: string;
   setSearchTerm: (value: string) => void;
@@ -21,8 +27,8 @@ interface ProductFiltersProps {
   setCategoryFilter: (value: string) => void;
   subcategoryFilter: string;
   setSubcategoryFilter: (value: string) => void;
-  modelFilter: string[];  // CHANGED: now an array for multi-select
-  setModelFilter: (value: string[]) => void;  // CHANGED: setter for array
+  modelFilter: string[];  // Multi-select car models
+  setModelFilter: (value: string[]) => void;
   companyFilter: string;
   setCompanyFilter: (value: string) => void;
   stockFilter: string;
@@ -53,6 +59,10 @@ export const ProductFilters = ({
   const [isModelsDropdownOpen, setIsModelsDropdownOpen] = useState(false); // Multi-select dropdown
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
 
+  // Dynamic subcategories state
+  const [dynamicSubcategories, setDynamicSubcategories] = useState<{ id: string; name: string }[]>([]);
+  const [dynamicSubcategoriesLoading, setDynamicSubcategoriesLoading] = useState(false);
+
 
 
   // Refs for click outside handling
@@ -60,6 +70,42 @@ export const ProductFilters = ({
   const subcategoryDropdownRef = useRef<HTMLDivElement>(null);
   const modelsDropdownRef = useRef<HTMLDivElement>(null);
   const companyDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fetch dynamic subcategories when category changes
+  useEffect(() => {
+    if (categoryFilter) {
+      fetchDynamicSubcategories(categoryFilter);
+      // Clear subcategory selection when category changes
+      setSubcategoryFilter('');
+      setSubcategorySearch('');
+    } else {
+      setDynamicSubcategories([]);
+    }
+  }, [categoryFilter]);
+
+  // Function to fetch subcategories dynamically
+  const fetchDynamicSubcategories = async (categoryId: string) => {
+    if (!categoryId) {
+      setDynamicSubcategories([]);
+      return;
+    }
+
+    setDynamicSubcategoriesLoading(true);
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setDynamicSubcategories(data.subcategories || []);
+      } else {
+        setDynamicSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching dynamic subcategories:', error);
+      setDynamicSubcategories([]);
+    } finally {
+      setDynamicSubcategoriesLoading(false);
+    }
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -112,14 +158,16 @@ export const ProductFilters = ({
     clearFilters(); // Calls the parent's state-clearing function
     setCategorySearch('');
     setSubcategorySearch('');
-    setModelSearchQuery(''); // FIXED: use correct variable name
+    setModelSearchQuery('');
     setCompanySearch('');
+    setDynamicSubcategories([]); // Clear dynamic subcategories
+    setDynamicSubcategoriesLoading(false);
   };
 
   return (
     <div className="card">
       <h3 className="text-lg font-semibold text-white mb-3">Search & Filter Products</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
         {/* Search */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Search Product/Part No</label>
@@ -153,13 +201,13 @@ export const ProductFilters = ({
           )}
         </div>
 
-        {/* NEW: Subcategory Filter (actual subcategories like "Motor Valve") */}
+        {/* Dynamic Subcategory Filter */}
         <div className="relative">
           <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
           <input
             type="text"
-            placeholder="Search subcategories..."
-            value={subcategorySearch || (subcategoryFilter && filterOptions.subcategories.find(s => s.id === subcategoryFilter)?.name) || ''}
+            placeholder={categoryFilter ? "Search subcategories..." : "Select a category first"}
+            value={subcategorySearch || (subcategoryFilter && dynamicSubcategories.find(s => s.id.toString() === subcategoryFilter)?.name) || ''}
             onChange={(e) => {
               setSubcategorySearch(e.target.value);
               setShowSubcategoryDropdown(true);
@@ -168,14 +216,26 @@ export const ProductFilters = ({
                 setSubcategorySearch('');
               }
             }}
-            onFocus={() => setShowSubcategoryDropdown(true)}
+            onFocus={() => categoryFilter && setShowSubcategoryDropdown(true)} // Only open if category is selected
             onBlur={() => setTimeout(() => setShowSubcategoryDropdown(false), 200)}
-            className="input w-full"
+            className={`input w-full ${!categoryFilter ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : ''}`}
+            disabled={!categoryFilter || dynamicSubcategoriesLoading}
           />
-          {showSubcategoryDropdown && (
+          {showSubcategoryDropdown && categoryFilter && (
             <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
               <div className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect({id: '', name: 'All Subcategories'})}>All Subcategories</div>
-              {filteredSubcategories.map((sub) => <div key={sub.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect(sub)}>{sub.name}</div>)}
+              {dynamicSubcategoriesLoading ? (
+                <div className="px-3 py-2 text-slate-500 text-sm">Loading...</div>
+              ) : (
+                dynamicSubcategories
+                  .filter(sub => sub.name?.toLowerCase().includes(subcategorySearch.toLowerCase()))
+                  .map((sub) => (
+                    <div key={sub.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect(sub)}>{sub.name}</div>
+                  ))
+              )}
+              {dynamicSubcategories.length === 0 && !dynamicSubcategoriesLoading && (
+                <div className="px-3 py-2 text-slate-500 text-sm">No subcategories available</div>
+              )}
             </div>
           )}
         </div>
@@ -322,14 +382,14 @@ export const ProductFilters = ({
         </div>
 
         {/* Stock Filter */}
-        <div>
+        {/* <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Stock Status</label>
           <select value={stockFilter} onChange={(e) => setStockFilter(e.target.value)} className="select w-full">
             <option value="all">All Products</option>
             <option value="in-stock">In Stock</option>
             <option value="low-stock">Low Stock</option>
           </select>
-        </div>
+        </div> */}
 
         {/* Items Per Page */}
         <div>

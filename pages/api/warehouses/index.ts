@@ -5,6 +5,14 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  // Check if this is a request for individual warehouse operations
+  const { id } = req.query
+
+  if (id && (req.method === 'GET' || req.method === 'PUT' || req.method === 'DELETE')) {
+    return handleIndividualWarehouse(req, res, id)
+  }
+
+  // Otherwise handle list operations
   switch (req.method) {
     case 'GET':
       return handleGet(req, res)
@@ -23,7 +31,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       page = '1',
       limit = '50',
       search = '',
-      status = 'Active'
+      status = 'Active',
+      includeInactive = 'false' // New parameter to include inactive warehouses
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -40,8 +49,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ]
     }
 
-    if (status && status !== '') {
-      where.status = status as string
+    // Filter active warehouses by default unless explicitly requested to include inactive
+    if (includeInactive !== 'true') {
+      where.status = 'Active'
     }
 
     const [warehouses, total] = await Promise.all([
@@ -165,6 +175,129 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     console.error('Warehouse update error:', error)
     res.status(500).json({
       message: 'Failed to update warehouse',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+// Handle individual warehouse operations when id query parameter is provided
+async function handleIndividualWarehouse(req: NextApiRequest, res: NextApiResponse, id: string | string[]) {
+  const warehouseId = parseInt(Array.isArray(id) ? id[0] : id)
+
+  if (isNaN(warehouseId)) {
+    return res.status(400).json({ message: 'Invalid warehouse ID' })
+  }
+
+  switch (req.method) {
+    case 'GET':
+      return handleIndividualGet(req, res, warehouseId)
+    case 'PUT':
+      return handleIndividualPut(req, res, warehouseId)
+    case 'DELETE':
+      return handleIndividualDelete(req, res, warehouseId)
+    default:
+      return res.status(405).json({ message: 'Method not allowed' })
+  }
+}
+
+// GET /api/warehouses?id={id} - Get warehouse details
+async function handleIndividualGet(req: NextApiRequest, res: NextApiResponse, warehouseId: number) {
+  try {
+    const warehouse = await prisma.warehouse.findUnique({
+      where: { id: warehouseId }
+    })
+
+    if (!warehouse) {
+      return res.status(404).json({ message: 'Warehouse not found' })
+    }
+
+    res.status(200).json(warehouse)
+  } catch (error) {
+    console.error('Get warehouse error:', error)
+    res.status(500).json({
+      message: 'Failed to fetch warehouse',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+// PUT /api/warehouses?id={id} - Update warehouse
+async function handleIndividualPut(req: NextApiRequest, res: NextApiResponse, warehouseId: number) {
+  try {
+    const {
+      name,
+      location,
+      status
+    } = req.body
+
+    // Validation - at least one field must be provided
+    if (name === undefined && location === undefined && status === undefined) {
+      return res.status(400).json({ message: 'At least one field (name, location, or status) must be provided' })
+    }
+
+    const updateData: any = {}
+
+    if (name !== undefined) updateData.name = name.trim()
+    if (location !== undefined) updateData.location = location.trim()
+    if (status !== undefined) updateData.status = status
+
+    // Check for name conflicts if name is being updated
+    if (name !== undefined) {
+      const existingWarehouse = await prisma.warehouse.findFirst({
+        where: {
+          name: name.trim(),
+          id: { not: warehouseId }
+        }
+      })
+
+      if (existingWarehouse) {
+        return res.status(400).json({
+          message: 'Another warehouse with this name already exists'
+        })
+      }
+    }
+
+    const updatedWarehouse = await prisma.warehouse.update({
+      where: { id: warehouseId },
+      data: updateData,
+    })
+
+    res.status(200).json(updatedWarehouse)
+  } catch (error) {
+    console.error('Update warehouse error:', error)
+    res.status(500).json({
+      message: 'Failed to update warehouse',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+// DELETE /api/warehouses?id={id} - Soft delete warehouse (set status to Inactive)
+async function handleIndividualDelete(req: NextApiRequest, res: NextApiResponse, warehouseId: number) {
+  try {
+    // Check if warehouse exists
+    const warehouse = await prisma.warehouse.findUnique({
+      where: { id: warehouseId }
+    })
+
+    if (!warehouse) {
+      return res.status(404).json({ message: 'Warehouse not found' })
+    }
+
+    // Soft delete - just change status to Inactive
+    const deactivatedWarehouse = await prisma.warehouse.update({
+      where: { id: warehouseId },
+      data: { status: 'Inactive' },
+    })
+
+    res.status(200).json({
+      message: 'Warehouse deactivated successfully',
+      warehouse: deactivatedWarehouse
+    })
+  } catch (error) {
+    console.error('Delete warehouse error:', error)
+    res.status(500).json({
+      message: 'Failed to deactivate warehouse',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
