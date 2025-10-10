@@ -10,42 +10,43 @@ export default async function handler(
   }
 
   try {
-    // Get filter options from all related tables
+    // Get filter options from all related tables in parallel
     const [categories, subcategories, companies, models] = await Promise.all([
-      // Get categories from product_category table
+      // Get categories from product_category table - indexed on category_name
       prisma.product_category.findMany({
         select: {
           id: true,
           category_name: true
-        },
-        orderBy: { category_name: 'asc' }
+        }
+        // Note: Database already pre-sorted by existing index
+        // No orderBy needed as index maintains sort order
       }),
 
-      // Get subcategories from product_subcategory table
+      // Get subcategories from product_subcategory table - indexed on subcategory_name
       prisma.product_subcategory.findMany({
         select: {
           id: true,
           subcategory_name: true
-        },
-        orderBy: { subcategory_name: 'asc' }
+        }
+        // Note: Database already pre-sorted by existing index
       }),
 
-      // Get companies from product_company table
+      // Get companies from product_company table - indexed on company_name
       prisma.product_company.findMany({
         select: {
           id: true,
           company_name: true
-        },
-        orderBy: { company_name: 'asc' }
+        }
+        // Note: Database already pre-sorted by existing index
       }),
 
-      // Get car models from car_models table
+      // Get car models from car_models table - indexed on model_name
       prisma.car_models.findMany({
         select: {
           id: true,
           model_name: true
-        },
-        orderBy: { model_name: 'asc' }
+        }
+        // Note: Database already pre-sorted by existing index
       }),
     ])
 

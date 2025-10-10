@@ -43,15 +43,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const where: any = {}
 
     if (search) {
+      const searchTerm = search as string
       where.OR = [
-        { name: { contains: search as string } },
-        { location: { contains: search as string } }
+        { name: { contains: searchTerm, mode: 'insensitive' } },
+        { location: { contains: searchTerm, mode: 'insensitive' } }
       ]
     }
 
     // Filter active warehouses by default unless explicitly requested to include inactive
+    // Use exact match for status to leverage index
     if (includeInactive !== 'true') {
-      where.status = 'Active'
+      where.status = status as string || 'Active'
     }
 
     const [warehouses, total] = await Promise.all([
