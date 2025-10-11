@@ -42,6 +42,7 @@ interface Purchase {
   payment_mode?: number;
   fy: number;
   transport?: string;
+  vehicle_number?: string;
   items?: PurchaseItem[];
   item_count?: number;
   formattedDate?: string;
@@ -286,20 +287,32 @@ export default function PurchaseView() {
 
           <div className="md:col-span-2 lg:col-span-3 space-y-4">
             <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🚚 Transport & Additional Info</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-slate-400 text-sm mb-1">Transport Details:</label>
+                <label className="block text-slate-400 text-sm mb-1">Transport Name:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
                   {purchase.transport || 'No transport information available'}
                 </div>
               </div>
               <div>
+                <label className="block text-slate-400 text-sm mb-1">Vehicle Number:</label>
+                <div className="bg-slate-700 rounded p-3 text-white text-sm">
+                  {purchase.vehicle_number || 'No vehicle number available'}
+                </div>
+              </div>
+              <div>
+                <label className="block text-slate-400 text-sm mb-1">Freight:</label>
+                <div className="bg-slate-700 rounded p-3 text-white text-sm">
+                  ₹{purchase.freight?.toLocaleString('en-IN') || '0'}
+                </div>
+              </div>
+              <div className="md:col-span-3">
                 <label className="block text-slate-400 text-sm mb-1">Notes:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
                   {purchase.notes || 'No notes available'}
                 </div>
               </div>
-              <div className="md:col-span-2">
+              <div className="md:col-span-3">
                 <label className="block text-slate-400 text-sm mb-1">Descriptions:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
                   {purchase.descriptions || 'No descriptions available'}
@@ -349,8 +362,8 @@ export default function PurchaseView() {
               {purchase.items && purchase.items.length > 0 && (
                 <tfoot>
                   <tr className="border-t border-slate-700">
-                    <td colSpan={6} className="text-right text-slate-300 font-semibold">Items Total:</td>
-                    <td className="text-white font-bold">₹{purchase.items_total.toLocaleString('en-IN')}</td>
+                    <td colSpan={5} className="text-right text-slate-300 font-semibold py-2">Items Total:</td>
+                    <td className="text-white font-bold pl-6">₹{purchase.items_total.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               )}

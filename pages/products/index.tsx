@@ -45,10 +45,14 @@ export default function Products() {
   // Apply the debounce hook to the search term
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Effect to fetch static filter options once on component mount
+// Effect to fetch static filter options once on component mount
   useEffect(() => {
     fetchFilterOptions();
   }, []);
+
+  const refreshFilterOptions = () => {
+    fetchFilterOptions();
+  };
 
   // This effect handles resetting to page 1 ONLY when filters change
   useEffect(() => {
@@ -151,6 +155,7 @@ export default function Products() {
         handleLimitChange={handleLimitChange}
         clearFilters={clearFilters}
         filterOptions={filterOptions}
+        refreshFilterOptions={refreshFilterOptions}
       />
 
       <ProductTable

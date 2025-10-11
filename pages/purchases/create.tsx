@@ -132,8 +132,8 @@ export default function PurchaseCreate() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
 
-  // State for the product selection row filters
-  const [productRowFilters, setProductRowFilters] = useState({
+  // State for the product selection filters
+  const [productFilters, setProductFilters] = useState({
     category: '',
     subcategory: '',
     carModels: [] as string[],
@@ -141,117 +141,17 @@ export default function PurchaseCreate() {
     partNo: ''
   });
 
-  // State for dynamic subcategories in filters
+  // State for available subcategories (loaded dynamically)
+  const [availableSubcategories, setAvailableSubcategories] = useState<any[]>([]);
   const [filterSubcategories, setFilterSubcategories] = useState<any[]>([]);
   const [filterSubcategoriesLoading, setFilterSubcategoriesLoading] = useState(false);
-
-  // Fetch subcategories for table filters
-  const fetchSubcategoriesForTable = async (categoryId: string) => {
-    if (!categoryId) {
-      setFilterSubcategories([]);
-      return;
-    }
-
-    setFilterSubcategoriesLoading(true);
-    try {
-      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setFilterSubcategories(data.subcategories || []);
-      } else {
-        setFilterSubcategories([]);
-      }
-    } catch (error) {
-      console.error('Error fetching subcategories for table:', error);
-      setFilterSubcategories([]);
-    } finally {
-      setFilterSubcategoriesLoading(false);
-    }
-  };
-
-  // Populate filters from existing purchase items (for edit mode)
-  const populateFiltersFromPurchaseItems = async (items: PurchaseItem[]) => {
-    if (items.length === 0) return;
-
-    // Extract unique category names from items
-    const uniqueCategories = Array.from(new Set(items.map(item => item.category).filter(Boolean)));
-
-    // Map category names to IDs from filterOptions
-    const categoryMappings = uniqueCategories.map(categoryName => {
-      const matchingCategory = filterOptions.categories.find(cat =>
-        cat.name.toLowerCase() === categoryName.toLowerCase()
-      );
-      return matchingCategory ? { name: categoryName, id: matchingCategory.id.toString() } : null;
-    }).filter(Boolean);
-
-    // If we found category mappings, set up the filters in cascading order
-    if (categoryMappings.length > 0) {
-      // Set the first category (most common case)
-      const firstCategoryId = categoryMappings[0].id;
-      setProductRowFilters(prev => ({
-        ...prev,
-        category: firstCategoryId
-      }));
-
-      // Fetch subcategories for this category
-      await fetchSubcategoriesForTable(firstCategoryId);
-
-      // After fetching subcategories, map subcategory names to IDs
-      setTimeout(() => {
-        const subcategoryMappings = items.map(item => {
-          const matchingSubcategory = filterSubcategories.find(sub =>
-            sub.subcategory_name.toLowerCase() === item.sub_category?.toLowerCase()
-          );
-          return matchingSubcategory ? matchingSubcategory.id.toString() : '';
-        }).filter(Boolean);
-
-        // Set subcategory if found
-        if (subcategoryMappings.length > 0) {
-          setProductRowFilters(prev => ({
-            ...prev,
-            subcategory: subcategoryMappings[0]
-          }));
-        }
-
-        // Extract car models (they are stored as comma-separated names in items)
-        const allCarModelNames = items
-          .flatMap(item => item.car_model?.split(',').map(name => name.trim()) || [])
-          .filter(Boolean)
-          .filter((value, index, self) => self.indexOf(value) === index); // unique
-
-        // Map car model names to IDs
-        const carModelIds = allCarModelNames.map(modelName => {
-          const matchingModel = filterOptions.models.find(model =>
-            model.name.toLowerCase() === modelName.toLowerCase()
-          );
-          return matchingModel ? matchingModel.id.toString() : null;
-        }).filter(Boolean) as string[];
-
-        // Extract unique companies
-        const uniqueCompanies = Array.from(new Set(items.map(item => item.company).filter(Boolean)));
-        const companyMappings = uniqueCompanies.map(companyName => {
-          const matchingCompany = filterOptions.companies.find(comp =>
-            comp.name.toLowerCase() === companyName.toLowerCase()
-          );
-          return matchingCompany ? matchingCompany.id.toString() : '';
-        }).filter(Boolean);
-
-        // Extract unique part numbers
-        const uniquePartNumbers = Array.from(new Set(items.map(item => item.part_number).filter(Boolean)));
-
-        // Update filters with mapped values
-        setProductRowFilters(prev => ({
-          ...prev,
-          carModels: carModelIds,
-          company: companyMappings.length > 0 ? companyMappings[0] : '',
-          partNo: uniquePartNumbers.length > 0 ? uniquePartNumbers[0] : ''
-        }));
-      }, 100); // Small delay to ensure subcategories are loaded
-    }
-  };
+  const [lastFetchedCategoryId, setLastFetchedCategoryId] = useState<string | null>(null);
 
   // State for selected product in the table row
   const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(null);
+
+  // State for filtered car models based on selected product
+  const [filteredCarModels, setFilteredCarModels] = useState<any[]>([]);
 
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
@@ -262,7 +162,7 @@ export default function PurchaseCreate() {
   const [templateRow, setTemplateRow] = useState({
     qty: '1',
     rate: '',
-    tax: '0'
+    gst: '0'
   });
 
   // State for selected vendor details (fetched on-demand, not stored in formData)
@@ -347,10 +247,111 @@ export default function PurchaseCreate() {
     }
   }, [isProductPanelOpen]);
 
+  // Function to filter car models based on product compatibility
+  const getFilteredCarModelsForProduct = (product: Product): any[] => {
+    if (!product.car_model_ids || !product.car_model_ids.trim()) {
+      return filterOptions.models; // If no specific models, allow all
+    }
+
+    const compatibleModelIds = product.car_model_ids.split(',').map(id => id.trim());
+    return filterOptions.models.filter(model =>
+      compatibleModelIds.includes(model.id.toString())
+    );
+  };
+
+// Helper functions to map IDs to display names
+const getCategoryName = (categoryId: string) => {
+  if (!categoryId) return 'N/A';
+  const category = filterOptions.categories.find(cat => cat.id.toString() === categoryId);
+  return category?.name || 'N/A';
+};
+
+const getSubcategoryName = (subcategoryId: string) => {
+  if (!subcategoryId) return 'N/A';
+  // Use the currently loaded subcategories to find the name
+  const subcategory = filterSubcategories.find(sub => sub.id.toString() === subcategoryId);
+  return subcategory?.subcategory_name || 'N/A';
+};
+
+// Get multiple car model names from comma-separated IDs
+const getCarModelNames = (modelIdsString: string) => {
+  if (!modelIdsString?.trim()) return 'N/A';
+  const modelIds = modelIdsString.split(',').map(id => id.trim());
+  const names = modelIds
+    .map(id => {
+      const model = filterOptions.models.find(model => model.id.toString() === id);
+      return model?.name || id;
+    })
+    .filter(name => name && name !== 'N/A');
+  return names.length > 0 ? names.join(', ') : 'N/A';
+};
+
+const getCarModelName = (modelId: string) => {
+  if (!modelId) return 'N/A';
+  const model = filterOptions.models.find(model => model.id.toString() === modelId);
+  return model?.name || 'N/A';
+};
+
+const getCompanyName = (companyId: string) => {
+  if (!companyId) return 'N/A';
+  const company = filterOptions.companies.find(comp => comp.id.toString() === companyId);
+  return company?.name || 'N/A';
+};
+
+  // Function to handle product selection and update filters
+  const handleProductSelection = async (product: Product) => {
+    setSelectedRowProduct(product);
+
+    // Filter car models for this product
+    const compatibleModels = getFilteredCarModelsForProduct(product);
+    setFilteredCarModels(compatibleModels);
+
+    // Set category first, then fetch subcategories
+    const categoryId = product.product_category_id ? product.product_category_id.toString() : '';
+    const subcategoryId = product.product_subcategory_id ? product.product_subcategory_id.toString() : '';
+
+    // Clear existing subcategories and fetch new ones
+    setFilterSubcategories([]);
+    if (categoryId) {
+      await fetchSubcategoriesForTable(categoryId);
+    }
+
+    // Initially set filters with product data (autofill filters from side panel selection)
+    // Set subcategory after a small delay to ensure subcategories are loaded
+    setProductFilters(prev => ({
+      ...prev,
+      category: categoryId,
+      subcategory: '', // Temporarily empty to avoid race condition
+      carModels: product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [], // Select first compatible model
+      company: product.company || '',
+      partNo: product.part_no || ''
+    }));
+
+    // Set subcategory after subcategories are loaded (with a small delay)
+    setTimeout(() => {
+      setProductFilters(prev => ({
+        ...prev,
+        subcategory: subcategoryId
+      }));
+    }, 100);
+
+    console.log('🔄 PRODUCT SELECTED:', {
+      product: product.product_name,
+      compatibleCarModels: compatibleModels.map(m => m.name),
+      autofilledFilters: {
+        category: categoryId,
+        subcategory: subcategoryId, // Now shows string value
+        carModels: product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [],
+        company: product.company
+      }
+    });
+  };
+
   // Fetch subcategories for table filters when category changes
   useEffect(() => {
-    fetchSubcategoriesForTable(productRowFilters.category);
-  }, [productRowFilters.category]);
+    // Do NOT clear subcategory selection when category changes (product selection handles this)
+    fetchSubcategoriesForTable(productFilters.category);
+  }, [productFilters.category]);
 
   // Handle product search with normalized text
   useEffect(() => {
@@ -374,6 +375,13 @@ export default function PurchaseCreate() {
       setSearchedProducts(products);
     }
   }, [productSearchTerm, products]);
+
+  // Auto-product selection (simplified version - removed as per user request)
+  // The user wanted to remove complex auto-selection logic, so this effect is now simplified
+  useEffect(() => {
+    // Removed complex auto-selection logic - now only side panel autofills filters
+    // Manual filter selection doesn't auto-select products anymore
+  }, []);
 
   // Auto-calculate tax totals ONLY when vendor state changes and not in edit mode
   // Don't recalculate existing purchase data, preserve what's in the database
@@ -459,6 +467,86 @@ export default function PurchaseCreate() {
       total_igst: totalIgst.toFixed(2)
     }));
   }, [selectedProducts, isEditMode, formData.total_cgst, formData.total_sgst, formData.total_igst]);
+
+  // Fetch subcategories for table filters
+  const fetchSubcategoriesForTable = async (categoryId: string) => {
+    if (!categoryId) {
+      setFilterSubcategories([]);
+      return;
+    }
+
+    // Prevent duplicate API calls for the same category
+    if (lastFetchedCategoryId === categoryId) {
+      // Already have data for this category, don't fetch again
+      return;
+    }
+
+    setFilterSubcategoriesLoading(true);
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFilterSubcategories(data.subcategories || []);
+        setLastFetchedCategoryId(categoryId); // Mark this category as fetched
+      } else {
+        setFilterSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subcategories for table:', error);
+      setFilterSubcategories([]);
+    } finally {
+      setFilterSubcategoriesLoading(false);
+    }
+  };
+
+  // Populate filters from existing purchase items (for edit mode)
+  const populateFiltersFromPurchaseItems = async (items: PurchaseItem[]) => {
+    if (items.length === 0) return;
+
+    // Extract unique category IDs from items (they are now stored as strings)
+    const uniqueCategoryIds = Array.from(new Set(items.map(item => item.category).filter(Boolean)));
+
+    // Set the first category (most common case) - since we now have IDs directly
+    if (uniqueCategoryIds.length > 0) {
+      const firstCategoryId = uniqueCategoryIds[0];
+      setProductFilters(prev => ({
+        ...prev,
+        category: firstCategoryId
+      }));
+
+      // Fetch subcategories for this category
+      await fetchSubcategoriesForTable(firstCategoryId);
+
+      // After fetching subcategories, populate the other filter values using the IDs
+      setTimeout(() => {
+        // Extract unique subcategory IDs from items
+        const uniqueSubcategoryIds = Array.from(new Set(items.map(item => item.sub_category).filter(Boolean)));
+        const firstSubcategoryId = uniqueSubcategoryIds.length > 0 ? uniqueSubcategoryIds[0] : '';
+
+        // Extract unique company IDs from items
+        const uniqueCompanyIds = Array.from(new Set(items.map(item => item.company).filter(Boolean)));
+        const firstCompanyId = uniqueCompanyIds.length > 0 ? uniqueCompanyIds[0] : '';
+
+        // Extract car model IDs from items (they are now stored as strings)
+        const uniqueCarModelIds = Array.from(new Set(
+          items.map(item => item.car_model).filter(Boolean)
+        ));
+
+        // Extract unique part numbers
+        const uniquePartNumbers = Array.from(new Set(items.map(item => item.part_number).filter(Boolean)));
+        const firstPartNo = uniquePartNumbers.length > 0 ? uniquePartNumbers[0] : '';
+
+        // Update filters with the ID values directly
+        setProductFilters(prev => ({
+          ...prev,
+          subcategory: firstSubcategoryId,
+          carModels: uniqueCarModelIds,
+          company: firstCompanyId,
+          partNo: firstPartNo
+        }));
+      }, 100); // Small delay to ensure subcategories are loaded
+    }
+  };
 
 
 
@@ -576,7 +664,7 @@ export default function PurchaseCreate() {
           state: purchase.vendor_gstin ? 'Uttar Pradesh' : '', // Approximate based on GSTIN
           gst_number: purchase.vendor_gstin || '',
           transport_name: purchase.transport || '',
-          vehicle_number: '',
+          vehicle_number: purchase.vehicle_number || '',
           transport_cost: purchase.freight?.toString() || '',
           bill: '',
           tax: purchase.total_tax?.toString() || '',
@@ -626,8 +714,43 @@ export default function PurchaseCreate() {
         }
 
         // Convert purchase items to local format - preserve existing calculations
-        if (purchase.items && purchase.items.length > 0) {
-          const convertedItems: PurchaseItem[] = purchase.items.map((item: any, index: number) => {
+        // Wait for filter options to be loaded before converting items
+        const convertItemsWithNames = async (rawItems: any[]) => {
+          // Ensure filter options are loaded
+          if (filterOptions.categories.length === 0) {
+            console.warn('Filter options not loaded yet, using fallback names');
+            // Return items with fallback names (will show as N/A if IDs don't match)
+            return rawItems.map((item: any, index: number) => {
+              const qty = item.qty || 1;
+              const rate = item.rate || 0;
+              const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
+              const total = item.total || item.subtotal || (qty * rate + tax);
+              const cgst = item.cgst || 0;
+              const sgst = item.sgst || 0;
+              const igst = item.igst || 0;
+
+              return {
+                id: (index + 1).toString(),
+                product_id: item.product_id || item.category_id || 1,
+                product_name: item.product_name || item.name_of_product || '',
+                car_model: item.car_model || (item.model_id ? `Model ${item.model_id}` : ''),
+                category: item.category || `Category ${item.category_id || 'N/A'}`,
+                sub_category: item.sub_category || `Subcategory ${item.subcategory_id || 'N/A'}`,
+                company: item.company || `Company ${item.company_id || 'N/A'}`,
+                part_number: item.part_number || item.part || '',
+                qty: qty,
+                rate: rate,
+                gst_percentage: item.gst_percentage || item.gst_rate || 0,
+                tax: tax,
+                cgst: cgst,
+                sgst: sgst,
+                igst: igst,
+                total: total
+              };
+            });
+          }
+
+          return rawItems.map((item: any, index: number) => {
             const qty = item.qty || 1;
             const rate = item.rate || 0;
 
@@ -640,14 +763,21 @@ export default function PurchaseCreate() {
             const sgst = item.sgst || 0;
             const igst = item.igst || 0;
 
+            // Map IDs to names using filter options - add debug logging
+            const categoryOption = filterOptions.categories?.find(cat => cat.id === item.category_id);
+            const subcategoryOption = filterOptions.subcategories?.find(sub => sub.id === item.subcategory_id);
+            const companyOption = filterOptions.companies?.find(comp => comp.id === item.company_id && item.company_id !== 0);
+
+            console.log(`Item ${item.id}: category_id=${item.category_id}, subcategory_id=${item.subcategory_id}, model_id=${item.model_id}, company_id=${item.company_id}`);
+
             return {
               id: (index + 1).toString(),
               product_id: item.product_id || item.category_id || 1,
               product_name: item.product_name || item.name_of_product || '',
-              car_model: item.car_model || (item.model_id ? `Model ${item.model_id}` : ''),
-              category: item.category || '',
-              sub_category: item.sub_category || '',
-              company: item.company || (item.company_id ? `Company ${item.company_id}` : ''),
+              car_model: item.model_id?.toString() || '', // Store model_id as string for dropdown
+              category: item.category_id?.toString() || '', // Store category_id as string for dropdown
+              sub_category: item.subcategory_id?.toString() || '', // Store subcategory_id as string for dropdown
+              company: item.company_id?.toString() || '', // Store company_id as string for dropdown
               part_number: item.part_number || item.part || '',
               qty: qty,
               rate: rate,
@@ -659,11 +789,51 @@ export default function PurchaseCreate() {
               total: total
             };
           });
+        };
+
+        if (purchase.items && purchase.items.length > 0) {
+          // Use converted items with proper names
+          const convertedItems: PurchaseItem[] = await convertItemsWithNames(purchase.items);
 
           // Cascade populate filters from existing purchase items
           await populateFiltersFromPurchaseItems(convertedItems);
 
           setSelectedProducts(convertedItems);
+
+          // After setting products, also populate the row filters for the template row
+          if (purchase.items && purchase.items.length > 0) {
+            const rawItem = purchase.items[0]; // Use raw API response data which has IDs
+
+            // Find matching category from filterOptions
+            const categoryOption = filterOptions.categories.find(cat =>
+              cat.id.toString() === rawItem.category_id?.toString()
+            );
+
+            // Wait for subcategories to be fetched for this category, then find match
+            setTimeout(async () => {
+              if (categoryOption) {
+                await fetchSubcategoriesForTable(categoryOption.id.toString());
+
+                const subcategoryOption = filterSubcategories.find(sub =>
+                  sub.id.toString() === rawItem.subcategory_id?.toString()
+                );
+
+                const companyOption = filterOptions.companies.find(comp =>
+                  comp.id.toString() === rawItem.company_id?.toString()
+                );
+
+                // Set row filters for the template
+                setProductFilters(prev => ({
+                  ...prev,
+                  category: categoryOption.id.toString(),
+                  subcategory: subcategoryOption ? subcategoryOption.id.toString() : '',
+                  company: companyOption ? companyOption.id.toString() : '',
+                  partNo: rawItem.part || '',
+                  carModels: [] // Keep empty for now, can be populated if needed
+                }));
+              }
+            }, 200); // Give time for subcategories to load
+          }
         }
       } else {
         showSnackbar('error', 'Failed to load purchase data. Please try again.');
@@ -825,6 +995,37 @@ export default function PurchaseCreate() {
   };
 
   const handleConfirmSubmit = async () => {
+    // Basic validation for purchase submission
+    const validationErrors: string[] = [];
+
+    // Check for minimum requirements
+    if (selectedProducts.length === 0) {
+      validationErrors.push('At least one product must be added');
+    }
+
+    if (!selectedVendorId) {
+      validationErrors.push('Please select a vendor first');
+    }
+
+    if (!formData.invoice_number.trim()) {
+      validationErrors.push('Invoice number is required');
+    }
+
+    if (validationErrors.length > 0) {
+      setErrors({
+        products: validationErrors.join('\n')
+      });
+      return;
+    }
+
+    // Clear any previous errors
+    setErrors({});
+
+    // For edit mode, also warn about potential stock changes
+    if (isEditMode && selectedProducts.length > 0) {
+      showSnackbar('info', 'Note: Editing purchase items may affect inventory stock levels');
+    }
+
     setLoading(true);
 
     try {
@@ -841,27 +1042,36 @@ export default function PurchaseCreate() {
         bill: formData.bill,
         tax: formData.tax,
         items: selectedProducts.map(item => {
-          // Map category name to ID
-          const categoryMatch = memoizedFilterOptions.categories.find(cat =>
-            cat.name.toLowerCase() === item.category?.toLowerCase()
-          );
-          const categoryId = categoryMatch ? categoryMatch.id : null;
+          // Parse the stored IDs directly (they're already strings containing the IDs)
+          const categoryId = item.category ? parseInt(item.category) : null;
+          const subcategoryId = item.sub_category ? parseInt(item.sub_category) : null;
+          const companyId = item.company ? parseInt(item.company) : null;
 
-          // Map company name to ID
-          const companyMatch = memoizedFilterOptions.companies.find(comp =>
-            comp.name.toLowerCase() === item.company?.toLowerCase()
-          );
-          const companyId = companyMatch ? companyMatch.id : null;
+          // Convert selected car model IDs to names for display
+          const carModelNames = productFilters.carModels
+            .map(id => {
+              const model = filterOptions.models.find(m => m.id.toString() === id);
+              return model ? model.name : '';
+            })
+            .filter(name => name)
+            .join(', ');
+
+          // Get model_id from the first selected car model
+          let modelId = null;
+          if (productFilters.carModels.length > 0) {
+            modelId = parseInt(productFilters.carModels[0]);
+          }
 
           return {
             product_id: item.product_id,
             product_name: item.product_name,
-            category_id: categoryId,
-            subcategory_id: null, // Will be handled by API using category_id + subcategory name
-            company_id: companyId,
-            car_model: item.car_model, // Keep as string for now
+            category_id: categoryId, // ✅ Now properly parsed from stored string ID
+            subcategory_id: subcategoryId, // ✅ Now properly parsed from stored string ID
+            company_id: companyId, // ✅ Now properly parsed from stored string ID
+            model_id: modelId, // ✅ Now populated from selected car model
+            car_model: carModelNames || item.car_model || '', // ✅ Car model names for display
             hsn: '', // Will be fetched by API from product
-            part: item.part_number,
+            part: productFilters.partNo, // ✅ Part number from filters
             qty: item.qty,
             rate: item.rate,
             tax: item.tax,
@@ -1206,9 +1416,9 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.category}
+                          value={productFilters.category}
                           onChange={(e) => {
-                            setProductRowFilters(prev => ({
+                            setProductFilters(prev => ({
                               ...prev,
                               category: e.target.value
                             }));
@@ -1223,17 +1433,17 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          value={productRowFilters.subcategory}
+                          value={productFilters.subcategory}
                           onChange={(e) => {
-                            setProductRowFilters(prev => ({
+                            setProductFilters(prev => ({
                               ...prev,
                               subcategory: e.target.value
                             }));
                           }}
-                          disabled={!productRowFilters.category || filterSubcategoriesLoading}
+                          disabled={!productFilters.category || filterSubcategoriesLoading}
                         >
                           <option value="">
-                            {!productRowFilters.category
+                            {!productFilters.category
                               ? "Please select a category first"
                               : filterSubcategoriesLoading
                                 ? "Loading subcategories..."
@@ -1247,23 +1457,29 @@ export default function PurchaseCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
-                          options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
-                          selectedValues={productRowFilters.carModels}
+                          options={
+                            selectedRowProduct && filteredCarModels.length > 0
+                              ? filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name }))
+                              : filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))
+                          }
+                          selectedValues={productFilters.carModels}
                           onSelectionChange={(values) => {
-                            setProductRowFilters(prev => ({
+                            setProductFilters(prev => ({
                               ...prev,
                               carModels: values
                             }));
                           }}
-                          placeholder="Select car models..."
+                          placeholder={
+                              "Select car models..."
+                          }
                         />
                       </td>
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.company}
+                          value={productFilters.company}
                           onChange={(e) => {
-                            setProductRowFilters(prev => ({
+                            setProductFilters(prev => ({
                               ...prev,
                               company: e.target.value
                             }));
@@ -1280,9 +1496,9 @@ export default function PurchaseCreate() {
                           type="text"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white placeholder-slate-400"
                           placeholder="Part number..."
-                          value={productRowFilters.partNo}
+                          value={productFilters.partNo}
                           onChange={(e) => {
-                            setProductRowFilters(prev => ({
+                            setProductFilters(prev => ({
                               ...prev,
                               partNo: e.target.value
                             }));
@@ -1325,11 +1541,11 @@ export default function PurchaseCreate() {
                           step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0%"
-                          value={templateRow.tax}
+                          value={templateRow.gst}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
                               ...prev,
-                              tax: e.target.value
+                              gst: e.target.value
                             }));
                           }}
                         />
@@ -1339,10 +1555,10 @@ export default function PurchaseCreate() {
                           ₹{(() => {
                             const qty = parseFloat(templateRow.qty) || 0;
                             const rate = parseFloat(templateRow.rate) || 0;
-                            const taxPercent = parseFloat(templateRow.tax) || 0;
+                            const gstPercent = parseFloat(templateRow.gst) || 0;
                             const subtotal = qty * rate;
-                            const taxAmount = (subtotal * taxPercent) / 100;
-                            const total = subtotal + taxAmount;
+                            const gstAmount = (subtotal * gstPercent) / 100;
+                            const total = subtotal + gstAmount;
                             return total.toFixed(2);
                           })()}
                         </div>
@@ -1350,16 +1566,43 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3 text-center w-20">
                         <button
                           type="button"
-                          onClick={() => {
+                              onClick={() => {
+                            // Validation: Check for required fields
+                            const validationErrors: string[] = [];
+
+                            if (!productFilters.category.trim()) {
+                              validationErrors.push('Category is required');
+                            }
+                            if (!productFilters.subcategory.trim()) {
+                              validationErrors.push('Subcategory is required');
+                            }
+                            if (productFilters.carModels.length === 0) {
+                              validationErrors.push('At least one car model is required');
+                            }
+                            if (!productFilters.company.trim()) {
+                              validationErrors.push('Company is required');
+                            }
+                            if (!productFilters.partNo.trim()) {
+                              validationErrors.push('Part number is required');
+                            }
+                            if (!templateRow.rate || parseFloat(templateRow.rate) <= 0) {
+                              validationErrors.push('Valid rate is required');
+                            }
+
+                            if (validationErrors.length > 0) {
+                              setErrors({ addProduct: validationErrors.join(', ') });
+                              return;
+                            }
+
                             if (selectedRowProduct !== null) {
                               const selectedProduct = selectedRowProduct;
                               if (selectedProduct) {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const taxPercent = templateRow.tax !== '0' ? parseFloat(templateRow.tax) : 0;
+                                const gstPercent = templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0;
                                 const subtotal = qty * rate;
-                                const taxAmount = (subtotal * taxPercent) / 100;
+                                const taxAmount = (subtotal * gstPercent) / 100;
 
                                 // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
                                 const cgst = taxAmount / 2;
@@ -1367,7 +1610,7 @@ export default function PurchaseCreate() {
                                 const igst = 0;
 
                                 // Convert car model IDs to names for display
-                                const carModelNames = productRowFilters.carModels
+                                const carModelNames = productFilters.carModels
                                   .map(id => {
                                     const model = filterOptions.models.find(m => m.id.toString() === id);
                                     return model ? model.name : id;
@@ -1375,18 +1618,32 @@ export default function PurchaseCreate() {
                                   .filter(name => name)
                                   .join(', ');
 
+                                // Use filter data - the filters are auto-filled from product selection
+                                const categoryId = productFilters.category; // Already a string
+                                const subcategoryId = productFilters.subcategory; // Already a string
+                                const companyId = productFilters.company || selectedProduct.company || ''; // Use filter if set, fallback to product
+
+                                console.log('🛒 ADDING PRODUCT:', {
+                                  categoryId,
+                                  subcategoryId,
+                                  categoryName: getCategoryName(categoryId),
+                                  subcategoryName: getSubcategoryName(subcategoryId),
+                                  filterOptionsCategories: filterOptions.categories.map(cat => ({ id: cat.id, name: cat.name })),
+                                  filterSubcategories: filterSubcategories.map(sub => ({ id: sub.id, name: sub.subcategory_name }))
+                                });
+
                                 const newItem: PurchaseItem = {
                                   id: Date.now().toString(),
                                   product_id: selectedProduct.id,
                                   product_name: selectedProduct.product_name,
                                   car_model: carModelNames || '',
-                                  category: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
-                                  sub_category: filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '',
-                                  company: filterOptions.companies.find(c => c.id.toString() === productRowFilters.company)?.name || '',
-                                  part_number: productRowFilters.partNo,
+                                  category: categoryId,
+                                  sub_category: subcategoryId,
+                                  company: companyId,
+                                  part_number: productFilters.partNo,
                                   qty: qty,
                                   rate: rate,
-                                  gst_percentage: taxPercent,
+                                  gst_percentage: gstPercent,
                                   tax: taxAmount,
                                   cgst: cgst,
                                   sgst: sgst,
@@ -1396,19 +1653,21 @@ export default function PurchaseCreate() {
 
                                 setSelectedProducts(prev => [...prev, newItem]);
 
-                                // Reset form
+                                // Clear any validation errors
+                                setErrors(prev => ({ ...prev, addProduct: '' }));
+
+                                // Reset form (preserve category so subcategories aren't cleared)
                                 setSelectedRowProduct(null);
-                                setProductRowFilters({
-                                  category: '',
+                                setProductFilters(prev => ({
+                                  ...prev,
                                   subcategory: '',
                                   carModels: [],
-                                  company: '',
                                   partNo: ''
-                                });
+                                }));
                                 setTemplateRow({
                                   qty: '1',
                                   rate: '',
-                                  tax: '0'
+                                  gst: '0'
                                 });
                               }
                             }
@@ -1434,16 +1693,34 @@ export default function PurchaseCreate() {
                           {product.product_name}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.category}
+                          {(() => {
+                            const catName = getCategoryName(product.category);
+                            console.log('📊 TABLE RENDER - Category:', {
+                              productName: product.product_name,
+                              categoryId: product.category,
+                              categoryName: catName,
+                              filterOptionsCategories: filterOptions.categories
+                            });
+                            return catName;
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.sub_category}
+                          {(() => {
+                            const subName = getSubcategoryName(product.sub_category);
+                            console.log('📊 TABLE RENDER - Subcategory:', {
+                              productName: product.product_name,
+                              subcategoryId: product.sub_category,
+                              subcategoryName: subName,
+                              filterSubcategories: filterSubcategories
+                            });
+                            return subName;
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.car_model || 'N/A'}
+                          {getCarModelNames(product.car_model)}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.company}
+                          {getCompanyName(product.company)}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {product.part_number || 'N/A'}
@@ -1500,6 +1777,7 @@ export default function PurchaseCreate() {
                 </table>
               </div>
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
+              {errors.addProduct && <p className="text-red-400 text-xs mt-1">{errors.addProduct}</p>}
             </div>
 
             {/* Additional Information */}
@@ -1706,47 +1984,13 @@ export default function PurchaseCreate() {
                     <div
                       key={product.id}
                       className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-750 cursor-pointer transition-colors"
-                      onClick={async () => {
-                        setSelectedRowProduct(product);
-
-                        // Set category first
-                        const categoryId = product.product_category_id ? product.product_category_id.toString() : '';
-                        setProductRowFilters(prev => ({
-                          ...prev,
-                          category: categoryId
-                        }));
-
-                        // If category exists, fetch subcategories and wait for completion
-                        if (categoryId) {
-                          await fetchSubcategoriesForTable(categoryId);
-
-                          // Now set subcategory after subcategories are loaded
-                          const subcategoryId = product.product_subcategory_id ? product.product_subcategory_id.toString() : '';
-                          setProductRowFilters(prev => ({
-                            ...prev,
-                            subcategory: subcategoryId,
-                            carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-                            company: product.company || '',
-                            partNo: product.part_no || ''
-                          }));
-                        } else {
-                          // No category, just set the rest
-                          setProductRowFilters(prev => ({
-                            ...prev,
-                            subcategory: '',
-                            carModels: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-                            company: product.company || '',
-                            partNo: product.part_no || ''
-                          }));
-                        }
-
+                      onClick={() => {
+                        handleProductSelection(product);
                         setTemplateRow({
                           qty: '1',
-                          rate: '0',
-                          tax: '0'
+                          rate: product.selling_price?.toString() || '',
+                          gst: product.gst_rate_percentage?.toString() || '18'
                         });
-
-                        // Close panel and reset search
                         setIsProductPanelOpen(false);
                         setProductSearchTerm('');
                       }}

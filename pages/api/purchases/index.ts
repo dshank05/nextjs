@@ -382,11 +382,22 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       const subcategoryId = product.product_subcategory_id || 0
       const hsn = product.hsn || ''
       const part = product.part_no || ''
-      const modelId = 0 // For now, we'll use 0 since it's not directly available
 
-      // For company_id in purchase_items, we'll use a default or try to map from company name
-      // Since company is just a string field, we'll set company_id to 0 for now
-      const companyId = 0
+      // Map car_model string to model_id by looking up in car_models table
+      let modelId = null;
+      if (item.car_model && item.car_model.trim()) {
+        const carModelRecord = await prisma.car_models.findFirst({
+          where: {
+            model_name: item.car_model.trim()
+          }
+        });
+        if (carModelRecord) {
+          modelId = carModelRecord.id;
+        }
+      }
+
+      // Use company_id directly from the frontend data
+      const companyId = item.company_id ? parseInt(item.company_id) : null;
 
       await prisma.purchaseitems.create({
         data: {
@@ -394,9 +405,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           name_of_product: productName,
           category_id: categoryId,
           subcategory_id: subcategoryId,
-          model_id: modelId,
-          company_id: companyId,
-          car_model: '', // For now, empty string since we don't have direct car model mapping
+          model_id: modelId, // ✅ Mapped from car_model string to ID
+          company_id: companyId, // ✅ Use company_id from frontend
+          car_model: item.car_model || '', // ✅ Store the car model string
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
           hsn: hsn,
           part: part,
@@ -591,91 +602,150 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Delete existing purchase items if items are provided
+      // Handle item-level updates instead of delete/recreate all
       if (items) {
-        // First, subtract stock from existing items (removed/modified products)
-        // Note: Since items don't have product_id, we can't adjust stock
-
-        await tx.purchaseitems.deleteMany({
+        // Get existing purchase items for comparison
+        const existingItems = await tx.purchaseitems.findMany({
           where: { invoice_no: purchase.invoice_no }
         })
 
-      // Create new purchase items
-      for (const item of items) {
-        // Get product details for HSN and other missing fields
-        let productData = null;
-        if (item.product_id) {
-          productData = await tx.product.findUnique({
-            where: { id: parseInt(item.product_id) },
-            select: {
-              hsn: true,
-              product_category_id: true,
-              product_subcategory_id: true,
-              car_model_ids: true,
-              company: true
-            }
-          });
-        }
+        // Create maps for efficient lookup
+        const existingItemsMap = new Map<string, any>()
+        const newItemsMap = new Map<string, any>()
 
-        // Handle subcategory_id mapping if not provided
-        let subcategoryId = item.subcategory_id;
-        if (!subcategoryId && item.category_id && item.subcategory_name) {
-          // Find subcategory by name and category_id
-          const subcategory = await tx.product_subcategory.findFirst({
-            where: {
-              category_id: parseInt(item.category_id),
-              subcategory_name: item.subcategory_name
-            }
-          });
-          subcategoryId = subcategory?.id || null;
-        }
-
-        // Handle company_id mapping if not provided
-        let companyId = item.company_id;
-        if (!companyId && item.company_name) {
-          // Find company by name
-          const company = await tx.product_company.findFirst({
-            where: {
-              company_name: item.company_name
-            }
-          });
-          companyId = company?.id || null;
-        }
-
-        await tx.purchaseitems.create({
-          data: {
-            invoice_no: purchase.invoice_no,
-            name_of_product: item.product_name,
-            category_id: item.category_id ? parseInt(item.category_id) : (productData?.product_category_id || null),
-            subcategory_id: subcategoryId,
-            model_id: null, // Will be handled separately if needed
-            company_id: companyId,
-            car_model: item.car_model || '',
-            vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
-            hsn: item.hsn || productData?.hsn || '',
-            part: item.part,
-            qty: item.qty,
-            unit: 1, // Default unit
-            rate: item.rate,
-            tax: item.tax || 0,
-            subtotal: item.total,
-            fy: financialYear,
-            invoice_date: invoiceDate
-          }
+        existingItems.forEach(item => {
+          existingItemsMap.set(item.name_of_product, {
+            id: item.id,
+            qty: item.qty || 0,
+            item: item
+          })
         })
 
-        // Add stock back for new items
-        if (item.product_id) {
-          await tx.product.update({
-            where: { id: parseInt(item.product_id) },
-            data: {
-              stock: {
-                increment: item.qty
+        items.forEach(item => {
+          newItemsMap.set(item.product_name, {
+            qty: item.qty || 0,
+            category_id: item.category_id,
+            subcategory_id: item.subcategory_id,
+            company_id: item.company_id,
+            model_id: item.model_id,
+            car_model: item.car_model || '',
+            part: item.part,
+            rate: item.rate,
+            tax: item.tax || 0,
+            total: item.total,
+            product_id: item.product_id,
+            item: item
+          })
+        })
+
+        // Process deletions: items that exist in DB but not in new list
+        for (const [productName, existingData] of Array.from(existingItemsMap.entries())) {
+          if (!newItemsMap.has(productName)) {
+            // Item was removed - decrease stock (remove purchased items)
+            // We need to find the product_id by matching the name_of_product
+            const product = await tx.product.findFirst({
+              where: { product_name: productName }
+            });
+            if (product && existingData.qty > 0) {
+              await tx.product.update({
+                where: { id: product.id },
+                data: {
+                  stock: {
+                    decrement: existingData.qty
+                  }
+                }
+              })
+            }
+            // Delete the item
+            await tx.purchaseitems.delete({
+              where: { id: existingData.id }
+            })
+          }
+        }
+
+        // Process additions and updates
+        for (const [productName, newData] of Array.from(newItemsMap.entries())) {
+          const existingData = existingItemsMap.get(productName)
+
+          if (!existingData) {
+            // New item - create it and increase stock
+            // Map car_model string to model_id by looking up in car_models table
+            let modelId = newData.model_id;
+            if (newData.car_model && !modelId) {
+              const carModelRecord = await tx.car_models.findFirst({
+                where: {
+                  model_name: newData.car_model.trim()
+                }
+              });
+              if (carModelRecord) {
+                modelId = carModelRecord.id;
               }
             }
-          })
+
+            await tx.purchaseitems.create({
+              data: {
+                invoice_no: purchase.invoice_no,
+                name_of_product: productName,
+                category_id: newData.category_id ? parseInt(newData.category_id) : null,
+                subcategory_id: newData.subcategory_id ? parseInt(newData.subcategory_id) : null,
+                model_id: modelId,
+                company_id: newData.company_id ? parseInt(newData.company_id) : null,
+                car_model: newData.car_model || '',
+                vendor_id: parseInt(vendor_id),
+                hsn: newData.item?.hsn || '',
+                part: newData.part,
+                qty: newData.qty,
+                unit: 1,
+                rate: newData.rate,
+                tax: newData.tax || 0,
+                subtotal: newData.total,
+                fy: financialYear,
+                invoice_date: invoiceDate
+              }
+            })
+
+            // Increase stock for new purchase
+            if (newData.product_id) {
+              await tx.product.update({
+                where: { id: parseInt(newData.product_id) },
+                data: {
+                  stock: {
+                    increment: newData.qty
+                  }
+                }
+              })
+            }
+          } else {
+            // Existing item - check if quantity changed
+            const qtyDifference = newData.qty - existingData.qty
+
+            if (Math.abs(qtyDifference) > 0.001) { // Allow for small floating point differences
+              // Update quantity and adjust stock
+              await tx.purchaseitems.update({
+                where: { id: existingData.id },
+                data: {
+                  qty: newData.qty,
+                  rate: newData.rate,
+                  tax: newData.tax || 0,
+                  subtotal: newData.total
+                }
+              })
+
+              // Adjust stock based on quantity difference
+              if (newData.product_id && Math.abs(qtyDifference) > 0.001) {
+                await tx.product.update({
+                  where: { id: parseInt(newData.product_id) },
+                  data: {
+                    stock: {
+                      increment: qtyDifference // Add the difference (can be negative)
+                    }
+                  }
+                })
+              }
+            }
+          }
         }
-      }
+
       }
 
       return purchase

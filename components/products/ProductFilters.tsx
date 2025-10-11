@@ -16,7 +16,7 @@ interface FilterOptions {
 
 // Added dynamic subcategory state interface
 interface DynamicSubcategories {
-  options: { id: string; name: string }[];
+  options: { id: string; subcategory_name: string; category_id?: number; index?: number }[];
   loading: boolean;
 }
 
@@ -37,6 +37,7 @@ interface ProductFiltersProps {
   handleLimitChange: (value: number) => void;
   clearFilters: () => void;
   filterOptions: FilterOptions;
+  refreshFilterOptions?: () => void;
 }
 
 export const ProductFilters = ({
@@ -47,7 +48,8 @@ export const ProductFilters = ({
   companyFilter, setCompanyFilter,
   stockFilter, setStockFilter,
   limit, handleLimitChange,
-  clearFilters, filterOptions
+  clearFilters, filterOptions,
+  refreshFilterOptions
 }: ProductFiltersProps) => {
   // State for typeaheads and dropdowns is encapsulated here
   const [categorySearch, setCategorySearch] = useState('');
@@ -60,8 +62,13 @@ export const ProductFilters = ({
   const [showCompanyDropdown, setShowCompanyDropdown] = useState(false);
 
   // Dynamic subcategories state
-  const [dynamicSubcategories, setDynamicSubcategories] = useState<{ id: string; name: string }[]>([]);
+  const [dynamicSubcategories, setDynamicSubcategories] = useState<{ id: string; subcategory_name: string; category_id?: number; index?: number }[]>([]);
   const [dynamicSubcategoriesLoading, setDynamicSubcategoriesLoading] = useState(false);
+
+  // Track dynamic subcategories changes
+  useEffect(() => {
+    // Dynamic subcategories updated, no logging needed for production
+  }, [dynamicSubcategories]);
 
 
 
@@ -97,6 +104,7 @@ export const ProductFilters = ({
         const data = await response.json();
         setDynamicSubcategories(data.subcategories || []);
       } else {
+        console.error('Failed to fetch subcategories:', response.status);
         setDynamicSubcategories([]);
       }
     } catch (error) {
@@ -162,6 +170,7 @@ export const ProductFilters = ({
     setCompanySearch('');
     setDynamicSubcategories([]); // Clear dynamic subcategories
     setDynamicSubcategoriesLoading(false);
+    refreshFilterOptions?.(); // Refresh filter options to ensure latest data
   };
 
   return (
@@ -180,7 +189,7 @@ export const ProductFilters = ({
           <input
             type="text"
             placeholder="Search categories..."
-            value={categorySearch || (categoryFilter && filterOptions.categories.find(c => c.id === categoryFilter)?.name) || ''}
+            value={categoryFilter === '' && categorySearch === '' ? 'All Categories' : categorySearch || (categoryFilter && filterOptions.categories.find(c => c.id === categoryFilter)?.name) || ''}
             onChange={(e) => {
               setCategorySearch(e.target.value);
               setShowCategoryDropdown(true);
@@ -207,7 +216,7 @@ export const ProductFilters = ({
           <input
             type="text"
             placeholder={categoryFilter ? "Search subcategories..." : "Select a category first"}
-            value={subcategorySearch || (subcategoryFilter && dynamicSubcategories.find(s => s.id.toString() === subcategoryFilter)?.name) || ''}
+            value={subcategorySearch || (subcategoryFilter && dynamicSubcategories.find(s => s.id.toString() === subcategoryFilter)?.subcategory_name) || ''}
             onChange={(e) => {
               setSubcategorySearch(e.target.value);
               setShowSubcategoryDropdown(true);
@@ -228,9 +237,9 @@ export const ProductFilters = ({
                 <div className="px-3 py-2 text-slate-500 text-sm">Loading...</div>
               ) : (
                 dynamicSubcategories
-                  .filter(sub => sub.name?.toLowerCase().includes(subcategorySearch.toLowerCase()))
+                  .filter(sub => sub.subcategory_name?.toLowerCase().includes(subcategorySearch.toLowerCase()))
                   .map((sub) => (
-                    <div key={sub.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect(sub)}>{sub.name}</div>
+                    <div key={sub.id} className="px-3 py-2 hover:bg-slate-600 cursor-pointer" onClick={() => handleSubcategorySelect({id: sub.id, name: sub.subcategory_name})}>{sub.subcategory_name}</div>
                   ))
               )}
               {dynamicSubcategories.length === 0 && !dynamicSubcategoriesLoading && (
@@ -360,7 +369,7 @@ export const ProductFilters = ({
             <input
               type="text"
               placeholder="Search companies..."
-              value={companySearch || (companyFilter && filterOptions.companies.find(c => c.id === companyFilter)?.name) || ''}
+            value={companyFilter === '' && companySearch === '' ? 'All Companies' : companySearch || (companyFilter && filterOptions.companies.find(c => c.id === companyFilter)?.name) || ''}
               onChange={(e) => {
                 setCompanySearch(e.target.value);
                 setShowCompanyDropdown(true);
