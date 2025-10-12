@@ -211,7 +211,7 @@ model Purchaseitems {
   hsn             String?         @db.VarChar(50)
   part            String?         @db.VarChar(100)
   qty             Float?
-  unit            Int?
+  unit            Int?    // @deprecated - not used for products
   rate            Float?
   tax             Float?
   subtotal        Float

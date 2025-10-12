@@ -119,13 +119,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Get item counts in batch queries (vendor info will be fetched individually when needed)
-    const invoiceIds = purchaseInvoices.map((inv: { id: any }) => inv.id)
+    const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
 
     const [itemCounts] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
-        where: { invoice_no: { in: invoiceIds } },
+        where: { invoice_no: { in: invoiceNos } },
         _count: { id: true }
       })
     ])
@@ -186,7 +186,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         fy: invoice.fy,
         transport: invoice.transport || '',
         type: 'purchase',
-        item_count: itemCountMap.get(invoice.id) || 0,
+        item_count: itemCountMap.get(invoice.invoice_no) || 0,
         // Remove formattedDate - frontend handles formatting
         formattedTotal: invoice.total.toLocaleString('en-IN', {
           style: 'currency',
@@ -240,8 +240,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
       packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
       packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
-      basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
+      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
+      // tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
+      // basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
       total_cgst,               // ✓ Purchase.total_cgst
       total_sgst,               // ✓ Purchase.total_sgst
       total_igst,               // ✓ Purchase.total_igst
@@ -249,11 +250,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       total_tax,                // ✓ Purchase.total_tax
       payment_status,           // ✓ Purchase.status
       payment_mode,             // ✓ Purchase.payment_mode
-      grand_total,              // ❌ NOT STORED (calculated field)
+      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
+      // grand_total,              // ❌ NOT STORED (calculated field)
 
       // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-      bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
-      tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
+      // bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
+      // tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
@@ -340,7 +342,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         items_total: itemsTotal,
         freight: transport_cost || 0,
         total_taxable_value: itemsTotal,
-        taxrate: tax_rate || 0,
+        // taxrate: tax_rate || 0,
         total_cgst: total_cgst || 0,
         total_sgst: total_sgst || 0,
         total_igst: total_igst || 0,
@@ -351,9 +353,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         packing_forwarding_qty: packing_forwarding_qty || 0,
         packing_forwarding_rate: packing_forwarding_rate || 0,
         packing_forwarding_total: packing_forwarding_total || 0,
-        basic_value: basic_value || 0,
-        bill: bill,
-        tax: tax,
+        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+        // basic_value: basic_value || 0,
+        // bill: bill,
+        // tax: tax,
+        // taxrate: tax_rate || 0,
         invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
         updated_at: new Date().toISOString().split('T')[0], // Current date
         status: payment_status,
@@ -362,6 +366,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         transport: transport_name || '',
         transport_name: transport_name,
         vehicle_number: vehicle_number
+        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+        // taxrate: tax_rate || 0,
+        // basic_value: basic_value || 0,
+        // bill: bill,
+        // tax: tax,
       }
     })
 
@@ -381,20 +390,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       const categoryId = product.product_category_id || 0
       const subcategoryId = product.product_subcategory_id || 0
       const hsn = product.hsn || ''
-      const part = product.part_no || ''
 
-      // Map car_model string to model_id by looking up in car_models table
-      let modelId = null;
-      if (item.car_model && item.car_model.trim()) {
-        const carModelRecord = await prisma.car_models.findFirst({
-          where: {
-            model_name: item.car_model.trim()
-          }
-        });
-        if (carModelRecord) {
-          modelId = carModelRecord.id;
-        }
-      }
+      // Use model_id directly from frontend (already looked up from car_model)
+      const modelId = item.model_id ? parseInt(item.model_id) : null;
 
       // Use company_id directly from the frontend data
       const companyId = item.company_id ? parseInt(item.company_id) : null;
@@ -405,14 +403,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           name_of_product: productName,
           category_id: categoryId,
           subcategory_id: subcategoryId,
-          model_id: modelId, // ✅ Mapped from car_model string to ID
+          model_id: modelId, // ✅ Use model_id directly from frontend
           company_id: companyId, // ✅ Use company_id from frontend
-          car_model: item.car_model || '', // ✅ Store the car model string
+          car_model: item.car_model || '', // ✅ Store the car model string for display
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
-          hsn: hsn,
-          part: part,
+          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+          // hsn: hsn,
+          part: item.part || '', // ✅ Use part number from frontend
           qty: item.qty,
-          unit: 1, // Default unit
+          // unit: 1, // @deprecated - Default unit (not used for products)
           rate: item.rate,
           tax: item.tax || 0,
           subtotal: item.total,
@@ -490,8 +489,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
       packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
       packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
-      basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
+      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
+      // tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
+      // basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
       total_cgst,               // ✓ Purchase.total_cgst
       total_sgst,               // ✓ Purchase.total_sgst
       total_igst,               // ✓ Purchase.total_igst
@@ -499,11 +499,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       total_tax,                // ✓ Purchase.total_tax
       payment_status,           // ✓ Purchase.status
       payment_mode,             // ✓ Purchase.payment_mode
-      grand_total,              // ❌ NOT STORED (calculated field)
+      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
+      // grand_total,              // ❌ NOT STORED (calculated field)
 
       // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-      bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
-      tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
+      // bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
+      // tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
     console.log('🔄 API Received PUT data:', req.body);
@@ -577,7 +578,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           items_total: itemsTotal,
           freight: transport_cost || 0,
           total_taxable_value: itemsTotal,
-          taxrate: tax_rate || 0,
+          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+          // taxrate: tax_rate || 0,
           total_cgst: total_cgst || 0,
           total_sgst: total_sgst || 0,
           total_igst: total_igst || 0,
@@ -588,9 +590,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           packing_forwarding_qty: packing_forwarding_qty || 0,
           packing_forwarding_rate: packing_forwarding_rate || 0,
           packing_forwarding_total: packing_forwarding_total || 0,
-          basic_value: basic_value || 0,
-          bill: bill,
-          tax: tax,
+          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+          // basic_value: basic_value || 0,
+          // bill: bill,
+          // tax: tax,
           invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
           updated_at: new Date().toISOString().split('T')[0], // Current date
           status: payment_status,
@@ -669,18 +672,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
           if (!existingData) {
             // New item - create it and increase stock
-            // Map car_model string to model_id by looking up in car_models table
-            let modelId = newData.model_id;
-            if (newData.car_model && !modelId) {
-              const carModelRecord = await tx.car_models.findFirst({
-                where: {
-                  model_name: newData.car_model.trim()
-                }
-              });
-              if (carModelRecord) {
-                modelId = carModelRecord.id;
-              }
-            }
+            // Use model_id directly from frontend (already looked up)
+            const modelId = newData.model_id ? parseInt(newData.model_id) : null;
 
             await tx.purchaseitems.create({
               data: {
@@ -693,9 +686,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 car_model: newData.car_model || '',
                 vendor_id: parseInt(vendor_id),
                 hsn: newData.item?.hsn || '',
-                part: newData.part,
+                part: newData.part, // ✅ Part number now stored
                 qty: newData.qty,
-                unit: 1,
+                // unit: 1, // @deprecated - Default unit (not used for products)
                 rate: newData.rate,
                 tax: newData.tax || 0,
                 subtotal: newData.total,

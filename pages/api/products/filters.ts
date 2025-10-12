@@ -26,6 +26,7 @@ export default async function handler(
       prisma.product_subcategory.findMany({
         select: {
           id: true,
+          category_id:true,
           subcategory_name: true
         }
         // Note: Database already pre-sorted by existing index
@@ -58,6 +59,7 @@ export default async function handler(
     }))
 
     const subcategoryOptions = subcategories.map((sub) => ({
+      category_id:sub.category_id,
       id: sub.id,
       name: sub.subcategory_name || '',
       source: 'products'

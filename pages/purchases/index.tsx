@@ -42,6 +42,7 @@ interface Purchase {
   notes?: string
   invoice_date: number | string
   status?: number
+  payment_status?: number
   payment_mode?: number
   fy: number
   transport?: string
@@ -179,7 +180,6 @@ export default function PurchasesPage() {
     switch (statusFilter) {
       case 'paid': return '1'
       case 'unpaid': return '0'
-      case 'unknown': return 'unknown'
       default: return ''
     }
   }
@@ -203,6 +203,7 @@ export default function PurchasesPage() {
     customer_vendor_address: purchase.vendor_address,
     customer_vendor_gstin: purchase.vendor_gstin,
     bill_reference: purchase.bill_reference,
+    status: purchase.payment_status, // Map payment_status to status for TransactionTable
     invoice_date: purchase.formattedDate ||
                   (typeof purchase.invoice_date === 'number' ? purchase.invoice_date :
                    (purchase.invoice_date && purchase.invoice_date.trim() !== '') ? purchase.invoice_date : null)

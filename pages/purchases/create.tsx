@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Plus, Trash2, Calculator, Loader } from 'lucide-react';
+import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -132,20 +132,20 @@ export default function PurchaseCreate() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
 
-  // State for the product selection filters
-  const [productFilters, setProductFilters] = useState({
-    category: '',
-    subcategory: '',
+  // State for product selection row filters
+  const [productRowFilters, setProductRowFilters] = useState({
+    category: 0,
+    categoryName: '',
+    subcategory: 0,
+    subcategoryName: '',
     carModels: [] as string[],
-    company: '',
+    company: 0,
+    companyName: '',
     partNo: ''
   });
 
-  // State for available subcategories (loaded dynamically)
-  const [availableSubcategories, setAvailableSubcategories] = useState<any[]>([]);
-  const [filterSubcategories, setFilterSubcategories] = useState<any[]>([]);
-  const [filterSubcategoriesLoading, setFilterSubcategoriesLoading] = useState(false);
-  const [lastFetchedCategoryId, setLastFetchedCategoryId] = useState<string | null>(null);
+  // State for filtered subcategories based on selected category
+  const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
   // State for selected product in the table row
   const [selectedRowProduct, setSelectedRowProduct] = useState<Product | null>(null);
@@ -168,6 +168,17 @@ export default function PurchaseCreate() {
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
+  // State for editing existing products
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  // State for inline row editing
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editingRowData, setEditingRowData] = useState<PurchaseItem | null>(null);
+
+  // State for delete confirmation modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<PurchaseItem | null>(null);
+
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     subcategories: [],
@@ -175,13 +186,6 @@ export default function PurchaseCreate() {
     models: []
   });
 
-  // Memoize the filterOptions to prevent unnecessary re-renders
-  const memoizedFilterOptions = useMemo(() => filterOptions, [
-    filterOptions.categories,
-    filterOptions.subcategories,
-    filterOptions.companies,
-    filterOptions.models
-  ]);
 
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
@@ -259,99 +263,79 @@ export default function PurchaseCreate() {
     );
   };
 
-// Helper functions to map IDs to display names
-const getCategoryName = (categoryId: string) => {
-  if (!categoryId) return 'N/A';
-  const category = filterOptions.categories.find(cat => cat.id.toString() === categoryId);
-  return category?.name || 'N/A';
-};
+  // useEffect to filter subcategories when category changes
+  useEffect(() => {
+    if (productRowFilters.category > 0) {
+      const filtered = filterOptions.subcategories.filter(sub => sub.category_id === productRowFilters.category);
+      setFilteredSubcategories(filtered);
+      
+      // Only clear subcategory if it's not valid for the new category
+      const isCurrentSubcategoryValid = filtered.some(sub => sub.id === productRowFilters.subcategory);
+      if (!isCurrentSubcategoryValid && productRowFilters.subcategory > 0) {
+        setProductRowFilters(prev => ({
+          ...prev,
+          subcategory: 0,
+          subcategoryName: ''
+        }));
+      }
+    } else {
+      setFilteredSubcategories(filterOptions.subcategories);
+    }
+  }, [productRowFilters.category, productRowFilters.subcategory, filterOptions.subcategories]);
 
-const getSubcategoryName = (subcategoryId: string) => {
-  if (!subcategoryId) return 'N/A';
-  // Use the currently loaded subcategories to find the name
-  const subcategory = filterSubcategories.find(sub => sub.id.toString() === subcategoryId);
-  return subcategory?.subcategory_name || 'N/A';
-};
-
-// Get multiple car model names from comma-separated IDs
-const getCarModelNames = (modelIdsString: string) => {
-  if (!modelIdsString?.trim()) return 'N/A';
-  const modelIds = modelIdsString.split(',').map(id => id.trim());
-  const names = modelIds
-    .map(id => {
-      const model = filterOptions.models.find(model => model.id.toString() === id);
-      return model?.name || id;
-    })
-    .filter(name => name && name !== 'N/A');
-  return names.length > 0 ? names.join(', ') : 'N/A';
-};
-
-const getCarModelName = (modelId: string) => {
-  if (!modelId) return 'N/A';
-  const model = filterOptions.models.find(model => model.id.toString() === modelId);
-  return model?.name || 'N/A';
-};
-
-const getCompanyName = (companyId: string) => {
-  if (!companyId) return 'N/A';
-  const company = filterOptions.companies.find(comp => comp.id.toString() === companyId);
-  return company?.name || 'N/A';
-};
+  // Helper functions to map IDs to display names
 
   // Function to handle product selection and update filters
-  const handleProductSelection = async (product: Product) => {
+  const handleProductSelection = (product: Product) => {
     setSelectedRowProduct(product);
 
     // Filter car models for this product
     const compatibleModels = getFilteredCarModelsForProduct(product);
     setFilteredCarModels(compatibleModels);
 
-    // Set category first, then fetch subcategories
-    const categoryId = product.product_category_id ? product.product_category_id.toString() : '';
-    const subcategoryId = product.product_subcategory_id ? product.product_subcategory_id.toString() : '';
+    // Look up names for category, subcategory, and company
+    const categoryName = product.product_category_id
+      ? filterOptions.categories.find(cat => cat.id === product.product_category_id)?.name || ''
+      : '';
 
-    // Clear existing subcategories and fetch new ones
-    setFilterSubcategories([]);
-    if (categoryId) {
-      await fetchSubcategoriesForTable(categoryId);
-    }
+    const subcategoryName = product.product_subcategory_id
+      ? filterOptions.subcategories.find(sub => sub.id === product.product_subcategory_id)?.name || ''
+      : '';
 
-    // Initially set filters with product data (autofill filters from side panel selection)
-    // Set subcategory after a small delay to ensure subcategories are loaded
-    setProductFilters(prev => ({
+    const companyId = product.company ? parseInt(product.company) : 0;
+    const companyName = companyId > 0
+      ? filterOptions.companies.find(comp => comp.id === companyId)?.name || ''
+      : '';
+
+    // Initially set car models to unselected
+    setProductRowFilters(prev => ({
       ...prev,
-      category: categoryId,
-      subcategory: '', // Temporarily empty to avoid race condition
-      carModels: product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [], // Select first compatible model
-      company: product.company || '',
+      category: product.product_category_id || 0,
+      categoryName: categoryName,
+      subcategory: product.product_subcategory_id || 0,
+      subcategoryName: subcategoryName,
+      carModels: [], // Initially unselected
+      company: companyId,
+      companyName: companyName,
       partNo: product.part_no || ''
     }));
-
-    // Set subcategory after subcategories are loaded (with a small delay)
-    setTimeout(() => {
-      setProductFilters(prev => ({
-        ...prev,
-        subcategory: subcategoryId
-      }));
-    }, 100);
 
     console.log('🔄 PRODUCT SELECTED:', {
       product: product.product_name,
       compatibleCarModels: compatibleModels.map(m => m.name),
-      autofilledFilters: {
-        category: categoryId,
-        subcategory: subcategoryId, // Now shows string value
-        carModels: product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [],
-        company: product.company
+      initialFilters: {
+        category: product.product_category_id,
+        categoryName: categoryName,
+        subcategory: product.product_subcategory_id,
+        subcategoryName: subcategoryName,
+        carModels: [], // unselected
+        company: companyId,
+        companyName: companyName
       }
     });
   };
 
-  // Fetch subcategories for table filters when category changes
-  useEffect(() => {
-    // Do NOT clear subcategory selection when category changes (product selection handles this)
-    fetchSubcategoriesForTable(productFilters.category);
-  }, [productFilters.category]);
+
 
   // Handle product search with normalized text
   useEffect(() => {
@@ -468,85 +452,7 @@ const getCompanyName = (companyId: string) => {
     }));
   }, [selectedProducts, isEditMode, formData.total_cgst, formData.total_sgst, formData.total_igst]);
 
-  // Fetch subcategories for table filters
-  const fetchSubcategoriesForTable = async (categoryId: string) => {
-    if (!categoryId) {
-      setFilterSubcategories([]);
-      return;
-    }
 
-    // Prevent duplicate API calls for the same category
-    if (lastFetchedCategoryId === categoryId) {
-      // Already have data for this category, don't fetch again
-      return;
-    }
-
-    setFilterSubcategoriesLoading(true);
-    try {
-      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setFilterSubcategories(data.subcategories || []);
-        setLastFetchedCategoryId(categoryId); // Mark this category as fetched
-      } else {
-        setFilterSubcategories([]);
-      }
-    } catch (error) {
-      console.error('Error fetching subcategories for table:', error);
-      setFilterSubcategories([]);
-    } finally {
-      setFilterSubcategoriesLoading(false);
-    }
-  };
-
-  // Populate filters from existing purchase items (for edit mode)
-  const populateFiltersFromPurchaseItems = async (items: PurchaseItem[]) => {
-    if (items.length === 0) return;
-
-    // Extract unique category IDs from items (they are now stored as strings)
-    const uniqueCategoryIds = Array.from(new Set(items.map(item => item.category).filter(Boolean)));
-
-    // Set the first category (most common case) - since we now have IDs directly
-    if (uniqueCategoryIds.length > 0) {
-      const firstCategoryId = uniqueCategoryIds[0];
-      setProductFilters(prev => ({
-        ...prev,
-        category: firstCategoryId
-      }));
-
-      // Fetch subcategories for this category
-      await fetchSubcategoriesForTable(firstCategoryId);
-
-      // After fetching subcategories, populate the other filter values using the IDs
-      setTimeout(() => {
-        // Extract unique subcategory IDs from items
-        const uniqueSubcategoryIds = Array.from(new Set(items.map(item => item.sub_category).filter(Boolean)));
-        const firstSubcategoryId = uniqueSubcategoryIds.length > 0 ? uniqueSubcategoryIds[0] : '';
-
-        // Extract unique company IDs from items
-        const uniqueCompanyIds = Array.from(new Set(items.map(item => item.company).filter(Boolean)));
-        const firstCompanyId = uniqueCompanyIds.length > 0 ? uniqueCompanyIds[0] : '';
-
-        // Extract car model IDs from items (they are now stored as strings)
-        const uniqueCarModelIds = Array.from(new Set(
-          items.map(item => item.car_model).filter(Boolean)
-        ));
-
-        // Extract unique part numbers
-        const uniquePartNumbers = Array.from(new Set(items.map(item => item.part_number).filter(Boolean)));
-        const firstPartNo = uniquePartNumbers.length > 0 ? uniquePartNumbers[0] : '';
-
-        // Update filters with the ID values directly
-        setProductFilters(prev => ({
-          ...prev,
-          subcategory: firstSubcategoryId,
-          carModels: uniqueCarModelIds,
-          company: firstCompanyId,
-          partNo: firstPartNo
-        }));
-      }, 100); // Small delay to ensure subcategories are loaded
-    }
-  };
 
 
 
@@ -718,7 +624,7 @@ const getCompanyName = (companyId: string) => {
         const convertItemsWithNames = async (rawItems: any[]) => {
           // Ensure filter options are loaded
           if (filterOptions.categories.length === 0) {
-            console.warn('Filter options not loaded yet, using fallback names');
+
             // Return items with fallback names (will show as N/A if IDs don't match)
             return rawItems.map((item: any, index: number) => {
               const qty = item.qty || 1;
@@ -768,7 +674,7 @@ const getCompanyName = (companyId: string) => {
             const subcategoryOption = filterOptions.subcategories?.find(sub => sub.id === item.subcategory_id);
             const companyOption = filterOptions.companies?.find(comp => comp.id === item.company_id && item.company_id !== 0);
 
-            console.log(`Item ${item.id}: category_id=${item.category_id}, subcategory_id=${item.subcategory_id}, model_id=${item.model_id}, company_id=${item.company_id}`);
+
 
             return {
               id: (index + 1).toString(),
@@ -795,45 +701,9 @@ const getCompanyName = (companyId: string) => {
           // Use converted items with proper names
           const convertedItems: PurchaseItem[] = await convertItemsWithNames(purchase.items);
 
-          // Cascade populate filters from existing purchase items
-          await populateFiltersFromPurchaseItems(convertedItems);
-
           setSelectedProducts(convertedItems);
 
-          // After setting products, also populate the row filters for the template row
-          if (purchase.items && purchase.items.length > 0) {
-            const rawItem = purchase.items[0]; // Use raw API response data which has IDs
 
-            // Find matching category from filterOptions
-            const categoryOption = filterOptions.categories.find(cat =>
-              cat.id.toString() === rawItem.category_id?.toString()
-            );
-
-            // Wait for subcategories to be fetched for this category, then find match
-            setTimeout(async () => {
-              if (categoryOption) {
-                await fetchSubcategoriesForTable(categoryOption.id.toString());
-
-                const subcategoryOption = filterSubcategories.find(sub =>
-                  sub.id.toString() === rawItem.subcategory_id?.toString()
-                );
-
-                const companyOption = filterOptions.companies.find(comp =>
-                  comp.id.toString() === rawItem.company_id?.toString()
-                );
-
-                // Set row filters for the template
-                setProductFilters(prev => ({
-                  ...prev,
-                  category: categoryOption.id.toString(),
-                  subcategory: subcategoryOption ? subcategoryOption.id.toString() : '',
-                  company: companyOption ? companyOption.id.toString() : '',
-                  partNo: rawItem.part || '',
-                  carModels: [] // Keep empty for now, can be populated if needed
-                }));
-              }
-            }, 200); // Give time for subcategories to load
-          }
         }
       } else {
         showSnackbar('error', 'Failed to load purchase data. Please try again.');
@@ -939,6 +809,97 @@ const getCompanyName = (companyId: string) => {
     }));
   };
 
+  const handleEditProduct = (item: PurchaseItem) => {
+    // Enable inline editing for this specific row
+    setEditingRowId(item.id);
+
+    // Calculate GST percentage from tax amount if not set or zero
+    const gstPercentage = item.gst_percentage || (item.rate > 0 ? (item.tax / (item.qty * item.rate)) * 100 : 0);
+
+    setEditingRowData({ ...item, gst_percentage: gstPercentage });
+  };
+
+  const saveInlineEdit = () => {
+    if (editingRowId && editingRowData) {
+      // Validate the editing data
+      if (!editingRowData.qty || editingRowData.qty < 1) {
+        setErrors({ inlineEdit: 'Quantity must be at least 1' });
+        return;
+      }
+      if (!editingRowData.rate || editingRowData.rate <= 0) {
+        setErrors({ inlineEdit: 'Rate must be greater than 0' });
+        return;
+      }
+
+      // Recalculate tax and total
+      const subtotal = editingRowData.qty * editingRowData.rate;
+      const taxAmount = (subtotal * editingRowData.gst_percentage) / 100;
+      const updatedItem = {
+        ...editingRowData,
+        tax: taxAmount,
+        total: subtotal + taxAmount,
+        cgst: vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
+        sgst: vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
+        igst: vendorStateForTax !== 'Uttar Pradesh' ? taxAmount : 0
+      };
+
+      // Update the item in selectedProducts
+      setSelectedProducts(prev => prev.map(item =>
+        item.id === editingRowId ? updatedItem : item
+      ));
+
+      // Clear editing state
+      setEditingRowId(null);
+      setEditingRowData(null);
+      setErrors(prev => ({ ...prev, inlineEdit: '' }));
+    }
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditingRowData(null);
+    setErrors(prev => ({ ...prev, inlineEdit: '' }));
+  };
+
+  const cancelEdit = () => {
+    setEditingItemId(null);
+    setSelectedRowProduct(null);
+    setProductRowFilters({
+      category: 0,
+      categoryName: '',
+      subcategory: 0,
+      subcategoryName: '',
+      carModels: [],
+      company: 0,
+      companyName: '',
+      partNo: ''
+    });
+    setTemplateRow({
+      qty: '1',
+      rate: '',
+      gst: '0'
+    });
+  };
+
+  const handleConfirmDelete = (item: PurchaseItem) => {
+    if (isEditMode) {
+      // Show confirmation modal only in edit mode
+      setItemToDelete(item);
+      setShowDeleteModal(true);
+    } else {
+      // Direct delete in create mode
+      removeProduct(item.id);
+    }
+  };
+
+  const confirmDeleteProduct = () => {
+    if (itemToDelete) {
+      removeProduct(itemToDelete.id);
+      setShowDeleteModal(false);
+      setItemToDelete(null);
+    }
+  };
+
   const removeProduct = (id: string) => {
     setSelectedProducts(prev => prev.filter(item => item.id !== id));
   };
@@ -1039,8 +1000,9 @@ const getCompanyName = (companyId: string) => {
         transport_name: formData.transport_name,
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
-        bill: formData.bill,
-        tax: formData.tax,
+        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+        // bill: formData.bill,
+        // tax: formData.tax,
         items: selectedProducts.map(item => {
           // Parse the stored IDs directly (they're already strings containing the IDs)
           const categoryId = item.category ? parseInt(item.category) : null;
@@ -1048,7 +1010,7 @@ const getCompanyName = (companyId: string) => {
           const companyId = item.company ? parseInt(item.company) : null;
 
           // Convert selected car model IDs to names for display
-          const carModelNames = productFilters.carModels
+          const carModelNames = productRowFilters.carModels
             .map(id => {
               const model = filterOptions.models.find(m => m.id.toString() === id);
               return model ? model.name : '';
@@ -1056,10 +1018,18 @@ const getCompanyName = (companyId: string) => {
             .filter(name => name)
             .join(', ');
 
-          // Get model_id from the first selected car model
+          // Get model_id from the first selected car model, or look up from car_model string
           let modelId = null;
-          if (productFilters.carModels.length > 0) {
-            modelId = parseInt(productFilters.carModels[0]);
+          if (productRowFilters.carModels.length > 0) {
+            modelId = parseInt(productRowFilters.carModels[0]);
+          } else if (item.car_model && item.car_model.trim()) {
+            // Look up model_id from car_model string using filterOptions
+            const carModelRecord = filterOptions.models.find(
+              model => model.name.trim() === item.car_model.trim()
+            );
+            if (carModelRecord) {
+              modelId = carModelRecord.id;
+            }
           }
 
           return {
@@ -1068,26 +1038,28 @@ const getCompanyName = (companyId: string) => {
             category_id: categoryId, // ✅ Now properly parsed from stored string ID
             subcategory_id: subcategoryId, // ✅ Now properly parsed from stored string ID
             company_id: companyId, // ✅ Now properly parsed from stored string ID
-            model_id: modelId, // ✅ Now populated from selected car model
+            model_id: modelId, // ✅ Now populated from selected car model or looked up from car_model
             car_model: carModelNames || item.car_model || '', // ✅ Car model names for display
-            hsn: '', // Will be fetched by API from product
-            part: productFilters.partNo, // ✅ Part number from filters
+            // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+            // hsn: '', // Will be fetched by API from product
+            part: item.part_number, // ✅ Use stored part number from item
             qty: item.qty,
             rate: item.rate,
             tax: item.tax,
             total: item.total,
-            // Include original string names for API to use as fallback
-            category_name: item.category,
-            subcategory_name: item.sub_category,
-            company_name: item.company
+            // ===== EXTRA FIELDS - COMMENTED OUT (FALLBACK NAMES NOT STORED) =====
+            // category_name: item.category,
+            // subcategory_name: item.sub_category,
+            // company_name: item.company
           };
         }),
         descriptions: formData.descriptions,
         packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,
         packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0,
         packing_forwarding_total: parseFloat(formData.packing_forwarding_total) || 0,
-        tax_rate: parseFloat(formData.tax_rate) || 0,
-        basic_value: parseFloat(formData.basic_value) || 0,
+        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+        // tax_rate: parseFloat(formData.tax_rate) || 0,
+        // basic_value: parseFloat(formData.basic_value) || 0,
         total_cgst: parseFloat(formData.total_cgst) || 0,
         total_sgst: parseFloat(formData.total_sgst) || 0,
         total_igst: parseFloat(formData.total_igst) || 0,
@@ -1095,7 +1067,8 @@ const getCompanyName = (companyId: string) => {
         total_tax: totalTax,
         payment_status: formData.payment_status,
         payment_mode: formData.payment_mode,
-        grand_total: grandTotal
+        // ===== EXTRA FIELDS - COMMENTED OUT (CALCULATED FIELD NOT STORED) =====
+        // grand_total: grandTotal
       };
 
       const method = isEditMode ? 'PUT' : 'POST';
@@ -1416,11 +1389,14 @@ const getCompanyName = (companyId: string) => {
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productFilters.category}
+                          value={productRowFilters.category.toString()}
                           onChange={(e) => {
-                            setProductFilters(prev => ({
+                            const value = parseInt(e.target.value);
+                            const selectedOption = filterOptions.categories.find(cat => cat.id === value);
+                            setProductRowFilters(prev => ({
                               ...prev,
-                              category: e.target.value
+                              category: value,
+                              categoryName: selectedOption?.name || ''
                             }));
                           }}
                         >
@@ -1432,56 +1408,90 @@ const getCompanyName = (companyId: string) => {
                       </td>
                       <td className="px-4 py-3">
                         <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          value={productFilters.subcategory}
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
+                          value={productRowFilters.subcategory.toString()}
                           onChange={(e) => {
-                            setProductFilters(prev => ({
+                            const value = parseInt(e.target.value);
+                            const selectedOption = filteredSubcategories.find(sub => sub.id === value);
+                            setProductRowFilters(prev => ({
                               ...prev,
-                              subcategory: e.target.value
+                              subcategory: value,
+                              subcategoryName: selectedOption?.name || ''
                             }));
                           }}
-                          disabled={!productFilters.category || filterSubcategoriesLoading}
                         >
-                          <option value="">
-                            {!productFilters.category
-                              ? "Please select a category first"
-                              : filterSubcategoriesLoading
-                                ? "Loading subcategories..."
-                                : "Select Sub Category"
-                            }
-                          </option>
-                          {filterSubcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
+                          <option value="">Select Sub Category</option>
+                          {filteredSubcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>{sub.name}</option>
                           ))}
                         </select>
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
-                          options={
-                            selectedRowProduct && filteredCarModels.length > 0
-                              ? filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name }))
-                              : filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))
-                          }
-                          selectedValues={productFilters.carModels}
+                          options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                          selectedValues={productRowFilters.carModels}
                           onSelectionChange={(values) => {
-                            setProductFilters(prev => ({
+                            // For purchase, only allow single car model selection
+                            let newSelection: string[];
+
+                            if (values.length === 0) {
+                              // Clear selection
+                              newSelection = [];
+                            } else {
+                              // Single selection - take only the first item (most recently selected)
+                              // Since SearchableMultiSelect calls onChange after each selection,
+                              // we get the array with all selected items, but we only want one
+                              newSelection = [values[values.length - 1]]; // Take the last selected item
+                            }
+
+                            // Update car models in filters
+                            setProductRowFilters(prev => ({
                               ...prev,
-                              carModels: values
+                              carModels: newSelection
                             }));
+
+                            // Update the product name directly when car models change
+                            if (selectedRowProduct) {
+                              if (newSelection.length > 0) {
+                                const selectedCarModelId = newSelection[0]; // Use the single selected model
+                                const selectedCarModel = filterOptions.models.find(model => model.id.toString() === selectedCarModelId);
+
+                                if (selectedCarModel) {
+                                  // Parse product name format: category-subcategory-carModel-company
+                                  const productName = selectedRowProduct.product_name;
+                                  const parts = productName.split('-');
+                                  if (parts.length >= 4) {
+                                    // Replace the car model part (index 2) with selected model name
+                                    parts[2] = selectedCarModel.name;
+                                    const updatedProductName = parts.join('-');
+
+                                    // Update the product's name directly
+                                    setSelectedRowProduct(prev => prev ? {
+                                      ...prev,
+                                      product_name: updatedProductName
+                                    } : null);
+                                  }
+                                }
+                              } else {
+                                // No car model selected - could reset to original name, but let's keep the current behavior
+                                // for now as the original name is still accessible
+                              }
+                            }
                           }}
-                          placeholder={
-                              "Select car models..."
-                          }
+                          placeholder="Select car model..."
                         />
                       </td>
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productFilters.company}
+                          value={productRowFilters.company.toString()}
                           onChange={(e) => {
-                            setProductFilters(prev => ({
+                            const value = parseInt(e.target.value);
+                            const selectedOption = filterOptions.companies.find(comp => comp.id === value);
+                            setProductRowFilters(prev => ({
                               ...prev,
-                              company: e.target.value
+                              company: value,
+                              companyName: selectedOption?.name || ''
                             }));
                           }}
                         >
@@ -1496,9 +1506,9 @@ const getCompanyName = (companyId: string) => {
                           type="text"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white placeholder-slate-400"
                           placeholder="Part number..."
-                          value={productFilters.partNo}
+                          value={productRowFilters.partNo}
                           onChange={(e) => {
-                            setProductFilters(prev => ({
+                            setProductRowFilters(prev => ({
                               ...prev,
                               partNo: e.target.value
                             }));
@@ -1564,128 +1574,162 @@ const getCompanyName = (companyId: string) => {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center w-20">
-                        <button
-                          type="button"
+                        <div className="flex items-center justify-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Validation: Check for required fields
+                              const validationErrors: string[] = [];
+
+                              if (productRowFilters.category <= 0) {
+                                validationErrors.push('Category is required');
+                              }
+                              if (productRowFilters.subcategory <= 0) {
+                                validationErrors.push('Subcategory is required');
+                              }
+                              if (productRowFilters.carModels.length === 0) {
+                                validationErrors.push('At least one car model is required');
+                              }
+                              if (productRowFilters.company <= 0) {
+                                validationErrors.push('Company is required');
+                              }
+                              if (!productRowFilters.partNo.trim()) {
+                                validationErrors.push('Part number is required');
+                              }
+                              if (!templateRow.rate || parseFloat(templateRow.rate) <= 0) {
+                                validationErrors.push('Valid rate is required');
+                              }
+
+                              if (validationErrors.length > 0) {
+                                setErrors({ addProduct: validationErrors.join(', ') });
+                                return;
+                              }
+
+                              if (selectedRowProduct !== null) {
+                                const selectedProduct = selectedRowProduct;
+                                if (selectedProduct) {
+                                  // Use product details and template values
+                                  const qty = parseFloat(templateRow.qty) || 1;
+                                  const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
+                                  const gstPercent = templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0;
+                                  const subtotal = qty * rate;
+                                  const taxAmount = (subtotal * gstPercent) / 100;
+
+                                  // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
+                                  const cgst = taxAmount / 2;
+                                  const sgst = taxAmount / 2;
+                                  const igst = 0;
+
+                                  // Convert car model IDs to names for display
+                                  const carModelNames = productRowFilters.carModels
+                                    .map(id => {
+                                      const model = filterOptions.models.find(m => m.id.toString() === id);
+                                      return model ? model.name : id;
+                                    })
+                                    .filter(name => name)
+                                    .join(', ');
+
+                                  // Use filter data - the filters are auto-filled from product selection
+                                  const categoryId = productRowFilters.category; // Already a string
+                                  const subcategoryId = productRowFilters.subcategory; // Already a string
+                                  const companyId = productRowFilters.company || selectedProduct.company || ''; // Use filter if set, fallback to product
+
+                                  const itemData: PurchaseItem = {
+                                    id: editingItemId || Date.now().toString(),
+                                    product_id: selectedProduct.id,
+                                    product_name: selectedProduct.product_name,
+                                    car_model: carModelNames || '',
+                                    category: productRowFilters.category.toString(),
+                                    sub_category: productRowFilters.subcategory.toString(),
+                                    company: productRowFilters.company.toString(),
+                                    part_number: productRowFilters.partNo,
+                                    qty: qty,
+                                    rate: rate,
+                                    gst_percentage: gstPercent,
+                                    tax: taxAmount,
+                                    cgst: cgst,
+                                    sgst: sgst,
+                                    igst: igst,
+                                    total: subtotal + taxAmount
+                                  };
+
+                                  if (editingItemId) {
+                                    // Update existing item
+                                    setSelectedProducts(prev =>
+                                      prev.map(item =>
+                                        item.id === editingItemId ? itemData : item
+                                      )
+                                    );
+                                    setEditingItemId(null);
+                                  } else {
+                                    // Add new item
+                                    setSelectedProducts(prev => [...prev, itemData]);
+                                  }
+
+                                  // Clear any validation errors
+                                  setErrors(prev => ({ ...prev, addProduct: '' }));
+
+                                  // Reset form (preserve category so subcategories aren't cleared)
+                                  setSelectedRowProduct(null);
+                                  setProductRowFilters(prev => ({
+                                    ...prev,
+                                    subcategory: 0,
+                                    carModels: [],
+                                    partNo: ''
+                                  }));
+                                  setTemplateRow({
+                                    qty: '1',
+                                    rate: '',
+                                    gst: '0'
+                                  });
+                                }
+                              }
+                            }}
+                            disabled={!selectedRowProduct}
+                            className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                              : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                              }`}
+                          >
+                            {editingItemId ? 'Update' : 'Add'}
+                          </button>
+
+                          {selectedRowProduct && (
+                            <button
+                              type="button"
                               onClick={() => {
-                            // Validation: Check for required fields
-                            const validationErrors: string[] = [];
-
-                            if (!productFilters.category.trim()) {
-                              validationErrors.push('Category is required');
-                            }
-                            if (!productFilters.subcategory.trim()) {
-                              validationErrors.push('Subcategory is required');
-                            }
-                            if (productFilters.carModels.length === 0) {
-                              validationErrors.push('At least one car model is required');
-                            }
-                            if (!productFilters.company.trim()) {
-                              validationErrors.push('Company is required');
-                            }
-                            if (!productFilters.partNo.trim()) {
-                              validationErrors.push('Part number is required');
-                            }
-                            if (!templateRow.rate || parseFloat(templateRow.rate) <= 0) {
-                              validationErrors.push('Valid rate is required');
-                            }
-
-                            if (validationErrors.length > 0) {
-                              setErrors({ addProduct: validationErrors.join(', ') });
-                              return;
-                            }
-
-                            if (selectedRowProduct !== null) {
-                              const selectedProduct = selectedRowProduct;
-                              if (selectedProduct) {
-                                // Use product details and template values
-                                const qty = parseFloat(templateRow.qty) || 1;
-                                const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const gstPercent = templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0;
-                                const subtotal = qty * rate;
-                                const taxAmount = (subtotal * gstPercent) / 100;
-
-                                // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
-                                const cgst = taxAmount / 2;
-                                const sgst = taxAmount / 2;
-                                const igst = 0;
-
-                                // Convert car model IDs to names for display
-                                const carModelNames = productFilters.carModels
-                                  .map(id => {
-                                    const model = filterOptions.models.find(m => m.id.toString() === id);
-                                    return model ? model.name : id;
-                                  })
-                                  .filter(name => name)
-                                  .join(', ');
-
-                                // Use filter data - the filters are auto-filled from product selection
-                                const categoryId = productFilters.category; // Already a string
-                                const subcategoryId = productFilters.subcategory; // Already a string
-                                const companyId = productFilters.company || selectedProduct.company || ''; // Use filter if set, fallback to product
-
-                                console.log('🛒 ADDING PRODUCT:', {
-                                  categoryId,
-                                  subcategoryId,
-                                  categoryName: getCategoryName(categoryId),
-                                  subcategoryName: getSubcategoryName(subcategoryId),
-                                  filterOptionsCategories: filterOptions.categories.map(cat => ({ id: cat.id, name: cat.name })),
-                                  filterSubcategories: filterSubcategories.map(sub => ({ id: sub.id, name: sub.subcategory_name }))
-                                });
-
-                                const newItem: PurchaseItem = {
-                                  id: Date.now().toString(),
-                                  product_id: selectedProduct.id,
-                                  product_name: selectedProduct.product_name,
-                                  car_model: carModelNames || '',
-                                  category: categoryId,
-                                  sub_category: subcategoryId,
-                                  company: companyId,
-                                  part_number: productFilters.partNo,
-                                  qty: qty,
-                                  rate: rate,
-                                  gst_percentage: gstPercent,
-                                  tax: taxAmount,
-                                  cgst: cgst,
-                                  sgst: sgst,
-                                  igst: igst,
-                                  total: subtotal + taxAmount
-                                };
-
-                                setSelectedProducts(prev => [...prev, newItem]);
-
-                                // Clear any validation errors
-                                setErrors(prev => ({ ...prev, addProduct: '' }));
-
-                                // Reset form (preserve category so subcategories aren't cleared)
+                                // Clear the template row
                                 setSelectedRowProduct(null);
-                                setProductFilters(prev => ({
-                                  ...prev,
-                                  subcategory: '',
+                                setProductRowFilters({
+                                  category: 0,
+                                  categoryName: '',
+                                  subcategory: 0,
+                                  subcategoryName: '',
                                   carModels: [],
+                                  company: 0,
+                                  companyName: '',
                                   partNo: ''
-                                }));
+                                });
                                 setTemplateRow({
                                   qty: '1',
                                   rate: '',
                                   gst: '0'
                                 });
-                              }
-                            }
-                          }}
-                          disabled={!selectedRowProduct}
-                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                            }`}
-                        >
-                          Add
-                        </button>
+                                setErrors(prev => ({ ...prev, addProduct: '' }));
+                              }}
+                              className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                              title="Clear selection"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
 
                     {/* Added Products Rows */}
                     {selectedProducts.map((product, index) => (
-                      <tr key={product.id} className="bg-slate-800 hover:bg-slate-750 border-t border-slate-600">
+                      <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
                         <td className="px-4 py-3 text-center text-xs text-slate-300">
                           {index + 1}
                         </td>
@@ -1694,58 +1738,120 @@ const getCompanyName = (companyId: string) => {
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {(() => {
-                            const catName = getCategoryName(product.category);
-                            console.log('📊 TABLE RENDER - Category:', {
-                              productName: product.product_name,
-                              categoryId: product.category,
-                              categoryName: catName,
-                              filterOptionsCategories: filterOptions.categories
-                            });
-                            return catName;
+                            const catOption = filterOptions.categories.find(cat => cat.id.toString() === product.category);
+                            return catOption?.name || product.category;
                           })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {(() => {
-                            const subName = getSubcategoryName(product.sub_category);
-                            console.log('📊 TABLE RENDER - Subcategory:', {
-                              productName: product.product_name,
-                              subcategoryId: product.sub_category,
-                              subcategoryName: subName,
-                              filterSubcategories: filterSubcategories
-                            });
-                            return subName;
+                            const subCatOption = filterOptions.subcategories.find(sub => sub.id.toString() === product.sub_category);
+                            return subCatOption?.name || product.sub_category;
                           })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {getCarModelNames(product.car_model)}
+                          {product.car_model}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {getCompanyName(product.company)}
+                          {(() => {
+                            const compOption = filterOptions.companies.find(comp => comp.id.toString() === product.company);
+                            return compOption?.name || product.company;
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {product.part_number || 'N/A'}
                         </td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-200">
-                          {product.qty}
-                        </td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-200">
-                          ₹{product.rate.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-center text-xs text-slate-200">
-                          ₹{product.tax.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
-                          ₹{product.total.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => removeProduct(product.id)}
-                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                            title="Remove product"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </td>
+                        {editingRowId === product.id ? (
+                          <>
+                            {/* Editable fields when inline editing */}
+                            <td className="px-4 py-3 text-center w-24">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingRowData?.qty || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center w-24">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRowData?.rate || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center w-20">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRowData?.gst_percentage || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center w-20 text-green-400">
+                              ₹{editingRowData ? (editingRowData.qty * editingRowData.rate * (1 + editingRowData.gst_percentage / 100)).toFixed(2) : product.total.toFixed(2)}
+                            </td>
+                            {/* Save/Cancel buttons */}
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={saveInlineEdit}
+                                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                  title="Save changes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelInlineEdit}
+                                  className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  title="Cancel edit"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            {/* Read-only display */}
+                            <td className="px-4 py-3 text-center text-xs text-slate-200">
+                              {product.qty}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-200">
+                              ₹{product.rate.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs text-slate-200">
+                              ₹{product.tax.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
+                              ₹{product.total.toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditProduct(product)}
+                                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                                  title="Edit product"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmDelete(product)}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                  title="Remove product"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -1778,6 +1884,7 @@ const getCompanyName = (companyId: string) => {
               </div>
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
               {errors.addProduct && <p className="text-red-400 text-xs mt-1">{errors.addProduct}</p>}
+              {errors.inlineEdit && <p className="text-red-400 text-xs mt-1">{errors.inlineEdit}</p>}
             </div>
 
             {/* Additional Information */}
@@ -1989,7 +2096,7 @@ const getCompanyName = (companyId: string) => {
                         setTemplateRow({
                           qty: '1',
                           rate: product.selling_price?.toString() || '',
-                          gst: product.gst_rate_percentage?.toString() || '18'
+                          gst: product.gst_rate_percentage?.toString() || '0'
                         });
                         setIsProductPanelOpen(false);
                         setProductSearchTerm('');
@@ -2031,7 +2138,7 @@ const getCompanyName = (companyId: string) => {
         </>
       )}
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal for Purchase Submit */}
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title={isEditMode ? "Update Purchase?" : "Create Purchase?"}
@@ -2042,6 +2149,21 @@ const getCompanyName = (companyId: string) => {
         loadingText={isEditMode ? "Updating Purchase..." : "Creating Purchase..."}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
+      />
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        title="Delete Product?"
+        message={`Are you sure you want to delete "${itemToDelete?.product_name}" from this purchase? This will permanently remove this product from the purchase.`}
+        confirmText="Delete Product"
+        cancelText="Cancel"
+        showLoading={false}
+        onConfirm={confirmDeleteProduct}
+        onCancel={() => {
+          setShowDeleteModal(false);
+          setItemToDelete(null);
+        }}
       />
     </div>
 

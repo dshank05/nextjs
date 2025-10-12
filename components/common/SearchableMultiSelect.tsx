@@ -47,6 +47,7 @@ export function SearchableMultiSelect({
       ? selectedValues.filter(id => id !== optionId)
       : [...selectedValues, optionId];
     onSelectionChange(newSelection);
+    setIsDropdownOpen(false); // Close dropdown after selection
   };
 
   const handleClearAll = () => {

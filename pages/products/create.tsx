@@ -369,30 +369,7 @@ export default function ProductCreate() {
       // Generate display name first
       const displayName = generateProductDisplay();
 
-      // Log form data to verify all fields are being sent
-      console.log('Submitting form data:', {
-        display_name: displayName,
-        product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
-        product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
-        car_models: formData.car_models, // Array of selected model IDs
-        car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated
-        company: formData.company ? parseInt(formData.company) : null,
-        part_no: formData.part_no,
-        min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
-        opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
-        opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
-        hsn: formData.hsn,
-        gst_rate: formData.gst_rate,
-        warehouse: formData.warehouse,
-        rack_id: formData.rack_id,
-        rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
-        descriptions: formData.descriptions,
-        notes: formData.notes,
-        mrp: formData.mrp ? parseFloat(formData.mrp) : null,
-        discount: formData.discount ? parseFloat(formData.discount) : null,
-        margin: formData.margin ? parseFloat(formData.margin) : null,
-      });
-
+    
       // Use foreign key IDs instead of names
       const submitData = {
         product_name: displayName,
@@ -420,7 +397,6 @@ export default function ProductCreate() {
         margin: formData.margin ? parseFloat(formData.margin) : null,
       };
 
-      console.log('Submitting data to API:', submitData);
 
       const url = isEditing && editingProductId ? `/api/products/${editingProductId}` : '/api/products';
       const method = isEditing && editingProductId ? 'PUT' : 'POST';
@@ -433,13 +409,10 @@ export default function ProductCreate() {
         body: JSON.stringify(submitData),
       });
 
-      console.log('API Response status:', response.status);
       const responseData = await response.json();
-      console.log('API Response data:', responseData);
 
       if (response.ok) {
         const action = isEditing ? 'updated' : 'created';
-        console.log(`Product ${action} successfully`);
         showSnackbar('success', `Product ${action} successfully!`);
         setShowConfirmModal(false);
         setShowCarModelsConfirmModal(false);
