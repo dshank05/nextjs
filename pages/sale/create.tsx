@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2 } from 'lucide-react';
+import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
@@ -97,6 +97,7 @@ interface InvoiceFormData {
   customer_name: string;
   contact_number: string;
   mechanic_name: string;
+  mechanic_id?: number | null;
   vehicle_number: string;
   commission: string;
   address: string;
@@ -148,6 +149,7 @@ export default function InvoiceCreate() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
+  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -157,10 +159,13 @@ export default function InvoiceCreate() {
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
-    category: '',
-    subcategory: '',
+    category: 0,
+    categoryName: '',
+    subcategory: 0,
+    subcategoryName: '',
     carModels: [] as string[],
-    company: '',
+    company: 0,
+    companyName: '',
     partNo: ''
   });
 
@@ -170,39 +175,14 @@ export default function InvoiceCreate() {
   // State for filtered car models based on selected product
   const [filteredCarModels, setFilteredCarModels] = useState<any[]>([]);
 
-  // State for dynamic subcategories in filters
-  const [filterSubcategories, setFilterSubcategories] = useState<any[]>([]);
-  const [filterSubcategoriesLoading, setFilterSubcategoriesLoading] = useState(false);
-
-  // Fetch subcategories for table filters
-  const fetchSubcategoriesForTable = async (categoryId: string) => {
-    if (!categoryId) {
-      setFilterSubcategories([]);
-      return;
-    }
-
-    setFilterSubcategoriesLoading(true);
-    try {
-      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setFilterSubcategories(data.subcategories || []);
-      } else {
-        setFilterSubcategories([]);
-      }
-    } catch (error) {
-      console.error('Error fetching subcategories for table:', error);
-      setFilterSubcategories([]);
-    } finally {
-      setFilterSubcategoriesLoading(false);
-    }
-  };
+  // State for filtered subcategories based on selected category
+  const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
-    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
-    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company || 'COMPANY';
+    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name;
+    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name ;
+    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company;
 
     // If no specific car model is selected, show base product name
     if (selectedCarModelIds.length === 0) {
@@ -261,10 +241,10 @@ export default function InvoiceCreate() {
     // Initially set car models to unselected
     setProductRowFilters(prev => ({
       ...prev,
-      category: product.product_category_id ? product.product_category_id.toString() : '',
-      subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
+      category: product.product_category_id || 0,
+      subcategory: product.product_subcategory_id || 0,
       carModels: [], // Initially unselected
-      company: product.company || '',
+      company: product.company ? parseInt(product.company, 10) : 0,
       partNo: product.part_no || ''
     }));
 
@@ -304,6 +284,10 @@ export default function InvoiceCreate() {
 
   // State for customer state (like vendor state in purchase create)
   const [customerStateForTax, setCustomerStateForTax] = useState<string>(''); // Track customer's state for tax calculations
+
+  // State for inline row editing
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -354,29 +338,51 @@ export default function InvoiceCreate() {
     total_igst: ''
   });
 
-  // Check for edit mode and fetch data
+  // Check for edit mode immediately on mount
   useEffect(() => {
     const { edit } = router.query;
     if (edit && typeof edit === 'string') {
       setIsEditMode(true);
       setEditInvoiceId(parseInt(edit));
-      fetchInvoiceForEdit(parseInt(edit));
     }
   }, [router.query]);
 
-  // Fetch customers, staff, mechanics, products, and filters on mount
+  // Fetch data on mount and handle edit mode properly
   useEffect(() => {
-    fetchCustomers();
-    fetchStaffList();
-    fetchMechanics();
-    fetchProducts();
-    fetchFilterOptions();
-    fetchGstRates(); // Add GST rates fetch
-    // Only fetch last invoice number in create mode, not edit mode
-    if (!isEditMode) {
+    const initializeData = async () => {
+      try {
+        // Fetch all required data in parallel
+        await Promise.all([
+          fetchCustomers(),
+          fetchStaffList(),
+          fetchMechanics(),
+          fetchProducts(),
+          fetchFilterOptions(),
+          fetchGstRates()
+        ]);
+
+        // Fetch customers first so customer dropdown is populated
+        await fetchCustomers();
+
+        // If in edit mode, fetch the invoice data
+        const { edit } = router.query;
+        if (edit && typeof edit === 'string') {
+          await fetchInvoiceForEdit(parseInt(edit));
+        }
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  // Fetch last invoice number only in create mode
+  useEffect(() => {
+    if (!isEditMode && !router.query.edit) {
       fetchLastInvoiceNumber();
     }
-  }, [isEditMode]);
+  }, [isEditMode, router.query.edit]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -385,10 +391,25 @@ export default function InvoiceCreate() {
     }
   }, [isProductPanelOpen]);
 
-  // Fetch subcategories for table filters when category changes
+  // Filter subcategories for table filters when category changes
   useEffect(() => {
-    fetchSubcategoriesForTable(productRowFilters.category);
-  }, [productRowFilters.category]);
+    if (productRowFilters.category > 0) {
+      const filtered = filterOptions.subcategories.filter(sub => sub.category_id === productRowFilters.category);
+      setFilteredSubcategories(filtered);
+
+      // Only clear subcategory if it's not valid for the new category
+      const isCurrentSubcategoryValid = filtered.some(sub => sub.id === productRowFilters.subcategory);
+      if (!isCurrentSubcategoryValid && productRowFilters.subcategory > 0) {
+        setProductRowFilters(prev => ({
+          ...prev,
+          subcategory: 0,
+          subcategoryName: ''
+        }));
+      }
+    } else {
+      setFilteredSubcategories(filterOptions.subcategories);
+    }
+  }, [productRowFilters.category, productRowFilters.subcategory, filterOptions.subcategories]);
 
   // Handle product search with normalized text
   useEffect(() => {
@@ -457,8 +478,14 @@ export default function InvoiceCreate() {
 
   const fetchStaffList = async () => {
     try {
-      // Placeholder - implement staff API
-      setStaffList([]);
+      const response = await fetch('/api/staff');
+      if (response.ok) {
+        const data = await response.json();
+        setStaffList(data.staff.map((staff: any) => ({
+          id: staff.id.toString(),
+          staff_name: staff.name
+        })));
+      }
     } catch (error) {
       console.error('Error fetching staff:', error);
     }
@@ -537,10 +564,12 @@ export default function InvoiceCreate() {
 
   const fetchInvoiceForEdit = async (invoiceId: number) => {
     try {
-      const response = await fetch(`/api/sales/${invoiceId}`); // Implement this API endpoint
+      console.log('🔍 FETCHING INVOICE FOR EDIT:', invoiceId);
+      const response = await fetch(`/api/invoices/${invoiceId}`);
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
+        console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
         const formatDateForInput = (dateValue: number | string) => {
@@ -556,17 +585,22 @@ export default function InvoiceCreate() {
           return new Date(dateValue * 1000).toISOString().split('T')[0];
         };
 
-        // Prefill form data
-        setFormData({
-          invoice_number: invoice.invoice_no?.toString() || '',
+        // Ensure invoice number is a string
+        const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
+        console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
+
+        // Prefill form data with all available fields
+        const formDataToSet = {
+          invoice_number: invoiceNo,
           bill_reference: invoice.bill_reference || '',
           staff_id: invoice.staff_id || null,
           date: formatDateForInput(invoice.invoice_date),
           customer_name: invoice.customer_name || '',
           contact_number: invoice.contact_number || '',
-          mechanic_name: invoice.mechanic_name || '',
+          mechanic_name: invoice.mechanic?.mechanic_name || '',
+          mechanic_id: invoice.mechanic_id || null,
           vehicle_number: invoice.vehicle_number || '',
-          commission: invoice.commission || '',
+          commission: invoice.commission ? invoice.commission.toString() : '',
           address: invoice.address || '',
           transport_name: invoice.transport_name || '',
           city: invoice.city || '',
@@ -578,62 +612,115 @@ export default function InvoiceCreate() {
           notes: invoice.notes || '',
           payment_status: invoice.status || 1,
           payment_mode: invoice.payment_mode || 1,
-          total_discount: invoice.total_discount || '',
-          subtotal: invoice.subtotal || '',
-          total_tax: invoice.total_tax || '',
-          grand_total: invoice.total || '',
+          total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
+          subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
+          total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
+          grand_total: invoice.total ? invoice.total.toString() : '',
           descriptions: invoice.descriptions || '',
-          packing_forwarding_qty: invoice.packing_forwarding_qty || '',
-          packing_forwarding_rate: invoice.packing_forwarding_rate || '',
-          packing_forwarding_total: invoice.packing_forwarding_total || '',
-          total_cgst: invoice.total_cgst || '',
-          total_sgst: invoice.total_sgst || '',
-          total_igst: invoice.total_igst || ''
-        });
+          packing_forwarding_qty: invoice.packing_forwarding_qty || '0',
+          packing_forwarding_rate: invoice.packing_forwarding_rate || '0',
+          packing_forwarding_total: invoice.packing_forwarding_total || '0',
+          total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
+          total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
+          total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0'
+        };
 
-        // Set related entity IDs
-        if (invoice.customer_id) {
-          setSelectedCustomerId(invoice.customer_id.toString());
+        console.log('📝 SETTING FORM DATA:', formDataToSet);
+        setFormData(formDataToSet);
+
+        // Set customer data - always create customer object from invoice data to ensure it works
+        if (invoice.select_customer) {  // API field is select_customer, not customer_id
+          setSelectedCustomerId(invoice.select_customer.toString());
+          setVendorIdToSave(invoice.select_customer); // For consistency with purchase create
+
+          // Always create customer object from API data (not relying on customers list)
+          const customer = {
+            id: invoice.select_customer.toString(),
+            billing_name: invoice.customer_name || '',
+            shipping_name: '',
+            billing_address: invoice.address || '',
+            billing_address_2: '',
+            billing_city: invoice.city || '',
+            billing_state: 0, // We don't have state code from API
+            billing_state_code: 0, // Default - could be improved with API enhancement
+            shipping_address: '',
+            shipping_address_2: '',
+            shipping_city: '',
+            shipping_state: 0,
+            shipping_state_code: 0,
+            billing_gstin: invoice.gst_number || '',
+            shipping_gstin: '',
+            contact_no: invoice.contact_number || '',
+            email: invoice.email_id || ''
+          };
+
+          // Set the selected customer state directly
+          setSelectedCustomer(customer);
+
+          // Populate customer-related form fields
+          setFormData(prev => ({
+            ...prev,
+            customer_name: customer.billing_name,
+            contact_number: customer.contact_no || '',
+            gst_number: customer.billing_gstin || '',
+            state: customer.billing_state?.toString() || '',
+            city: customer.billing_city || '',
+            address: customer.billing_address || ''
+          }));
+
+          // Set state for tax calculations (default to business state if unknown)
+          setCustomerStateForTax(customer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
         }
+
+        // Set other related entity IDs
         if (invoice.staff_id) {
           setSelectedStaffId(invoice.staff_id.toString());
+          setFormData(prev => ({ ...prev, staff_id: invoice.staff_id }));
         }
         if (invoice.mechanic_id) {
           setSelectedMechanicId(invoice.mechanic_id.toString());
+          setFormData(prev => ({ ...prev, mechanic_id: invoice.mechanic_id }));
         }
 
         // Convert invoice items to local format
-        if (invoice.items && invoice.items.length > 0) {
-          const convertedItems: InvoiceItem[] = invoice.items.map((item: any, index: number) => ({
-            id: (index + 1).toString(),
-            product_id: item.product_id || item.category_id || 1,
-            product_name: item.product_name || item.name_of_product || '',
-            car_model_ids: item.car_model_ids ? item.car_model_ids.split(',').map((id: string) => id.trim()) : [],
-            car_model_names: item.car_model_names ? item.car_model_names.split(',').map((name: string) => name.trim()) : [],
-            category_id: item.category_id || 0,
-            category_name: item.category_name || '',
-            subcategory_id: item.subcategory_id || 0,
-            subcategory_name: item.subcategory_name || '',
-            company_id: item.company_id || 0,
-            company_name: item.company_name || '',
-            part_number: item.part_number || item.part || '',
-            qty: item.qty || 1,
-            rate: item.rate || 0,
-            gst_percentage: item.gst_percentage || item.gst_rate || 0,
-            discount_percentage: item.discount_percentage || 0,
-            tax: item.tax || 0,
-            discount_amount: item.discount_amount || 0,
-            total: item.total || 0,
-            // New pricing fields - defaults for edit mode
-            hsn: item.hsn || '',
-            mrp: item.mrp || 0,
-            discount: item.discount || 0,
-            margin: item.margin || 0,
-            // GST breakdown - defaults for edit mode
-            cgst: item.cgst || item.tax / 2 || 0,
-            sgst: item.sgst || item.tax / 2 || 0,
-            igst: item.igst || 0
-          }));
+        // API returns invoiceItems in data.invoiceItems, not invoice.items
+        if (data.invoiceItems && data.invoiceItems.length > 0) {
+          console.log('Converting invoice items:', data.invoiceItems);
+          const convertedItems: InvoiceItem[] = data.invoiceItems.map((item: any, index: number) => {
+            const itemObj = {
+              id: (index + 1).toString(),
+              product_id: item.name_of_product || item.product_id || 1, // API stores product_id in name_of_product field
+              product_name: item.name_of_product || 'Unknown Product',
+              car_model_ids: [], // Not stored in current API
+              car_model_names: [], // Not stored in current API
+              category_id: item.category_id || 0,
+              category_name: item.category_name || '', // Will need to be fetched
+              subcategory_id: item.subcategory_id || 0,
+              subcategory_name: item.subcategory_name || '', // Will need to be fetched
+              company_id: item.company_id || 0,
+              company_name: item.company_name || '', // Will need to be fetched
+              part_number: item.part || '',
+              qty: item.qty || 1,
+              rate: item.rate || 0,
+              gst_percentage: item.product?.gst_rate?.rate , // Use GST rate from related product
+              discount_percentage: item.discount_percentage || 0, // Use stored discount percentage
+              tax: item.tax || 0, // Use stored tax amount
+              discount_amount: item.discount_amount || 0, // Use stored discount amount
+              total: item.subtotal || 0,
+              // New pricing fields - defaults for edit mode
+              hsn: item.hsn || '',
+              mrp: 0,
+              discount: item.discount_percentage || 0,
+              margin: 0,
+              // GST breakdown - try to use stored values or calculate from state
+              cgst: item.cgst || 0,
+              sgst: item.sgst || 0,
+              igst: item.igst || 0
+            };
+            console.log('Converted item:', itemObj);
+            return itemObj;
+          });
+          console.log('Setting selected products:', convertedItems);
           setSelectedProducts(convertedItems);
         }
       }
@@ -801,6 +888,58 @@ export default function InvoiceCreate() {
     }));
   };
 
+  const handleEditProduct = (item: InvoiceItem) => {
+    // Enable inline editing for this specific row
+    setEditingRowId(item.id);
+
+    // Calculate GST percentage from tax amount if not set or zero
+    const gstPercentage = item.gst_percentage || (item.rate > 0 ? (item.tax / (item.qty * item.rate)) * 100 : 0);
+
+    setEditingRowData({ ...item, gst_percentage: gstPercentage });
+  };
+
+  const saveInlineEdit = () => {
+    if (editingRowId && editingRowData) {
+      // Validate the editing data
+      if (!editingRowData.qty || editingRowData.qty < 1) {
+        setErrors({ inlineEdit: 'Quantity must be at least 1' });
+        return;
+      }
+      if (!editingRowData.rate || editingRowData.rate <= 0) {
+        setErrors({ inlineEdit: 'Rate must be greater than 0' });
+        return;
+      }
+
+      // Recalculate tax and total
+      const subtotal = editingRowData.qty * editingRowData.rate;
+      const taxAmount = (subtotal * editingRowData.gst_percentage) / 100;
+      const updatedItem = {
+        ...editingRowData,
+        tax: taxAmount,
+        total: subtotal + taxAmount,
+        cgst: customerStateForTax === '9' ? taxAmount / 2 : 0,
+        sgst: customerStateForTax === '9' ? taxAmount / 2 : 0,
+        igst: customerStateForTax !== '9' ? taxAmount : 0
+      };
+
+      // Update the item in selectedProducts
+      setSelectedProducts(prev => prev.map(item =>
+        item.id === editingRowId ? updatedItem : item
+      ));
+
+      // Clear editing state
+      setEditingRowId(null);
+      setEditingRowData(null);
+      setErrors(prev => ({ ...prev, inlineEdit: '' }));
+    }
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditingRowData(null);
+    setErrors(prev => ({ ...prev, inlineEdit: '' }));
+  };
+
   const removeProduct = (id: string) => {
     setSelectedProducts(prev => prev.filter(item => item.id !== id));
   };
@@ -859,13 +998,14 @@ export default function InvoiceCreate() {
       // Mapping all collected data to match invoice API expectations
       const submitData = {
         // ===== MAIN INVOICE FIELDS (currently stored) =====
-        invoice_no: formData.invoice_number,                    // ✓ Stored in Invoice.invoice_no
+        invoice_no: parseInt(formData.invoice_number),                    // ✓ Stored in Invoice.invoice_no
         invoice_date: formData.date,                            // ✓ Stored in Invoice.invoice_date (was 'date')
         select_customer: parseInt(selectedCustomerId),         // ✓ Stored in Invoice.select_customer (was 'customer_id')
 
         // ===== ITEM DATA =====
         invoiceItems: selectedProducts.map(item => ({
-          name_of_product: item.product_id,                    // ✓ Stored in InvoiceItems.name_of_product (product ID)
+          product_id:item.product_id,
+          name_of_product: item.product_name,                    // ✓ Stored in InvoiceItems.name_of_product (product ID)
           qty: item.qty,                                       // ✓ Stored in InvoiceItems.qty
           rate: item.rate,                                     // ✓ Stored in InvoiceItems.rate
           subtotal: item.total,                                // ✓ Stored in InvoiceItems.subtotal
@@ -891,7 +1031,7 @@ export default function InvoiceCreate() {
           address2: selectedCustomer.billing_address_2,        // ✓ Stored in BillToSales.address2
           mobile: selectedCustomer.contact_no,                 // ✓ Stored in BillToSales.mobile
           email: selectedCustomer.email,                       // ✓ Stored in BillToSales.email
-          state: selectedCustomer.billing_state,               // ❌ NOT SAVED - STATE NAME not in BillToSales schema (only state_code)
+          // state: selectedCustomer.billing_state,               // ❌ NOT SAVED - STATE NAME not in BillToSales schema (only state_code)
           state_code: selectedCustomer.billing_state_code || 0, // ✓ Stored in BillToSales.state_code
           gstin: selectedCustomer.billing_gstin                // ✓ Stored in BillToSales.gstin
         } : null,
@@ -900,7 +1040,7 @@ export default function InvoiceCreate() {
         shippingDetails: selectedCustomer ? {
           user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name, // ✓ Stored in ShipTo.user_name
           address: selectedCustomer.shipping_address || selectedCustomer.billing_address, // ✓ Stored in ShipTo.address
-          state: selectedCustomer.shipping_state || selectedCustomer.billing_state, // ❌ NOT SAVED - STATE NAME not in ShipTo schema
+          // state: selectedCustomer.shipping_state || selectedCustomer.billing_state, // ❌ NOT SAVED - STATE NAME not in ShipTo schema
           state_code: selectedCustomer.shipping_state_code || selectedCustomer.billing_state_code || 0, // ❌ NOT SAVED - ShipTo doesn't have state_code
           gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin // ✓ Stored in ShipTo.gstin
         } : null,
@@ -909,8 +1049,8 @@ export default function InvoiceCreate() {
         transportDetails: {
           trans_mode: formData.transport_name,                  // ✓ Stored in TransportDetails.trans_mode
           vehicle_no: formData.vehicle_number,                  // ✓ Stored in TransportDetails.vehicle_no
-          supply_date: formData.date,                           // ❌ NOT SAVED - not relevant for transport
-          place_of_supply: ''                                   // ❌ NOT COLLECTED - stored in TransportDetails.place_of_supply
+          // supply_date: formData.date,                           // ❌ NOT SAVED - not relevant for transport
+          // place_of_supply: ''                                   // ❌ NOT COLLECTED - stored in TransportDetails.place_of_supply
         },
 
         // ===== CALCULATED TOTALS (currently stored) =====
@@ -1026,8 +1166,12 @@ export default function InvoiceCreate() {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
                   <select
-                    value={formData.staff_id || ''}
-                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
+                    value={selectedStaffId || formData.staff_id || ''}
+                    onChange={(e) => {
+                      const staffId = e.target.value;
+                      setSelectedStaffId(staffId);
+                      handleInputChange('staff_id', staffId ? staffId : '');
+                    }}
                     className="select w-full"
                   >
                     <option value="">Select Staff</option>
@@ -1168,7 +1312,7 @@ export default function InvoiceCreate() {
             {/* Customer Service Details */}
             <div className="mb-6 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Service Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
                   <input
@@ -1180,10 +1324,24 @@ export default function InvoiceCreate() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
+                  <input
+                    type="text"
+                    value={formData.transport_name}
+                    onChange={(e) => handleInputChange('transport_name', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter transport name"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">MECHANIC NAME</label>
                   <select
-                    value={selectedMechanicId}
-                    onChange={(e) => setSelectedMechanicId(e.target.value)}
+                    value={selectedMechanicId || formData.mechanic_id || ''}
+                    onChange={(e) => {
+                      const mechanicId = e.target.value;
+                      setSelectedMechanicId(mechanicId);
+                      setFormData(prev => ({ ...prev, mechanic_id: mechanicId ? parseInt(mechanicId) : null }));
+                    }}
                     className="select w-full"
                   >
                     <option value="">Select Mechanic</option>
@@ -1203,7 +1361,6 @@ export default function InvoiceCreate() {
                     placeholder="0.00"
                   />
                 </div>
-                <div></div> {/* Empty column for 4-column layout */}
               </div>
             </div>
 
@@ -1316,59 +1473,73 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.category}
+                          value={productRowFilters.category || ''}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              category: e.target.value
+                              category: parseInt(e.target.value) || 0,
+                              categoryName: e.target.options[e.target.selectedIndex]?.text || ''
                             }));
                           }}
                         >
                           <option value="">Select Category</option>
                           {filterOptions.categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                            <option key={cat.id} value={cat.id.toString()}>{cat.name}</option>
                           ))}
                         </select>
                       </td>
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          value={productRowFilters.subcategory}
+                          value={productRowFilters.subcategory || ''}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              subcategory: e.target.value
+                              subcategory: parseInt(e.target.value) || 0,
+                              subcategoryName: e.target.options[e.target.selectedIndex]?.text || ''
                             }));
                           }}
-                          disabled={!productRowFilters.category || filterSubcategoriesLoading}
+                          disabled={!productRowFilters.category}
                         >
                           <option value="">
                             {!productRowFilters.category
                               ? "Please select a category first"
-                              : filterSubcategoriesLoading
-                                ? "Loading subcategories..."
-                                : "Select Sub Category"
+                              : "Select Sub Category"
                             }
                           </option>
-                          {filterSubcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
+                          {filteredSubcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>{sub.name}</option>
                           ))}
                         </select>
                       </td>
                       <td className="px-4 py-3">
+                        <SearchableMultiSelect
+                          options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                          selectedValues={productRowFilters.carModels}
+                          onSelectionChange={(values) => {
+                            setProductRowFilters(prev => ({
+                              ...prev,
+                              carModels: values
+                            }));
+                          }}
+                          placeholder="Select car models..."
+                        />
+                      </td>
+                      <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.company}
+                          value={productRowFilters.company || ''}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              company: e.target.value
+                              company: parseInt(e.target.value) || 0,
+                              companyName: e.target.options[e.target.selectedIndex]?.text || ''
                             }));
                           }}
                         >
                           <option value="">Select Company</option>
                           {filterOptions.companies.map((comp) => (
-                            <option key={comp.id} value={comp.id}>{comp.name}</option>
+                            <option key={comp.id} value={comp.id.toString()}>{comp.name}</option>
                           ))}
                         </select>
                       </td>
@@ -1536,10 +1707,13 @@ export default function InvoiceCreate() {
                                 // Reset form
                                 setSelectedRowProduct(null);
                                 setProductRowFilters({
-                                  category: '',
-                                  subcategory: '',
+                                  category: 0,
+                                  categoryName: '',
+                                  subcategory: 0,
+                                  subcategoryName: '',
                                   carModels: [],
-                                  company: '',
+                                  company: 0,
+                                  companyName: '',
                                   partNo: ''
                                 });
                                 setTemplateRow({
@@ -1564,7 +1738,7 @@ export default function InvoiceCreate() {
 
                     {/* Added Products Rows */}
                     {selectedProducts.map((product, index) => (
-                      <tr key={product.id} className="bg-slate-800 hover:bg-slate-750 border-t border-slate-600">
+                      <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
                         <td className="px-3 py-2 text-center text-xs text-slate-300">
                           {index + 1}
                         </td>
@@ -1586,50 +1760,159 @@ export default function InvoiceCreate() {
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.part_number || '-'}
                         </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          {product.qty}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          ₹{product.rate.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          ₹{product.tax.toFixed(2)}
-                        </td>
-                        {enableDiscount && (
-                          <td className="px-3 py-2 text-center text-xs text-slate-200">
-                            ₹{product.discount_amount.toFixed(2)}
-                          </td>
+                        {editingRowId === product.id ? (
+                          <>
+                            {/* Editable fields when inline editing */}
+                            <td className="px-3 py-2 text-center w-24">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingRowData?.qty || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center w-32">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRowData?.rate || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center w-32">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRowData?.gst_percentage || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            {enableDiscount && (
+                              <td className="px-3 py-2 text-center w-20">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  value={editingRowData?.discount_percentage || ''}
+                                  onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                />
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center text-green-400">
+                              ₹{editingRowData ? (() => {
+                                const subtotal = editingRowData.qty * editingRowData.rate;
+                                const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+                                const taxableAmount = subtotal - discountAmount;
+                                const tax = (taxableAmount * editingRowData.gst_percentage) / 100;
+                                return (taxableAmount + tax).toFixed(2);
+                              })() : product.total.toFixed(2)}
+                            </td>
+                            {/* Save/Cancel buttons */}
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={saveInlineEdit}
+                                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                  title="Save changes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelInlineEdit}
+                                  className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  title="Cancel edit"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            {/* Read-only display */}
+                            <td className="px-3 py-2 text-center text-xs text-slate-200">
+                              {product.qty}
+                            </td>
+                            <td className="px-3 py-2 text-center text-xs text-slate-200">
+                              ₹{product.rate.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-center text-xs text-slate-200">
+                              ₹{product.tax.toFixed(2)}
+                            </td>
+                            {enableDiscount && (
+                              <td className="px-3 py-2 text-center text-xs text-slate-200">
+                                ₹{product.discount_amount.toFixed(2)}
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
+                              ₹{product.total.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditProduct(product)}
+                                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                                  title="Edit product"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                onClick={() => removeProduct(product.id)}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                  title="Remove product"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                          </>
                         )}
-                        <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                          ₹{product.total.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            onClick={() => removeProduct(product.id)}
-                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                            title="Remove product"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3"></td>
                       </tr>
+                      {totalDiscount > 0 && (
+                        <tr>
+                          <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
+                          <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
+                            TOTAL DISCOUNT
+                          </td>
+                          <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
+                            -₹{totalDiscount.toFixed(2)}
+                          </td>
+                        </tr>
+                      )}
+                      {/* <tr className="border-t border-slate-600">
+                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
+                        <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
+                          GRAND TOTAL
+                        </td>
+                        <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
+                          ₹{grandTotal.toFixed(2)}
+                        </td>
+                      </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
-                        <td colSpan={enableDiscount ? 4 : 3} className="px-4 py-3 text-center">
+                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
+                        <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
                             onClick={() => setSelectedProducts([])}
@@ -1932,7 +2215,7 @@ export default function InvoiceCreate() {
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <h4 className="text-slate-200 font-bold text-sm">{product.product_name}</h4>
+                          <h4 className="text-slate-200 font-bold text-sm">{product.id} - {product.product_name}</h4>
                           <div className="flex items-center justify-between mt-1">
                             <div className="flex items-center">
                               <span className="text-green-400 font-semibold text-sm mr-2">Stock:</span>

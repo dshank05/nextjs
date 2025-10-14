@@ -261,9 +261,9 @@ export default function SalexPage() {
           </button>
         </div>
 
-        <button className="btn-primary">
+        {/* <button className="btn-primary">
           New SALEX
-        </button>
+        </button> */}
       </div>
 
       {/* Filters */}

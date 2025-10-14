@@ -75,8 +75,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         select: { invoice_no: true, user_name: true }
       }),
       
-      // Get all item counts in one query  
-      prisma.invoice_itemsx.groupBy({
+      // Get all item counts in one query
+      prisma.invoiceitems.groupBy({
         by: ['invoice_no'],
         where: { invoice_no: { in: invoiceIds } },
         _count: { id: true }
@@ -136,40 +136,48 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       total_tax,                         // ✓ Invoice.total_tax
       total,                             // ✓ Invoice.total
       notes,                             // ✓ Invoice.notes
+      descriptions,                      // ✓ Invoice.descriptions (NOW IN SCHEMA)
       fy,                                // ✓ Invoice.fy
+      bill_reference,                    // ✓ Invoice.bill_reference (NOW IN SCHEMA)
+      payment_mode,                      // ✓ Invoice.payment_mode (NEWLY ADDED)
+      updated_at,                        // ✓ Invoice.updated_at (NEWLY ADDED)
 
       // ===== RELATIONAL DATA (CURRENTLY STORED IN DATABASE) =====
-      invoiceItems,                      // ✓ InvoiceItems table (multiple records)
+      invoiceItems,                      // ✓ InvoiceItems table (multiple records) - WITH product_id FK
       billingDetails,                    // ✓ BillToSales table (single record)
       shippingDetails,                   // ✓ ShipTo table (single record)
       transportDetails,                  // ✓ TransportDetails table (single record)
 
+      // ===== FIELDS COLLECTED BUT NOW READY TO BE SAVED =====
+      // These fields NOW exist in schema and should be saved:
+      staff_details,                     // ✅ NOW SAVED - Invoice.staff_details
+      staff_id,                          // ✅ NOW SAVED - Invoice.staff_id (FK to staff table)
+      mechanic_id,                       // ✅ NOW SAVED - Invoice.mechanic_id (FK to mechanic table)
+      commission,                        // ✅ NOW SAVED - Invoice.commission
+
       // ===== FIELDS COLLECTED BUT NOT YET SAVED IN DATABASE =====
-      // These fields are collected in UI but current schema doesn't have space for them:
-      bill_reference,                    // ❌ NOT SAVED - Future: Invoice.bill_reference
-      staff_details,                     // ❌ NOT SAVED - Future: Invoice.staff_details
-      staff_id,                          // ❌ NOT SAVED - Future: Invoice.staff_id (relation)
-      mechanic_id,                       // ❌ NOT SAVED - Future: Invoice.mechanic_id (relation)
-      commission,                        // ❌ NOT SAVED - Future: Invoice.commission
+      // These fields are collected in UI but schema still doesn't have them:
       discount,                          // ❌ NOT SAVED - Future: Invoice.discount (invoice-level)
       tax,                               // ❌ NOT SAVED - Future: Invoice.tax_description
-      descriptions,                      // ❌ NOT SAVED - Future: Invoice.descriptions
       packing_forwarding_qty,            // ❌ NOT SAVED - Future: Invoice.packing_forwarding_qty
       packing_forwarding_rate,           // ❌ NOT SAVED - Future: Invoice.packing_forwarding_rate
       packing_forwarding_total,          // ❌ NOT SAVED - Future: Invoice.packing_forwarding_total
 
-      // ===== UNUSED FIELDS (removed from UI, kept for API backward compatibility) =====
-      tax_rate,                          // ❌ UNUSED - Removed from invoice create UI, kept for backward compatibility
-      basic_value,                       // ❌ UNUSED - Removed from invoice create UI, kept for backward compatibility
+      // ===== FIELDS MARKED FOR REMOVAL (legacy fields no longer needed) =====
+      tax_rate,                          // 🗑️ MARKED FOR REMOVAL - Legacy field, no longer used in UI
+      basic_value,                       // 🗑️ MARKED FOR REMOVAL - Legacy field, no longer used in UI
 
-      // ===== PAYMENT FIELDS (UI vs DB NAMING ISSUES) =====
-      payment_status,                    // ❌ NOT SAVED - UI sends payment_status, DB has status field (1=Paid)
-      payment_mode,                      // ✓ Invoice.payment_mode
+      // ===== DEPRECATED PAYMENT FIELDS (replaced by payment_mode) =====
+      payment_status,                    // ✅ ACTIVE - Use this field (maps to Invoice.status)
 
-      // ===== CALCULATED FIELDS (REDUNDANT, NOT SAVED) =====
-      total_discount,                    // ❌ NOT SAVED - Calculated field, will compute from items
-      subtotal,                          // ❌ NOT SAVED - Redundant, same as items_total
-      grand_total                        // ❌ NOT SAVED - Redundant, same as total
+      // ===== CALCULATED FIELDS (client-side calculations, not stored) =====
+      // 🗑️ MARKED FOR REMOVAL - These are calculated on client-side:
+      // - total_discount: Calculated from item-level discounts
+      // - subtotal: Same as items_total (sum of item subtotals)
+      // - grand_total: Same as total (items_total + freight + taxes)
+      total_discount,
+      subtotal,
+      grand_total
     } = req.body
 
     // Validate required fields
@@ -180,12 +188,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     console.log('� INVOICE API RECEIVED PAYLOAD:');
     console.log('✅ FIELDS BEING STORED IN DATABASE:', {
       invoice_no, invoice_date, select_customer, items_total, freight,
-      total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, fy,
+      total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, descriptions, fy, bill_reference, payment_mode,
       has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems
     });
     console.log('❌ FIELDS COLLECTED BUT NOT CURRENTLY SAVED:', {
-      bill_reference, staff_details, staff_id, mechanic_id, commission, discount, tax,
-      descriptions, packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total,
+      staff_details, staff_id, mechanic_id, commission, discount, tax,
+      packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total,
       tax_rate, basic_value, payment_status, total_discount, subtotal, grand_total
     });
 
@@ -207,7 +215,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // - warranty_period: String? (warranty information)
 
     // ===== DATABASE CREATION MAPPING =====
-    // Start transaction
+    // Start transaction with 8-second timeout for remote database latency
     const result = await prisma.$transaction(async (tx: any) => {
       // ===== INVOICE TABLE CREATION =====
       // Maps to: Invoice table
@@ -225,9 +233,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           total_tax: total_tax || 0,                     // Invoice.total_tax
           total,                                         // Invoice.total
           notes,                                         // Invoice.notes
+          descriptions,                                  // Invoice.descriptions (NEWLY ADDED)
           fy,                                            // Invoice.fy
-          status: 1,                                     // Invoice.status (default: Paid)
-          payment_mode: 1,                               // Invoice.payment_mode (default: Cash)
+          bill_reference,                                // Invoice.bill_reference (NEWLY ADDED)
+          status: payment_status ? parseInt(payment_status) : 0,                   // Invoice.status (from UI payment_status: 0=Unpaid, 1=Paid)
+          payment_mode: payment_mode ? parseInt(payment_mode) : 1,               // Invoice.payment_mode (from UI: 1=Cash, 2=Bank)
           updated_at: new Date().toISOString(),          // Invoice.updated_at
           staff_details,                                 // Invoice.staff_details (optional, for backward compatibility)
           staff_id: staff_id ? parseInt(staff_id) : null, // Invoice.staff_id (optional, FK to staff table)
@@ -236,10 +246,25 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // ===== BILLING DETAILS CREATION =====
-      // Maps to: BillToSales table
-      if (billingDetails) {
-        await tx.billtosales.create({
+      // ===== PHASE 1: PARALLEL CREATION OF RELATED RECORDS =====
+      // Create incexp, billing, shipping, and transport details in parallel
+      const parallelOperations = [
+        // Record income transaction in incexp table
+        tx.incexp.create({
+          data: {
+            invoice_id: invoice.id,
+            user_id: 1, // TODO: Get from authentication context
+            amt: invoice.total,
+            payment_mode: invoice.payment_mode,
+            type: 1, // 1 = Income
+            incexp_date: new Date().toISOString().split('T')[0],
+            fy: invoice.fy,
+            notes: `Invoice #${invoice.invoice_no} - Sale Transaction`
+          }
+        }),
+
+        // Billing details creation
+        billingDetails ? tx.bill_tosales.create({
           data: {
             invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
             user_name: billingDetails.user_name,          // BillToSales.user_name
@@ -251,13 +276,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             state_code: billingDetails.state_code,        // BillToSales.state_code
             gstin: billingDetails.gstin                   // BillToSales.gstin
           }
-        })
-      }
+        }) : Promise.resolve(null),
 
-      // ===== SHIPPING DETAILS CREATION =====
-      // Maps to: ShipTo table
-      if (shippingDetails) {
-        await tx.shipto.create({
+        // Shipping details creation
+        shippingDetails ? tx.ship_to.create({
           data: {
             invoice_no: invoice.id,                       // ShipTo.invoice_no (FK to invoice)
             user_name: shippingDetails.user_name,          // ShipTo.user_name
@@ -266,60 +288,69 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             state_code: shippingDetails.state_code,        // ShipTo.state_code
             gstin: shippingDetails.gstin                   // ShipTo.gstin
           }
-        })
-      }
+        }) : Promise.resolve(null),
 
-      // ===== TRANSPORT DETAILS CREATION =====
-      // Maps to: TransportDetails table
-      if (transportDetails) {
-        await tx.transportdetails.create({
+        // Transport details creation
+        transportDetails ? tx.transport_details.create({
           data: {
             invoice_id: invoice.id,                       // TransportDetails.invoice_id (FK to invoice)
-            trans_mode: transportDetails.trans_mode,      // TransportDetails.trans_mode
-            vehicle_no: transportDetails.vehicle_no,       // TransportDetails.vehicle_no
-            supply_date: transportDetails.supply_date,    // TransportDetails.supply_date
-            place_of_supply: transportDetails.place_of_supply // TransportDetails.place_of_supply
+            trans_mode: transportDetails.trans_mode || '', // TransportDetails.trans_mode
+            vehicle_no: transportDetails.vehicle_no || ''  // TransportDetails.vehicle_no
+            // supply_date and place_of_supply are optional and not provided in current payload
           }
-        })
-      }
+        }) : Promise.resolve(null)
+      ];
+
+      // Execute all parallel operations
+      await Promise.all(parallelOperations);
 
       // ===== INVOICE ITEMS CREATION =====
-      // Maps to: InvoiceItems table (multiple records)
+      // Maps to: InvoiceItems table (multiple records) - BATCH INSERT OPTIMIZATION
       if (invoiceItems && invoiceItems.length > 0) {
-        for (const item of invoiceItems) {
-          // Create invoice item record
-          await tx.invoiceitems.create({
-            data: {
-              invoice_no: invoice.id,                     // InvoiceItems.invoice_no (FK to invoice)
-              name_of_product: parseInt(item.name_of_product), // InvoiceItems.name_of_product (product name/ID)
-              qty: item.qty,                              // InvoiceItems.qty
-              rate: item.rate,                            // InvoiceItems.rate
-              subtotal: item.subtotal,                    // InvoiceItems.subtotal
-              hsn: item.hsn,                              // InvoiceItems.hsn
-              part: item.part,                            // InvoiceItems.part
-              category_id: item.category_id,              // InvoiceItems.category_id
-              model_id: item.model_id,                    // InvoiceItems.model_id
-              company_id: item.company_id,                // InvoiceItems.company_id
-              invoice_date: invoice.invoice_date,         // copied from invoice
-              fy: invoice.fy                             // copied from invoice
-            }
-          })
+        // Prepare batch data for invoice items
+        const invoiceItemData = invoiceItems.map(item => ({
+          product_id : item.product_id,
+          invoice_no: invoice.id,                     // InvoiceItems.invoice_no (FK to invoice)
+          name_of_product: item.name_of_product, // InvoiceItems.name_of_product (product name/ID)
+          qty: item.qty,                              // InvoiceItems.qty
+          rate: item.rate,                            // InvoiceItems.rate
+          subtotal: item.subtotal,                    // InvoiceItems.subtotal
+          hsn: item.hsn,                              // InvoiceItems.hsn
+          part: item.part,                            // InvoiceItems.part
+          category_id: item.category_id,              // InvoiceItems.category_id
+          model_id: parseInt(item.model_id),                    // InvoiceItems.model_id
+          company_id: item.company_id,                // InvoiceItems.company_id
+          invoice_date: invoice.invoice_date,         // copied from invoice
+          fy: invoice.fy                             // copied from invoice
+        }));
 
-          // ===== STOCK MANAGEMENT =====
-          // Update product stock (decrease for sales)
-          await tx.product.update({
-            where: { id: parseInt(item.name_of_product) },
-            data: {
-              stock: {
-                decrement: item.qty                      // Product.stock -= item.qty
+        // Batch create all invoice items
+        await tx.invoiceitems.createMany({
+          data: invoiceItemData
+        });
+
+        // ===== STOCK MANAGEMENT =====
+        // Batch update product stock (decrease for sales) - OPTIMIZED
+        const stockUpdates = invoiceItems.map(item => ({
+          id: item.product_id,
+          qty: item.qty
+        }));
+
+        // Execute stock updates in parallel for better performance
+        await Promise.all(
+          stockUpdates.map(({ id, qty }) =>
+            tx.product.update({
+              where: { id },
+              data: {
+                stock: { decrement: qty }
               }
-            }
-          })
-        }
+            })
+          )
+        );
       }
 
       return invoice
-    })
+    },{ timeout: 8000 })
 
     console.log('✅ INVOICE CREATED SUCCESSFULLY:', { id: result.id, invoice_no: result.invoice_no, total: result.total });
 

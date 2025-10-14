@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2 } from 'lucide-react';
+import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
@@ -170,6 +170,9 @@ export default function InvoiceCCreate() {
   // State for filtered car models based on selected product
   const [filteredCarModels, setFilteredCarModels] = useState<any[]>([]);
 
+  // State for filtered subcategories based on selected category
+  const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
+
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
@@ -250,6 +253,10 @@ export default function InvoiceCCreate() {
   // State for selected customer details (fetched on-demand, not stored in formData)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
+  // State for inline row editing
+  const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
+
   // New state for GST rates - not used for salex but kept for consistency
   const [gstRates, setGstRates] = useState<any[]>([]);
 
@@ -326,6 +333,31 @@ export default function InvoiceCCreate() {
     }
   }, [isProductPanelOpen]);
 
+  // Fetch subcategories for table filters when category changes
+  const fetchSubcategoriesForTable = async (categoryId: string) => {
+    if (!categoryId) {
+      setFilteredSubcategories([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFilteredSubcategories(data.subcategories || []);
+      } else {
+        setFilteredSubcategories([]);
+      }
+    } catch (error) {
+      console.error('Error fetching subcategories for table:', error);
+      setFilteredSubcategories([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubcategoriesForTable(productRowFilters.category);
+  }, [productRowFilters.category]);
+
   // Handle product search with normalized text
   useEffect(() => {
     if (productSearchTerm.trim()) {
@@ -378,7 +410,14 @@ export default function InvoiceCCreate() {
 
   const fetchStaffList = async () => {
     try {
-      setStaffList([]);
+      const response = await fetch('/api/staff');
+      if (response.ok) {
+        const data = await response.json();
+        setStaffList(data.staff.map((staff: any) => ({
+          id: staff.id.toString(),
+          staff_name: staff.name
+        })));
+      }
     } catch (error) {
       console.error('Error fetching staff:', error);
     }
@@ -457,6 +496,62 @@ export default function InvoiceCCreate() {
     } else {
       setSelectedCustomer(null);
     }
+  };
+
+  const handleEditProduct = (item: InvoiceItem) => {
+    // Enable inline editing for this specific row
+    setEditingRowId(item.id);
+
+    // Calculate GST percentage from tax amount if not set or zero
+    const gstPercentage = item.gst_percentage || (item.rate > 0 ? (item.tax / (item.qty * item.rate)) * 100 : 0);
+
+    setEditingRowData({ ...item, gst_percentage: gstPercentage });
+  };
+
+  const saveInlineEdit = () => {
+    if (editingRowId && editingRowData) {
+      // Validate the editing data
+      if (!editingRowData.qty || editingRowData.qty < 1) {
+        setErrors({ inlineEdit: 'Quantity must be at least 1' });
+        return;
+      }
+      if (!editingRowData.rate || editingRowData.rate <= 0) {
+        setErrors({ inlineEdit: 'Rate must be greater than 0' });
+        return;
+      }
+
+      // Recalculate tax and total for salex (tax is always 0)
+      const subtotal = editingRowData.qty * editingRowData.rate;
+      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+      const finalTotal = subtotal - discountAmount; // No tax added for salex
+
+      const updatedItem = {
+        ...editingRowData,
+        discount_amount: discountAmount,
+        total: finalTotal,
+        // Tax fields always 0 for salex
+        tax: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0
+      };
+
+      // Update the item in selectedProducts
+      setSelectedProducts(prev => prev.map(item =>
+        item.id === editingRowId ? updatedItem : item
+      ));
+
+      // Clear editing state
+      setEditingRowId(null);
+      setEditingRowData(null);
+      setErrors(prev => ({ ...prev, inlineEdit: '' }));
+    }
+  };
+
+  const cancelInlineEdit = () => {
+    setEditingRowId(null);
+    setEditingRowData(null);
+    setErrors(prev => ({ ...prev, inlineEdit: '' }));
   };
 
   const addProductToInvoice = (product: Product) => {
@@ -873,7 +968,7 @@ export default function InvoiceCCreate() {
             {/* Customer Service Details */}
             <div className="mb-6 border-t border-slate-600 pt-8">
               <h3 className="text-lg font-medium text-slate-200 mb-6">Service Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
                   <input
@@ -882,6 +977,16 @@ export default function InvoiceCCreate() {
                     onChange={(e) => handleInputChange('vehicle_number', e.target.value)}
                     className="input w-full"
                     placeholder="Enter vehicle number"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
+                  <input
+                    type="text"
+                    value={formData.transport_name}
+                    onChange={(e) => handleInputChange('transport_name', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter transport name"
                   />
                 </div>
                 <div>
@@ -908,7 +1013,6 @@ export default function InvoiceCCreate() {
                     placeholder="0.00"
                   />
                 </div>
-                <div></div> {/* Empty column for 4-column layout */}
               </div>
             </div>
 
@@ -1034,7 +1138,7 @@ export default function InvoiceCCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
                           value={productRowFilters.subcategory}
                           onChange={(e) => {
                             setProductRowFilters(prev => ({
@@ -1042,10 +1146,16 @@ export default function InvoiceCCreate() {
                               subcategory: e.target.value
                             }));
                           }}
+                          disabled={!productRowFilters.category}
                         >
-                          <option value="">Select Sub Category</option>
-                          {filterOptions.subcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.name}</option>
+                          <option value="">
+                            {!productRowFilters.category
+                              ? "Please select a category first"
+                              : "Select Sub Category"
+                            }
+                          </option>
+                          {filteredSubcategories.map((sub) => (
+                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
                           ))}
                         </select>
                       </td>
@@ -1246,7 +1356,7 @@ export default function InvoiceCCreate() {
 
                     {/* Added Products Rows */}
                     {selectedProducts.map((product, index) => (
-                      <tr key={product.id} className="bg-slate-800 hover:bg-slate-750 border-t border-slate-600">
+                      <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
                         <td className="px-3 py-2 text-center text-xs text-slate-300">
                           {index + 1}
                         </td>
@@ -1268,82 +1378,142 @@ export default function InvoiceCCreate() {
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.part_number || '-'}
                         </td>
-                        <td className="px-3 py-2 text-center text-xs">
-                          <input
-                            type="number"
-                            min="1"
-                            value={product.qty}
-                            onChange={(e) => updateProductQuantity(product.id, parseFloat(e.target.value) || 0)}
-                            className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          />
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          ₹{product.rate.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          ₹{product.tax.toFixed(2)}
-                        </td>
-                        {enableDiscount && (
-                          <td className="px-3 py-2 text-center text-xs">
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.01"
-                              value={product.discount_percentage}
-                              onChange={(e) => updateProductDiscount(product.id, parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                            />
-                          </td>
+                        {editingRowId === product.id ? (
+                          <>
+                            {/* Editable fields when inline editing */}
+                            <td className="px-3 py-2 text-center w-24">
+                              <input
+                                type="number"
+                                min="1"
+                                value={editingRowData?.qty || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-center w-32">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingRowData?.rate || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
+                            </td>
+                            {enableDiscount && (
+                              <td className="px-3 py-2 text-center w-20">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max="100"
+                                  value={editingRowData?.discount_percentage || ''}
+                                  onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                />
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center text-green-400">
+                              ₹{editingRowData ? (() => {
+                                const subtotal = editingRowData.qty * editingRowData.rate;
+                                const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+                                return (subtotal - discountAmount).toFixed(2);
+                              })() : product.total.toFixed(2)}
+                            </td>
+                            {/* Save/Cancel buttons */}
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={saveInlineEdit}
+                                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                  title="Save changes"
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelInlineEdit}
+                                  className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  title="Cancel edit"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            {/* Read-only display */}
+                            <td className="px-3 py-2 text-center text-xs text-slate-200">
+                              {product.qty}
+                            </td>
+                            <td className="px-3 py-2 text-center text-xs text-slate-200">
+                              ₹{product.rate.toFixed(2)}
+                            </td>
+                            {enableDiscount && (
+                              <td className="px-3 py-2 text-center text-xs text-slate-200">
+                                ₹{product.discount_amount.toFixed(2)}
+                              </td>
+                            )}
+                            <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
+                              ₹{product.total.toFixed(2)}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              <div className="flex items-center justify-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditProduct(product)}
+                                  className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
+                                  title="Edit product"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeProduct(product.id)}
+                                  className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                                  title="Remove product"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </td>
+                          </>
                         )}
-                        <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                          ₹{product.total.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          <button
-                            onClick={() => removeProduct(product.id)}
-                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                            title="Remove product"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </td>
                       </tr>
                     ))}
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={11} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3"></td>
                       </tr>
-                      {totalDiscount > 0 && (
-                        <tr>
-                          <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
-                          <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
-                            TOTAL DISCOUNT
-                          </td>
-                          <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
-                            -₹{totalDiscount.toFixed(2)}
-                          </td>
-                          <td className="px-4 py-3"></td>
-                        </tr>
-                      )}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={11} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
                           GRAND TOTAL
                         </td>
                         <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
                           ₹{grandTotal.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3"></td>
+                      </tr>
+                      <tr className="border-t border-slate-600">
+                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={2} className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedProducts([])}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
+                          >
+                            Clear All Products
+                          </button>
+                        </td>
                       </tr>
                     </tfoot>
                   )}

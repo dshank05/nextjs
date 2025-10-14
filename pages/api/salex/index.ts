@@ -180,10 +180,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       payment_status = 1,
       payment_mode = 1,
       descriptions = '',
-      staff_details,     // New field for backward compatibility
-      staff_id,         // New field as FK to staff table (optional)
-      mechanic_id,      // New field as FK to mechanic table (optional)
-      commission,       // New field for commission amount (optional)
+      staff_details,     // ✅ TO BE SAVED - InvoiceX.staff_details (exists)
+      staff_id,          // ✅ TO BE SAVED - InvoiceX.staff_id (FK field)
+      mechanic_id,       // ✅ TO BE SAVED - InvoiceX.mechanic_id (FK field)
+      commission,        // ✅ TO BE SAVED - InvoiceX.commission (exists)
+      bill_reference,    // ❌ NOT SAVED - Schema missing: InvoiceX.bill_reference
 
       // ===== UNUSED FIELDS (removed from UI, kept for API backward compatibility) =====
       tax_rate,         // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
@@ -202,6 +203,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create main invoice record in invoicex table
+      const combinedNotes = descriptions ? `${notes || ''}\n\nDescriptions: ${descriptions}`.trim() : (notes || '');
       const invoice = await tx.invoicex.create({
         data: {
           invoice_no: parseInt(invoice_no),
@@ -215,8 +217,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           total_igst: 0,
           total_tax: 0,
           total: parseFloat(total),
-          notes: notes || '',
-          // Note: invoicex table doesn't have descriptions field, only notes
+          notes: combinedNotes,                       // Combine notes and descriptions
+          // Note: invoicex table doesn't have bill_reference field in current schema
           invoice_date: invoiceDateTimestamp,
           updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
           status: parseInt(payment_status),
@@ -226,6 +228,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
           mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
           commission: commission || 0                // Optional commission amount
+        }
+      })
+
+      // ===== PHASE 1: TRANSACTION RECORDING =====
+      // Record income transaction in incexpx table
+      await tx.incexpx.create({
+        data: {
+          invoice_id: invoice.id,
+          user_id: 1, // TODO: Get from authentication context
+          amt: invoice.total,
+          payment_mode: invoice.payment_mode,
+          type: 1, // 1 = Income (for salex/invoice exempt)
+          incexp_date: new Date().toISOString().split('T')[0],
+          fy: invoice.fy,
+          notes: `InvoiceX #${invoice.invoice_no} - Tax-exempt Sale Transaction`
         }
       })
 

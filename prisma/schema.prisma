@@ -77,6 +77,8 @@ model Product {
   subcategory_ref        product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
   product_company_ref    product_company?     @relation(fields: [company_id], references: [id], map: "product_company_fkey")
   warehouse              warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
+  invoice_items          Invoiceitems[]
+  invoice_itemsx         invoice_itemsx[]
 
   @@index([product_category], map: "idx_product_category")
   @@index([company], map: "idx_product_company")
@@ -108,7 +110,7 @@ model Invoice {
   total_tax           Float?
   total               Float
   notes               String?   @db.VarChar(255)
-  notes_show          Int?
+  descriptions        String?   @db.Text
   invoice_date        Int
   updated_at          String    @db.VarChar(100)
   status              Int?
@@ -120,6 +122,7 @@ model Invoice {
   staff_id            Int?
   commission          Float?
   mechanic_id         Int?
+  bill_reference      String?   @db.VarChar(255)
   mechanic            mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
   staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
 
@@ -132,8 +135,9 @@ model Invoice {
 }
 
 model Invoiceitems {
-  id              Int     @id @default(autoincrement())
-  invoice_no      Int
+  id         Int @id @default(autoincrement())
+  invoice_no Int
+  product_id Int
   name_of_product String  @db.VarChar(255)
   category_id     Int?
   model_id        Int?
@@ -150,8 +154,10 @@ model Invoiceitems {
   part_show       Int?
   invoice_date    Int
   fy              Int
+  product         Product @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
 
   @@index([invoice_date], map: "idx_invoiceitems_invoice_date")
+  @@index([product_id], map: "invoiceitems_product_fkey")
   @@map("invoice_items")
 }
 
@@ -201,6 +207,7 @@ model Purchase {
 model Purchaseitems {
   id              Int             @id @default(autoincrement())
   invoice_no      Int
+  product_id      Int?
   name_of_product String          @db.VarChar(255)
   category_id     Int?
   subcategory_id  Int?
@@ -211,9 +218,8 @@ model Purchaseitems {
   hsn             String?         @db.VarChar(50)
   part            String?         @db.VarChar(100)
   qty             Float?
-  unit            Int?    // @deprecated - not used for products
+  unit            Int? // @deprecated - not used for products
   rate            Float?
-  tax             Float?
   subtotal        Float
   fy              Int
   invoice_date    Int
@@ -347,6 +353,7 @@ model incexpx {
 model invoice_itemsx {
   id              Int     @id @default(autoincrement())
   invoice_no      Int
+  product_id      Int
   name_of_product String  @db.VarChar(255)
   category_id     Int?
   model_id        Int?
@@ -363,8 +370,10 @@ model invoice_itemsx {
   part_show       Int?
   invoice_date    Int
   fy              Int
+  product         Product @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
 
   @@index([invoice_date], map: "idx_invoice_itemsx_invoice_date")
+  @@index([product_id], map: "invoiceitemsx_product_fkey")
 }
 
 model invoicex {
@@ -381,8 +390,8 @@ model invoicex {
   total_tax           Float?
   total               Float
   notes               String?   @db.VarChar(255)
-  notes_show          Int?
   invoice_date        Int
+  descriptions        String?   @db.Text
   updated_at          String    @db.VarChar(100)
   status              Int?
   payment_mode        Int?
@@ -438,8 +447,8 @@ model car_models {
 }
 
 model product_company {
-  id           Int      @id @default(autoincrement())
-  company_name String   @db.VarChar(255)
+  id           Int       @id @default(autoincrement())
+  company_name String    @db.VarChar(255)
   products     Product[]
 
   @@index([company_name], map: "idx_product_company_name")
@@ -561,7 +570,7 @@ model gst_tax_rate {
   @@index([description], map: "idx_gst_tax_rate_description")
   @@index([hsn_code], map: "idx_gst_tax_rate_hsn_code")
   @@index([status], map: "idx_gst_tax_rate_status")
-  @@index([status, description], map: "idx_gst_status_description") 
+  @@index([status, description], map: "idx_gst_status_description")
   @@map("gst_tax_rate")
 }
 

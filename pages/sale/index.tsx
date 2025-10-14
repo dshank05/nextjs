@@ -261,9 +261,12 @@ export default function SalePage() {
           </button>
         </div>
 
-        <button className="btn-primary">
+        {/* <button
+          onClick={() => router.push('/sale/create')}
+          className="btn-primary"
+        >
           New Sales Invoice
-        </button>
+        </button> */}
       </div>
 
       {/* Filters */}

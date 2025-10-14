@@ -1858,17 +1858,17 @@ export default function PurchaseCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={9} className="px-4 py-3"></td>
+                        <td colSpan={11} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200" colSpan={2}>
+                        <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={9} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right" colSpan={3}>
+                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
                             onClick={() => setSelectedProducts([])}
