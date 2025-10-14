@@ -44,16 +44,28 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       prisma.transport_details.findFirst({ where: { invoice_id: invoice.id } }),
       prisma.invoiceitems.findMany({
         where: { invoice_no: invoice.id },
-        include: {
-          product: {
-            select: {
-              gst_rate: {
-                select: {
-                  rate: true
-                }
-              }
-            }
-          }
+        select: {
+          id: true,
+          product_id: true,
+          invoice_no: true,
+          name_of_product: true,
+          qty: true,
+          rate: true,
+          subtotal: true,
+          gst_percentage: true,
+          cgst: true,
+          sgst: true,
+          igst: true,
+          tax: true,
+          discount: true,          // Item-level discount amount
+          discountrate: true,      // Item-level discount percentage
+          hsn: true,
+          part: true,
+          category_id: true,
+          model_id: true,
+          company_id: true,
+          invoice_date: true,
+          fy: true
         }
       }),
       prisma.incexp.findMany({ where: { invoice_id: invoice.id } })
@@ -62,7 +74,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     res.status(200).json({
       invoice: {
         ...invoice,
-        // Add missing fields that UI expects
+        // Add fields that UI expects
         customer_id: invoice.select_customer, // UI expects customer_id field
         customer_name: billingDetails?.user_name || '',
         contact_number: billingDetails?.mobile || '',
@@ -71,10 +83,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         gst_number: billingDetails?.gstin || '',
         vehicle_number: transportDetails?.vehicle_no || '',
         transport_name: transportDetails?.trans_mode || '',
-        // Add missing packing/forwarding fields (these aren't stored in DB yet)
-        packing_forwarding_qty: '0', // Default for now
-        packing_forwarding_rate: '0', // Default for now
-        packing_forwarding_total: '0', // Default for now
+        // Now use actual database values for packing/forwarding fields
+        packing_forwarding_qty: invoice.packing_forwarding_qty?.toString() || '0',
+        packing_forwarding_rate: invoice.packing_forwarding_rate?.toString() || '0',
+        packing_forwarding_total: invoice.packing_forwarding_total?.toString() || '0',
       },
       billingDetails,
       shippingDetails,
@@ -90,6 +102,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     })
   }
 }
+
 
 async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: string) {
   try {
@@ -119,6 +132,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       mechanic_id,
       commission,
 
+      // Newly stored invoice-level fields
+      discount,
+      tax,
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
+
       // Related data
       invoiceItems,
       billingDetails,
@@ -145,9 +165,21 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       return res.status(404).json({ message: 'Invoice not found' })
     }
 
-    const result = await prisma.$transaction(async (tx: any) => {
-      // Update main invoice
-      const updatedInvoice = await tx.invoice.update({
+    // ===== SPLIT INTO MULTIPLE TRANSACTIONS TO AVOID TIMEOUT =====
+
+    // Transaction 1: Update main invoice data
+    const totalItemDiscount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.discount?.toString()) || 0), 0);
+    const discountPercentage = items_total > 0 ? (totalItemDiscount / items_total) * 100 : 0;
+
+    console.log('💰 UPDATE: INVOICE-LEVEL DISCOUNT CALCULATIONS:', {
+      totalItemDiscount,
+      items_total,
+      discountPercentage,
+      taxrate: discountPercentage > 0 ? (total_tax / (items_total - totalItemDiscount)) * 100 : (total_tax / items_total) * 100
+    });
+
+    const updatedInvoice = await prisma.$transaction(async (tx: any) => {
+      return await tx.invoice.update({
         where: { id: parseInt(invoiceId) },
         data: {
           invoice_no,
@@ -156,6 +188,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           items_total: items_total || 0,
           freight: freight || 0,
           total_taxable_value,
+          taxrate: discountPercentage > 0 ? Math.round((total_tax / (items_total - totalItemDiscount)) * 100) : Math.round((total_tax / items_total) * 100),
           total_cgst: total_cgst || 0,
           total_sgst: total_sgst || 0,
           total_igst: total_igst || 0,
@@ -171,22 +204,34 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           bill_reference: bill_reference || null,
           descriptions: descriptions || null,
           staff_details,
-          staff_id: staff_id ? parseInt(staff_id) : null,
-          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null,
-          commission: commission || 0
+          staff: staff_id ? { connect: { id: parseInt(staff_id) } } : undefined,
+          mechanic: mechanic_id ? { connect: { id: parseInt(mechanic_id) } } : undefined,
+          commission: commission || 0,
+
+          // Newly stored invoice-level fields
+          discount: totalItemDiscount,
+          discount_percentage: discountPercentage,
+          packing_forwarding_qty: packing_forwarding_qty || 0,
+          packing_forwarding_rate: packing_forwarding_rate || 0,
+          packing_forwarding_total: packing_forwarding_total || 0
         }
       })
+    },{ timeout: 15000 }) //  15 seconds timeout
 
-      // Handle stock adjustments for edited items
-      if (invoiceItems && invoiceItems.length > 0) {
+    // Transaction 2: Handle stock adjustments and invoice items (most expensive operation)
+    if (invoiceItems && invoiceItems.length > 0) {
+      await prisma.$transaction(async (tx: any) => {
         // First, reverse previous stock changes
         for (const oldItem of currentInvoiceItems) {
-          await tx.product.update({
-            where: { id: parseInt(oldItem.name_of_product) },
-            data: {
-              stock: { increment: oldItem.qty } // Add back the stock that was deducted
-            }
-          })
+          const productId = parseInt(oldItem.product_id?.toString() || oldItem.name_of_product?.toString() || '0');
+          if (productId > 0) {
+            await tx.product.update({
+              where: { id: productId },
+              data: {
+                stock: { increment: oldItem.qty } // Add back the stock that was deducted
+              }
+            })
+          }
         }
 
         // Delete old invoice items
@@ -194,15 +239,23 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           where: { invoice_no: parseInt(invoiceId) }
         })
 
-        // Create new invoice items and adjust stock
+        // Create new invoice items
         for (const item of invoiceItems) {
           await tx.invoiceitems.create({
             data: {
+              product_id: item.product_id,
               invoice_no: parseInt(invoiceId),
-              name_of_product: parseInt(item.name_of_product),
+              name_of_product: item.name_of_product,
               qty: item.qty,
               rate: item.rate,
               subtotal: item.subtotal,
+              gst_percentage: item.gst_percentage,
+              cgst: item.cgst,
+              sgst: item.sgst,
+              igst: item.igst,
+              tax: item.tax,
+              discount: item.discount || 0,
+              discountrate: item.discountrate || 0,
               hsn: item.hsn,
               part: item.part,
               category_id: item.category_id,
@@ -212,17 +265,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
               fy: updatedInvoice.fy
             }
           })
+        }
 
-          // Deduct new stock
+        // Deduct new stock for all new items
+        for (const item of invoiceItems) {
           await tx.product.update({
-            where: { id: parseInt(item.name_of_product) },
+            where: { id: parseInt(item.product_id.toString()) },
             data: {
               stock: { decrement: item.qty }
             }
           })
         }
-      }
+      })
+    }
 
+    // Transaction 3: Update related tables (separate transaction)
+    await prisma.$transaction(async (tx: any) => {
       // Update billing details
       if (billingDetails) {
         await tx.billtosales.upsert({
@@ -292,21 +350,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           }
         })
       }
-
-      // Update transaction record
-      await tx.incexp.updateMany({
-        where: { invoice_id: parseInt(invoiceId) },
-        data: {
-          amt: updatedInvoice.total,
-          payment_mode: updatedInvoice.payment_mode,
-          notes: `Invoice #${updatedInvoice.invoice_no} - Updated Transaction`
-        }
-      })
-
-      return updatedInvoice
     })
 
-    res.status(200).json(result)
+    // Update transaction record (outside transaction since it's not critical)
+    await prisma.incexp.updateMany({
+      where: { invoice_id: parseInt(invoiceId) },
+      data: {
+        amt: updatedInvoice.total,
+        payment_mode: updatedInvoice.payment_mode,
+        notes: `Invoice #${updatedInvoice.invoice_no} - Updated Transaction`
+      }
+    })
+
+    res.status(200).json(updatedInvoice)
   } catch (error) {
     console.error('Invoice update error:', error)
     res.status(500).json({
@@ -327,12 +383,15 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, invoiceId
     await prisma.$transaction(async (tx: any) => {
       // Return stock for all invoice items
       for (const item of invoiceItems) {
-        await tx.product.update({
-          where: { id: parseInt(item.name_of_product) },
-          data: {
-            stock: { increment: item.qty }
-          }
-        })
+        const productId = parseInt(item.product_id?.toString() || item.name_of_product?.toString() || '0');
+        if (productId > 0) {
+          await tx.product.update({
+            where: { id: productId },
+            data: {
+              stock: { increment: item.qty }
+            }
+          })
+        }
       }
 
       // Delete related records

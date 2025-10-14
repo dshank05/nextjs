@@ -96,7 +96,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       formattedTotal: invoice.total.toLocaleString('en-IN', {
         style: 'currency',
         currency: 'INR'
-      })
+      }),
+      // Include newly added invoice-level fields in the response
+      discount: invoice.discount || 0,
+      tax: invoice.tax || null,
+      packing_forwarding_qty: invoice.packing_forwarding_qty || 0,
+      packing_forwarding_rate: invoice.packing_forwarding_rate || 0,
+      packing_forwarding_total: invoice.packing_forwarding_total || 0
     }))
 
     const totalPages = Math.ceil(total / limitNum)
@@ -150,18 +156,18 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       // ===== FIELDS COLLECTED BUT NOW READY TO BE SAVED =====
       // These fields NOW exist in schema and should be saved:
-      staff_details,                     // ✅ NOW SAVED - Invoice.staff_details
-      staff_id,                          // ✅ NOW SAVED - Invoice.staff_id (FK to staff table)
-      mechanic_id,                       // ✅ NOW SAVED - Invoice.mechanic_id (FK to mechanic table)
-      commission,                        // ✅ NOW SAVED - Invoice.commission
+      staff_details,                     // NOW SAVED - Invoice.staff_details
+      staff_id,                          // NOW SAVED - Invoice.staff_id (FK to staff table)
+      mechanic_id,                       // NOW SAVED - Invoice.mechanic_id (FK to mechanic table)
+      commission,                        // NOW SAVED - Invoice.commission
 
-      // ===== FIELDS COLLECTED BUT NOT YET SAVED IN DATABASE =====
-      // These fields are collected in UI but schema still doesn't have them:
-      discount,                          // ❌ NOT SAVED - Future: Invoice.discount (invoice-level)
-      tax,                               // ❌ NOT SAVED - Future: Invoice.tax_description
-      packing_forwarding_qty,            // ❌ NOT SAVED - Future: Invoice.packing_forwarding_qty
-      packing_forwarding_rate,           // ❌ NOT SAVED - Future: Invoice.packing_forwarding_rate
-      packing_forwarding_total,          // ❌ NOT SAVED - Future: Invoice.packing_forwarding_total
+      // ===== FIELDS NOW SAVED AS INVOICE-LEVEL FIELDS =====
+      // These fields are collected in UI and now stored in database:
+      discount,                          // ✓ NOW SAVED - Invoice.discount (invoice-level discount amount)
+      tax,                               // ✓ NOW SAVED - Invoice.tax (tax description/notes)
+      packing_forwarding_qty,            // ✓ NOW SAVED - Invoice.packing_forwarding_qty
+      packing_forwarding_rate,           // ✓ NOW SAVED - Invoice.packing_forwarding_rate
+      packing_forwarding_total,          // ✓ NOW SAVED - Invoice.packing_forwarding_total
 
       // ===== FIELDS MARKED FOR REMOVAL (legacy fields no longer needed) =====
       tax_rate,                          // 🗑️ MARKED FOR REMOVAL - Legacy field, no longer used in UI
@@ -191,28 +197,28 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, descriptions, fy, bill_reference, payment_mode,
       has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems
     });
-    console.log('❌ FIELDS COLLECTED BUT NOT CURRENTLY SAVED:', {
-      staff_details, staff_id, mechanic_id, commission, discount, tax,
-      packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total,
+    // ===== CALCULATE INVOICE-LEVEL DISCOUNTS =====
+    // Calculate total discount from all invoice items
+    const totalItemDiscount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.discount?.toString()) || 0), 0);
+    const discountPercentage = items_total > 0 ? (totalItemDiscount / items_total) * 100 : 0;
+
+    console.log('💰 INVOICE-LEVEL DISCOUNT CALCULATIONS:', {
+      totalItemDiscount,
+      items_total,
+      discountPercentage,
+      taxrate: discountPercentage > 0 ? (total_tax / (items_total - totalItemDiscount)) * 100 : (total_tax / items_total) * 100
+    });
+
+    console.log('✅ FIELDS NOW SAVED IN DATABASE:', {
+      staff_details, staff_id, mechanic_id, commission,
+      invoice_discount: totalItemDiscount,
+      invoice_discount_percentage: discountPercentage,
+      packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total
+    });
+    console.log('❌ LEGACY FIELDS IGNORED:', {
       tax_rate, basic_value, payment_status, total_discount, subtotal, grand_total
     });
 
-    // ===== FUTURE SCHEMA EXPANSION FIELDS =====
-    // These fields don't exist in current Invoice/InvoiceItems tables, similar to Product API approach:
-    // TODO: Add these fields to Invoice/InvoiceItems schemas when ready:
-    // - approved_by: String? (user who approved the invoice)
-    // - approval_date: DateTime? (when invoice was approved)
-    // - delivery_status: String? ("pending", "shipped", "delivered")
-    // - payment_terms: String? ("net_15", "net_30", "cod")
-    // - invoice_discount: Float? (separate from item-level discounts)
-    // - due_date: DateTime? (calculated based on payment terms)
-    // - eway_bill_no: String? (for interstate sales)
-    // - credit_period_days: Int? (number of days for credit)
-    // - salesperson_id: Int? (who sold this invoice)
-    // - delivery_notes: String? (separate from general notes)
-    // - quality_check_status: String? ("pending", "passed", "failed")
-    // - return_policy: String? (terms for returns/exchanges)
-    // - warranty_period: String? (warranty information)
 
     // ===== DATABASE CREATION MAPPING =====
     // Start transaction with 8-second timeout for remote database latency
@@ -227,6 +233,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           items_total: items_total || 0,                 // Invoice.items_total
           freight: freight || 0,                         // Invoice.freight
           total_taxable_value,                           // Invoice.total_taxable_value
+          taxrate: discountPercentage > 0 ? Math.round((total_tax / (items_total - totalItemDiscount)) * 100) : Math.round((total_tax / items_total) * 100), // Invoice.taxrate (calculated from total tax %)
           total_cgst: total_cgst || 0,                   // Invoice.total_cgst
           total_sgst: total_sgst || 0,                   // Invoice.total_sgst
           total_igst: total_igst || 0,                   // Invoice.total_igst
@@ -240,9 +247,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: payment_mode ? parseInt(payment_mode) : 1,               // Invoice.payment_mode (from UI: 1=Cash, 2=Bank)
           updated_at: new Date().toISOString(),          // Invoice.updated_at
           staff_details,                                 // Invoice.staff_details (optional, for backward compatibility)
-          staff_id: staff_id ? parseInt(staff_id) : null, // Invoice.staff_id (optional, FK to staff table)
-          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Invoice.mechanic_id (optional, FK to mechanic table)
-          commission: commission || 0                    // Invoice.commission (optional, commission amount)
+          staff: staff_id ? { connect: { id: parseInt(staff_id) } } : undefined, // Invoice.staff (relation)
+          mechanic: mechanic_id ? { connect: { id: parseInt(mechanic_id) } } : undefined, // Invoice.mechanic (relation)
+          commission: commission || 0,                   // Invoice.commission (optional, commission amount)
+
+          // Newly stored invoice-level fields (added to schema)
+          discount: totalItemDiscount,                   // Invoice.discount (calculated as sum of item discounts)
+          discount_percentage: discountPercentage,       // Invoice.discount_percentage (calculated discount percentage)
+          packing_forwarding_qty: packing_forwarding_qty || 0,     // Invoice.packing_forwarding_qty
+          packing_forwarding_rate: packing_forwarding_rate || 0,   // Invoice.packing_forwarding_rate
+          packing_forwarding_total: packing_forwarding_total || 0, // Invoice.packing_forwarding_total
         }
       })
 
@@ -315,10 +329,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           qty: item.qty,                              // InvoiceItems.qty
           rate: item.rate,                            // InvoiceItems.rate
           subtotal: item.subtotal,                    // InvoiceItems.subtotal
+          gst_percentage: item.gst_percentage,        // InvoiceItems.gst_percentage (new field)
+          cgst: item.cgst,                            // InvoiceItems.cgst (new field)
+          sgst: item.sgst,                            // InvoiceItems.sgst (new field)
+          igst: item.igst,                            // InvoiceItems.igst (new field)
+          tax: item.tax,                              // InvoiceItems.tax (new field)
+          discount: item.discount || 0,               // InvoiceItems.discount (item-level discount amount)
+          discountrate: item.discountrate || 0,       // InvoiceItems.discountrate (item-level discount percentage)
           hsn: item.hsn,                              // InvoiceItems.hsn
           part: item.part,                            // InvoiceItems.part
           category_id: item.category_id,              // InvoiceItems.category_id
-          model_id: parseInt(item.model_id),                    // InvoiceItems.model_id
+          model_id: parseInt(item.model_id),          // InvoiceItems.model_id
           company_id: item.company_id,                // InvoiceItems.company_id
           invoice_date: invoice.invoice_date,         // copied from invoice
           fy: invoice.fy                             // copied from invoice
@@ -350,11 +371,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       return invoice
-    },{ timeout: 8000 })
+    },{ timeout: 15000 })
 
     console.log('✅ INVOICE CREATED SUCCESSFULLY:', { id: result.id, invoice_no: result.invoice_no, total: result.total });
 
-    res.status(201).json(result)
+
+    res.status(201).json({
+      message: 'Invoice created successfully',
+      invoice: {
+        id: result.id,
+        invoice_no: result.invoice_no,
+        total: result.total,
+      }
+    })
   } catch (error) {
     console.error('Invoice creation error:', error)
     res.status(500).json({ 

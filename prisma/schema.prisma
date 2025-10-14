@@ -97,34 +97,38 @@ model Product {
 }
 
 model Invoice {
-  id                  Int       @id @default(autoincrement())
-  invoice_no          Int
-  select_customer     Int
-  items_total         Float?
-  freight             Float?
-  total_taxable_value Float
-  taxrate             Int?
-  total_cgst          Float?
-  total_sgst          Float?
-  total_igst          Float?
-  total_tax           Float?
-  total               Float
-  notes               String?   @db.VarChar(255)
-  descriptions        String?   @db.Text
-  invoice_date        Int
-  updated_at          String    @db.VarChar(100)
-  status              Int?
-  payment_mode        Int?
-  fy                  Int
-  mode                Int?
-  type                Int?
-  staff_details       String?   @db.VarChar(255)
-  staff_id            Int?
-  commission          Float?
-  mechanic_id         Int?
-  bill_reference      String?   @db.VarChar(255)
-  mechanic            mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
-  staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
+  id                       Int       @id @default(autoincrement())
+  invoice_no               Int
+  select_customer          Int
+  items_total              Float?
+  freight                  Float?
+  total_taxable_value      Float
+  taxrate                  Int?      // Invoice-level tax rate (calculated from total tax)
+  total_cgst               Float?
+  total_sgst               Float?
+  total_igst               Float?
+  total_tax                Float?
+  total                    Float
+  notes                    String?   @db.VarChar(255)
+  descriptions             String?   @db.Text
+  invoice_date             Int
+  updated_at               String    @db.VarChar(100)
+  status                   Int?      // Payment status: 0=Unpaid, 1=Paid
+  payment_mode             Int?      // Payment mode: 1=Cash, 2=Bank
+  fy                       Int
+  staff_details            String?   @db.VarChar(255)
+  staff_id                 Int?
+  commission               Float?
+  mechanic_id              Int?
+  bill_reference           String?   @db.VarChar(255)
+  // Invoice-level fields now stored
+  discount                 Float?    // Invoice-level discount amount
+  discount_percentage      Float?    // Invoice-level discount percentage (backend calculation)
+  packing_forwarding_qty   Float?    // Packing/forwarding quantity
+  packing_forwarding_rate  Float?    // Packing/forwarding rate per unit
+  packing_forwarding_total Float?    // Total packing/forwarding amount
+  mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
+  staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
 
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
@@ -135,7 +139,7 @@ model Invoice {
 }
 
 model Invoiceitems {
-  id         Int @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   invoice_no Int
   product_id Int
   name_of_product String  @db.VarChar(255)
@@ -147,11 +151,13 @@ model Invoiceitems {
   qty             Float?
   rate            Float?
   subtotal        Float
-  product_show    Int?
-  category_show   Int?
-  model_show      Int?
-  company_show    Int?
-  part_show       Int?
+  gst_percentage  Float? // GST percentage applied to this item
+  cgst            Float? // CGST amount for this item
+  sgst            Float? // SGST amount for this item
+  igst            Float? // IGST amount for this item
+  tax             Float? // Total tax amount for this item
+  discount        Float? // Item-level discount amount
+  discountrate    Float? // Item-level discount percentage
   invoice_date    Int
   fy              Int
   product         Product @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
@@ -351,23 +357,25 @@ model incexpx {
 }
 
 model invoice_itemsx {
-  id              Int     @id @default(autoincrement())
+  id              Int      @id @default(autoincrement())
   invoice_no      Int
   product_id      Int
-  name_of_product String  @db.VarChar(255)
+  name_of_product String   @db.VarChar(255)
   category_id     Int?
   model_id        Int?
   company_id      Int?
-  hsn             String? @db.VarChar(50)
-  part            String? @db.VarChar(100)
+  hsn             String?  @db.VarChar(50)
+  part            String?  @db.VarChar(100)
   qty             Float?
   rate            Float?
   subtotal        Float
-  product_show    Int?
-  category_show   Int?
-  model_show      Int?
-  company_show    Int?
-  part_show       Int?
+  gst_percentage  Float?  // GST percentage applied to this item
+  cgst            Float?  // CGST amount for this item
+  sgst            Float?  // SGST amount for this item
+  igst            Float?  // IGST amount for this item
+  tax             Float?  // Total tax amount for this item
+  discount        Float?  // Item-level discount amount
+  discountrate    Float?  // Item-level discount percentage
   invoice_date    Int
   fy              Int
   product         Product @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
@@ -377,33 +385,37 @@ model invoice_itemsx {
 }
 
 model invoicex {
-  id                  Int       @id @default(autoincrement())
-  invoice_no          Int
-  select_customer     Int?
-  items_total         Float?
-  freight             Float?
-  total_taxable_value Float
-  taxrate             Int?
-  total_cgst          Float?
-  total_sgst          Float?
-  total_igst          Float?
-  total_tax           Float?
-  total               Float
-  notes               String?   @db.VarChar(255)
-  invoice_date        Int
-  descriptions        String?   @db.Text
-  updated_at          String    @db.VarChar(100)
-  status              Int?
-  payment_mode        Int?
-  fy                  Int
-  mode                Int?
-  type                Int?
-  staff_details       String?   @db.VarChar(255)
-  staff_id            Int?
-  commission          Float?
-  mechanic_id         Int?
-  mechanic            mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
-  staff               staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
+  id                       Int       @id @default(autoincrement())
+  invoice_no               Int
+  select_customer          Int?
+  items_total              Float?
+  freight                  Float?
+  total_taxable_value      Float
+  taxrate                  Int?
+  total_cgst               Float?
+  total_sgst               Float?
+  total_igst               Float?
+  total_tax                Float?
+  total                    Float
+  notes                    String?   @db.VarChar(255)
+  invoice_date             Int
+  descriptions             String?   @db.Text
+  updated_at               String    @db.VarChar(100)
+  status                   Int?
+  payment_mode             Int?
+  fy                       Int
+  mode                     Int?
+  type                     Int?
+  staff_details            String?   @db.VarChar(255)
+  staff_id                 Int?
+  commission               Float?
+  mechanic_id              Int?
+  // Invoice-level fields now stored (excluding discount and tax as requested)
+  packing_forwarding_qty   Float?    // Packing/forwarding quantity
+  packing_forwarding_rate  Float?    // Packing/forwarding rate per unit
+  packing_forwarding_total Float?    // Total packing/forwarding amount
+  mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
+  staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
 
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")

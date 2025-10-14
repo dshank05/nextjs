@@ -16,11 +16,6 @@ interface InvoiceItem {
   qty: number;
   rate: number;
   subtotal: number;
-  product_show?: number;
-  category_show?: number;
-  model_show?: number;
-  company_show?: number;
-  part_show?: number;
   invoice_date: number;
   fy: number;
 }

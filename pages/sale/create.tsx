@@ -157,6 +157,9 @@ export default function InvoiceCreate() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
 
+  // Raw invoice data for re-conversion when filters load
+  const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
+
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
     category: 0,
@@ -181,7 +184,7 @@ export default function InvoiceCreate() {
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name;
-    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name ;
+    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name;
     const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company;
 
     // If no specific car model is selected, show base product name
@@ -351,9 +354,11 @@ export default function InvoiceCreate() {
   useEffect(() => {
     const initializeData = async () => {
       try {
-        // Fetch all required data in parallel
+        // Fetch customers first so customer data is available for edit mode
+        await fetchCustomers();
+
+        // Fetch other data in parallel
         await Promise.all([
-          fetchCustomers(),
           fetchStaffList(),
           fetchMechanics(),
           fetchProducts(),
@@ -361,10 +366,7 @@ export default function InvoiceCreate() {
           fetchGstRates()
         ]);
 
-        // Fetch customers first so customer dropdown is populated
-        await fetchCustomers();
-
-        // If in edit mode, fetch the invoice data
+        // If in edit mode, fetch the invoice data after customers are loaded
         const { edit } = router.query;
         if (edit && typeof edit === 'string') {
           await fetchInvoiceForEdit(parseInt(edit));
@@ -390,6 +392,50 @@ export default function InvoiceCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
+
+  // Convert raw invoice items when filterOptions are loaded
+  useEffect(() => {
+    if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
+      console.log('🔄 Converting raw invoice items to formatted items now that filters are available');
+      const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
+        const itemObj: InvoiceItem = {
+          id: (index + 1).toString(),
+          product_id: item.product_id || item.name_of_product || 1,
+          product_name: item.name_of_product || 'Unknown Product',
+          car_model_ids: item.model_id ? [item.model_id.toString()] : [],
+          car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
+          category_id: item.category_id || 0,
+          category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
+          subcategory_id: item.subcategory_id || 0,
+          subcategory_name: item.subcategory_id ? filterOptions.subcategories.find(sub => sub.id.toString() === item.subcategory_id?.toString())?.name || '' : '',
+          company_id: item.company_id || 0,
+          company_name: filterOptions.companies.find(comp => comp.id.toString() === item.company_id?.toString())?.name || '',
+          part_number: item.part || '',
+          qty: item.qty || 1,
+          rate: item.rate || 0,
+          gst_percentage: item.gst_percentage || 0,
+          discount_percentage: item.discountrate || 0,
+          tax: item.tax || 0,
+          discount_amount: item.discount || 0,
+          total: item.subtotal || 0,
+          hsn: item.hsn || '',
+          mrp: 0,
+          discount: item.discountrate || 0,
+          margin: 0,
+          cgst: item.cgst || 0,
+          sgst: item.sgst || 0,
+          igst: item.igst || 0
+        };
+        return itemObj;
+      });
+
+      console.log('✅ Setting converted invoice items:', convertedItems);
+      setSelectedProducts(convertedItems);
+
+      // Clear raw items after conversion
+      setRawInvoiceItems([]);
+    }
+  }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
 
   // Filter subcategories for table filters when category changes
   useEffect(() => {
@@ -464,7 +510,6 @@ export default function InvoiceCreate() {
 
   const fetchCustomers = async () => {
     try {
-      // Assuming there's a customers API or we get them from somewhere
       const response = await fetch('/api/customers');
       if (response.ok) {
         const data = await response.json();
@@ -628,48 +673,45 @@ export default function InvoiceCreate() {
         console.log('📝 SETTING FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
 
-        // Set customer data - always create customer object from invoice data to ensure it works
+        // Set customer data - find customer in loaded customers list for proper state codes
         if (invoice.select_customer) {  // API field is select_customer, not customer_id
           setSelectedCustomerId(invoice.select_customer.toString());
           setVendorIdToSave(invoice.select_customer); // For consistency with purchase create
 
-          // Always create customer object from API data (not relying on customers list)
-          const customer = {
-            id: invoice.select_customer.toString(),
-            billing_name: invoice.customer_name || '',
-            shipping_name: '',
-            billing_address: invoice.address || '',
-            billing_address_2: '',
-            billing_city: invoice.city || '',
-            billing_state: 0, // We don't have state code from API
-            billing_state_code: 0, // Default - could be improved with API enhancement
-            shipping_address: '',
-            shipping_address_2: '',
-            shipping_city: '',
-            shipping_state: 0,
-            shipping_state_code: 0,
-            billing_gstin: invoice.gst_number || '',
-            shipping_gstin: '',
-            contact_no: invoice.contact_number || '',
-            email: invoice.email_id || ''
-          };
+          // Find customer in loaded customers list for proper state codes and data
+          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString());
+          if (existingCustomer) {
+            // Use real customer data from the API
+            setSelectedCustomer(existingCustomer);
+            setCustomerStateForTax(existingCustomer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
 
-          // Set the selected customer state directly
-          setSelectedCustomer(customer);
-
-          // Populate customer-related form fields
-          setFormData(prev => ({
-            ...prev,
-            customer_name: customer.billing_name,
-            contact_number: customer.contact_no || '',
-            gst_number: customer.billing_gstin || '',
-            state: customer.billing_state?.toString() || '',
-            city: customer.billing_city || '',
-            address: customer.billing_address || ''
-          }));
-
-          // Set state for tax calculations (default to business state if unknown)
-          setCustomerStateForTax(customer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
+            // CRITICAL: Call handleCustomerSelect to populate customer form fields (STATE, etc.)
+            handleCustomerSelect(existingCustomer.id);
+          } else {
+            // Fallback: create customer object from invoice data if not found in list
+            console.warn('Customer not found in loaded list, creating from invoice data');
+            const customer = {
+              id: invoice.select_customer.toString(),
+              billing_name: invoice.customer_name || '',
+              shipping_name: '',
+              billing_address: invoice.address || '',
+              billing_address_2: '',
+              billing_city: invoice.city || '',
+              billing_state: 0, // We don't have state code from API
+              billing_state_code: 0, // We don't have state code from API
+              shipping_address: '',
+              shipping_address_2: '',
+              shipping_city: '',
+              shipping_state: 0,
+              shipping_state_code: 0, // Default - could be improved with API enhancement
+              billing_gstin: invoice.gst_number || '',
+              shipping_gstin: '',
+              contact_no: invoice.contact_number || '',
+              email: invoice.email_id || ''
+            };
+            setSelectedCustomer(customer);
+            setCustomerStateForTax(customer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
+          }
         }
 
         // Set other related entity IDs
@@ -682,46 +724,10 @@ export default function InvoiceCreate() {
           setFormData(prev => ({ ...prev, mechanic_id: invoice.mechanic_id }));
         }
 
-        // Convert invoice items to local format
-        // API returns invoiceItems in data.invoiceItems, not invoice.items
+        // Store raw invoice items to convert later when filters are loaded
         if (data.invoiceItems && data.invoiceItems.length > 0) {
-          console.log('Converting invoice items:', data.invoiceItems);
-          const convertedItems: InvoiceItem[] = data.invoiceItems.map((item: any, index: number) => {
-            const itemObj = {
-              id: (index + 1).toString(),
-              product_id: item.name_of_product || item.product_id || 1, // API stores product_id in name_of_product field
-              product_name: item.name_of_product || 'Unknown Product',
-              car_model_ids: [], // Not stored in current API
-              car_model_names: [], // Not stored in current API
-              category_id: item.category_id || 0,
-              category_name: item.category_name || '', // Will need to be fetched
-              subcategory_id: item.subcategory_id || 0,
-              subcategory_name: item.subcategory_name || '', // Will need to be fetched
-              company_id: item.company_id || 0,
-              company_name: item.company_name || '', // Will need to be fetched
-              part_number: item.part || '',
-              qty: item.qty || 1,
-              rate: item.rate || 0,
-              gst_percentage: item.product?.gst_rate?.rate , // Use GST rate from related product
-              discount_percentage: item.discount_percentage || 0, // Use stored discount percentage
-              tax: item.tax || 0, // Use stored tax amount
-              discount_amount: item.discount_amount || 0, // Use stored discount amount
-              total: item.subtotal || 0,
-              // New pricing fields - defaults for edit mode
-              hsn: item.hsn || '',
-              mrp: 0,
-              discount: item.discount_percentage || 0,
-              margin: 0,
-              // GST breakdown - try to use stored values or calculate from state
-              cgst: item.cgst || 0,
-              sgst: item.sgst || 0,
-              igst: item.igst || 0
-            };
-            console.log('Converted item:', itemObj);
-            return itemObj;
-          });
-          console.log('Setting selected products:', convertedItems);
-          setSelectedProducts(convertedItems);
+          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
+          setRawInvoiceItems(data.invoiceItems);
         }
       }
     } catch (error) {
@@ -731,7 +737,7 @@ export default function InvoiceCreate() {
     }
   };
 
-  const handleInputChange = (field: keyof InvoiceFormData, value: string) => {
+  const handleInputChange = (field: keyof InvoiceFormData, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
@@ -759,14 +765,22 @@ export default function InvoiceCreate() {
   };
 
   const addProductToInvoice = (product: Product) => {
+    // Don't allow adding products without customer selection
+    if (!selectedCustomer) {
+      setErrors({ products: 'Please select a customer before adding products' });
+      return;
+    }
+
     const qty = 1;
     const rate = product.selling_price || product.rate || 0;
-    const taxPercent = product.gst_rate_percentage || product.gst_rate || 0;
+    const gstPercent = product.gst_rate_percentage || product.gst_rate || 0;
     const subtotal = qty * rate;
-    const totalTaxAmount = (subtotal * taxPercent) / 100;
+
+    // Calculate tax on the full amount (no discount by default)
+    const totalTaxAmount = (subtotal * gstPercent) / 100;
 
     // Calculate GST breakdown based on customer's state
-    const gstBreakdown = calculateGSTBreakdown(totalTaxAmount, selectedCustomer?.billing_state_code);
+    const gstBreakdown = calculateGSTBreakdown(totalTaxAmount, selectedCustomer.billing_state_code);
 
     const newItem: InvoiceItem = {
       id: Date.now().toString(),
@@ -783,7 +797,7 @@ export default function InvoiceCreate() {
       part_number: product.part_no || '',
       qty: qty,
       rate: rate,
-      gst_percentage: taxPercent,
+      gst_percentage: gstPercent,
       discount_percentage: 0,
       tax: totalTaxAmount,
       discount_amount: 0,
@@ -793,7 +807,7 @@ export default function InvoiceCreate() {
       mrp: 0, // Default MRP
       discount: 0, // Default discount
       margin: 0, // Default margin
-      // GST breakdown - use calculated values based on state
+      // GST breakdown - calculated based on state
       cgst: gstBreakdown.cgst,
       sgst: gstBreakdown.sgst,
       igst: gstBreakdown.igst
@@ -801,6 +815,11 @@ export default function InvoiceCreate() {
 
     setSelectedProducts(prev => [...prev, newItem]);
     setSearchTerm('');
+
+    // Clear any product-related errors after successful addition
+    if (errors.products) {
+      setErrors(prev => ({ ...prev, products: '' }));
+    }
   };
 
   const updateProductQuantity = (id: string, qty: number) => {
@@ -909,17 +928,28 @@ export default function InvoiceCreate() {
         setErrors({ inlineEdit: 'Rate must be greater than 0' });
         return;
       }
+      if (editingRowData.gst_percentage < 0) {
+        setErrors({ inlineEdit: 'GST percentage cannot be negative' });
+        return;
+      }
 
-      // Recalculate tax and total
+      // Recalculate tax and total based on discount if enabled
       const subtotal = editingRowData.qty * editingRowData.rate;
-      const taxAmount = (subtotal * editingRowData.gst_percentage) / 100;
+      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+      const taxableAmount = subtotal - discountAmount;
+      const taxAmount = (taxableAmount * editingRowData.gst_percentage) / 100;
+
+      // Calculate GST breakdown based on customer's state
+      const gstBreakdown = calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code);
+
       const updatedItem = {
         ...editingRowData,
         tax: taxAmount,
-        total: subtotal + taxAmount,
-        cgst: customerStateForTax === '9' ? taxAmount / 2 : 0,
-        sgst: customerStateForTax === '9' ? taxAmount / 2 : 0,
-        igst: customerStateForTax !== '9' ? taxAmount : 0
+        total: taxableAmount + taxAmount,
+        discount_amount: discountAmount,
+        cgst: gstBreakdown.cgst,
+        sgst: gstBreakdown.sgst,
+        igst: gstBreakdown.igst
       };
 
       // Update the item in selectedProducts
@@ -963,32 +993,197 @@ export default function InvoiceCreate() {
     return productTotal + packingTotal;
   }, [selectedProducts, formData.packing_forwarding_total]);
 
+  // Tax validation functions
+  const validateTaxData = (item: InvoiceItem): Record<string, string> => {
+    const taxErrors: Record<string, string> = {};
+
+    // Validate GST percentage range
+    if (item.gst_percentage < 0 || item.gst_percentage > 100) {
+      taxErrors.gstPercentage = 'GST percentage must be between 0 and 100';
+    }
+
+    // Ensure positive tax values
+    if (item.cgst < 0) taxErrors.cgst = 'CGST cannot be negative';
+    if (item.sgst < 0) taxErrors.sgst = 'SGST cannot be negative';
+    if (item.igst < 0) taxErrors.igst = 'IGST cannot be negative';
+    if (item.tax < 0) taxErrors.tax = 'Total tax cannot be negative';
+
+    // Validate tax consistency
+    const expectedTotalTax = item.cgst + item.sgst + item.igst;
+    if (Math.abs(expectedTotalTax - item.tax) > 0.01) {
+      taxErrors.consistency = `Tax breakdown does not match total tax amount (Expected: ${expectedTotalTax.toFixed(2)}, Got: ${item.tax.toFixed(2)})`;
+    }
+
+    // Validate state-based tax logic
+    const isIntraState = !selectedCustomer?.billing_state_code || selectedCustomer.billing_state_code === BUSINESS_STATE_CODE;
+
+    if (isIntraState) {
+      // Intra-state: Must have CGST + SGST, no IGST
+      if (item.igst > 0) {
+        taxErrors.stateLogic = 'Intra-state transactions should not have IGST';
+      }
+      if (item.cgst <= 0 && item.sgst <= 0) {
+        taxErrors.stateLogic = 'Intra-state transactions require CGST or SGST';
+      }
+    } else {
+      // Inter-state: Must have IGST, no CGST/SGST
+      if (item.cgst > 0 || item.sgst > 0) {
+        taxErrors.stateLogic = 'Inter-state transactions should not have CGST or SGST';
+      }
+      if (item.igst <= 0) {
+        taxErrors.stateLogic = 'Inter-state transactions require IGST';
+      }
+    }
+
+    return taxErrors;
+  };
+
+  const validateAllTaxData = (): Record<string, string> => {
+    const taxErrors: Record<string, string> = {};
+
+    console.log('🔍 VALIDATING TAX DATA FOR', selectedProducts.length, 'PRODUCTS');
+    console.log('🏢 BUSINESS STATE CODE:', BUSINESS_STATE_CODE);
+    console.log('👤 CUSTOMER STATE CODE:', selectedCustomer?.billing_state_code);
+
+    selectedProducts.forEach((item, index) => {
+      console.log(`📦 PRODUCT ${index + 1}:`, {
+        name: item.product_name,
+        gst_percentage: item.gst_percentage,
+        cgst: item.cgst,
+        sgst: item.sgst,
+        igst: item.igst,
+        tax: item.tax,
+        total: item.total
+      });
+
+      const itemErrors = validateTaxData(item);
+      console.log(`❌ PRODUCT ${index + 1} ERRORS:`, itemErrors);
+
+      Object.entries(itemErrors).forEach(([key, error]) => {
+        taxErrors[`product_${index}_${key}`] = `Product ${index + 1}: ${error}`;
+      });
+    });
+
+    console.log('📊 FINAL TAX ERRORS:', taxErrors);
+    return taxErrors;
+  };
+
+  // Calculate expected tax based on current items
+  const calculateExpectedTax = () => {
+    const totalCgst = selectedProducts.reduce((sum, item) => sum + item.cgst, 0);
+    const totalSgst = selectedProducts.reduce((sum, item) => sum + item.sgst, 0);
+    const totalIgst = selectedProducts.reduce((sum, item) => sum + item.igst, 0);
+
+    return { totalCgst, totalSgst, totalIgst };
+  };
+
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    console.log('🔍 STARTING FORM VALIDATION...');
+
+    // Basic form validation
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
+      console.log('❌ NO INVOICE NUMBER');
     }
     if (!selectedCustomerId || !selectedCustomer) {
       newErrors.customer_name = 'Please select a customer';
+      console.log('❌ NO CUSTOMER SELECTED');
     }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
+      console.log('❌ NO PRODUCTS SELECTED');
     }
+
+    console.log('📊 RUNNING TAX VALIDATION...');
+    // Tax-specific validation
+    const taxErrors = validateAllTaxData();
+    console.log('📋 TAX ERRORS FROM validateAllTaxData:', taxErrors);
+    Object.assign(newErrors, taxErrors);
+
+    // Validate total tax consistency
+    const { totalCgst, totalSgst, totalIgst } = calculateExpectedTax();
+    const expectedFormTotalCgst = parseFloat(formData.total_cgst) || 0;
+    const expectedFormTotalSgst = parseFloat(formData.total_sgst) || 0;
+    const expectedFormTotalIgst = parseFloat(formData.total_igst) || 0;
+
+    console.log('💰 TAX CONSISTENCY CHECK:', {
+      calculated: { totalCgst, totalSgst, totalIgst },
+      formValues: { expectedFormTotalCgst, expectedFormTotalSgst, expectedFormTotalIgst }
+    });
+
+    if (Math.abs(totalCgst - expectedFormTotalCgst) > 0.01) {
+      newErrors.totalCgst = `Total CGST mismatch: calculated ${totalCgst.toFixed(2)}, form shows ${expectedFormTotalCgst.toFixed(2)}`;
+      console.log('❌ CGST MISMATCH');
+    }
+    if (Math.abs(totalSgst - expectedFormTotalSgst) > 0.01) {
+      newErrors.totalSgst = `Total SGST mismatch: calculated ${totalSgst.toFixed(2)}, form shows ${expectedFormTotalSgst.toFixed(2)}`;
+      console.log('❌ SGST MISMATCH');
+    }
+    if (Math.abs(totalIgst - expectedFormTotalIgst) > 0.01) {
+      newErrors.totalIgst = `Total IGST mismatch: calculated ${totalIgst.toFixed(2)}, form shows ${expectedFormTotalIgst.toFixed(2)}`;
+      console.log('❌ IGST MISMATCH');
+    }
+
+    // Validate payment data - convert to numbers since formData stores as strings
+    const paymentStatusNum = parseInt(formData.payment_status.toString());
+    const paymentModeNum = parseInt(formData.payment_mode.toString());
+
+    if (!formData.payment_status || ![0, 1].includes(paymentStatusNum)) {
+      newErrors.payment_status = `Payment status must be either Paid (1) or Unpaid (0), got: ${formData.payment_status}`;
+      console.log('❌ INVALID PAYMENT STATUS');
+    }
+    if (!formData.payment_mode || ![1, 2].includes(paymentModeNum)) {
+      newErrors.payment_mode = `Payment mode must be either Cash (1) or Bank (2), got: ${formData.payment_mode}`;
+      console.log('❌ INVALID PAYMENT MODE');
+    }
+
+    console.log('📝 FINAL ERRORS OBJECT:', newErrors);
+    console.log('✅ VALIDATION RESULT:', Object.keys(newErrors).length === 0);
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+
+
+
   const handleSubmit = (e: React.FormEvent) => {
+
     e.preventDefault();
 
-    if (!validateForm()) {
+    console.log('🔍 VALIDATING FORM...');
+    console.log('📋 FORM DATA:', {
+      invoice_number: formData.invoice_number,
+      selectedCustomerId,
+      selectedCustomer,
+      selectedProducts: selectedProducts.length,
+      payment_status: formData.payment_status,
+      payment_mode: formData.payment_mode
+    });
+
+    const isValid = validateForm();
+    console.log('✅ VALIDATION RESULT:', isValid);
+    console.log('❌ ERRORS:', errors);
+    console.log('💰 TAX CALCULATIONS:', {
+      calculated: calculateExpectedTax(),
+      formValues: {
+        total_cgst: formData.total_cgst,
+        total_sgst: formData.total_sgst,
+        total_igst: formData.total_igst
+      }
+    });
+
+    if (!isValid) {
+      alert('Form validation failed. Check console for details.');
       return;
     }
 
     setShowConfirmationModal(true);
   };
+
+
 
   const handleConfirmSubmit = async () => {
     setLoading(true);
@@ -997,97 +1192,93 @@ export default function InvoiceCreate() {
       // ===== COMPLETE PAYLOAD FROM UI =====
       // Mapping all collected data to match invoice API expectations
       const submitData = {
-        // ===== MAIN INVOICE FIELDS (currently stored) =====
-        invoice_no: parseInt(formData.invoice_number),                    // ✓ Stored in Invoice.invoice_no
-        invoice_date: formData.date,                            // ✓ Stored in Invoice.invoice_date (was 'date')
-        select_customer: parseInt(selectedCustomerId),         // ✓ Stored in Invoice.select_customer (was 'customer_id')
+        // ===== MAIN INVOICE FIELDS =====
+        invoice_no: parseInt(formData.invoice_number),               // Invoice.invoice_no
+        invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoice.invoice_date (convert to UNIX timestamp)
+        select_customer: parseInt(selectedCustomerId),              // Invoice.select_customer
+
+        // ===== CALCULATED TOTALS =====
+        items_total: subtotal,                                       // Invoice.items_total
+        freight: 0,                                                  // Invoice.freight (not collected separately)
+        total_taxable_value: subtotal,                               // Invoice.total_taxable_value
+        total_cgst: parseFloat(formData.total_cgst) || 0,            // Invoice.total_cgst
+        total_sgst: parseFloat(formData.total_sgst) || 0,            // Invoice.total_sgst
+        total_igst: parseFloat(formData.total_igst) || 0,            // Invoice.total_igst
+        total_tax: totalTax,                                         // Invoice.total_tax
+        total: grandTotal,                                           // Invoice.total
+
+        // ===== INVOICE-LEVEL FIELDS (NEWLY ADDED TO SCHEMA) =====
+        bill_reference: formData.bill_reference,                     // Invoice.bill_reference
+        staff_id: formData.staff_id,                                 // Invoice.staff_id (foreign key)
+        staff_details: selectedStaffId ? staffList.find(s => s.id === selectedStaffId)?.staff_name || '' : '', // Invoice.staff_details (deprecated but kept for backward compatibility)
+        mechanic_id: selectedMechanicId ? parseInt(selectedMechanicId) : null, // Invoice.mechanic_id (foreign key)
+        commission: parseFloat(formData.commission) || 0,            // Invoice.commission
+        discount: parseFloat(formData.discount) || 0,                // Invoice.discount (invoice-level discount)
+        tax: formData.tax,                                           // Invoice.tax (tax description/notes)
+        packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,   // Invoice.packing_forwarding_qty
+        packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0, // Invoice.packing_forwarding_rate
+        packing_forwarding_total: parseFloat(formData.packing_forwarding_total) || 0, // Invoice.packing_forwarding_total
+
+        // ===== PAYMENT FIELDS =====
+        payment_status: parseInt(formData.payment_status.toString()), // Invoice.status (payment_status) as integer 0=Unpaid, 1=Paid
+        payment_mode: parseInt(formData.payment_mode.toString()),     // Invoice.payment_mode as integer 1=Cash, 2=Bank
+
+        // ===== MISC FIELDS =====
+        notes: formData.notes,                                       // Invoice.notes
+        descriptions: formData.descriptions,                         // Invoice.descriptions
+        fy: new Date().getFullYear(),                                // Invoice.fy (calculated)
+        updated_at: new Date().toISOString(),                       // Invoice.updated_at
 
         // ===== ITEM DATA =====
         invoiceItems: selectedProducts.map(item => ({
-          product_id:item.product_id,
-          name_of_product: item.product_name,                    // ✓ Stored in InvoiceItems.name_of_product (product ID)
-          qty: item.qty,                                       // ✓ Stored in InvoiceItems.qty
-          rate: item.rate,                                     // ✓ Stored in InvoiceItems.rate
-          subtotal: item.total,                                // ✓ Stored in InvoiceItems.subtotal
-          hsn: '',                                             // ❌ NOT COLLECTED - stored in InvoiceItems.hsn
-          part: item.part_number,                              // ✓ Stored in InvoiceItems.part
-          category_id: item.category_id,                       // ✓ Stored in InvoiceItems.category_id
-          model_id: item.car_model_ids[0] || 0,                // ❌ PARTIALLY - stored in InvoiceItems.model_id (only first car model)
-          company_id: item.company_id,                         // ✓ Stored in InvoiceItems.company_id
-          product_name: item.product_name,                     // ❌ NOT SAVED - UI label only
-          car_model_ids: item.car_model_ids.join(','),         // ❌ NOT SAVED - UI data only
-          car_model_names: item.car_model_names.join(','),     // ❌ NOT SAVED - UI data only
-          subcategory_id: item.subcategory_id,                 // ❌ NOT SAVED - not in current schema
-          gst_percentage: item.gst_percentage,                 // ❌ NOT SAVED - not in current schema
-          discount_percentage: item.discount_percentage,       // ❌ NOT SAVED - not in current schema
-          discount_amount: item.discount_amount,               // ❌ NOT SAVED - not in current schema
-          tax: item.tax                                        // ❌ NOT SAVED - not in current schema
+          product_id: item.product_id,                                // Invoiceitems.product_id (foreign key)
+          name_of_product: item.product_name,                         // Invoiceitems.name_of_product
+          qty: item.qty,                                              // Invoiceitems.qty
+          rate: item.rate,                                            // Invoiceitems.rate
+          subtotal: item.total,                                       // Invoiceitems.subtotal
+          gst_percentage: item.gst_percentage,                        // Invoiceitems.gst_percentage (NEW)
+          cgst: item.cgst,                                            // Invoiceitems.cgst (NEW)
+          sgst: item.sgst,                                            // Invoiceitems.sgst (NEW)
+          igst: item.igst,                                            // Invoiceitems.igst (NEW)
+          tax: item.tax,                                              // Invoiceitems.tax (NEW)
+          discount: item.discount_amount,                             // Invoiceitems.discount (item-level discount amount)
+          discountrate: item.discount_percentage,                     // Invoiceitems.discountrate (item-level discount percentage)
+          hsn: item.hsn || '',                                        // Invoiceitems.hsn
+          part: item.part_number,                                     // Invoiceitems.part
+          category_id: item.category_id,                              // Invoiceitems.category_id
+          model_id: item.car_model_ids && item.car_model_ids.length > 0 ? parseInt(item.car_model_ids[0]) : null, // Invoiceitems.model_id (first car model)
+          company_id: item.company_id,                                // Invoiceitems.company_id
+          invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoiceitems.invoice_date
+          fy: new Date().getFullYear()                                // Invoiceitems.fy
         })),
 
-        // ===== BILLING DETAILS (currently stored) =====
-        billingDetails: selectedCustomer ? {
-          user_name: selectedCustomer.billing_name,            // ✓ Stored in BillToSales.user_name
-          address: selectedCustomer.billing_address,           // ✓ Stored in BillToSales.address
-          address2: selectedCustomer.billing_address_2,        // ✓ Stored in BillToSales.address2
-          mobile: selectedCustomer.contact_no,                 // ✓ Stored in BillToSales.mobile
-          email: selectedCustomer.email,                       // ✓ Stored in BillToSales.email
-          // state: selectedCustomer.billing_state,               // ❌ NOT SAVED - STATE NAME not in BillToSales schema (only state_code)
-          state_code: selectedCustomer.billing_state_code || 0, // ✓ Stored in BillToSales.state_code
-          gstin: selectedCustomer.billing_gstin                // ✓ Stored in BillToSales.gstin
-        } : null,
+        // ===== BILLING DETAILS =====
+        ...(selectedCustomer && {
+          billingDetails: {
+            user_name: selectedCustomer.billing_name,                // bill_tosales.user_name
+            address: selectedCustomer.billing_address,               // bill_tosales.address
+            address2: selectedCustomer.billing_address_2,            // bill_tosales.address2
+            mobile: selectedCustomer.contact_no,                     // bill_tosales.mobile
+            email: selectedCustomer.email,                           // bill_tosales.email
+            state_code: selectedCustomer.billing_state_code || 0,     // bill_tosales.state_code
+            gstin: selectedCustomer.billing_gstin                    // bill_tosales.gstin
+          }
+        }),
 
-        // ===== SHIPPING DETAILS (currently stored) =====
-        shippingDetails: selectedCustomer ? {
-          user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name, // ✓ Stored in ShipTo.user_name
-          address: selectedCustomer.shipping_address || selectedCustomer.billing_address, // ✓ Stored in ShipTo.address
-          // state: selectedCustomer.shipping_state || selectedCustomer.billing_state, // ❌ NOT SAVED - STATE NAME not in ShipTo schema
-          state_code: selectedCustomer.shipping_state_code || selectedCustomer.billing_state_code || 0, // ❌ NOT SAVED - ShipTo doesn't have state_code
-          gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin // ✓ Stored in ShipTo.gstin
-        } : null,
+        // ===== SHIPPING DETAILS =====
+        ...(selectedCustomer && {
+          shippingDetails: {
+            user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name, // ship_to.user_name
+            address: selectedCustomer.shipping_address || selectedCustomer.billing_address, // ship_to.address
+            gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin // ship_to.gstin
+          }
+        }),
 
-        // ===== TRANSPORT DETAILS (currently stored) =====
+        // ===== TRANSPORT DETAILS =====
         transportDetails: {
-          trans_mode: formData.transport_name,                  // ✓ Stored in TransportDetails.trans_mode
-          vehicle_no: formData.vehicle_number,                  // ✓ Stored in TransportDetails.vehicle_no
-          // supply_date: formData.date,                           // ❌ NOT SAVED - not relevant for transport
-          // place_of_supply: ''                                   // ❌ NOT COLLECTED - stored in TransportDetails.place_of_supply
-        },
-
-        // ===== CALCULATED TOTALS (currently stored) =====
-        items_total: subtotal,                                  // ✓ Stored in Invoice.items_total
-        freight: 0,                                             // ✓ Stored in Invoice.freight (not collected separately)
-        total_taxable_value: subtotal,                          // ✓ Stored in Invoice.total_taxable_value
-        total_cgst: parseFloat(formData.total_cgst) || 0,       // ✓ Stored in Invoice.total_cgst
-        total_sgst: parseFloat(formData.total_sgst) || 0,       // ✓ Stored in Invoice.total_sgst
-        total_igst: parseFloat(formData.total_igst) || 0,       // ✓ Stored in Invoice.total_igst
-        total_tax: totalTax,                                    // ✓ Stored in Invoice.total_tax
-        total: grandTotal,                                      // ✓ Stored in Invoice.total
-
-        // ===== ADDITIONAL FIELDS (currently stored) =====
-        notes: formData.notes,                                  // ✓ Stored in Invoice.notes
-        fy: new Date().getFullYear(),                           // ✓ Stored in Invoice.fy (calculated)
-
-        // ===== FIELDS COLLECTED BUT NOT CURRENTLY SAVED =====
-        // These fields are collected in UI but not stored due to schema limitations:
-        bill_reference: formData.bill_reference,                // ❌ NOT SAVED - not in current schema
-        staff_id: formData.staff_id,                            // ❌ NOT SAVED - not in current schema
-        mechanic_id: selectedMechanicId ? parseInt(selectedMechanicId) : null, // ❌ NOT SAVED - not in current schema
-        commission: parseFloat(formData.commission) || 0,       // ❌ NOT SAVED - not in current schema
-        discount: parseFloat(formData.discount) || 0,           // ❌ NOT SAVED - invoice-level discount not in schema
-        tax: formData.tax,                                      // ❌ NOT SAVED - tax description not in schema
-        descriptions: formData.descriptions,                    // ❌ NOT SAVED - not in current schema
-        packing_forwarding_qty: formData.packing_forwarding_qty, // ❌ NOT SAVED - not in current schema
-        packing_forwarding_rate: formData.packing_forwarding_rate, // ❌ NOT SAVED - not in current schema
-        packing_forwarding_total: formData.packing_forwarding_total, // ❌ NOT SAVED - not in current schema
-
-        // ===== PAYMENT FIELDS (currently stored) =====
-        payment_status: formData.payment_status,                // ❌ NOT SAVED - Invoice has status field but UI uses payment_status
-        payment_mode: formData.payment_mode,                    // ✓ Stored in Invoice.payment_mode
-
-        // ===== CALCULATED FIELDS (redundant - not saved) =====
-        total_discount: totalDiscount,                          // ❌ NOT SAVED - calculated field
-        subtotal: subtotal,                                     // ❌ NOT SAVED - calculated field
-        grand_total: grandTotal                                 // ❌ NOT SAVED - calculated field
+          trans_mode: formData.transport_name,                        // transport_details.trans_mode
+          vehicle_no: formData.vehicle_number                         // transport_details.vehicle_no
+        }
       };
 
       console.log('📤 UI SENDING COMPLETE PAYLOAD:', submitData);
@@ -1628,11 +1819,16 @@ export default function InvoiceCreate() {
                             const rate = parseFloat(templateRow.rate) || 0;
                             const gstPercent = parseFloat(templateRow.gst) || 0;
                             const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+
                             const subtotal = qty * rate;
                             const discountAmount = (subtotal * discountPercent) / 100;
                             const taxableAmount = subtotal - discountAmount;
                             const tax = (taxableAmount * gstPercent) / 100;
+
+                            // Calculate GST breakdown
+                            const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
                             const total = taxableAmount + tax;
+
                             return total.toFixed(2);
                           })()}
                         </div>
@@ -1678,11 +1874,11 @@ export default function InvoiceCreate() {
                                   car_model_ids: selectedProduct.car_model_ids ? selectedProduct.car_model_ids.split(',').map(id => id.trim()) : [],
                                   car_model_names: carModelNames ? carModelNames.split(', ') : [],
                                   category_id: selectedProduct.product_category_id || 0,
-                                  category_name: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
+                                  category_name: selectedProduct.category_name || filterOptions.categories.find(c => c.id.toString() === selectedProduct.product_category_id?.toString())?.name || '',
                                   subcategory_id: selectedProduct.product_subcategory_id || 0,
-                                  subcategory_name: filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '',
+                                  subcategory_name: selectedProduct.subcategory_name || filterOptions.subcategories.find(s => s.id.toString() === selectedProduct.product_subcategory_id?.toString() && s.category_id === selectedProduct.product_category_id)?.name || '',
                                   company_id: selectedProduct.company ? parseInt(selectedProduct.company) : 0,
-                                  company_name: filterOptions.companies.find(c => c.id.toString() === productRowFilters.company)?.name || '',
+                                  company_name: filterOptions.companies.find(c => c.id.toString() === selectedProduct.company)?.name || selectedProduct.company || '',
                                   part_number: productRowFilters.partNo,
                                   qty: qty,
                                   rate: rate,
@@ -1701,7 +1897,7 @@ export default function InvoiceCreate() {
                                   sgst: sgst,
                                   igst: igst
                                 };
-
+                                console.log("newItem", newItem)
                                 setSelectedProducts(prev => [...prev, newItem]);
 
                                 // Reset form
@@ -1866,7 +2062,7 @@ export default function InvoiceCreate() {
                                 </button>
                                 <button
                                   type="button"
-                                onClick={() => removeProduct(product.id)}
+                                  onClick={() => removeProduct(product.id)}
                                   className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
                                   title="Remove product"
                                 >
@@ -2094,25 +2290,25 @@ export default function InvoiceCreate() {
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
                       <select
-                        value={formData.payment_status.toString()}
-                        onChange={(e) => handleInputChange('payment_status', e.target.value)}
+                        value={formData.payment_status}
+                        onChange={(e) => handleInputChange('payment_status', Number(e.target.value))}
                         className="select w-full"
                         required
                       >
-                        <option value="0">Unpaid</option>
-                        <option value="1">Paid</option>
+                        <option value={0}>Unpaid</option>
+                        <option value={1}>Paid</option>
                       </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
                       <select
-                        value={formData.payment_mode.toString()}
-                        onChange={(e) => handleInputChange('payment_mode', e.target.value)}
+                        value={formData.payment_mode}
+                        onChange={(e) => handleInputChange('payment_mode', Number(e.target.value))}
                         className="select w-full"
                         required
                       >
-                        <option value="1">Cash</option>
-                        <option value="2">Bank</option>
+                        <option value={1}>Cash</option>
+                        <option value={2}>Bank</option>
                       </select>
                     </div>
                   </div>
@@ -2202,11 +2398,17 @@ export default function InvoiceCreate() {
                       key={product.id}
                       className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
                       onClick={() => {
+                        console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
+                          product: product.product_name,
+                          selling_price: product.selling_price,
+                          gst_rate_percentage: product.gst_rate_percentage,
+                          gst_rate: product.gst_rate
+                        });
                         handleProductSelection(product);
                         setTemplateRow({
                           qty: '1',
-                          rate: product.selling_price?.toString() || '',
-                          gst: product.gst_rate_percentage?.toString() || '18',
+                          rate: product.selling_price?.toString() || product.rate?.toString() || '0',  // FIXED: Use product.rate as fallback
+                          gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '18',  // FIXED: Use gst_rate as fallback
                           discount: '0'
                         });
                         setIsProductPanelOpen(false);
