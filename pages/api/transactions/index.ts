@@ -133,45 +133,89 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         where: { id: { in: invoiceXIds } },
         select: { id: true, invoice_no: true }
       }),
-      prisma.bill_tosales.findMany({
-        where: { invoice_no: { in: invoiceIds } },
-        select: { invoice_no: true, user_name: true, gstin: true }
+      prisma.customer_details.findMany({
+        where: {
+          bill_tosales: {
+            some: {
+              invoice_no: { in: invoiceIds }
+            }
+          }
+        },
+        select: {
+          id: true,
+          billing_name: true,
+          billing_gstin: true,
+          bill_tosales: {
+            select: {
+              invoice_no: true
+            }
+          }
+        }
       }),
-      prisma.bill_tosalesx.findMany({
-        where: { invoice_no: { in: invoiceXIds } },
-        select: { invoice_no: true, user_name: true, gstin: true }
+      prisma.customer_details.findMany({
+        where: {
+          bill_tosalesx: {
+            some: {
+              invoice_no: { in: invoiceXIds }
+            }
+          }
+        },
+        select: {
+          id: true,
+          billing_name: true,
+          billing_gstin: true,
+          bill_tosalesx: {
+            select: {
+              invoice_no: true
+            }
+          }
+        }
       })
     ])
 
     // Create lookup maps
-    const invoiceMap = new Map(invoices.map(inv => [inv.id, inv]))
-    const invoiceXMap = new Map(invoicesx.map(inv => [inv.id, inv]))
-    const billToMap = new Map(billToSales.map(bill => [bill.invoice_no, bill]))
-    const billToXMap = new Map(billToSalesX.map(bill => [bill.invoice_no, bill]))
+    const invoiceMap = new Map(invoices.map(inv => [inv.id, inv.invoice_no]))
+    const invoiceXMap = new Map(invoicesx.map(inv => [inv.id, inv.invoice_no]))
+
+    const billToMap = new Map()
+    billToSales.forEach(customer => {
+      customer.bill_tosales.forEach(billToRecord => {
+        const invoiceNo = billToRecord.invoice_no
+        billToMap.set(invoiceNo, customer)
+      })
+    })
+
+    const billToXMap = new Map()
+    billToSalesX.forEach(customer => {
+      customer.bill_tosalesx.forEach(billToRecord => {
+        const invoiceNo = billToRecord.invoice_no
+        billToXMap.set(invoiceNo, customer)
+      })
+    })
 
     // Combine results from both tables
     const allTransactions = [
       ...incexpResults.map(tx => {
-        const invoice = tx.invoice_id ? invoiceMap.get(tx.invoice_id) : null
-        const billing = invoice?.id ? billToMap.get(invoice.id) : null
+        const invoice_no = tx.invoice_id ? invoiceMap.get(tx.invoice_id) : null
+        const billing = invoice_no ? billToMap.get(invoice_no) : null
         return {
           ...tx,
           transaction_type: 'regular_sale' as const,
-          customer_name: billing?.user_name || 'N/A',
-          customer_gstin: billing?.gstin || '',
-          invoice_no: invoice?.invoice_no || null,
+          customer_name: billing?.billing_name || 'N/A',
+          customer_gstin: billing?.billing_gstin || '',
+          invoice_no: invoice_no,
           invoice_id: tx.invoice_id
         }
       }),
       ...incexpxResults.map(tx => {
-        const invoice = tx.invoice_id ? invoiceXMap.get(tx.invoice_id) : null
-        const billing = invoice?.id ? billToXMap.get(invoice.id) : null
+        const invoice_no = tx.invoice_id ? invoiceXMap.get(tx.invoice_id) : null
+        const billing = invoice_no ? billToXMap.get(invoice_no) : null
         return {
           ...tx,
           transaction_type: 'tax_exempt_sale' as const,
-          customer_name: billing?.user_name || 'N/A',
-          customer_gstin: billing?.gstin || '',
-          invoice_no: invoice?.invoice_no || null,
+          customer_name: billing?.billing_name || 'N/A',
+          customer_gstin: billing?.billing_gstin || '',
+          invoice_no: invoice_no,
           invoice_id: tx.invoice_id
         }
       })

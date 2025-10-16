@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { Search, Calculator, Loader, Trash2, Edit2, Plus } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import SessionStorageService from '../../lib/sessionStorage';
 
 interface Customer {
   id: string;
@@ -357,6 +358,76 @@ export default function InvoiceCCreate() {
   useEffect(() => {
     if (customersLoaded && isEditMode && editInvoiceId) {
       console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
+
+      // First try to get data from sessionStorage
+      const cachedData = SessionStorageService.get('salex', editInvoiceId.toString());
+      if (cachedData) {
+        console.log('🔄 Using cached invoice data from sessionStorage:', cachedData);
+        // Process the cached data directly inline
+        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
+
+        setFormData({
+          invoice_number: invoiceData.invoice_no?.toString() || '',
+          bill_reference: invoiceData.bill_reference || '',
+          staff_id: invoiceData.staff_id || null,
+          date: new Date(invoiceData.invoice_date * 1000).toISOString().split('T')[0],
+          customer_name: invoiceData.customer_name || '',
+          contact_number: invoiceData.contact_number || '',
+          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
+          vehicle_number: transportDetails.vehicle_no || '',
+          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
+          address: invoiceData.address || '',
+          transport_name: transportDetails.trans_mode || '',
+          city: invoiceData.city || '',
+          email_id: invoiceData.email_id || '',
+          discount: invoiceData.discount ? invoiceData.discount.toString() : '0',
+          state: invoiceData.state || '',
+          gst_number: invoiceData.gst_number || '',
+          tax: invoiceData.tax || '',
+          notes: invoiceData.notes || '',
+          payment_status: invoiceData.status || 1,
+          payment_mode: invoiceData.mode || 1,
+          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
+          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
+          total_tax: '0', // Always 0 for salex invoices
+          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
+          descriptions: invoiceData.descriptions || '',
+          packing_forwarding_qty: invoiceData.packing_forwarding_qty ? invoiceData.packing_forwarding_qty.toString() : '0',
+          packing_forwarding_rate: invoiceData.packing_forwarding_rate ? invoiceData.packing_forwarding_rate.toString() : '0',
+          packing_forwarding_total: invoiceData.packing_forwarding_total ? invoiceData.packing_forwarding_total.toString() : '0',
+          tax_rate: '0', // Always 0 for salex
+          basic_value: invoiceData.basic_value || '0'
+        });
+
+        // Set customer data from billingDetails
+        if (billingDetails?.customer) {
+          const customer = billingDetails.customer;
+          setSelectedCustomerId(customer.id.toString());
+          setSelectedCustomer(customer);
+        }
+
+        // Set other IDs
+        if (invoiceData.staff_id) {
+          setSelectedStaffId(invoiceData.staff_id.toString());
+        }
+        if (invoiceData.mechanic_id) {
+          setSelectedMechanicId(invoiceData.mechanic_id.toString());
+        }
+
+        // Set raw items to convert later
+        if (invoiceItems && invoiceItems.length > 0) {
+          setRawInvoiceItems(invoiceItems);
+        }
+
+        // Set loading to false
+        setInvoiceNumberLoading(false);
+
+        // Remove the cached data after using it
+        SessionStorageService.remove('salex', editInvoiceId.toString());
+        return;
+      }
+
+      // Fallback to API call if no cached data
       fetchInvoiceForEdit(editInvoiceId);
     }
   }, [customersLoaded, isEditMode, editInvoiceId]);
@@ -555,8 +626,12 @@ export default function InvoiceCCreate() {
     try {
       const response = await fetch('/api/products');
       if (response.ok) {
-        const data = await response.json();
-        setProducts(data.products || []);
+        // Clean up sessionStorage on successful update
+        if (isEditMode && editInvoiceId) {
+          SessionStorageService.remove('salex', editInvoiceId.toString());
+        }
+        setShowConfirmationModal(false);
+        router.push('/salex');
       }
     } catch (error) {
       console.error('Error fetching products:', error);

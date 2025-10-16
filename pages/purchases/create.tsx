@@ -4,6 +4,8 @@ import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2 } from 'lucide-re
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import SessionStorageService from '../../lib/sessionStorage';
+
 
 interface Vendor {
   id: string;
@@ -228,7 +230,18 @@ export default function PurchaseCreate() {
     if (edit && typeof edit === 'string') {
       setIsEditMode(true);
       setEditPurchaseId(parseInt(edit));
-      fetchPurchaseForEdit(parseInt(edit));
+
+      // First try to get data from sessionStorage
+      const cachedData = SessionStorageService.get('purchases', edit);
+      if (cachedData) {
+        console.log('🔄 Using cached purchase data from sessionStorage:', cachedData);
+        populateFormWithPurchaseData(cachedData);
+        // Remove the cached data after using it
+        SessionStorageService.remove('purchases', edit);
+      } else {
+        // Fallback to API call if no cached data
+        fetchPurchaseForEdit(parseInt(edit));
+      }
     }
   }, [router.query]);
 
@@ -531,6 +544,127 @@ export default function PurchaseCreate() {
       showSnackbar('error', 'Failed to generate invoice number. Please try again.');
     } finally {
       setInvoiceNumberLoading(false);
+    }
+  };
+
+  // Extract form population logic to reusable function for cached data
+  const populateFormWithPurchaseData = (cachedData: any) => {
+    const purchase = cachedData.purchase || cachedData;
+
+    // Format date for input fields
+    const formatDateForInput = (dateValue: number | string) => {
+      if (typeof dateValue === 'string') {
+        if (/^\d+$/.test(dateValue)) {
+          const timestamp = parseInt(dateValue);
+          if (timestamp > 1000000000) {
+            return new Date(timestamp * 1000).toISOString().split('T')[0];
+          }
+        }
+        return new Date(dateValue).toISOString().split('T')[0];
+      }
+      return new Date(dateValue * 1000).toISOString().split('T')[0];
+    };
+
+    // Prefill form data
+    setFormData({
+      invoice_number: purchase.invoice_no?.toString() || '',
+      bill_reference: purchase.bill_reference || '',
+      staff_id: purchase.staff_id || null,
+      date: formatDateForInput(purchase.invoice_date),
+      vendor_name: purchase.vendor_name || '',
+      contact_number: purchase.contact_number || '',
+      email_id: purchase.email_id || '',
+      address: purchase.vendor_address || '',
+      address_2: '',
+      city: '',
+      state: purchase.vendor_gstin ? 'Uttar Pradesh' : '', // Approximate based on GSTIN
+      gst_number: purchase.vendor_gstin || '',
+      transport_name: purchase.transport || '',
+      vehicle_number: purchase.vehicle_number || '',
+      transport_cost: purchase.freight?.toString() || '',
+      bill: '',
+      tax: purchase.total_tax?.toString() || '',
+      descriptions: purchase.descriptions || '',
+      packing_forwarding_qty: '',
+      packing_forwarding_rate: '',
+      packing_forwarding_total: '',
+      tax_rate: purchase.taxrate?.toString() || '',
+      basic_value: purchase.total_taxable_value?.toString() || '',
+      total_cgst: purchase.total_cgst?.toString() || '',
+      total_sgst: purchase.total_sgst?.toString() || '',
+      total_igst: purchase.total_igst?.toString() || '',
+      notes: purchase.notes || '',
+      total_tax: purchase.total_tax?.toString() || '',
+      payment_status: purchase.status || 0,
+      payment_mode: purchase.payment_mode || 1,
+    });
+
+    // Set vendor data
+    if (purchase.vendor_id) {
+      setSelectedVendorId(purchase.vendor_id.toString());
+      setVendorIdToSave(purchase.vendor_id);
+
+      // Find vendor in loaded vendors list, or create from cached data
+      let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
+
+      // If not found in loaded vendors, create from purchase data
+      if (!vendor && purchase.vendor_name) {
+        vendor = {
+          id: purchase.vendor_id.toString(),
+          vendor_name: purchase.vendor_name,
+          contact_no: purchase.contact_number || '',
+          email: purchase.email_id || '',
+          address: purchase.vendor_address || '',
+          address_2: '',
+          city: '',
+          state: purchase.vendor_gstin ? 'Uttar Pradesh' : '',
+          state_code: 0,
+          tax_id: purchase.vendor_gstin || ''
+        };
+      }
+
+      if (vendor) {
+        setSelectedVendor(vendor);
+        setVendorStateForTax(vendor.state || '');
+      }
+    }
+
+    // Convert purchase items to local format
+    if (purchase.items && purchase.items.length > 0) {
+      const convertedItems: PurchaseItem[] = purchase.items.map((item: any, index: number) => {
+        const qty = item.qty || 1;
+        const rate = item.rate || 0;
+
+        // Use existing tax breakdown from database if available, otherwise calculate
+        const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
+        const total = item.total || item.subtotal || (qty * rate + tax);
+
+        // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
+        const cgst = item.cgst || 0;
+        const sgst = item.sgst || 0;
+        const igst = item.igst || 0;
+
+        return {
+          id: (index + 1).toString(),
+          product_id: item.product_id || item.category_id || 1,
+          product_name: item.product_name || item.name_of_product || '',
+          car_model: item.model_id?.toString() || '',
+          category: item.category_id?.toString() || '',
+          sub_category: item.subcategory_id?.toString() || '',
+          company: item.company_id?.toString() || '',
+          part_number: item.part_number || item.part || '',
+          qty: qty,
+          rate: rate,
+          gst_percentage: item.gst_percentage || item.gst_rate || 0,
+          tax: tax,
+          cgst: cgst,
+          sgst: sgst,
+          igst: igst,
+          total: total
+        };
+      });
+
+      setSelectedProducts(convertedItems);
     }
   };
 
@@ -1086,6 +1220,11 @@ export default function PurchaseCreate() {
       setShowConfirmationModal(false);
 
       if (response.ok) {
+        // Clean up sessionStorage on successful update
+        if (isEditMode && editPurchaseId) {
+          SessionStorageService.remove('purchases', editPurchaseId.toString());
+        }
+
         // Show success snackbar after modal closes and navigate
         showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);
         router.push('/purchases');

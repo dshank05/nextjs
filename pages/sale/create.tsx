@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import SessionStorageService from '../../lib/sessionStorage';
 
 interface Customer {
   id: string;
@@ -460,6 +461,86 @@ export default function InvoiceCreate() {
   useEffect(() => {
     if (isEditMode && editInvoiceId) {
       console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
+
+      // First try to get data from sessionStorage
+      const cachedData = SessionStorageService.get('sales', editInvoiceId.toString());
+      if (cachedData) {
+        console.log('🔄 Using cached invoice data from sessionStorage:', cachedData);
+        // Process the cached data directly inline
+        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
+
+        setFormData({
+          invoice_number: invoiceData.invoice_no?.toString() || '',
+          bill_reference: invoiceData.bill_reference || '',
+          staff_id: invoiceData.staff_id || null,
+          date: new Date(invoiceData.invoice_date * 1000).toISOString().split('T')[0],
+          customer_name: invoiceData.customer_name || '',
+          contact_number: invoiceData.contact_number || '',
+          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
+          mechanic_id: invoiceData.mechanic_id || null,
+          vehicle_number: transportDetails.vehicle_no || '',
+          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
+          address: invoiceData.address || '',
+          transport_name: transportDetails.trans_mode || '',
+          city: invoiceData.city || '',
+          email_id: invoiceData.email_id || '',
+          discount: invoiceData.discount || '',
+          state: invoiceData.state || '',
+          gst_number: invoiceData.gst_number || '',
+          tax: invoiceData.tax || '',
+          notes: invoiceData.notes || '',
+          payment_status: invoiceData.status || 1,
+          payment_mode: invoiceData.payment_mode || 1,
+          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
+          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
+          total_tax: invoiceData.total_tax ? invoiceData.total_tax.toString() : '',
+          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
+          descriptions: invoiceData.descriptions || '',
+          packing_forwarding_qty: invoiceData.packing_forwarding_qty || '0',
+          packing_forwarding_rate: invoiceData.packing_forwarding_rate || '0',
+          packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
+          total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
+          total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
+          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0'
+        });
+
+        // Set customer data from billingDetails
+        if (billingDetails?.customer) {
+          const customer = billingDetails.customer;
+          setSelectedCustomerId(customer.id.toString());
+          setSelectedCustomer(customer);
+          setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE);
+          if (customer.billing_state) {
+            setFormData(prev => ({
+              ...prev,
+              state: customer.billing_state,
+              gst_number: customer.billing_gstin || ''
+            }));
+          }
+        }
+
+        // Set other IDs
+        if (invoiceData.staff_id) {
+          setSelectedStaffId(invoiceData.staff_id.toString());
+        }
+        if (invoiceData.mechanic_id) {
+          setSelectedMechanicId(invoiceData.mechanic_id.toString());
+        }
+
+        // Set raw items to convert later
+        if (invoiceItems && invoiceItems.length > 0) {
+          setRawInvoiceItems(invoiceItems);
+        }
+
+        // Set loading to false
+        setInvoiceNumberLoading(false);
+
+        // Remove the cached data after using it
+        SessionStorageService.remove('sales', editInvoiceId.toString());
+        return;
+      }
+
+      // Fallback to API call if no cached data
       fetchInvoiceForEdit(editInvoiceId);
     }
   }, [isEditMode, editInvoiceId]);
@@ -539,8 +620,12 @@ export default function InvoiceCreate() {
     try {
       const response = await fetch('/api/customers');
       if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
+        // Clean up sessionStorage on successful update
+        if (isEditMode && editInvoiceId) {
+          SessionStorageService.remove('sales', editInvoiceId.toString());
+        }
+        setShowConfirmationModal(false);
+        router.push('/sale');
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
@@ -636,12 +721,110 @@ export default function InvoiceCreate() {
 
   const fetchInvoiceForEdit = async (invoiceId: number) => {
     try {
-      console.log('🔍 FETCHING INVOICE FOR EDIT:', invoiceId);
+      console.log('🔍 CHECKING SESSIONSTORAGE FOR EDIT DATA:', invoiceId);
+
+      // Check sessionStorage first to avoid redundant API call in edit mode
+      const cachedData = SessionStorageService.get('sales', invoiceId.toString());
+      if (cachedData) {
+        console.log('✅ USING CACHED DATA FROM SESSIONSTORAGE');
+        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
+
+        // Process the cached data directly inline
+        const formatDateForInput = (dateValue: number | string) => {
+          if (typeof dateValue === 'string') {
+            if (/^\d+$/.test(dateValue)) {
+              const timestamp = parseInt(dateValue);
+              if (timestamp > 1000000000) {
+                return new Date(timestamp * 1000).toISOString().split('T')[0];
+              }
+            }
+            return new Date(dateValue).toISOString().split('T')[0];
+          }
+          return new Date(dateValue * 1000).toISOString().split('T')[0];
+        };
+
+        const invoiceNo = invoiceData.invoice_no ? invoiceData.invoice_no.toString() : '';
+        console.log('📋 SETTING CACHED INVOICE NUMBER:', invoiceNo);
+
+        // Prefill form data from cached data
+        const formDataToSet = {
+          invoice_number: invoiceNo,
+          bill_reference: invoiceData.bill_reference || '',
+          staff_id: invoiceData.staff_id || null,
+          date: formatDateForInput(invoiceData.invoice_date),
+          customer_name: invoiceData.customer_name || '',
+          contact_number: invoiceData.contact_number || '',
+          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
+          mechanic_id: invoiceData.mechanic_id || null,
+          vehicle_number: transportDetails.vehicle_no || '',
+          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
+          address: invoiceData.address || '',
+          transport_name: transportDetails.trans_mode || '',
+          city: invoiceData.city || '',
+          email_id: invoiceData.email_id || '',
+          discount: invoiceData.discount || '',
+          state: invoiceData.state || '',
+          gst_number: invoiceData.gst_number || '',
+          tax: invoiceData.tax || '',
+          notes: invoiceData.notes || '',
+          payment_status: invoiceData.status || 1,
+          payment_mode: invoiceData.payment_mode || 1,
+          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
+          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
+          total_tax: invoiceData.total_tax ? invoiceData.total_tax.toString() : '',
+          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
+          descriptions: invoiceData.descriptions || '',
+          packing_forwarding_qty: invoiceData.packing_forwarding_qty || '0',
+          packing_forwarding_rate: invoiceData.packing_forwarding_rate || '0',
+          packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
+          total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
+          total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
+          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0'
+        };
+
+        setFormData(formDataToSet);
+
+        // Set customer data from billingDetails
+        if (billingDetails?.customer) {
+          const customer = billingDetails.customer;
+          setSelectedCustomerId(customer.id.toString());
+          setSelectedCustomer(customer);
+          setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE);
+          if (customer) {
+            setFormData(prev => ({
+              ...prev,
+              state: customer.billing_state || '',
+              gst_number: customer.billing_gstin || ''
+            }));
+          }
+        }
+
+        // Set other IDs
+        if (invoiceData.staff_id) {
+          setSelectedStaffId(invoiceData.staff_id.toString());
+        }
+        if (invoiceData.mechanic_id) {
+          setSelectedMechanicId(invoiceData.mechanic_id.toString());
+        }
+
+        // Set raw items to convert later
+        if (invoiceItems && invoiceItems.length > 0) {
+          console.log('Storing cached raw invoice items for conversion:', invoiceItems);
+          setRawInvoiceItems(invoiceItems);
+        }
+
+        // Set loading to false
+        setInvoiceNumberLoading(false);
+
+        return;
+      }
+
+      console.log('🔍 FETCHING INVOICE FOR EDIT FROM API:', invoiceId);
       const response = await fetch(`/api/invoices/${invoiceId}`);
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
-        const transportDetails = data.transportDetails
+        const transportDetails = data.transportDetails;
         console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
@@ -661,6 +844,17 @@ export default function InvoiceCreate() {
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
         console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
+
+        // Store data in sessionStorage for future edit reuse
+        if (typeof invoiceId === 'number') {
+          SessionStorageService.set('sales', invoiceId.toString(), {
+            invoice: invoice,
+            billingDetails: data.billingDetails,
+            shippingDetails: data.shippingDetails,
+            transportDetails: data.transportDetails,
+            invoiceItems: data.invoiceItems
+          });
+        }
 
         // Prefill form data with all available fields
         const formDataToSet = {

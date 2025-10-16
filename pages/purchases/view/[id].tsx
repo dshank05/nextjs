@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Trash2, FileText, Truck } from 'lucide-react';
+import SessionStorageService from '../../../lib/sessionStorage';
 
 interface PurchaseItem {
   id: number;
@@ -70,12 +71,29 @@ export default function PurchaseView() {
       const response = await fetch(`/api/purchases/${id}`);
       if (response.ok) {
         const data = await response.json();
-        setPurchase(data.purchase || data);
+        const purchaseData = data.purchase || data;
+        setPurchase(purchaseData);
       }
     } catch (error) {
       console.error('Error fetching purchase:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditPurchase = async () => {
+    try {
+      const response = await fetch(`/api/purchases/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        SessionStorageService.set('purchases', id.toString(), data.purchase || data);
+        router.push(`/purchases/create?edit=${id}`);
+      } else {
+        alert('Failed to prepare purchase for editing');
+      }
+    } catch (error) {
+      console.error('Error preparing purchase for edit:', error);
+      alert('Failed to prepare purchase for editing');
     }
   };
 
@@ -181,7 +199,7 @@ export default function PurchaseView() {
 
             <div className="flex justify-end space-x-3 pt-4">
               <button
-                onClick={() => router.push(`/purchases/create?edit=${purchase.id}`)}
+                onClick={handleEditPurchase}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Purchase"
               >

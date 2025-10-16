@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, FileText, Truck } from 'lucide-react';
+import SessionStorageService from '../../../lib/sessionStorage';
+
 
 interface InvoiceItem {
   id: number;
@@ -126,7 +128,8 @@ export default function InvoiceView() {
       const response = await fetch(`/api/invoices/${id}`);
       if (response.ok) {
         const data = await response.json();
-        setInvoice(data.invoice || data);
+        const invoiceData = data.invoice || data;
+        setInvoice(invoiceData);
         setBillingDetails(data.billingDetails || null);
         setShippingDetails(data.shippingDetails || null);
         setTransportDetails(data.transportDetails || null);
@@ -136,6 +139,28 @@ export default function InvoiceView() {
       console.error('Error fetching invoice:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditInvoice = async () => {
+    try {
+      const response = await fetch(`/api/invoices/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        SessionStorageService.set('sales', id.toString(), {
+          invoice: data.invoice,
+          billingDetails: data.billingDetails,
+          shippingDetails: data.shippingDetails,
+          transportDetails: data.transportDetails,
+          invoiceItems: data.invoiceItems
+        });
+        router.push(`/sale/create?edit=${id}`);
+      } else {
+        alert('Failed to prepare invoice for editing');
+      }
+    } catch (error) {
+      console.error('Error preparing invoice for edit:', error);
+      alert('Failed to prepare invoice for editing');
     }
   };
 
@@ -237,7 +262,7 @@ export default function InvoiceView() {
 
             <div className="flex justify-end space-x-3 pt-4">
               <button
-                onClick={() => router.push(`/sale/create?edit=${invoice.id}`)}
+                onClick={handleEditInvoice}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Invoice"
               >

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, FileText, Truck } from 'lucide-react';
+import SessionStorageService from '../../../lib/sessionStorage';
 
 interface InvoiceItem {
   id: number;
@@ -127,7 +128,8 @@ export default function InvoiceCView() {
       const response = await fetch(`/api/salex/${id}`);
       if (response.ok) {
         const data = await response.json();
-        setInvoice(data.invoice || data);
+        const invoiceData = data.invoice || data;
+        setInvoice(invoiceData);
         setBillingDetails(data.billingDetails || null);
         setShippingDetails(data.shippingDetails || null);
         setTransportDetails(data.transportDetails || null);
@@ -137,6 +139,28 @@ export default function InvoiceCView() {
       console.error('Error fetching invoice:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditInvoice = async () => {
+    try {
+      const response = await fetch(`/api/salex/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        SessionStorageService.set('salex', id.toString(), {
+          invoice: data.invoice,
+          billingDetails: data.billingDetails,
+          shippingDetails: data.shippingDetails,
+          transportDetails: data.transportDetails,
+          invoiceItems: data.invoiceItems
+        });
+        router.push(`/salex/create?edit=${id}`);
+      } else {
+        alert('Failed to prepare invoice for editing');
+      }
+    } catch (error) {
+      console.error('Error preparing invoice for edit:', error);
+      alert('Failed to prepare invoice for editing');
     }
   };
 
@@ -167,10 +191,7 @@ export default function InvoiceCView() {
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
       case 1: return 'Cash';
-      case 2:
-      case 3: return 'Bank';
-      case 4: return 'Credit';
-      default: return 'N/A';
+      case 2: return 'Bank';
     }
   };
 
@@ -240,14 +261,14 @@ export default function InvoiceCView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button
-                onClick={() => router.push(`/salex/create?edit=${invoice.id}`)}
-                className="btn-primary flex items-center gap-2"
-                title="Edit Invoice C"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
-              </button>
+            <button
+              onClick={handleEditInvoice}
+              className="btn-primary flex items-center gap-2"
+              title="Edit Invoice C"
+            >
+              <Edit className="w-4 h-4" />
+              Edit
+            </button>
             </div>
           </div>
         </div>

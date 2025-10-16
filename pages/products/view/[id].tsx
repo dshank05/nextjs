@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Edit } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/ConfirmationModal';
 import { useSnackbar } from '../../../components/SnackbarProvider';
+import SessionStorageService from '../../../lib/sessionStorage';
 
 interface Product {
   id: number;
@@ -55,6 +56,22 @@ export default function ProductView() {
       console.error('Error fetching product:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEditProduct = async () => {
+    try {
+      const response = await fetch(`/api/products/${id}`);
+      if (response.ok) {
+        const data = await response.json();
+        SessionStorageService.set('products', id.toString(), data);
+        router.push(`/products/create?edit=${id}`);
+      } else {
+        alert('Failed to prepare product for editing');
+      }
+    } catch (error) {
+      console.error('Error preparing product for edit:', error);
+      alert('Failed to prepare product for editing');
     }
   };
 
@@ -181,10 +198,14 @@ export default function ProductView() {
               >
                 {product.is_active ? '🚫 Inactive' : '✅ Reactivate'}
               </button>
-              <Link href={`/products/create?edit=${product.id}`} className="btn-primary flex items-center gap-2" title="Edit Product">
+              <button
+                onClick={handleEditProduct}
+                className="btn-primary flex items-center gap-2"
+                title="Edit Product"
+              >
                 <Edit className="w-4 h-4" />
                 Edit
-              </Link>
+              </button>
             </div>
           </div>
         </div>

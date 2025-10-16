@@ -89,7 +89,7 @@ export default async function handler(
           total: true,
           notes: true,
           invoice_date: true,
-          status: true,
+          payment_status: true,
           payment_mode: true,
           fy: true,
           bill_reference: true // Add bill_reference field
@@ -103,9 +103,24 @@ export default async function handler(
 
     const [customerData, itemCounts] = await Promise.all([
       // Get all customer names in one query
-      prisma.bill_tosales.findMany({
-        where: { invoice_no: { in: invoiceIds } },
-        select: { invoice_no: true, user_name: true, gstin: true }
+      prisma.customer_details.findMany({
+        where: {
+          bill_tosales: {
+            some: {
+              invoice_no: { in: invoiceIds }
+            }
+          }
+        },
+        select: {
+          id: true,
+          billing_name: true,
+          billing_gstin: true,
+          bill_tosales: {
+            select: {
+              invoice_no: true
+            }
+          }
+        }
       }),
 
       // Get all item counts in one query
@@ -117,8 +132,17 @@ export default async function handler(
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: { invoice_no: any; user_name: any; gstin: any }) => [c.invoice_no, c.user_name]))
-    const gstinMap = new Map(customerData.map((c: { invoice_no: any; gstin: any }) => [c.invoice_no, c.gstin]))
+    const customerMap = new Map()
+    const gstinMap = new Map()
+
+    customerData.forEach(customer => {
+      customer.bill_tosales.forEach(billToRecord => {
+        const invoiceNo = billToRecord.invoice_no
+        customerMap.set(invoiceNo, customer.billing_name)
+        gstinMap.set(invoiceNo, customer.billing_gstin)
+      })
+    })
+
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced sales invoices using maps
