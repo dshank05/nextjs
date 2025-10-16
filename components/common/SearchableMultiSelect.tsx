@@ -12,6 +12,7 @@ interface SearchableMultiSelectProps {
   onSelectionChange: (values: string[]) => void;
   placeholder?: string;
   className?: string;
+  closeOnSelect?: boolean; // Optional prop to control dropdown behavior after selection
 }
 
 export function SearchableMultiSelect({
@@ -19,7 +20,8 @@ export function SearchableMultiSelect({
   selectedValues,
   onSelectionChange,
   placeholder = "Select options...",
-  className = ""
+  className = "",
+  closeOnSelect = true // Default to closing on select (backward compatible)
 }: SearchableMultiSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,7 +49,9 @@ export function SearchableMultiSelect({
       ? selectedValues.filter(id => id !== optionId)
       : [...selectedValues, optionId];
     onSelectionChange(newSelection);
-    setIsDropdownOpen(false); // Close dropdown after selection
+    if (closeOnSelect) {
+      setIsDropdownOpen(false); // Only close if closeOnSelect is true
+    }
   };
 
   const handleClearAll = () => {
@@ -65,12 +69,12 @@ export function SearchableMultiSelect({
     <div className={`relative ${className}`} ref={dropdownRef}>
       {/* Selected items display */}
       <div
-        className="select w-full h-10 cursor-pointer flex items-center justify-between px-3 py-2"
+        className="select w-full min-h-8 cursor-pointer flex items-center justify-between px-3 py-2"
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
       >
         <div className="flex flex-wrap gap-1 flex-1">
           {selectedValues.length > 0 ? (
-            selectedValues.slice(0, 3).map((value) => {
+            selectedValues.map((value) => {
               const option = options.find(opt => opt.id === value);
               return (
                 <span
@@ -94,11 +98,8 @@ export function SearchableMultiSelect({
           ) : (
             <span className="text-slate-400 text-sm">{placeholder}</span>
           )}
-          {selectedValues.length > 3 && (
-            <span className="text-slate-400 text-sm">+{selectedValues.length - 3} more</span>
-          )}
         </div>
-        <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ml-2 flex-shrink-0`} />
       </div>
 
       {/* Dropdown menu */}

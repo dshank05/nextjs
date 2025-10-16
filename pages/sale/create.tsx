@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
+import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import SessionStorageService from '../../lib/sessionStorage';
 
@@ -184,6 +185,9 @@ export default function InvoiceCreate() {
 
   // State for filtered subcategories based on selected category
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
+
+  // State for sidepanel car model filtering
+  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
 
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
@@ -565,11 +569,25 @@ export default function InvoiceCreate() {
     }
   }, [productRowFilters.category, productRowFilters.subcategory, filterOptions.subcategories]);
 
-  // Handle product search with normalized text
+  // Filter products based on car model selection and search term
   useEffect(() => {
+    let filtered = products;
+
+    // Apply car model filter if any selected
+    if (selectedPanelCarModels.length > 0) {
+      filtered = filtered.filter(product => {
+        if (!product.car_model_ids) return false;
+        const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
+        return selectedPanelCarModels.some(selectedModel =>
+          productModelIds.includes(selectedModel)
+        );
+      });
+    }
+
+    // Apply text search filter
     if (productSearchTerm.trim()) {
       const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-      const filtered = products.filter(product => {
+      filtered = filtered.filter(product => {
         const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
         const productIdString = product.id.toString();
         const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
@@ -582,11 +600,10 @@ export default function InvoiceCreate() {
           partNoNormalized.includes(searchTermNormalized) ||
           companyNameNormalized.includes(searchTermNormalized);
       });
-      setSearchedProducts(filtered);
-    } else {
-      setSearchedProducts(products);
     }
-  }, [productSearchTerm, products]);
+
+    setSearchedProducts(filtered);
+  }, [productSearchTerm, products, selectedPanelCarModels]);
 
   // Calculate and update GST totals whenever selectedProducts change
   useEffect(() => {
@@ -620,12 +637,10 @@ export default function InvoiceCreate() {
     try {
       const response = await fetch('/api/customers');
       if (response.ok) {
-        // Clean up sessionStorage on successful update
-        if (isEditMode && editInvoiceId) {
-          SessionStorageService.remove('sales', editInvoiceId.toString());
-        }
-        setShowConfirmationModal(false);
-        router.push('/sale');
+        const data = await response.json();
+        setCustomers(data.customers || []);
+      } else {
+        setCustomers([]); // Set empty array on error
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
@@ -2589,102 +2604,35 @@ export default function InvoiceCreate() {
       </form>
 
       {/* Product Selection Side Panel */}
-      {isProductPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setIsProductPanelOpen(false)}
-          />
-
-          {/* Panel */}
-          <div className="fixed top-0 right-0 w-3/12 h-full bg-slate-900 shadow-lg flex flex-col z-50">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-700">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-slate-200">Select Product</h3>
-                <button
-                  onClick={() => setIsProductPanelOpen(false)}
-                  className="p-1 hover:bg-slate-800 rounded"
-                >
-                  <span className="text-slate-400 text-xl">×</span>
-                </button>
-              </div>
-
-              {/* Search Input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={productSearchTerm}
-                  onChange={(e) => setProductSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Product List */}
-            <div className="flex-1 overflow-y-auto">
-              {searchedProducts.length > 0 ? (
-                <div className="p-4 space-y-2">
-                  {searchedProducts.map((product) => (
-                    <div
-                      key={product.id}
-                      className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
-                      onClick={() => {
-                        console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
-                          product: product.product_name,
-                          selling_price: product.selling_price,
-                          gst_rate_percentage: product.gst_rate_percentage,
-                          gst_rate: product.gst_rate
-                        });
-                        handleProductSelection(product);
-                        setTemplateRow({
-                          qty: '1',
-                          rate: product.selling_price?.toString() || product.rate?.toString() || '0',  // FIXED: Use product.rate as fallback
-                          gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '18',  // FIXED: Use gst_rate as fallback
-                          discount: '0'
-                        });
-                        setIsProductPanelOpen(false);
-                        setProductSearchTerm('');
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className="text-slate-200 font-bold text-sm">{product.id} - {product.product_name}</h4>
-                          <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center">
-                              <span className="text-green-400 font-semibold text-sm mr-2">Stock:</span>
-                              <span className="text-white font-bold text-sm">{product.stock || 0} units</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <p className="text-slate-400 text-sm">
-                    {productSearchTerm ? 'No products found' : 'Loading products...'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-700">
-              <button
-                onClick={() => setIsProductPanelOpen(false)}
-                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <ProductSelectionPanel
+        isOpen={isProductPanelOpen}
+        onClose={() => setIsProductPanelOpen(false)}
+        title="Select Product"
+        showCarModelFilter={true}
+        filterOptions={memoizedFilterOptions}
+        selectedCarModels={selectedPanelCarModels}
+        onCarModelSelection={setSelectedPanelCarModels}
+        searchedProducts={searchedProducts}
+        productSearchTerm={productSearchTerm}
+        onSearchTermChange={setProductSearchTerm}
+        onProductSelect={(product) => {
+          console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
+            product: product.product_name,
+            selling_price: product.selling_price,
+            gst_rate_percentage: product.gst_rate_percentage,
+            gst_rate: product.gst_rate
+          });
+          handleProductSelection(product);
+          setTemplateRow({
+            qty: '1',
+            rate: product.selling_price?.toString() || product.rate?.toString() || '0',
+            gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '18',
+            discount: '0'
+          });
+          setIsProductPanelOpen(false);
+          setProductSearchTerm('');
+        }}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal

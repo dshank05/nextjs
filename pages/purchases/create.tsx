@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
@@ -157,6 +158,7 @@ export default function PurchaseCreate() {
 
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
+  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
 
@@ -465,9 +467,19 @@ export default function PurchaseCreate() {
     }));
   }, [selectedProducts, isEditMode, formData.total_cgst, formData.total_sgst, formData.total_igst]);
 
+  // Auto-calculate packing and forwarding total
+  useEffect(() => {
+    const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+    const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+    const total = qty * rate;
 
-
-
+    if (total !== parseFloat(formData.packing_forwarding_total)) {
+      setFormData(prev => ({
+        ...prev,
+        packing_forwarding_total: total.toFixed(2)
+      }));
+    }
+  }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
   const fetchVendors = async () => {
     try {
@@ -585,9 +597,9 @@ export default function PurchaseCreate() {
       bill: '',
       tax: purchase.total_tax?.toString() || '',
       descriptions: purchase.descriptions || '',
-      packing_forwarding_qty: '',
-      packing_forwarding_rate: '',
-      packing_forwarding_total: '',
+      packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
+      packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
+      packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
       tax_rate: purchase.taxrate?.toString() || '',
       basic_value: purchase.total_taxable_value?.toString() || '',
       total_cgst: purchase.total_cgst?.toString() || '',
@@ -709,9 +721,9 @@ export default function PurchaseCreate() {
           bill: '',
           tax: purchase.total_tax?.toString() || '',
           descriptions: purchase.descriptions || '',
-          packing_forwarding_qty: '',
-          packing_forwarding_rate: '',
-          packing_forwarding_total: '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
+          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
+          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
           tax_rate: purchase.taxrate?.toString() || '',
           basic_value: purchase.total_taxable_value?.toString() || '',
           total_cgst: purchase.total_cgst?.toString() || '',
@@ -1369,12 +1381,23 @@ export default function PurchaseCreate() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
                     value={selectedVendor?.address || ''}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="Auto-filled from vendor"
+                    readOnly
+                    disabled
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
+                  <input
+                    type="text"
+                    value={selectedVendor?.address_2 || ''}
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     placeholder="Auto-filled from vendor"
                     readOnly
@@ -1443,6 +1466,47 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div></div> {/* Empty column for 4-column layout */}
+              </div>
+            </div>
+
+            {/* Packing & Forwarding */}
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.packing_forwarding_qty}
+                    onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                    className="input w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.packing_forwarding_rate}
+                    onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                    className="input w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.packing_forwarding_total}
+                    readOnly
+                    disabled
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    placeholder="0.00"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1965,7 +2029,7 @@ export default function PurchaseCreate() {
                             </td>
                             <td className="px-4 py-3 text-center text-xs text-slate-200">
                               ₹{product.tax.toFixed(2)}
-                            </td>
+                            </td> 
                             <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
                               ₹{product.total.toFixed(2)}
                             </td>
@@ -1997,7 +2061,7 @@ export default function PurchaseCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={10} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
@@ -2006,7 +2070,7 @@ export default function PurchaseCreate() {
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={10} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
@@ -2187,95 +2251,28 @@ export default function PurchaseCreate() {
       </form>
 
       {/* Product Selection Side Panel */}
-      {isProductPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setIsProductPanelOpen(false)}
-          />
-
-          {/* Panel */}
-          <div className="fixed top-0 right-0 w-3/12 h-full bg-slate-900 shadow-lg flex flex-col z-50">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-700">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-slate-200">Select Product</h3>
-                <button
-                  onClick={() => setIsProductPanelOpen(false)}
-                  className="p-1 hover:bg-slate-800 rounded"
-                >
-                  <span className="text-slate-400 text-xl">×</span>
-                </button>
-              </div>
-
-              {/* Search Input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={productSearchTerm}
-                  onChange={(e) => setProductSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Product List */}
-            <div className="flex-1 overflow-y-auto">
-              {searchedProducts.length > 0 ? (
-                <div className="p-4 space-y-2">
-                  {searchedProducts.map((product) => (
-                    <div
-                      key={product.id}
-                      className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-750 cursor-pointer transition-colors"
-                      onClick={() => {
-                        handleProductSelection(product);
-                        setTemplateRow({
-                          qty: '1',
-                          rate: product.selling_price?.toString() || '',
-                          gst: product.gst_rate_percentage?.toString() || '0'
-                        });
-                        setIsProductPanelOpen(false);
-                        setProductSearchTerm('');
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className="text-slate-200 font-bold text-sm">{product.id} - {product.product_name}</h4>
-                          <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center">
-                              <span className="text-green-400 font-semibold text-sm mr-2">Stock:</span>
-                              <span className="text-white font-bold text-sm">{product.stock || 0} units</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <p className="text-slate-400 text-sm">
-                    {productSearchTerm ? 'No products found' : 'Loading products...'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-700">
-              <button
-                onClick={() => setIsProductPanelOpen(false)}
-                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <ProductSelectionPanel
+        isOpen={isProductPanelOpen}
+        onClose={() => setIsProductPanelOpen(false)}
+        title="Select Product"
+        showCarModelFilter={true}
+        filterOptions={filterOptions}
+        selectedCarModels={selectedPanelCarModels}
+        onCarModelSelection={setSelectedPanelCarModels}
+        searchedProducts={searchedProducts}
+        productSearchTerm={productSearchTerm}
+        onSearchTermChange={setProductSearchTerm}
+        onProductSelect={(product) => {
+          handleProductSelection(product);
+          setTemplateRow({
+            qty: '1',
+            rate: product.selling_price?.toString() || '',
+            gst: product.gst_rate_percentage?.toString() || '0'
+          });
+          setIsProductPanelOpen(false);
+          setProductSearchTerm('');
+        }}
+      />
 
       {/* Confirmation Modal for Purchase Submit */}
       <ConfirmationModal

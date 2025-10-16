@@ -29,7 +29,7 @@ export default async function handler(
           where: { invoice_no: purchase.invoice_no }
         })
 
-        // ✅ Now that Prisma client is regenerated, use direct vendor_id FK lookup
+        // ✅ Use direct vendor_id FK lookup
         let vendorData = null;
         if (purchase.vendor_id) {
           vendorData = await prisma.vendor_details.findUnique({
@@ -40,16 +40,17 @@ export default async function handler(
         const enhancedPurchase = {
           ...purchase,
           payment_status: purchase.status, // Map Prisma 'status' field to 'payment_status' in response
-          vendor_name: vendorData?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
-          vendor_address: vendorData?.address || null,
-          vendor_gstin: vendorData?.tax_id || null,
+          // Remove vendor details from response - send vendor_id instead
+          // vendor_name: vendorData?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
+          // vendor_address: vendorData?.address || null,
+          // vendor_gstin: vendorData?.tax_id || null,
           items: purchaseItems,
           formattedDate: purchase.invoice_date,
           bill_reference: purchase.bill_reference,
           staff_details: purchase.staff_details,
           descriptions: purchase.descriptions,
-          contact_number: vendorData?.contact_no || null,
-          email_id: vendorData?.email || null
+          // contact_number: vendorData?.contact_no || null,
+          // email_id: vendorData?.email || null
         }
 
         res.status(200).json(enhancedPurchase)
@@ -106,16 +107,17 @@ export default async function handler(
         const enhancedPurchase = {
           ...updatedPurchase,
           payment_status: updatedPurchase.status, // Map Prisma 'status' field to 'payment_status' in response
-          vendor_name: vendorData?.vendor_name || updatedPurchase.bill_reference || 'Unknown Vendor',
-          vendor_address: vendorData?.address || null,
-          vendor_gstin: vendorData?.tax_id || null,
+          // Remove vendor details from PUT response - send vendor_id instead
+          // vendor_name: vendorData?.vendor_name || updatedPurchase.bill_reference || 'Unknown Vendor',
+          // vendor_address: vendorData?.address || null,
+          // vendor_gstin: vendorData?.tax_id || null,
           items: purchaseItems,
           formattedDate: updatedPurchase.invoice_date,
           bill_reference: updatedPurchase.bill_reference,
           staff_details: updatedPurchase.staff_details,
           descriptions: updatedPurchase.descriptions,
-          contact_number: vendorData?.contact_no || null,
-          email_id: vendorData?.email || null
+          // contact_number: vendorData?.contact_no || null,
+          // email_id: vendorData?.email || null
         }
 
         res.status(200).json(enhancedPurchase)

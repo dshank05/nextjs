@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2, Plus } from 'lucide-react';
+import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import SessionStorageService from '../../lib/sessionStorage';
 
@@ -182,7 +183,10 @@ export default function InvoiceCCreate() {
   // State for filtered subcategories based on selected category
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
-  // Function to generate dynamic product name based on car model selection
+  // State for sidepanel car model filtering
+  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
+
+// Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
     const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
@@ -471,11 +475,24 @@ export default function InvoiceCCreate() {
     fetchSubcategoriesForTable(productRowFilters.category);
   }, [productRowFilters.category]);
 
-  // Handle product search with normalized text
+  // Handle product search with normalized text and filter by car models
   useEffect(() => {
-    if (productSearchTerm.trim()) {
-      const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-      const filtered = products.filter(product => {
+    let filtered = products.filter(product => {
+      // Car model filter
+      if (selectedPanelCarModels.length > 0) {
+        if (!product.car_model_ids || !product.car_model_ids.trim()) {
+          return false; // If no car models and filter is active, exclude product
+        }
+        const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
+        const hasMatchingModel = selectedPanelCarModels.some(selectedId =>
+          productModelIds.includes(selectedId)
+        );
+        if (!hasMatchingModel) return false;
+      }
+
+      // Text search filter
+      if (productSearchTerm.trim()) {
+        const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
         const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
         const productIdString = product.id.toString();
         const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
@@ -487,12 +504,13 @@ export default function InvoiceCCreate() {
           displayNameNormalized.includes(searchTermNormalized) ||
           partNoNormalized.includes(searchTermNormalized) ||
           companyNameNormalized.includes(searchTermNormalized);
-      });
-      setSearchedProducts(filtered);
-    } else {
-      setSearchedProducts(products);
-    }
-  }, [productSearchTerm, products]);
+      }
+
+      return true;
+    });
+
+    setSearchedProducts(filtered);
+  }, [productSearchTerm, products, selectedPanelCarModels, filterOptions.models]);
 
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
@@ -626,15 +644,14 @@ export default function InvoiceCCreate() {
     try {
       const response = await fetch('/api/products');
       if (response.ok) {
-        // Clean up sessionStorage on successful update
-        if (isEditMode && editInvoiceId) {
-          SessionStorageService.remove('salex', editInvoiceId.toString());
-        }
-        setShowConfirmationModal(false);
-        router.push('/salex');
+        const data = await response.json();
+        setProducts(data.products || []);
+      } else {
+        setProducts([]); // Set empty array on error
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+      setProducts([]); // Set empty array on error
     }
   };
 
@@ -2095,96 +2112,29 @@ export default function InvoiceCCreate() {
       </form>
 
       {/* Product Selection Side Panel */}
-      {isProductPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
-            onClick={() => setIsProductPanelOpen(false)}
-          />
-
-          {/* Panel */}
-          <div className="fixed top-0 right-0 w-3/12 h-full bg-slate-900 shadow-lg flex flex-col z-50">
-            {/* Header */}
-            <div className="p-4 border-b border-slate-700">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-slate-200">Select Product</h3>
-                <button
-                  onClick={() => setIsProductPanelOpen(false)}
-                  className="p-1 hover:bg-slate-800 rounded"
-                >
-                  <span className="text-slate-400 text-xl">×</span>
-                </button>
-              </div>
-
-              {/* Search Input */}
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search products..."
-                  value={productSearchTerm}
-                  onChange={(e) => setProductSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Product List */}
-            <div className="flex-1 overflow-y-auto">
-              {searchedProducts.length > 0 ? (
-                <div className="p-4 space-y-2">
-                  {searchedProducts.map((product) => (
-                    <div
-                      key={product.id}
-                      className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
-                      onClick={() => {
-                        handleProductSelection(product);
-                        setTemplateRow({
-                          qty: '1',
-                          rate: product.selling_price?.toString() || '',
-                          gst: '0',
-                          discount: '0'
-                        });
-                        setIsProductPanelOpen(false);
-                        setProductSearchTerm('');
-                      }}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <h4 className="text-slate-200 font-bold text-sm">{product.product_name}</h4>
-                          <div className="flex items-center justify-between mt-1">
-                            <div className="flex items-center">
-                              <span className="text-green-400 font-semibold text-sm mr-2">Stock:</span>
-                              <span className="text-white font-bold text-sm">{product.stock || 0} units</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <p className="text-slate-400 text-sm">
-                    {productSearchTerm ? 'No products found' : 'Loading products...'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-700">
-              <button
-                onClick={() => setIsProductPanelOpen(false)}
-                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <ProductSelectionPanel
+        isOpen={isProductPanelOpen}
+        onClose={() => setIsProductPanelOpen(false)}
+        title="Select Product"
+        showCarModelFilter={true}
+        filterOptions={memoizedFilterOptions}
+        selectedCarModels={selectedPanelCarModels}
+        onCarModelSelection={setSelectedPanelCarModels}
+        searchedProducts={searchedProducts}
+        productSearchTerm={productSearchTerm}
+        onSearchTermChange={setProductSearchTerm}
+        onProductSelect={(product) => {
+          handleProductSelection(product);
+          setTemplateRow({
+            qty: '1',
+            rate: product.selling_price?.toString() || '',
+            gst: '0',
+            discount: '0'
+          });
+          setIsProductPanelOpen(false);
+          setProductSearchTerm('');
+        }}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal

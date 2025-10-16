@@ -92,24 +92,32 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
-    // Vendor filtering by name - use JOIN with vendor_details table for name search
-    if (vendor && vendor !== '') {
-      where.vendor = {
-        vendor_name: { contains: vendor as string, mode: 'insensitive' }
-      }
-    }
+    // Vendor filtering removed - vendor_id is stored directly
 
     // Get purchase invoices with related vendor data
     const [purchaseInvoices, total] = await Promise.all([
       prisma.purchase.findMany({
         where,
-        include: {
-          vendor: {
-            select: {
-              vendor_name: true,
-              tax_id: true
-            }
-          }
+        select: {
+          id: true,
+          invoice_no: true,
+          bill_reference: true,
+          items_total: true,
+          freight: true,
+          total_taxable_value: true,
+          taxrate: true,
+          total_cgst: true,
+          total_sgst: true,
+          total_igst: true,
+          total_tax: true,
+          total: true,
+          notes: true,
+          invoice_date: true,
+          payment_mode: true,
+          status: true,
+          fy: true,
+          transport: true,
+          vendor_id: true
         },
         skip,
         take: limitNum,
@@ -168,8 +176,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
         bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
-        vendor_name: invoice.vendor?.vendor_name || 'Unknown Vendor', // ✅ Vendor name from JOIN
-        vendor_gstin: invoice.vendor?.tax_id || '', // ✅ GSTIN from JOIN
+        vendor_id: invoice.vendor_id, // ✅ Send vendor ID back - frontend fetches vendor data as needed
         items_total: invoice.items_total || 0,
         freight: invoice.freight || 0,
         total_taxable_value: invoice.total_taxable_value,
