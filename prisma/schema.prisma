@@ -144,6 +144,7 @@ model Invoiceitems {
   product_id Int
   name_of_product String  @db.VarChar(255)
   category_id     Int?
+  subcategory_id  Int?
   model_id        Int?
   company_id      Int?
   hsn             String? @db.VarChar(50)
@@ -289,7 +290,7 @@ model bill_tosales {
 
 model bill_tosalesx {
   id         Int     @id @default(autoincrement())
-  invoice_no Int?
+  invoice_no Int?   @unique
   user_name  String  @db.VarChar(255)
   address    String  @db.VarChar(255)
   address2   String? @db.VarChar(255)
@@ -362,6 +363,7 @@ model invoice_itemsx {
   product_id      Int
   name_of_product String   @db.VarChar(255)
   category_id     Int?
+  subcategory_id  Int?
   model_id        Int?
   company_id      Int?
   hsn             String?  @db.VarChar(50)
@@ -410,7 +412,9 @@ model invoicex {
   staff_id                 Int?
   commission               Float?
   mechanic_id              Int?
-  // Invoice-level fields now stored (excluding discount and tax as requested)
+  // Invoice-level fields now stored
+  discount                 Float?    // Invoice-level discount amount
+  bill_reference           String?   @db.VarChar(255)
   packing_forwarding_qty   Float?    // Packing/forwarding quantity
   packing_forwarding_rate  Float?    // Packing/forwarding rate per unit
   packing_forwarding_total Float?    // Total packing/forwarding amount

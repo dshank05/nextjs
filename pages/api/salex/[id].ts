@@ -77,10 +77,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       status,
       payment_mode,
 
+      // Additional fields from UI
+      descriptions = '',
+      discount = 0,      // Invoice-level discount amount
       staff_details,
       staff_id,
       mechanic_id,
       commission,
+      bill_reference,
+
+      // Packing & forwarding fields
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
 
       invoiceItems,
       billingDetails,
@@ -124,6 +133,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           total_tax: 0,
           total: parseFloat(total),
           notes: combinedNotes,
+          descriptions: descriptions || '', // Add descriptions field
+          bill_reference: bill_reference || '', // Add bill_reference field
           invoice_date: invoiceDateTimestamp,
           updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
           status: parseInt(status),
@@ -132,7 +143,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           staff_details,
           staff_id: staff_id ? parseInt(staff_id) : null,
           mechanic_id: mechanic_id ? parseInt(mechanic_id) : null,
-          commission: commission || 0
+          commission: commission || 0,
+          // Add packing and forwarding fields
+          packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null,
+          packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null,
+          packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null
         }
       })
 
@@ -146,15 +161,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         // Create new invoice items
         await tx.invoice_itemsx.createMany({
           data: invoiceItems.map((item: any) => ({
+            product_id: item.product_id, // Required foreign key to Product table
             invoice_no: parseInt(invoiceId),
             name_of_product: item.name_of_product,
             qty: parseFloat(item.qty),
             rate: parseFloat(item.rate),
             subtotal: parseFloat(item.subtotal),
             hsn: item.hsn || '',
-            part: item.part || '',
+            part: item.part,
             category_id: item.category_id || null,
-            model_id: item.model_id || null,
+            subcategory_id: item.subcategory_id || null,
+            model_id: item.model_id ? parseInt(item.model_id) : null, // Convert to integer
             company_id: item.company_id || null,
             fy: fy,
             invoice_date: invoiceDateTimestamp

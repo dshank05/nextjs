@@ -39,6 +39,7 @@ interface Salex {
   total_tax?: number
   total: number
   notes?: string
+  bill_reference?: string
   invoice_date: number | string
   status?: number
   payment_mode?: number

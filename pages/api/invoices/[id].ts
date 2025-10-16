@@ -62,6 +62,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           hsn: true,
           part: true,
           category_id: true,
+          subcategory_id: true,    // Added subcategory_id field
           model_id: true,
           company_id: true,
           invoice_date: true,
@@ -259,6 +260,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
               hsn: item.hsn,
               part: item.part,
               category_id: item.category_id,
+              subcategory_id: item.subcategory_id,
               model_id: item.model_id,
               company_id: item.company_id,
               invoice_date: updatedInvoice.invoice_date,

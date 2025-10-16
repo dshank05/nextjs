@@ -163,6 +163,22 @@ await tx.incexp.create({
 3. ✅ **Transaction Recording** - Added `incexpx` table integration to salex creation
 4. ✅ **Save Missing Fields** - Verified staff_details, staff_id, mechanic_id, commission fields
 
+### **Phase 4: Modernize Tax-exempt Invoice Creation (Current)** ⏳ **FINALIZING**
+8. ✅ **Update salex/create.tsx** - Modernized Invoice C creation page with advanced features while keeping tax-free
+   - Added advanced product selection with category/subcategory/company filters
+   - Added inline product editing capabilities
+   - Improved form validation and error handling
+   - Modernized UI with card-based layout matching sale/create.tsx
+   - Enhanced product search functionality
+   - Kept all tax calculations as 0 (tax-exempt)
+
+9. ✅ **Fix mechanics dropdown** - Updated fetchMechanics function in salex/create.tsx
+10. ✅ **Update salex API** - Added missing field support (descriptions, packing_forwarding fields)
+   - ✅ Added descriptions as separate field (not combined into notes)
+   - ✅ Added packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total fields
+   - ⚠️  bill_reference field commented out - needs schema update (field exists in InvoiceX table but not present in current schema)
+11. ✅ **Fix API field saving** - Staff_id and mechanic_id are properly saved ✅
+
 ### **Phase 2: Core Features (Week 3-4)**
 4. ✅ **Edit Functionality** - Created PUT `/api/invoices/[id].ts` and `/api/salex/[id].ts` endpoints with full CRUD
 5. ✅ **Enhanced Item Tracking** - GST breakdown per item

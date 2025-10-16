@@ -339,6 +339,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           hsn: item.hsn,                              // InvoiceItems.hsn
           part: item.part,                            // InvoiceItems.part
           category_id: item.category_id,              // InvoiceItems.category_id
+          subcategory_id: item.subcategory_id,        // InvoiceItems.subcategory_id (new field)
           model_id: parseInt(item.model_id),          // InvoiceItems.model_id
           company_id: item.company_id,                // InvoiceItems.company_id
           invoice_date: invoice.invoice_date,         // copied from invoice

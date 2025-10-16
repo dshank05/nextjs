@@ -285,8 +285,8 @@ export default function InvoiceCreate() {
   // New state for GST rates (from product create)
   const [gstRates, setGstRates] = useState<any[]>([]);
 
-  // State for customer state (like vendor state in purchase create)
-  const [customerStateForTax, setCustomerStateForTax] = useState<string>(''); // Track customer's state for tax calculations
+  // State for customer state code (like vendor state in purchase create)
+  const [customerStateForTax, setCustomerStateForTax] = useState<number>(BUSINESS_STATE_CODE); // Track customer's state code for tax calculations (default to business state)
 
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -366,11 +366,7 @@ export default function InvoiceCreate() {
           fetchGstRates()
         ]);
 
-        // If in edit mode, fetch the invoice data after customers are loaded
-        const { edit } = router.query;
-        if (edit && typeof edit === 'string') {
-          await fetchInvoiceForEdit(parseInt(edit));
-        }
+
       } catch (error) {
         console.error('Error initializing data:', error);
       }
@@ -407,7 +403,21 @@ export default function InvoiceCreate() {
           category_id: item.category_id || 0,
           category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
           subcategory_id: item.subcategory_id || 0,
-          subcategory_name: item.subcategory_id ? filterOptions.subcategories.find(sub => sub.id.toString() === item.subcategory_id?.toString())?.name || '' : '',
+          subcategory_name: (() => {
+            // First try database subcategory_id
+            if (item.subcategory_id && item.subcategory_id !== 0) {
+              return filterOptions.subcategories.find(sub => sub.id.toString() === item.subcategory_id?.toString())?.name || '';
+            }
+            // Fallback to product subcategory_id with category filtering
+            const product = products.find(p => p.id === item.product_id);
+            if (product?.product_subcategory_id) {
+              return filterOptions.subcategories.find(sub =>
+                sub.id.toString() === product.product_subcategory_id?.toString() &&
+                sub.category_id === product.product_category_id
+              )?.name || '';
+            }
+            return '';
+          })(),
           company_id: item.company_id || 0,
           company_name: filterOptions.companies.find(comp => comp.id.toString() === item.company_id?.toString())?.name || '',
           part_number: item.part || '',
@@ -437,7 +447,15 @@ export default function InvoiceCreate() {
     }
   }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
 
-  // Filter subcategories for table filters when category changes
+  // Fetch invoice data when edit mode is detected
+  useEffect(() => {
+    if (isEditMode && editInvoiceId) {
+      console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
+      fetchInvoiceForEdit(editInvoiceId);
+    }
+  }, [isEditMode, editInvoiceId]);
+
+  // Filter subcategories for table filters when category changes (using loaded filter data)
   useEffect(() => {
     if (productRowFilters.category > 0) {
       const filtered = filterOptions.subcategories.filter(sub => sub.category_id === productRowFilters.category);
@@ -683,7 +701,7 @@ export default function InvoiceCreate() {
           if (existingCustomer) {
             // Use real customer data from the API
             setSelectedCustomer(existingCustomer);
-            setCustomerStateForTax(existingCustomer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
+            setCustomerStateForTax(existingCustomer.billing_state_code || BUSINESS_STATE_CODE);
 
             // CRITICAL: Call handleCustomerSelect to populate customer form fields (STATE, etc.)
             handleCustomerSelect(existingCustomer.id);
@@ -710,7 +728,7 @@ export default function InvoiceCreate() {
               email: invoice.email_id || ''
             };
             setSelectedCustomer(customer);
-            setCustomerStateForTax(customer.billing_state?.toString() || BUSINESS_STATE_CODE.toString());
+            setCustomerStateForTax(customer.billing_state_code);
           }
         }
 
@@ -748,7 +766,7 @@ export default function InvoiceCreate() {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state?.toString() || ''); // Set customer's state for tax calculations
+      setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE); // Set customer's state for tax calculations
 
       // Clear tax calculations when customer changes
       setSelectedProducts([]);
@@ -760,7 +778,7 @@ export default function InvoiceCreate() {
       }));
     } else {
       setSelectedCustomer(null);
-      setCustomerStateForTax('');
+
     }
   };
 
@@ -1246,6 +1264,7 @@ export default function InvoiceCreate() {
           hsn: item.hsn || '',                                        // Invoiceitems.hsn
           part: item.part_number,                                     // Invoiceitems.part
           category_id: item.category_id,                              // Invoiceitems.category_id
+          subcategory_id:item.subcategory_id,
           model_id: item.car_model_ids && item.car_model_ids.length > 0 ? parseInt(item.car_model_ids[0]) : null, // Invoiceitems.model_id (first car model)
           company_id: item.company_id,                                // Invoiceitems.company_id
           invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoiceitems.invoice_date

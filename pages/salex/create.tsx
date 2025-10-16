@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
+import { Search, Calculator, Loader, Trash2, Edit2, Plus } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 
@@ -148,12 +148,17 @@ export default function InvoiceCCreate() {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
+  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [customersLoaded, setCustomersLoaded] = useState(false);
 
-  // Edit mode state - salex doesn't support edit mode yet
+  // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
+
+  // Raw invoice data for re-conversion when filters load
+  const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -312,19 +317,53 @@ export default function InvoiceCCreate() {
     // total_igst: ''
   });
 
-  // Fetch customers, staff, mechanics, products, and filters on mount
+  // Check for edit mode immediately on mount
   useEffect(() => {
-    fetchCustomers();
-    fetchStaffList();
-    fetchMechanics();
-    fetchProducts();
-    fetchFilterOptions();
-    fetchGstRates(); // Not used but kept for consistency
-    // Always fetch last invoice number for create mode
-    if (!isEditMode) {
+    const { edit } = router.query;
+    if (edit && typeof edit === 'string') {
+      setIsEditMode(true);
+      setEditInvoiceId(parseInt(edit));
+    }
+  }, [router.query]);
+
+  // Fetch data on mount
+  useEffect(() => {
+    const initializeData = async () => {
+      try {
+        // Fetch customers first so customer data is available for edit mode
+        await fetchCustomers();
+
+        // Fetch other data in parallel
+        await Promise.all([
+          fetchStaffList(),
+          fetchMechanics(),
+          fetchProducts(),
+          fetchFilterOptions(),
+          fetchGstRates()
+        ]);
+
+      } catch (error) {
+        console.error('Error initializing data:', error);
+      }
+    };
+
+    initializeData();
+  }, []);
+
+  // Fetch invoice data when edit mode is detected and customers are loaded
+  useEffect(() => {
+    if (customersLoaded && isEditMode && editInvoiceId) {
+      console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
+      fetchInvoiceForEdit(editInvoiceId);
+    }
+  }, [customersLoaded, isEditMode, editInvoiceId]);
+
+  // Fetch last invoice number only in create mode
+  useEffect(() => {
+    if (!isEditMode && !router.query.edit) {
       fetchLastInvoiceNumber();
     }
-  }, [isEditMode]);
+  }, [isEditMode, router.query.edit]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -370,16 +409,74 @@ export default function InvoiceCCreate() {
         const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
         // Also search by product UID (ID)
         return productNameNormalized.includes(searchTermNormalized) ||
-               productIdString.includes(searchTermNormalized) ||
-               displayNameNormalized.includes(searchTermNormalized) ||
-               partNoNormalized.includes(searchTermNormalized) ||
-               companyNameNormalized.includes(searchTermNormalized);
+          productIdString.includes(searchTermNormalized) ||
+          displayNameNormalized.includes(searchTermNormalized) ||
+          partNoNormalized.includes(searchTermNormalized) ||
+          companyNameNormalized.includes(searchTermNormalized);
       });
       setSearchedProducts(filtered);
     } else {
       setSearchedProducts(products);
     }
   }, [productSearchTerm, products]);
+
+  // Convert raw invoice items when filterOptions are loaded
+  useEffect(() => {
+    if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
+      console.log('🔄 Converting raw invoice items to formatted items now that filters are available');
+      const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
+        const itemObj: InvoiceItem = {
+          id: (index + 1).toString(),
+          product_id: item.product_id || item.name_of_product || 1,
+          product_name: item.name_of_product || 'Unknown Product',
+          car_model_ids: item.model_id ? [item.model_id.toString()] : [],
+          car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
+          category_id: item.category_id || 0,
+          category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
+          subcategory_id: item.subcategory_id || 0,
+          subcategory_name: (() => {
+            // First try database subcategory_id
+            if (item.subcategory_id && item.subcategory_id !== 0) {
+              return filterOptions.subcategories.find(sub => sub.id.toString() === item.subcategory_id?.toString())?.name || '';
+            }
+            // Fallback to product subcategory_id with category filtering
+            const product = products.find(p => p.id === item.product_id);
+            if (product?.product_subcategory_id) {
+              return filterOptions.subcategories.find(sub =>
+                sub.id.toString() === product.product_subcategory_id?.toString() &&
+                sub.category_id === product.product_category_id
+              )?.name || '';
+            }
+            return '';
+          })(),
+          company_id: item.company_id || 0,
+          company_name: filterOptions.companies.find(comp => comp.id.toString() === item.company_id?.toString())?.name || '',
+          part_number: item.part || '',
+          qty: item.qty || 1,
+          rate: item.rate || 0,
+          gst_percentage: 0, // Always 0 for salex
+          discount_percentage: item.discountrate || 0,
+          tax: 0, // Always 0 for salex
+          discount_amount: item.discount || 0,
+          total: item.subtotal || 0,
+          hsn: item.hsn || '',
+          mrp: 0,
+          discount: item.discountrate || 0,
+          margin: 0,
+          cgst: 0, // Always 0 for salex
+          sgst: 0, // Always 0 for salex
+          igst: 0  // Always 0 for salex
+        };
+        return itemObj;
+      });
+
+      console.log('✅ Setting converted invoice items:', convertedItems);
+      setSelectedProducts(convertedItems);
+
+      // Clear raw items after conversion
+      setRawInvoiceItems([]);
+    }
+  }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -401,10 +498,12 @@ export default function InvoiceCCreate() {
       if (response.ok) {
         const data = await response.json();
         setCustomers(data.customers || []);
+        setCustomersLoaded(true);
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
-      setCustomers([]);
+      setCustomers([]); // Set empty array on error
+      setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
     }
   };
 
@@ -425,9 +524,21 @@ export default function InvoiceCCreate() {
 
   const fetchMechanics = async () => {
     try {
-      setMechanics([]);
+      const response = await fetch('/api/mechanics');
+      if (response.ok) {
+        const data = await response.json();
+        // Transform mechanic data to match expected format
+        const transformedMechanics = data.mechanics.map((mechanic: any) => ({
+          id: mechanic.id.toString(),
+          mechanic_name: mechanic.name
+        }));
+        setMechanics(transformedMechanics);
+      } else {
+        setMechanics([]);
+      }
     } catch (error) {
       console.error('Error fetching mechanics:', error);
+      setMechanics([]);
     }
   };
 
@@ -476,6 +587,128 @@ export default function InvoiceCCreate() {
     } catch (error) {
       console.error('Error fetching last invoice number:', error);
       setFormData(prev => ({ ...prev, invoice_number: '1' }));
+    } finally {
+      setInvoiceNumberLoading(false);
+    }
+  };
+
+  const fetchInvoiceForEdit = async (invoiceId: number) => {
+    try {
+      console.log('🔍 FETCHING INVOICE FOR EDIT:', invoiceId);
+      const response = await fetch(`/api/salex/${invoiceId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const invoice = data.invoice || data;
+        console.log('📄 RECEIVED INVOICE DATA:', invoice);
+
+        // Format date
+        const formatDateForInput = (dateValue: number | string) => {
+          if (typeof dateValue === 'string') {
+            if (/^\d+$/.test(dateValue)) {
+              const timestamp = parseInt(dateValue);
+              if (timestamp > 1000000000) {
+                return new Date(timestamp * 1000).toISOString().split('T')[0];
+              }
+            }
+            return new Date(dateValue).toISOString().split('T')[0];
+          }
+          return new Date(dateValue * 1000).toISOString().split('T')[0];
+        };
+
+        // Ensure invoice number is a string
+        const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
+        console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
+
+        // Prefill form data with all available fields for salex
+        const formDataToSet = {
+          invoice_number: invoiceNo,
+          bill_reference: invoice.bill_reference || '',
+          staff_id: invoice.staff_id || null,
+          date: formatDateForInput(invoice.invoice_date),
+          customer_name: invoice.customer_name || '',
+          contact_number: invoice.contact_number || '',
+          mechanic_name: invoice.mechanic?.mechanic_name || '',
+          mechanic_id: invoice.mechanic_id || null,
+          vehicle_number: invoice.vehicle_number || '',
+          commission: invoice.commission ? invoice.commission.toString() : '',
+          address: invoice.address || '',
+          transport_name: invoice.transport_name || '',
+          city: invoice.city || '',
+          email_id: invoice.email_id || '',
+          discount: invoice.discount ? invoice.discount.toString() : '0',
+          state: invoice.state || '',
+          gst_number: invoice.gst_number || '',
+          tax: invoice.tax || '',
+          notes: invoice.notes || '',
+          payment_status: invoice.status || 1,
+          payment_mode: invoice.payment_mode || 1,
+          total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
+          subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
+          total_tax: '0', // Always 0 for salex invoices
+          grand_total: invoice.total ? invoice.total.toString() : '',
+          descriptions: invoice.descriptions || '',
+          packing_forwarding_qty: invoice.packing_forwarding_qty ? invoice.packing_forwarding_qty.toString() : '0',
+          packing_forwarding_rate: invoice.packing_forwarding_rate ? invoice.packing_forwarding_rate.toString() : '0',
+          packing_forwarding_total: invoice.packing_forwarding_total ? invoice.packing_forwarding_total.toString() : '0',
+          tax_rate: '0', // Always 0 for salex
+          basic_value: invoice.basic_value || '0'
+        };
+
+        console.log('📝 SETTING FORM DATA:', formDataToSet);
+        setFormData(formDataToSet);
+
+        // Set customer data - find customer in loaded customers list
+        if (invoice.select_customer) {
+          setSelectedCustomerId(invoice.select_customer.toString());
+          setVendorIdToSave(parseInt(invoice.select_customer.toString()));
+
+          // Find customer in loaded customers list
+          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString());
+          if (existingCustomer) {
+            setSelectedCustomer(existingCustomer);
+            handleCustomerSelect(existingCustomer.id);
+          } else {
+            // This should not happen since we wait for customers to load, but if it does, create from invoice data
+            console.warn('Customer not found in loaded list after customers loaded, creating from invoice data');
+            const customer = {
+              id: invoice.select_customer.toString(),
+              billing_name: invoice.customer_name || '',
+              shipping_name: '',
+              billing_address: invoice.address || '',
+              billing_address_2: '',
+              billing_city: invoice.city || '',
+              billing_state: 0,
+              billing_state_code: 0,
+              shipping_address: '',
+              shipping_address_2: '',
+              shipping_city: '',
+              shipping_state: 0,
+              shipping_state_code: 0,
+              billing_gstin: invoice.gst_number || '',
+              shipping_gstin: '',
+              contact_no: invoice.contact_number || '',
+              email: invoice.email_id || ''
+            };
+            setSelectedCustomer(customer);
+          }
+        }
+
+        // Set other related entity IDs
+        if (invoice.staff_id) {
+          setSelectedStaffId(invoice.staff_id.toString());
+        }
+        if (invoice.mechanic_id) {
+          setSelectedMechanicId(invoice.mechanic_id.toString());
+        }
+
+        // Store raw invoice items to convert later when filters are loaded
+        if (data.invoiceItems && data.invoiceItems.length > 0) {
+          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
+          setRawInvoiceItems(data.invoiceItems);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching invoice for edit:', error);
     } finally {
       setInvoiceNumberLoading(false);
     }
@@ -698,18 +931,24 @@ export default function InvoiceCCreate() {
         invoice_no: formData.invoice_number,
         invoice_date: formData.date,
         select_customer: parseInt(selectedCustomerId),
+        staff_id: formData.staff_id,
+        staff_details: staffList.find(e => e.id === formData.staff_id.toString()).staff_name,
 
         // Invoice items
         invoiceItems: selectedProducts.map(item => ({
-          name_of_product: item.product_id,
+          product_id: item.product_id, // Product ID for database relationship
+          name_of_product: item.product_name, // Product name for display
           qty: item.qty,
           rate: item.rate,
           subtotal: item.total, // For salex, subtotal = total (no tax added)
           hsn: item.hsn || '',
           part: item.part_number,
           category_id: item.category_id,
-          model_id: item.car_model_ids[0] || 0,
-          company_id: item.company_id
+          discount: item.discount,
+          discountrate: item.discount_percentage,
+          model_id: item.car_model_ids[0] ? parseInt(item.car_model_ids[0]) : null,
+          company_id: item.company_id,
+          subcategory_id:item.subcategory_id,
         })),
 
         // Billing details
@@ -719,8 +958,8 @@ export default function InvoiceCCreate() {
           address2: selectedCustomer.billing_address_2 || null,
           mobile: selectedCustomer.contact_no,
           email: selectedCustomer.email,
-          state: selectedCustomer.billing_state,
-          state_code: selectedCustomer.billing_state_code || null,
+          state: selectedCustomer.billing_state ? parseInt(selectedCustomer.billing_state.toString()) : null,
+          state_code: selectedCustomer.billing_state_code ? parseInt(selectedCustomer.billing_state_code.toString()) : null,
           gstin: selectedCustomer.billing_gstin
         } : null,
 
@@ -728,8 +967,8 @@ export default function InvoiceCCreate() {
         shippingDetails: selectedCustomer ? {
           user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name,
           address: selectedCustomer.shipping_address || selectedCustomer.billing_address,
-          state: selectedCustomer.shipping_state || selectedCustomer.billing_state,
-          state_code: selectedCustomer.shipping_state_code || selectedCustomer.billing_state_code || 0,
+          state: selectedCustomer.shipping_state ? parseInt(selectedCustomer.shipping_state.toString()) : (selectedCustomer.billing_state ? parseInt(selectedCustomer.billing_state.toString()) : null),
+          state_code: selectedCustomer.shipping_state_code ? parseInt(selectedCustomer.shipping_state_code.toString()) : (selectedCustomer.billing_state_code ? parseInt(selectedCustomer.billing_state_code.toString()) : null),
           gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin
         } : null,
 
@@ -751,19 +990,84 @@ export default function InvoiceCCreate() {
         notes: formData.notes || '',
         payment_status: formData.payment_status,
         payment_mode: formData.payment_mode,
-
+        discount: formData.total_discount
         // Skip tax-related fields entirely for salex
         // total_cgst, total_sgst, total_igst are not included
       };
 
       console.log('📤 UI SENDING SALEX PAYLOAD:', submitData);
 
-      const response = await fetch('/api/salex', {
-        method: 'POST',
+      console.log('📤 UI SENDING SALEX PAYLOAD:', submitData);
+
+      let additionalFields = {};
+
+      // Get selected staff and mechanic names/details
+      if (selectedStaffId && staffList.length > 0) {
+        const selectedStaff = staffList.find(s => s.id === selectedStaffId);
+        if (selectedStaff) {
+          additionalFields = {
+            ...additionalFields,
+            staff_details: selectedStaff.staff_name,
+            staff_id: parseInt(selectedStaffId)
+          };
+        }
+      }
+
+      if (selectedMechanicId && mechanics.length > 0) {
+        const selectedMechanic = mechanics.find(m => m.id === selectedMechanicId);
+        if (selectedMechanic) {
+          additionalFields = {
+            ...additionalFields,
+            mechanic_id: parseInt(selectedMechanicId)
+          };
+        }
+      }
+
+      // Add form data fields that might not have been included
+      if (formData.descriptions && formData.descriptions.trim()) {
+        additionalFields = { ...additionalFields, descriptions: formData.descriptions };
+      }
+
+      if (formData.commission && formData.commission !== '0' && formData.commission !== '') {
+        additionalFields = { ...additionalFields, commission: parseFloat(formData.commission) };
+      }
+
+      if (formData.bill_reference && formData.bill_reference.trim()) {
+        additionalFields = { ...additionalFields, bill_reference: formData.bill_reference };
+      }
+
+      // Add packing & forwarding fields if provided
+      if (formData.packing_forwarding_qty && formData.packing_forwarding_qty !== '0' && formData.packing_forwarding_qty !== '') {
+        additionalFields = {
+          ...additionalFields,
+          packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty)
+        };
+      }
+
+      if (formData.packing_forwarding_rate && formData.packing_forwarding_rate !== '0' && formData.packing_forwarding_rate !== '') {
+        additionalFields = {
+          ...additionalFields,
+          packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate)
+        };
+      }
+
+      if (formData.packing_forwarding_total && formData.packing_forwarding_total !== '0' && formData.packing_forwarding_total !== '') {
+        additionalFields = {
+          ...additionalFields,
+          packing_forwarding_total: parseFloat(formData.packing_forwarding_total)
+        };
+      }
+
+      const finalSubmitData = { ...submitData, ...additionalFields };
+
+      console.log('📤 FINAL UI SENDING COMPLETE SALEX PAYLOAD:', finalSubmitData);
+
+      const response = await fetch(isEditMode ? `/api/salex/${editInvoiceId}` : '/api/salex', {
+        method: isEditMode ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(submitData),
+        body: JSON.stringify(isEditMode ? finalSubmitData : finalSubmitData),
       });
 
       if (response.ok) {
@@ -917,7 +1221,7 @@ export default function InvoiceCCreate() {
                     disabled
                   />
                 </div>
-                
+
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
@@ -1100,11 +1404,10 @@ export default function InvoiceCCreate() {
                             setIsProductPanelOpen(true);
                           }}
                           disabled={!selectedCustomerId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${
-                            selectedCustomerId
-                              ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                              : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                          }`}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedCustomerId
+                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
                           title={!selectedCustomerId ? 'Please select a customer first' : ''}
                         >
                           {selectedRowProduct ? (
@@ -1300,7 +1603,7 @@ export default function InvoiceCCreate() {
                                   category_id: selectedProduct.product_category_id || 0,
                                   category_name: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
                                   subcategory_id: selectedProduct.product_subcategory_id || 0,
-                                  subcategory_name: filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '',
+          subcategory_name: productRowFilters.subcategory ? filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '' : '',
                                   company_id: selectedProduct.company ? parseInt(selectedProduct.company) : 0,
                                   company_name: filterOptions.companies.find(c => c.id.toString() === productRowFilters.company)?.name || '',
                                   part_number: productRowFilters.partNo,
@@ -1343,11 +1646,10 @@ export default function InvoiceCCreate() {
                             }
                           }}
                           disabled={!selectedRowProduct}
-                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${
-                            selectedRowProduct
-                              ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                              : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                          }`}
+                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                            }`}
                         >
                           Add
                         </button>
@@ -1486,7 +1788,7 @@ export default function InvoiceCCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
@@ -1495,7 +1797,7 @@ export default function InvoiceCCreate() {
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
                           GRAND TOTAL
                         </td>
@@ -1504,7 +1806,7 @@ export default function InvoiceCCreate() {
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={11} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
@@ -1555,7 +1857,7 @@ export default function InvoiceCCreate() {
               <div className="space-y-6">
 
                 {/* Calculations */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
                     <input
@@ -1578,7 +1880,7 @@ export default function InvoiceCCreate() {
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     />
                   </div>
-                  <div>
+                  {/* <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                     <input
                       type="number"
@@ -1588,7 +1890,7 @@ export default function InvoiceCCreate() {
                       className="input w-full"
                       placeholder="0.00"
                     />
-                  </div>
+                  </div> */}
                 </div>
 
                 {/* Packing & Forwarding */}
@@ -1695,7 +1997,7 @@ export default function InvoiceCCreate() {
                 disabled={loading}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Creating...' : 'Create Invoice C'}
+                {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice C' : 'Create Invoice C')}
               </button>
             </div>
           </div>

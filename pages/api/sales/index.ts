@@ -74,6 +74,26 @@ export default async function handler(
         skip,
         take: limitNum,
         orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
+        select: {
+          id: true,
+          invoice_no: true,
+          select_customer: true,
+          items_total: true,
+          freight: true,
+          total_taxable_value: true,
+          taxrate: true,
+          total_cgst: true,
+          total_sgst: true,
+          total_igst: true,
+          total_tax: true,
+          total: true,
+          notes: true,
+          invoice_date: true,
+          status: true,
+          payment_mode: true,
+          fy: true,
+          bill_reference: true // Add bill_reference field
+        }
       }),
       prisma.invoice.count({ where })
     ])
@@ -133,6 +153,7 @@ export default async function handler(
         total_tax: invoice.total_tax || 0,
         total: invoice.total,
         notes: invoice.notes || '',
+        bill_reference: invoice.bill_reference || '',
         invoice_date: invoice.invoice_date,
         status: invoice.status || 0,
         payment_mode: invoice.payment_mode || 0,

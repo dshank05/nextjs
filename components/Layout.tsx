@@ -159,10 +159,10 @@ const Layout = ({ children }: LayoutProps) => {
 
 
   const isActive = (href?: string, subpages?: Subpage[]) => {
-    if (subpages?.some(sub => router.pathname.startsWith(sub.href))) {
+    if (subpages?.some(sub => router.pathname == sub.href)) {
       return true;
     }
-    return href ? router.pathname.startsWith(href) : false;
+    return href ? router.pathname == href : false;
   };
 
   const getPageTitle = () => {
