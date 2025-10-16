@@ -39,7 +39,7 @@ interface Invoice {
   notes?: string;
   descriptions?: string;
   invoice_date: number;
-  status?: number;
+  payment_status?: number;
   payment_mode?: number;
   fy: number;
   staff_details?: string;
@@ -47,8 +47,6 @@ interface Invoice {
   commission?: number;
   mechanic_id?: number;
   formattedDate?: string;
-  mode?: number;
-  type?: number;
   mechanic?: {
     id: number;
     name: string;
@@ -63,27 +61,39 @@ interface Invoice {
   };
 }
 
+interface CustomerData {
+  id: number;
+  billing_name: string;
+  billing_address: string;
+  billing_address_2?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_state_code?: number;
+  billing_gstin?: string;
+  contact_no: string;
+  email: string;
+  shipping_name?: string;
+  shipping_address: string;
+  shipping_address_2?: string;
+  shipping_city?: string;
+  shipping_state?: string;
+  shipping_state_code?: number;
+  shipping_gstin?: string;
+}
+
 interface BillingDetails {
   id: number;
   invoice_no: number;
-  user_name: string;
-  address: string;
-  address2?: string;
-  mobile?: string;
-  email?: string;
-  state?: number;
-  state_code?: number;
-  gstin?: string;
+  customer_id: number;
+  customer?: CustomerData;
 }
 
 interface ShippingDetails {
   id: number;
   invoice_no: number;
-  user_name: string;
-  address: string;
-  state?: number;
-  state_code?: number;
-  gstin?: string;
+  customer_id: number;
+  shipping: boolean;
+  customer?: CustomerData;
 }
 
 interface TransportDetails {
@@ -145,8 +155,8 @@ export default function InvoiceView() {
     );
   }
 
-  const getStatusBadge = (status?: number) => {
-    switch (status) {
+  const getStatusBadge = (paymentStatus?: number) => {
+    switch (paymentStatus) {
       case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
       case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
       default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
@@ -194,15 +204,15 @@ export default function InvoiceView() {
               <div className="text-6xl">🧾</div>
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Sales Invoice #{invoice.invoice_no}</h3>
-            <p className="text-slate-400 text-sm mb-2">{billingDetails?.user_name || 'N/A'} • {formatDate(invoice.invoice_date)}</p>
-            <div className="flex items-center gap-2 mt-2">{getStatusBadge(invoice.status)}</div>
+            <p className="text-slate-400 text-sm mb-2">{billingDetails?.customer?.billing_name || 'N/A'} • {formatDate(invoice.invoice_date)}</p>
+            <div className="flex items-center gap-2 mt-2">{getStatusBadge(invoice.payment_status)}</div>
           </div>
 
           {/* Right: Key-Value Display + Actions */}
           <div className="space-y-4">
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Customer:</span>
-              <span className="text-white font-medium">{billingDetails?.user_name || 'N/A'}</span>
+              <span className="text-white font-medium">{billingDetails?.customer?.billing_name || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Invoice Number:</span>
@@ -214,7 +224,7 @@ export default function InvoiceView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{billingDetails?.mobile || 'N/A'}</span>
+              <span className="text-white font-medium">{billingDetails?.customer?.contact_no || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Items Total:</span>
@@ -256,7 +266,7 @@ export default function InvoiceView() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Status:</span>
-                <span className="text-white font-medium">{getStatusBadge(invoice.status)}</span>
+            <span className="text-white font-medium">{getStatusBadge(invoice.payment_status)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Payment Mode:</span>
@@ -270,19 +280,19 @@ export default function InvoiceView() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-slate-400">Customer Name:</span>
-                <span className="text-white font-medium">{billingDetails?.user_name || 'N/A'}</span>
+                <span className="text-white font-medium">{billingDetails?.customer?.billing_name || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Contact:</span>
-                <span className="text-white font-medium">{billingDetails?.mobile || 'N/A'}</span>
+                <span className="text-white font-medium">{billingDetails?.customer?.contact_no || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">{billingDetails?.email || 'N/A'}</span>
+                <span className="text-white font-medium">{billingDetails?.customer?.email || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">GSTIN:</span>
-                <span className="text-white font-medium">{billingDetails?.gstin || 'N/A'}</span>
+                <span className="text-white font-medium">{billingDetails?.customer?.billing_gstin || 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -363,7 +373,7 @@ export default function InvoiceView() {
           {/* Transport Details Section */}
           <div className="space-y-4 mt-6">
             <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🚚 Complete Transport Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
                 <label className="block text-slate-400 text-sm mb-1">Transport Mode:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
@@ -382,12 +392,12 @@ export default function InvoiceView() {
                   {transportDetails?.supply_date ? formatDate(transportDetails.supply_date) : 'N/A'}
                 </div>
               </div>
-              <div>
+              {/* <div>
                 <label className="block text-slate-400 text-sm mb-1">Place of Supply:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
                   {transportDetails?.place_of_supply || 'N/A'}
                 </div>
-              </div>
+              </div> */}
             </div>
           </div>
 

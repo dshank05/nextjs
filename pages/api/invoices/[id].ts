@@ -39,8 +39,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
 
     // Get related data
     const [billingDetails, shippingDetails, transportDetails, invoiceItems, transactions] = await Promise.all([
-      prisma.bill_tosales.findFirst({ where: { invoice_no: invoice.id } }),
-      prisma.ship_to.findFirst({ where: { invoice_no: invoice.id } }),
+      prisma.bill_tosales.findFirst({
+        where: { invoice_no: invoice.id },
+        include: { customer: true }
+      }),
+      prisma.shipto.findFirst({
+        where: { invoice_no: invoice.id },
+        include: { customer: true }
+      }),
       prisma.transport_details.findFirst({ where: { invoice_id: invoice.id } }),
       prisma.invoiceitems.findMany({
         where: { invoice_no: invoice.id },
@@ -77,11 +83,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         ...invoice,
         // Add fields that UI expects
         customer_id: invoice.select_customer, // UI expects customer_id field
-        customer_name: billingDetails?.user_name || '',
-        contact_number: billingDetails?.mobile || '',
-        email_id: billingDetails?.email || '',
-        address: billingDetails?.address || '',
-        gst_number: billingDetails?.gstin || '',
+        customer_name: billingDetails?.customer?.billing_name || '',
+        contact_number: billingDetails?.customer?.contact_no || '',
+        email_id: billingDetails?.customer?.email || '',
+        address: billingDetails?.customer?.billing_address || '',
+        gst_number: billingDetails?.customer?.billing_gstin || '',
         vehicle_number: transportDetails?.vehicle_no || '',
         transport_name: transportDetails?.trans_mode || '',
         // Now use actual database values for packing/forwarding fields
@@ -122,7 +128,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       total,
       notes,
       fy,
-      status,
+      payment_status,
       payment_mode,
 
       // New fields
@@ -197,7 +203,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           total,
           notes,
           fy,
-          status,
+          payment_status,
           payment_mode,
           updated_at: new Date().toISOString(),
 
@@ -283,72 +289,48 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
 
     // Transaction 3: Update related tables (separate transaction)
     await prisma.$transaction(async (tx: any) => {
-      // Update billing details
-      if (billingDetails) {
-        await tx.billtosales.upsert({
-          where: { invoice_no: parseInt(invoiceId) },
-          update: {
-            user_name: billingDetails.user_name,
-            address: billingDetails.address,
-            address2: billingDetails.address2,
-            mobile: billingDetails.mobile,
-            email: billingDetails.email,
-            state: billingDetails.state,
-            state_code: billingDetails.state_code,
-            gstin: billingDetails.gstin
-          },
-          create: {
-            invoice_no: parseInt(invoiceId),
-            user_name: billingDetails.user_name,
-            address: billingDetails.address,
-            address2: billingDetails.address2,
-            mobile: billingDetails.mobile,
-            email: billingDetails.email,
-            state: billingDetails.state,
-            state_code: billingDetails.state_code,
-            gstin: billingDetails.gstin
-          }
-        })
-      }
+      // Update billing details (now uses customer_id foreign key)
+      await tx.bill_tosales.upsert({
+        where: { invoice_no: parseInt(invoiceId) },
+        update: {
+          customer_id: parseInt(select_customer)
+        },
+        create: {
+          invoice_no: parseInt(invoiceId),
+          customer_id: parseInt(select_customer)
+        }
+      })
 
-      // Update shipping details
-      if (shippingDetails) {
-        await tx.ship_to.upsert({
+      // Update shipping details (now uses customer_id foreign key)
+      if (shippingDetails && shippingDetails !== null) {
+        await tx.shipto.upsert({
           where: { invoice_no: parseInt(invoiceId) },
           update: {
-            user_name: shippingDetails.user_name,
-            address: shippingDetails.address,
-            state: shippingDetails.state,
-            state_code: shippingDetails.state_code,
-            gstin: shippingDetails.gstin
+            customer_id: parseInt(select_customer),
+            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
           },
           create: {
             invoice_no: parseInt(invoiceId),
-            user_name: shippingDetails.user_name,
-            address: shippingDetails.address,
-            state: shippingDetails.state,
-            state_code: shippingDetails.state_code,
-            gstin: shippingDetails.gstin
+            customer_id: parseInt(select_customer),
+            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
           }
         })
       }
 
       // Update transport details
       if (transportDetails) {
-        await tx.transportdetails.upsert({
+        await tx.transport_details.upsert({
           where: { invoice_id: parseInt(invoiceId) },
           update: {
             trans_mode: transportDetails.trans_mode,
             vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date,
-            place_of_supply: transportDetails.place_of_supply
+            supply_date: transportDetails.supply_date
           },
           create: {
             invoice_id: parseInt(invoiceId),
             trans_mode: transportDetails.trans_mode,
             vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date,
-            place_of_supply: transportDetails.place_of_supply
+            supply_date: transportDetails.supply_date
           }
         })
       }
@@ -360,7 +342,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       data: {
         amt: updatedInvoice.total,
         payment_mode: updatedInvoice.payment_mode,
-        notes: `Invoice #${updatedInvoice.invoice_no} - Updated Transaction`
+        notes: updatedInvoice.notes
       }
     })
 
@@ -398,7 +380,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, invoiceId
 
       // Delete related records
       await tx.transport_details.deleteMany({ where: { invoice_id: parseInt(invoiceId) } })
-      await tx.ship_to.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
+      await tx.shipto.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
       await tx.bill_tosales.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
       await tx.invoiceitems.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
       await tx.incexp.deleteMany({ where: { invoice_id: parseInt(invoiceId) } })

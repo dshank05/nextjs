@@ -39,8 +39,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
 
     // Get related data
     const [billingDetails, shippingDetails, transportDetails, invoiceItems, transactions] = await Promise.all([
-      prisma.bill_tosalesx.findFirst({ where: { invoice_no: invoice.id } }),
-      prisma.ship_tox.findFirst({ where: { invoice_no: invoice.id } }),
+      prisma.bill_tosalesx.findFirst({
+        where: { invoice_no: invoice.id },
+        include: { customer: true }
+      }),
+      prisma.shiptox.findFirst({
+        where: { invoice_no: invoice.id },
+        include: { customer: true }
+      }),
       prisma.transport_detailsx.findFirst({ where: { invoice_id: invoice.id } }),
       prisma.invoice_itemsx.findMany({ where: { invoice_no: invoice.id } }),
       prisma.incexpx.findMany({ where: { invoice_id: invoice.id } })
@@ -74,7 +80,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       total_taxable_value,
       total,
       notes = '',
-      status,
+      payment_status,
       payment_mode,
 
       // Additional fields from UI
@@ -111,14 +117,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       return res.status(404).json({ message: 'Invoice not found' })
     }
 
-    const result = await prisma.$transaction(async (tx: any) => {
+    // ===== SPLIT INTO MULTIPLE TRANSACTIONS TO AVOID TIMEOUT =====
+
+    // Transaction 1: Update main invoice data
+    const updatedInvoice = await prisma.$transaction(async (tx: any) => {
       // Convert date to timestamp
       const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
       const fy = new Date().getFullYear()
 
-      // Update main salex invoice
-      const combinedNotes = notes ? notes : '';
-      const updatedInvoice = await tx.invoicex.update({
+      return await tx.invoicex.update({
         where: { id: parseInt(invoiceId) },
         data: {
           invoice_no: parseInt(invoice_no),
@@ -132,12 +139,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           total_igst: 0,
           total_tax: 0,
           total: parseFloat(total),
-          notes: combinedNotes,
+          notes: notes || '',
           descriptions: descriptions || '', // Add descriptions field
           bill_reference: bill_reference || '', // Add bill_reference field
           invoice_date: invoiceDateTimestamp,
           updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
-          status: parseInt(status),
+          payment_status: parseInt(payment_status),
           payment_mode: parseInt(payment_mode),
           fy: fy,
           staff_details,
@@ -150,15 +157,20 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null
         }
       })
+    }, { timeout: 15000 }) // 15 seconds timeout
 
-      // Handle invoice items update (salex doesn't affect stock)
-      if (invoiceItems && invoiceItems.length > 0) {
+    // Transaction 2: Handle invoice items (salex doesn't affect stock)
+    if (invoiceItems && invoiceItems.length > 0) {
+      await prisma.$transaction(async (tx: any) => {
         // Delete old invoice items
         await tx.invoice_itemsx.deleteMany({
           where: { invoice_no: parseInt(invoiceId) }
         })
 
         // Create new invoice items
+        const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
+        const fy = new Date().getFullYear()
+
         await tx.invoice_itemsx.createMany({
           data: invoiceItems.map((item: any) => ({
             product_id: item.product_id, // Required foreign key to Product table
@@ -173,58 +185,41 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
             subcategory_id: item.subcategory_id || null,
             model_id: item.model_id ? parseInt(item.model_id) : null, // Convert to integer
             company_id: item.company_id || null,
+            discount: parseFloat(item.discount) || 0, // Item-level discount amount
+            discountrate: parseFloat(item.discountrate) || 0, // Item-level discount percentage
             fy: fy,
             invoice_date: invoiceDateTimestamp
           }))
         })
-      }
+      }, { timeout: 15000 }) // 15 seconds timeout
+    }
 
-      // Update billing details
-      if (billingDetails) {
-        await tx.bill_tosalesx.upsert({
+    // Transaction 3: Update related tables (separate transaction)
+    await prisma.$transaction(async (tx: any) => {
+      // Update billing details (now uses customer_id foreign key)
+      await tx.bill_tosalesx.upsert({
+        where: { invoice_no: parseInt(invoiceId) },
+        update: {
+          customer_id: parseInt(select_customer)
+        },
+        create: {
+          invoice_no: parseInt(invoiceId),
+          customer_id: parseInt(select_customer)
+        }
+      })
+
+      // Update shipping details (now uses customer_id foreign key)
+      if (shippingDetails && shippingDetails !== null) {
+        await tx.shiptox.upsert({
           where: { invoice_no: parseInt(invoiceId) },
           update: {
-            user_name: billingDetails.user_name,
-            address: billingDetails.address,
-            address2: billingDetails.address2,
-            mobile: billingDetails.mobile,
-            email: billingDetails.email,
-            state: billingDetails.state,
-            state_code: billingDetails.state_code,
-            gstin: billingDetails.gstin
+            customer_id: parseInt(select_customer),
+            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
           },
           create: {
             invoice_no: parseInt(invoiceId),
-            user_name: billingDetails.user_name,
-            address: billingDetails.address,
-            address2: billingDetails.address2,
-            mobile: billingDetails.mobile,
-            email: billingDetails.email,
-            state: billingDetails.state,
-            state_code: billingDetails.state_code,
-            gstin: billingDetails.gstin
-          }
-        })
-      }
-
-      // Update shipping details
-      if (shippingDetails) {
-        await tx.ship_tox.upsert({
-          where: { invoice_no: parseInt(invoiceId) },
-          update: {
-            user_name: shippingDetails.user_name,
-            address: shippingDetails.address,
-            state: shippingDetails.state,
-            state_code: shippingDetails.state_code,
-            gstin: shippingDetails.gstin
-          },
-          create: {
-            invoice_no: parseInt(invoiceId),
-            user_name: shippingDetails.user_name,
-            address: shippingDetails.address,
-            state: shippingDetails.state,
-            state_code: shippingDetails.state_code,
-            gstin: shippingDetails.gstin
+            customer_id: parseInt(select_customer),
+            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
           }
         })
       }
@@ -236,33 +231,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           update: {
             trans_mode: transportDetails.trans_mode,
             vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date,
-            place_of_supply: transportDetails.place_of_supply
+            supply_date: transportDetails.supply_date
           },
           create: {
             invoice_id: parseInt(invoiceId),
             trans_mode: transportDetails.trans_mode,
             vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date,
-            place_of_supply: transportDetails.place_of_supply
+            supply_date: transportDetails.supply_date
           }
         })
       }
+    }, { timeout: 10000 }) // 10 seconds timeout
 
-      // Update transaction record
-      await tx.incexpx.updateMany({
-        where: { invoice_id: parseInt(invoiceId) },
-        data: {
-          amt: updatedInvoice.total,
-          payment_mode: updatedInvoice.payment_mode,
-          notes: `InvoiceX #${updatedInvoice.invoice_no} - Updated Transaction`
-        }
-      })
-
-      return updatedInvoice
+    // Update transaction record (outside transaction since it's not critical)
+    await prisma.incexpx.updateMany({
+      where: { invoice_id: parseInt(invoiceId) },
+      data: {
+        amt: updatedInvoice.total,
+        payment_mode: updatedInvoice.payment_mode,
+        notes: updatedInvoice.notes
+      }
     })
 
-    res.status(200).json(result)
+    res.status(200).json(updatedInvoice)
   } catch (error) {
     console.error('Salex invoice update error:', error)
     res.status(500).json({

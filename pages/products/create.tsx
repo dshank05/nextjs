@@ -433,9 +433,9 @@ export default function ProductCreate() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div className="card">
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-3 space-y-3">
         {/* Row 1: Image and Product Name */}
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -488,7 +488,7 @@ export default function ProductCreate() {
         </div>
 
         {/* Row 2: Basic Product Information */}
-        <div className="mb-6 space-y-4">
+        <div className="mb-3 space-y-2">
           <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Product Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>

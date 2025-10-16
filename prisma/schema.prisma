@@ -113,7 +113,7 @@ model Invoice {
   descriptions             String?   @db.Text
   invoice_date             Int
   updated_at               String    @db.VarChar(100)
-  status                   Int?      // Payment status: 0=Unpaid, 1=Paid
+  payment_status           Int?      // Payment status: 0=Unpaid, 1=Paid
   payment_mode             Int?      // Payment mode: 1=Cash, 2=Bank
   fy                       Int
   staff_details            String?   @db.VarChar(255)
@@ -133,7 +133,7 @@ model Invoice {
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
   @@index([invoice_date], map: "idx_invoice_invoice_date")
-  @@index([status], map: "idx_invoice_status")
+  @@index([payment_status], map: "idx_invoice_status")
   @@index([fy, invoice_date], map: "idx_invoice_fy_date")
   @@map("invoice")
 }
@@ -276,29 +276,17 @@ model bill_to {
 }
 
 model bill_tosales {
-  id         Int     @id @default(autoincrement())
-  invoice_no Int?
-  user_name  String  @db.VarChar(255)
-  address    String  @db.VarChar(255)
-  address2   String? @db.VarChar(255)
-  mobile     String? @db.VarChar(100)
-  email      String? @db.VarChar(255)
-  state      Int?
-  state_code Int?
-  gstin      String? @db.VarChar(50)
+  id          Int                @id @default(autoincrement())
+  invoice_no  Int?               @unique
+  customer_id Int?
+  customer    customer_details?  @relation(fields: [customer_id], references: [id])
 }
 
 model bill_tosalesx {
-  id         Int     @id @default(autoincrement())
-  invoice_no Int?   @unique
-  user_name  String  @db.VarChar(255)
-  address    String  @db.VarChar(255)
-  address2   String? @db.VarChar(255)
-  mobile     String? @db.VarChar(100)
-  email      String? @db.VarChar(255)
-  state      Int?
-  state_code Int?
-  gstin      String? @db.VarChar(50)
+  id          Int                @id @default(autoincrement())
+  invoice_no  Int?               @unique
+  customer_id Int?
+  customer    customer_details?  @relation(fields: [customer_id], references: [id])
 }
 
 model business_details {
@@ -315,23 +303,27 @@ model business_details {
 }
 
 model customer_details {
-  id                  Int     @id @default(autoincrement())
-  billing_name        String  @db.VarChar(200)
-  billing_address     String  @db.VarChar(255)
-  billing_address_2   String? @db.VarChar(255)
-  billing_state       String? @db.VarChar(100)
+  id                  Int          @id @default(autoincrement())
+  billing_name        String       @db.VarChar(200)
+  billing_address     String       @db.VarChar(255)
+  billing_address_2   String?      @db.VarChar(255)
+  billing_state       String?      @db.VarChar(100)
   billing_state_code  Int?
-  billing_gstin       String? @db.VarChar(30)
-  contact_no          String? @db.VarChar(20)
-  email               String? @db.VarChar(100)
-  shipping_name       String? @db.VarChar(200)
-  shipping_address    String  @db.VarChar(255)
-  shipping_address_2  String? @db.VarChar(255)
-  shipping_state      String? @db.VarChar(100)
+  billing_gstin       String?      @db.VarChar(30)
+  contact_no          String?      @db.VarChar(20)
+  email               String?      @db.VarChar(100)
+  shipping_name       String?      @db.VarChar(200)
+  shipping_address    String       @db.VarChar(255)
+  shipping_address_2  String?      @db.VarChar(255)
+  shipping_state      String?      @db.VarChar(100)
   shipping_state_code Int?
-  shipping_gstin      String? @db.VarChar(30)
-  billing_city        String? @db.VarChar(100)
-  shipping_city       String? @db.VarChar(100)
+  shipping_gstin      String?      @db.VarChar(30)
+  billing_city        String?      @db.VarChar(100)
+  shipping_city       String?      @db.VarChar(100)
+  bill_tosales        bill_tosales[]
+  bill_tosalesx       bill_tosalesx[]
+  shiptos             shipto[]
+  shiptoxs            shiptox[]
 }
 
 model financial_year {
@@ -403,11 +395,9 @@ model invoicex {
   invoice_date             Int
   descriptions             String?   @db.Text
   updated_at               String    @db.VarChar(100)
-  status                   Int?
+  payment_status           Int?
   payment_mode             Int?
   fy                       Int
-  mode                     Int?
-  type                     Int?
   staff_details            String?   @db.VarChar(255)
   staff_id                 Int?
   commission               Float?
@@ -424,7 +414,7 @@ model invoicex {
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")
   @@index([invoice_date], map: "idx_invoicex_invoice_date")
-  @@index([status], map: "idx_invoicex_status")
+  @@index([payment_status], map: "idx_invoicex_status")
 }
 
 model migration {
@@ -470,42 +460,36 @@ model product_company {
   @@index([company_name], map: "idx_product_company_name")
 }
 
-model ship_to {
-  id         Int     @id @default(autoincrement())
-  invoice_no Int?
-  user_name  String  @db.VarChar(255)
-  address    String  @db.VarChar(255)
-  state      Int?
-  state_code Int?
-  gstin      String? @db.VarChar(50)
+model shipto {
+  id          Int                @id @default(autoincrement())
+  invoice_no  Int?               @unique
+  customer_id Int?
+  shipping    Boolean            @default(false)
+  customer    customer_details?  @relation(fields: [customer_id], references: [id])
 }
 
-model ship_tox {
-  id         Int     @id @default(autoincrement())
-  invoice_no Int?
-  user_name  String  @db.VarChar(255)
-  address    String  @db.VarChar(255)
-  state      Int?
-  state_code Int?
-  gstin      String? @db.VarChar(50)
+model shiptox {
+  id          Int                @id @default(autoincrement())
+  invoice_no  Int?               @unique
+  customer_id Int?
+  shipping    Boolean            @default(false)
+  customer    customer_details?  @relation(fields: [customer_id], references: [id])
 }
 
 model transport_details {
-  id              Int     @id @default(autoincrement())
-  invoice_id      Int
-  trans_mode      String? @db.VarChar(100)
-  vehicle_no      String? @db.VarChar(100)
-  supply_date     String? @db.VarChar(100)
-  place_of_supply String? @db.VarChar(100)
+  id          Int     @id @default(autoincrement())
+  invoice_id  Int     @unique
+  trans_mode  String? @db.VarChar(100)
+  vehicle_no  String? @db.VarChar(100)
+  supply_date String? @db.VarChar(100)
 }
 
 model transport_detailsx {
-  id              Int     @id @default(autoincrement())
-  invoice_id      Int
-  trans_mode      String? @db.VarChar(100)
-  vehicle_no      String? @db.VarChar(100)
-  supply_date     String? @db.VarChar(100)
-  place_of_supply String? @db.VarChar(100)
+  id          Int     @id @default(autoincrement())
+  invoice_id  Int     @unique
+  trans_mode  String? @db.VarChar(100)
+  vehicle_no  String? @db.VarChar(100)
+  supply_date String? @db.VarChar(100)
 }
 
 model user {

@@ -157,6 +157,9 @@ export default function InvoiceCreate() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
 
+  // Shipping address selection state
+  const [useShippingAddress, setUseShippingAddress] = useState(false);
+
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
 
@@ -442,6 +445,12 @@ export default function InvoiceCreate() {
       console.log('✅ Setting converted invoice items:', convertedItems);
       setSelectedProducts(convertedItems);
 
+      // Check if any items have discounts and enable discount checkbox
+      const hasDiscounts = convertedItems.some(item => item.discount_percentage > 0);
+      if (hasDiscounts) {
+        setEnableDiscount(true);
+      }
+
       // Clear raw items after conversion
       setRawInvoiceItems([]);
     }
@@ -632,6 +641,7 @@ export default function InvoiceCreate() {
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
+        const transportDetails = data.transportDetails
         console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
@@ -662,10 +672,10 @@ export default function InvoiceCreate() {
           contact_number: invoice.contact_number || '',
           mechanic_name: invoice.mechanic?.mechanic_name || '',
           mechanic_id: invoice.mechanic_id || null,
-          vehicle_number: invoice.vehicle_number || '',
+          vehicle_number: transportDetails.vehicle_no || '',
           commission: invoice.commission ? invoice.commission.toString() : '',
           address: invoice.address || '',
-          transport_name: invoice.transport_name || '',
+          transport_name: transportDetails.trans_mode || '',
           city: invoice.city || '',
           email_id: invoice.email_id || '',
           discount: invoice.discount || '',
@@ -1271,27 +1281,20 @@ export default function InvoiceCreate() {
           fy: new Date().getFullYear()                                // Invoiceitems.fy
         })),
 
-        // ===== BILLING DETAILS =====
-        ...(selectedCustomer && {
-          billingDetails: {
-            user_name: selectedCustomer.billing_name,                // bill_tosales.user_name
-            address: selectedCustomer.billing_address,               // bill_tosales.address
-            address2: selectedCustomer.billing_address_2,            // bill_tosales.address2
-            mobile: selectedCustomer.contact_no,                     // bill_tosales.mobile
-            email: selectedCustomer.email,                           // bill_tosales.email
-            state_code: selectedCustomer.billing_state_code || 0,     // bill_tosales.state_code
-            gstin: selectedCustomer.billing_gstin                    // bill_tosales.gstin
-          }
-        }),
+        // ===== CUSTOMER ID =====
+        customer_id: selectedCustomerId,
 
         // ===== SHIPPING DETAILS =====
         ...(selectedCustomer && {
           shippingDetails: {
-            user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name, // ship_to.user_name
-            address: selectedCustomer.shipping_address || selectedCustomer.billing_address, // ship_to.address
-            gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin // ship_to.gstin
+            user_name: useShippingAddress ? selectedCustomer.shipping_name || selectedCustomer.billing_name : selectedCustomer.billing_name, // ship_to.user_name
+            address: useShippingAddress ? selectedCustomer.shipping_address || selectedCustomer.billing_address : selectedCustomer.billing_address, // ship_to.address
+            gstin: useShippingAddress ? selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin : selectedCustomer.billing_gstin // ship_to.gstin
           }
         }),
+
+        // ===== SHIPPING FLAG =====
+        useShippingAddress: useShippingAddress,
 
         // ===== TRANSPORT DETAILS =====
         transportDetails: {
@@ -1334,15 +1337,15 @@ export default function InvoiceCreate() {
   };
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="space-y-6">
+    <div className="space-y-3">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {/* Single Mega Card with All Sections */}
         <div className="card">
           <div className="p-6">
 
             {/* Invoice Information */}
-            <div className="mb-6">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Invoice Information</h3>
+            <div className="mb-3">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
@@ -1405,8 +1408,21 @@ export default function InvoiceCreate() {
             </div>
 
             {/* Customer Information */}
-            <div className="mb-6 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Customer Information</h3>
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">
+                Customer Information
+                <div className="float-right mt-1">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={useShippingAddress}
+                      onChange={(e) => setUseShippingAddress(e.target.checked)}
+                      className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
+                    />
+                    <span className="text-sm text-slate-300">Use shipping address</span>
+                  </label>
+                </div>
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1458,10 +1474,16 @@ export default function InvoiceCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    {useShippingAddress ? 'SHIPPING GST NUMBER' : 'BILLING GST NUMBER'}
+                  </label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_gstin || ''}
+                    value={
+                      useShippingAddress
+                        ? selectedCustomer?.shipping_gstin || ''
+                        : selectedCustomer?.billing_gstin || ''
+                    }
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     placeholder="Auto-filled from customer"
                     readOnly
@@ -1520,8 +1542,8 @@ export default function InvoiceCreate() {
 
 
             {/* Customer Service Details */}
-            <div className="mb-6 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Service Details</h3>
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Service Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
@@ -1575,8 +1597,8 @@ export default function InvoiceCreate() {
             </div>
 
             {/* Discount Section */}
-            <div className="mb-6 border-t border-slate-600 pt-8">
-              <div className="flex items-center justify-between mb-6">
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <div className="flex items-center justify-between mb-3">
                 <h3 className="text-lg font-medium text-slate-200">Discount</h3>
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
@@ -1592,11 +1614,11 @@ export default function InvoiceCreate() {
             </div>
 
             {/* Product Selection */}
-            <div className="mb-6 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Product Selection</h3>
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3>
 
               {/* Product Selection & Display Table */}
-              <div className="border border-slate-600 rounded mb-6">
+              <div className="border border-slate-600 rounded mb-3">
                 <table className="w-full">
                   <thead className="bg-slate-700">
                     <tr>
@@ -2145,8 +2167,8 @@ export default function InvoiceCreate() {
             </div>
 
             {/* Additional Information */}
-            <div className="mb-6 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Additional Information</h3>
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -2172,8 +2194,8 @@ export default function InvoiceCreate() {
             </div>
 
             {/* Summary & Payment */}
-            <div className="border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Summary & Payment</h3>
+            <div className="border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3>
               <div className="space-y-6">
 
                 {/* Tax Breakdown */}

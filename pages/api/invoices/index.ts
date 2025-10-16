@@ -69,12 +69,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const invoiceIds = invoices.map((inv: { id: any }) => inv.id)
     
     const [customerData, itemCounts] = await Promise.all([
-      // Get all customer names in one query
+      // Get all customer names by joining with customer_details
       prisma.bill_tosales.findMany({
         where: { invoice_no: { in: invoiceIds } },
-        select: { invoice_no: true, user_name: true }
+        include: { customer: { select: { billing_name: true } } }
       }),
-      
+
       // Get all item counts in one query
       prisma.invoiceitems.groupBy({
         by: ['invoice_no'],
@@ -84,7 +84,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: { invoice_no: any; user_name: any }) => [c.invoice_no, c.user_name]))
+    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name || 'N/A']))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
@@ -277,18 +277,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         }),
 
-        // Billing details creation
+        // Customer ID reference creation
         billingDetails ? tx.bill_tosales.create({
           data: {
             invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
-            user_name: billingDetails.user_name,          // BillToSales.user_name
-            address: billingDetails.address,              // BillToSales.address
-            address2: billingDetails.address2,            // BillToSales.address2
-            mobile: billingDetails.mobile,                // BillToSales.mobile
-            email: billingDetails.email,                  // BillToSales.email
-            state: billingDetails.state,                  // BillToSales.state
-            state_code: billingDetails.state_code,        // BillToSales.state_code
-            gstin: billingDetails.gstin                   // BillToSales.gstin
+            customer_id: parseInt(billingDetails.customer_id)    // BillToSales.customer_id (FK to customer_details)
           }
         }) : Promise.resolve(null),
 

@@ -136,7 +136,7 @@ export default function Products() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
 
       <ProductFilters
         searchTerm={searchTerm}

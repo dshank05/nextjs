@@ -1107,16 +1107,16 @@ export default function PurchaseCreate() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {/* Single Mega Card with All Sections */}
         <div className="card">
-          <div className="p-6">
+          <div className="p-3">
 
             {/* Invoice Information */}
-            <div className="mb-10">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Invoice Information</h3>
+            <div className="mb-5">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
@@ -1175,8 +1175,8 @@ export default function PurchaseCreate() {
             </div>
 
             {/* Vendor Information */}
-            <div className="mb-10 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Vendor Information</h3>
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Vendor Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
@@ -1269,8 +1269,8 @@ export default function PurchaseCreate() {
 
 
             {/* Transport Information */}
-            <div className="mb-10 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Transport Information</h3>
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Transport Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
@@ -1308,11 +1308,11 @@ export default function PurchaseCreate() {
             </div>
 
             {/* Product Selection */}
-            <div className="mb-10 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Product Selection</h3>
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3>
 
               {/* Product Selection & Display Table */}
-              <div className="border border-slate-600 rounded mb-6">
+              <div className="border border-slate-600 rounded mb-3">
                 <table className="w-full">
                   <thead className="bg-slate-700">
                     <tr>
@@ -1888,8 +1888,8 @@ export default function PurchaseCreate() {
             </div>
 
             {/* Additional Information */}
-            <div className="mb-10 border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Additional Information</h3>
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -1915,8 +1915,8 @@ export default function PurchaseCreate() {
             </div>
 
             {/* Tax & Payment Information */}
-            <div className="border-t border-slate-600 pt-8">
-              <h3 className="text-lg font-medium text-slate-200 mb-6">Tax & Payment Information</h3>
+            <div className="border-t border-slate-600 pt-4">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Tax & Payment Information</h3>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>

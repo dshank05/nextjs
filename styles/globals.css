@@ -147,6 +147,42 @@ a {
   @apply text-emerald-400 text-sm mt-1;
 }
 
+/* Page content spacing */
+.page-compact {
+  @apply space-y-3;
+}
+
+.page-normal {
+  @apply space-y-6;
+}
+
+/* Card content spacing */
+.card-compact {
+  @apply p-3;
+}
+
+.card-normal {
+  @apply p-6;
+}
+
+/* Form section spacing */
+.form-section {
+  @apply mb-6 border-t border-slate-600 pt-8;
+}
+
+.form-section:last-child {
+  @apply border-t-0 pt-0;
+}
+
+/* Page utilities */
+.page-header {
+  @apply mb-6;
+}
+
+.page-actions {
+  @apply border-t border-slate-600 pt-6 mt-6 px-6;
+}
+
 /* Toast notifications */
 .toast {
   @apply fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg text-white;
@@ -166,4 +202,33 @@ a {
 
 .toast.info {
   @apply bg-blue-600;
+}
+
+/* Responsive spacing utilities */
+@media (max-width: 640px) {
+  .page-compact {
+    @apply space-y-2;
+  }
+
+  .card-compact {
+    @apply p-2;
+  }
+
+  .form-section {
+    @apply mb-4 pt-6;
+  }
+}
+
+@media (max-width: 480px) {
+  .page-compact {
+    @apply space-y-1;
+  }
+
+  .card-compact {
+    @apply p-1;
+  }
+
+  .form-section {
+    @apply mb-3 pt-4;
+  }
 }

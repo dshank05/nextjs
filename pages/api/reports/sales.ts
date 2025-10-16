@@ -224,8 +224,12 @@ async function generateDetailedReport(dateFilter: any) {
       },
       select: {
         invoice_no: true,
-        user_name: true,
-        gstin: true
+        customer: {
+          select: {
+            billing_name: true,
+            billing_gstin: true
+          }
+        }
       }
     }),
     prisma.invoicex.findMany({
@@ -240,8 +244,12 @@ async function generateDetailedReport(dateFilter: any) {
       },
       select: {
         invoice_no: true,
-        user_name: true,
-        gstin: true
+        customer: {
+          select: {
+            billing_name: true,
+            billing_gstin: true
+          }
+        }
       }
     })
   ])
@@ -253,11 +261,27 @@ async function generateDetailedReport(dateFilter: any) {
   const [regularBillingData, exemptBillingData] = await Promise.all([
     prisma.bill_tosales.findMany({
       where: { invoice_no: { in: regularIds } },
-      select: { invoice_no: true, user_name: true, gstin: true }
+      select: {
+        invoice_no: true,
+        customer: {
+          select: {
+            billing_name: true,
+            billing_gstin: true
+          }
+        }
+      }
     }),
     prisma.bill_tosalesx.findMany({
       where: { invoice_no: { in: exemptIds } },
-      select: { invoice_no: true, user_name: true, gstin: true }
+      select: {
+        invoice_no: true,
+        customer: {
+          select: {
+            billing_name: true,
+            billing_gstin: true
+          }
+        }
+      }
     })
   ])
 
@@ -269,8 +293,8 @@ async function generateDetailedReport(dateFilter: any) {
       const billing = billingMap.get(inv.id)
       return {
         ...inv,
-        customer_name: billing?.user_name || 'N/A',
-        customer_gstin: billing?.gstin || '',
+        customer_name: billing?.customer?.billing_name || 'N/A',
+        customer_gstin: billing?.customer?.billing_gstin || '',
         type: 'regular'
       }
     }),
@@ -278,8 +302,8 @@ async function generateDetailedReport(dateFilter: any) {
       const billing = billingXMap.get(inv.id)
       return {
         ...inv,
-        customer_name: billing?.user_name || 'N/A',
-        customer_gstin: billing?.gstin || '',
+        customer_name: billing?.customer?.billing_name || 'N/A',
+        customer_gstin: billing?.customer?.billing_gstin || '',
         type: 'tax_exempt'
       }
     })

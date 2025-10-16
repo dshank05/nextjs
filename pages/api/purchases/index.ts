@@ -413,7 +413,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           qty: item.qty,
           // unit: 1, // @deprecated - Default unit (not used for products)
           rate: item.rate,
-          tax: item.tax || 0,
           subtotal: item.total,
           fy: financialYear,
           invoice_date: invoiceDate
@@ -634,7 +633,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             car_model: item.car_model || '',
             part: item.part,
             rate: item.rate,
-            tax: item.tax || 0,
             total: item.total,
             product_id: item.product_id,
             item: item
@@ -690,7 +688,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 qty: newData.qty,
                 // unit: 1, // @deprecated - Default unit (not used for products)
                 rate: newData.rate,
-                tax: newData.tax || 0,
                 subtotal: newData.total,
                 fy: financialYear,
                 invoice_date: invoiceDate
@@ -719,7 +716,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 data: {
                   qty: newData.qty,
                   rate: newData.rate,
-                  tax: newData.tax || 0,
                   subtotal: newData.total
                 }
               })

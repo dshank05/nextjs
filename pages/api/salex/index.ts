@@ -75,10 +75,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const invoiceIds = salexInvoices.map((inv: { id: any }) => inv.id)
 
     const [customerData, itemCounts] = await Promise.all([
-      // Get all customer names in one query
+      // Get all customer names by joining with customer_details
       prisma.bill_tosalesx.findMany({
         where: { invoice_no: { in: invoiceIds } },
-        select: { invoice_no: true, user_name: true, gstin: true }
+        include: { customer: { select: { billing_name: true, billing_gstin: true } } }
       }),
 
       // Get all item counts in one query
@@ -90,8 +90,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: { invoice_no: any; user_name: any; gstin: any }) => [c.invoice_no, c.user_name]))
-    const gstinMap = new Map(customerData.map((c: { invoice_no: any; gstin: any }) => [c.invoice_no, c.gstin]))
+    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name || 'N/A']))
+    const gstinMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_gstin || '']))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced salex invoices using maps
@@ -170,7 +170,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       invoice_date,
       select_customer,
       invoiceItems,
-      billingDetails,
       shippingDetails,
       transportDetails,
       items_total,
@@ -190,10 +189,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty,
       packing_forwarding_rate,
       packing_forwarding_total,
+      customer_id,
+      useShippingAddress,
 
       // ===== UNUSED FIELDS (removed from UI, kept for API backward compatibility) =====
-      tax_rate,         // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
-      basic_value       // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
+      // tax_rate,         // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
+      // basic_value       // ❌ UNUSED - Removed from salex create UI, kept for backward compatibility
     } = req.body
 
     // Validate required fields
@@ -229,7 +230,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       discount: parseFloat(discount) || 0,         // Invoice-level discount amount
       invoice_date: invoiceDateTimestamp,
       updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
-      status: parseInt(payment_status),
+      payment_status: parseInt(payment_status),
       payment_mode: parseInt(payment_mode),
       fy: fy,
       staff_details,                             // Optional string field for backward compatibility
@@ -254,7 +255,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           type: 1, // 1 = Income (for salex/invoice exempt)
           incexp_date: new Date().toISOString().split('T')[0],
           fy: invoice.fy,
-          notes: `InvoiceX #${invoice.invoice_no} - Tax-exempt Sale Transaction`
+          notes: invoice.notes
         }
       })
 
@@ -282,33 +283,23 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       }
 
-      // 3. Create billing details in bill_tosalesx table
-      if (billingDetails) {
+      // 3. Create customer reference in bill_tosalesx table
+      if (customer_id) {
         await prisma.bill_tosalesx.create({
           data: {
             invoice_no: invoice.id,
-            user_name: billingDetails.user_name,
-            address: billingDetails.address,
-            address2: billingDetails.address2 || null,
-            mobile: billingDetails.mobile || null,
-            email: billingDetails.email || null,
-            state: billingDetails.state || null,
-            state_code: billingDetails.state_code || null,
-            gstin: billingDetails.gstin || null
+            customer_id: parseInt(customer_id)
           }
         })
       }
 
-      // 4. Create shipping details in ship_tox table
-      if (shippingDetails) {
-        await prisma.ship_tox.create({
+      // 4. Create shipping reference in shiptox table
+      if (customer_id) {
+        await prisma.shiptox.create({
           data: {
             invoice_no: invoice.id,
-            user_name: shippingDetails.user_name,
-            address: shippingDetails.address,
-            state: shippingDetails.state || null,
-            state_code: shippingDetails.state_code || null,
-            gstin: shippingDetails.gstin || null
+            customer_id: parseInt(customer_id),
+            shipping: useShippingAddress
           }
         })
       }
@@ -320,8 +311,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             invoice_id: invoice.id,
             trans_mode: transportDetails.trans_mode || null,
             vehicle_no: transportDetails.vehicle_no || null,
-            supply_date: transportDetails.supply_date || null,
-            place_of_supply: transportDetails.place_of_supply || null
+            supply_date: transportDetails.supply_date || null
           }
         })
       }
