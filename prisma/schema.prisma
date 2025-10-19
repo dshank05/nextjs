@@ -60,6 +60,8 @@ model Product {
   min_stock              Int?
   stock                  Int?
   opening_rate           Float?
+  latest_purchase_rate   Float?    // Latest purchase rate (auto-updated)
+  last_purchase_date     Int?      // Unix timestamp of last purchase
   notes                  String?              @db.VarChar(255)
   warehouse_id           Int?
   gst_rate_id            Int?
@@ -198,14 +200,14 @@ model Purchase {
   transport_name           String?         @db.VarChar(255)
   vehicle_number           String?         @db.VarChar(100)
   fy                       Int
-  status                   Int?            @map("payment_status")
+  payment_status           Int?
   staff_id                 Int?
   staff                    staff?          @relation(fields: [staff_id], references: [id])
   vendor                   vendor_details? @relation(fields: [vendor_id], references: [id])
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
-  @@index([status], map: "idx_purchase_status")
-  @@index([status, fy, invoice_date], map: "idx_purchase_status_fy_date")
+  @@index([payment_status], map: "idx_purchase_payment_status")
+  @@index([payment_status, fy, invoice_date], map: "idx_purchase_payment_status_fy_date")
   @@index([staff_id], map: "purchase_staff_id_fkey")
   @@index([vendor_id], map: "purchase_vendor_id_fkey")
   @@map("purchase")

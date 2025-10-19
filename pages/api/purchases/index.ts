@@ -76,11 +76,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     if (status && status !== '') {
       if (status === '1' || status === '0') {
-        where.status = parseInt(status)
+        where.payment_status = parseInt(status)
       } else if (status === 'unknown') {
         // For unknown status, we don't add a where clause since we want all statuses that are not 0 or 1
         // But actually, we need to filter to show only non-standard statuses
-        where.status = { notIn: [0, 1] }
+        where.payment_status = { notIn: [0, 1] }
       }
     }
 
@@ -114,7 +114,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           notes: true,
           invoice_date: true,
           payment_mode: true,
-          status: true,
+          payment_status: true,
           fy: true,
           transport: true,
           vendor_id: true
@@ -126,20 +126,27 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.purchase.count({ where })
     ])
 
-    // Get item counts in batch queries (vendor info will be fetched individually when needed)
+    // Get item counts and vendor info in batch queries
     const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
+    const vendorIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.vendor_id).filter(Boolean)))
 
-    const [itemCounts] = await Promise.all([
+    const [itemCounts, vendorData] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
         where: { invoice_no: { in: invoiceNos } },
         _count: { id: true }
-      })
+      }),
+      // Get vendor names for all purchases
+      vendorIds.length > 0 ? prisma.vendor_details.findMany({
+        where: { id: { in: vendorIds } },
+        select: { id: true, vendor_name: true, address: true, tax_id: true }
+      }) : Promise.resolve([])
     ])
 
     // Create lookup maps for fast access
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
+    const vendorMap = new Map(vendorData.map(vendor => [vendor.id, vendor]))
 
     // Enhanced purchase invoices using maps
     const enhancedPurchases = purchaseInvoices.map((invoice: any) => {
@@ -172,34 +179,39 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         console.warn('Invalid date format for purchase:', invoice.invoice_date, error)
       }
 
-      return {
-        id: invoice.id,
-        invoice_no: invoice.invoice_no,
-        bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
-        vendor_id: invoice.vendor_id, // ✅ Send vendor ID back - frontend fetches vendor data as needed
-        items_total: invoice.items_total || 0,
-        freight: invoice.freight || 0,
-        total_taxable_value: invoice.total_taxable_value,
-        taxrate: invoice.taxrate || 0,
-        total_cgst: invoice.total_cgst || 0,
-        total_sgst: invoice.total_sgst || 0,
-        total_igst: invoice.total_igst || 0,
-        total_tax: invoice.total_tax || 0,
-        total: invoice.total,
-        notes: invoice.notes || '',
-        invoice_date: invoice.invoice_date, // Raw date - let frontend format it
-        payment_status: invoice.status || 0,
-        payment_mode: invoice.payment_mode || 0,
-        fy: invoice.fy,
-        transport: invoice.transport || '',
-        type: 'purchase',
-        item_count: itemCountMap.get(invoice.invoice_no) || 0,
-        // Remove formattedDate - frontend handles formatting
-        formattedTotal: invoice.total.toLocaleString('en-IN', {
-          style: 'currency',
-          currency: 'INR'
-        })
-      }
+        const vendorInfo = vendorMap.get(invoice.vendor_id)
+
+        return {
+          id: invoice.id,
+          invoice_no: invoice.invoice_no,
+          bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
+          vendor_id: invoice.vendor_id,
+          vendor_name: vendorInfo?.vendor_name || 'N/A',
+          vendor_address: vendorInfo?.address || '',
+          vendor_gstin: vendorInfo?.tax_id || '',
+          // OPTIMIZATION: Commented out fields only used in removed expanded details
+          // items_total: invoice.items_total || 0,
+          // freight: invoice.freight || 0,
+          // total_taxable_value: invoice.total_taxable_value,
+          // taxrate: invoice.taxrate || 0,
+          // total_cgst: invoice.total_cgst || 0,
+          // total_sgst: invoice.total_sgst || 0,
+          // total_igst: invoice.total_igst || 0,
+          // total_tax: invoice.total_tax || 0,
+          // notes: invoice.notes || '',
+          // transport: invoice.transport || '',
+          // items: [], // Never populated in GET response
+          total: invoice.total,
+          invoice_date: invoice.invoice_date, // Raw date - let frontend format it
+          payment_status: invoice.payment_status || 0,
+          payment_mode: invoice.payment_mode || 0,
+          fy: invoice.fy,
+          item_count: itemCountMap.get(invoice.invoice_no) || 0,
+          // OPTIMIZATION: Commented out unused fields - uncomment if needed
+          // type: 'purchase',
+          // formattedDate: formattedDate, // Frontend handles formatting
+          // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+        }
     })
 
     const totalPages = Math.ceil(total / limitNum)
@@ -225,6 +237,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
+    // ===== RATE MANAGEMENT =====
+    // ✓ Updates product's latest_purchase_rate when purchase is created
+    // ✓ Validates purchase rates > 0 before processing
+    // ✓ Maintains rate history through automatic product updates
+    // ✓ Supports transaction safety for stock and rate updates together
+
     const {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
@@ -287,6 +305,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({
         message: 'Missing required fields: invoice_number, vendor_id, or items'
       })
+    }
+
+    // ===== RATE VALIDATION =====
+    // Validate all purchase items have valid rates > 0
+    for (const item of items) {
+      if (!item.rate || item.rate <= 0) {
+        return res.status(400).json({
+          message: `Invalid purchase rate for item "${item.product_name}": rate must be greater than 0`
+        })
+      }
     }
 
     // Validate payment_status and payment_mode are valid integers
@@ -367,7 +395,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         // taxrate: tax_rate || 0,
         invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
         updated_at: new Date().toISOString().split('T')[0], // Current date
-        status: payment_status,
+        payment_status: payment_status,
         payment_mode: payment_mode,
         fy: financialYear,
         transport: transport_name || '',
@@ -426,13 +454,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Increase product stock when purchase is created
+      // Increase product stock and update latest purchase rate when purchase is created
       await prisma.product.update({
         where: { id: parseInt(item.product_id) },
         data: {
           stock: {
             increment: item.qty
-          }
+          },
+          // ===== RATE MANAGEMENT =====
+          // Update latest purchase rate and timestamp when purchase is created
+          latest_purchase_rate: item.rate,
+          last_purchase_date: invoiceDate
         }
       })
     }
@@ -602,7 +634,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           // tax: tax,
           invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
           updated_at: new Date().toISOString().split('T')[0], // Current date
-          status: payment_status,
+          payment_status: payment_status,
           payment_mode: payment_mode,
           fy: financialYear,
           transport: transport_name || '',
@@ -701,14 +733,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               }
             })
 
-            // Increase stock for new purchase
+            // Increase stock and update rate for new purchase
             if (newData.product_id) {
               await tx.product.update({
                 where: { id: parseInt(newData.product_id) },
                 data: {
                   stock: {
                     increment: newData.qty
-                  }
+                  },
+                  // ===== RATE MANAGEMENT =====
+                  // Update latest purchase rate and timestamp when purchase item is added/updated
+                  latest_purchase_rate: newData.rate,
+                  last_purchase_date: invoiceDate
                 }
               })
             }

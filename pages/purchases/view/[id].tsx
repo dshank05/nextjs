@@ -39,7 +39,7 @@ interface Purchase {
   total: number;
   notes?: string;
   invoice_date: number | string;
-  status?: number;
+  payment_status?: number;
   payment_mode?: number;
   fy: number;
   transport?: string;
@@ -163,7 +163,7 @@ export default function PurchaseView() {
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Purchase Invoice #{purchase.invoice_no}</h3>
             <p className="text-slate-400 text-sm mb-2">{purchase.vendor_name} • {formatDate(purchase.invoice_date)}</p>
-            <div className="flex items-center gap-2 mt-2">{getStatusBadge(purchase.status)}</div>
+            <div className="flex items-center gap-2 mt-2">{getStatusBadge(purchase.payment_status)}</div>
           </div>
 
           {/* Right: Key-Value Display + Actions */}
@@ -228,7 +228,7 @@ export default function PurchaseView() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Status:</span>
-                <span className="text-white font-medium">{getStatusBadge(purchase.status)}</span>
+                <span className="text-white font-medium">{getStatusBadge(purchase.payment_status)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Payment Mode:</span>

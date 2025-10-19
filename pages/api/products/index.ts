@@ -69,21 +69,59 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.product.count({ where }),
     ])
 
-    // Process products to calculate selling price and GST rate percentage
-    const processedProducts = products.map(product => {
-      let sellingPrice = null
-      let gstRatePercentage = product.gst_rate?.rate || 0
+    // ===== RATE MANAGEMENT =====
+    // Get latest purchase rates for all products using individual queries (simple and reliable)
+    const productIds = products.map(p => p.id)
+    let latestRateMap = new Map<number, { rate: number, date: number }>()
 
-      // Calculate selling price directly from schema fields (SP = MRP - Discount + Margin)
-      if (product.mrp && product.mrp > 0) {
-        const discount = product.discount || 0
-        const margin = product.margin || 0
-        sellingPrice = product.mrp - discount + margin
+    if (productIds.length > 0) {
+      // Get latest purchase rate for each product individually
+      for (const productId of productIds) {
+        const latestPurchase = await prisma.purchaseitems.findFirst({
+          where: {
+            product_id: productId,
+            rate: { gt: 0 } // Only consider valid rates > 0
+          },
+          select: {
+            rate: true,
+            invoice_date: true
+          },
+          orderBy: { invoice_date: 'desc' }
+        })
+
+        if (latestPurchase) {
+          latestRateMap.set(productId, {
+            rate: latestPurchase.rate || 0,
+            date: latestPurchase.invoice_date || 0
+          })
+        }
       }
+    }
+
+    // Process products to calculate selling price, GST rate, and display rates
+    const processedProducts = products.map(product => {
+      const gstRatePercentage = product.gst_rate?.rate || 0
+      const latestPurchaseData = latestRateMap.get(product.id)
+
+      // ===== RATE CALCULATIONS =====
+      // opening_rate: Original/base price (fallback, never changes)
+      // latest_purchase_rate: Latest purchase rate (primary display, auto-updated)
+      // mrp: Manual maximum retail price (selling ceiling)
+      // display_rate: latest_purchase_rate || opening_rate || 0
+      // calculated_selling_price: latest_purchase_rate + margin - discount
+
+      const displayRate = (latestPurchaseData?.rate || 0) || product.opening_rate || 0
+      const calculatedSellingPrice = (product.opening_rate || 0) + (product.margin || 0) - (product.discount || 0)
 
       return {
         ...product,
-        selling_price: sellingPrice,
+        // ===== RATE FIELDS =====
+        display_rate: displayRate,
+        calculated_selling_price: calculatedSellingPrice,
+        latest_purchase_rate: latestPurchaseData?.rate || null,
+        last_purchase_date: latestPurchaseData?.date || null,
+        // Legacy field for backward compatibility
+        selling_price: calculatedSellingPrice,
         gst_rate_percentage: gstRatePercentage,
         // Keep backward compatibility with existing gst_rate field
       }

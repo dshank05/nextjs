@@ -3,44 +3,45 @@
 ## Rate Calculation System
 
 ### Overview
-The "Rate" displayed in the products table follows the legacy Yii2 system's business logic, which shows the **Latest Purchase Rate** instead of the base product rate.
+The "Rate" displayed in the products table shows the **Latest Purchase Rate** as the primary rate, with Opening Rate as fallback only for new products that haven't been purchased yet.
 
 ### Rate Display Logic
 
-#### Primary Rate Source: Latest Purchase Rate
+#### Primary Rate Source: Latest Purchase Rate (Always Primary)
 ```sql
--- Legacy System Query (from Product::getLPRate())
-SELECT rate FROM purchase_items 
-WHERE name_of_product = [product_id] 
-ORDER BY invoice_date DESC 
+-- Current System Query
+SELECT rate FROM purchase_items
+WHERE product_id = [product_id]
+ORDER BY invoice_date DESC
 LIMIT 1
 ```
 
 #### NextJS Implementation
 ```typescript
-// Enhanced API Logic (/api/products/enhanced.ts)
+// Current API Logic (/api/products/index.ts)
 const latestPurchase = await prisma.purchaseitems.findFirst({
-  where: { name_of_product: product.id.toString() },
+  where: { product_id: product.id },
   orderBy: { invoice_date: 'desc' }
 })
 
-const displayRate = latestPurchase?.rate || product.rate || 0
+// Display rate prioritizes latest purchase rate always
+const displayRate = (latestPurchase?.rate || 0) || product.opening_rate || 0
 ```
 
 ### Rate Priority System
 
-1. **Latest Purchase Rate** (Primary)
-   - Gets the rate from the most recent purchase of this product
-   - Reflects current market pricing
-   - Updates automatically when new purchases are made
+1. **Latest Purchase Rate** (Primary - Always Displayed)
+   - Most recent purchase cost becomes the display rate immediately
+   - Reflects current market pricing and actual costs paid
+   - Updates automatically on every purchase transaction
 
-2. **Base Product Rate** (Fallback)
-   - Used when no purchase history exists
-   - Stored in the product table
-   - Manual entry fallback
+2. **Opening Rate** (Fallback - New Products Only)
+   - Used only when no purchases have ever been made
+   - Serves as initial rate when product is first created
+   - Becomes irrelevant once first purchase occurs
 
 3. **Zero Rate** (Default)
-   - When neither purchase history nor base rate exists
+   - Only when neither latest purchase nor opening rate exists
 
 ### Why This System?
 

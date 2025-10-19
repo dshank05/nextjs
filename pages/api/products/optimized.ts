@@ -307,12 +307,11 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
   // Get purchase rates
   const latestPurchaseRates = await getPurchaseRatesOptimized(productIds)
 
-  // Build enhanced products with proper names
+  // Build enhanced products with proper names - OPTIMIZED to only include UI-required fields
   return products.map(product => {
     // Look up names using foreign key maps
     const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : '';
     const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : '';
-    const companyName = product.company ? companyMap.get(product.company) || '' : '';
 
     // Handle comma-separated car model IDs
     let carModelNames: string[] = [];
@@ -321,20 +320,31 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
       carModelNames = modelIds.map(id => carModelMap.get(id)).filter(Boolean) as string[];
     }
 
-    // Separate fields for clean display - no mixing subcategories with car models
-    const subcategoryDisplay = subcategoryName; // Just subcategory
-    const carModelsDisplay = carModelNames.join(', '); // Just car models
+    // UI expects: subcategoryName (combined) and carModelsDisplay (separate)
+    const carModelsDisplay = carModelNames.join(', ') || undefined;
 
     // Get latest purchase rate
-    const latestPurchaseRate = latestPurchaseRates.get(product.id.toString()) || product.rate
+    const latestPurchaseRate = latestPurchaseRates.get(product.id.toString()) || product.opening_rate || 0;
+    const rate = latestPurchaseRate; // For UI compatibility
 
+    // OPTIMIZATION: Only include fields that are actually used in the UI
+    // Commented out extensive unused fields - uncomment if needed later
     return {
-      ...product,
+      id: product.id,
+      product_name: product.product_name,
+      stock: product.stock || 0,
+      min_stock: product.min_stock || 0,
+      rate,
+      part_no: product.part_no || '',
       categoryName,
-      subcategoryName: subcategoryDisplay, // ONLY subcategory
-      carModelsDisplay, // ONLY car models
-      companyName,
-      latestPurchaseRate
+      companyName: product.company ? companyMap.get(product.company) || '' : '',
+      subcategoryName: subcategoryName || undefined, // UI expects singular form
+      carModelsDisplay, // UI expects this separate field for car models column
+      latestPurchaseRate,
+      index: undefined // Will be set by frontend
+
+      // OPTIMIZATION: Commented out unused product fields - uncomment if needed
+      // ...product, // All base product fields are unused by UI
     }
   })
 }

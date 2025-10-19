@@ -39,7 +39,7 @@ export default async function handler(
 
         const enhancedPurchase = {
           ...purchase,
-          payment_status: purchase.status, // Map Prisma 'status' field to 'payment_status' in response
+          payment_status: purchase.payment_status, // Use Prisma 'payment_status' field directly
           // Remove vendor details from response - send vendor_id instead
           // vendor_name: vendorData?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
           // vendor_address: vendorData?.address || null,
@@ -85,7 +85,7 @@ export default async function handler(
             staff_details: staff_details || null,
             notes: notes || null,
             descriptions: descriptions || null,
-            status: payment_status ? parseInt(payment_status) : null,
+            payment_status: payment_status ? parseInt(payment_status) : null,
             payment_mode: payment_mode ? parseInt(payment_mode) : null,
             transport: transport || null,
           }
@@ -106,7 +106,7 @@ export default async function handler(
 
         const enhancedPurchase = {
           ...updatedPurchase,
-          payment_status: updatedPurchase.status, // Map Prisma 'status' field to 'payment_status' in response
+          payment_status: updatedPurchase.payment_status, // Use Prisma 'payment_status' field directly
           // Remove vendor details from PUT response - send vendor_id instead
           // vendor_name: vendorData?.vendor_name || updatedPurchase.bill_reference || 'Unknown Vendor',
           // vendor_address: vendorData?.address || null,

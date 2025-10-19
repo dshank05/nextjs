@@ -45,10 +45,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     if (status && status !== '') {
       if (status === '1' || status === '0') {
-        where.status = parseInt(status)
+        where.payment_status = parseInt(status)
       } else if (status === 'unknown') {
         // For unknown status, show statuses that are not 0, 1, or 2 (2 is cancelled for salex)
-        where.status = { notIn: [0, 1, 2] }
+        where.payment_status = { notIn: [0, 1, 2] }
       }
     }
 
@@ -113,32 +113,34 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
-        select_customer: invoice.select_customer,
+        // OPTIMIZATION: Commented out unused customer ID field
+        // select_customer: invoice.select_customer,
         customer_name: customerMap.get(invoice.id) || 'N/A',
-        customer_gstin: gstinMap.get(invoice.id) || '',
-        items_total: invoice.items_total || 0,
-        freight: invoice.freight || 0,
-        total_taxable_value: invoice.total_taxable_value,
-        taxrate: invoice.taxrate || 0,
-        total_cgst: invoice.total_cgst || 0,
-        total_sgst: invoice.total_sgst || 0,
-        total_igst: invoice.total_igst || 0,
-        total_tax: invoice.total_tax || 0,
+        // OPTIMIZATION: Removed customer_gstin as it's always empty
+        // OPTIMIZATION: Commented out fields only used in removed expanded details
+        // items_total: invoice.items_total || 0,
+        // freight: invoice.freight || 0,
+        // total_taxable_value: invoice.total_taxable_value,
+        // taxrate: invoice.taxrate || 0,
+        // total_cgst: invoice.total_cgst || 0,
+        // total_sgst: invoice.total_sgst || 0,
+        // total_igst: invoice.total_igst || 0,
+        // total_tax: invoice.total_tax || 0,
+        // notes: invoice.notes || '',
+        // transport: '', // Not fetched in salex API
+        // items: [], // Never populated in GET response
         total: invoice.total,
-        notes: invoice.notes || '',
         bill_reference: invoice.bill_reference || '',
         invoice_date: invoice.invoice_date,
-        status: invoice.status || 0,
+        payment_status: invoice.payment_status || 0,
         payment_mode: invoice.payment_mode || 0,
         fy: invoice.fy,
         mode: invoice.mode || 0,
         type: invoice.type || 'salex',
         item_count: itemCountMap.get(invoice.id) || 0,
-        formattedDate,
-        formattedTotal: invoice.total.toLocaleString('en-IN', {
-          style: 'currency',
-          currency: 'INR'
-        })
+        // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
+        // formattedDate,
+        // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
 

@@ -78,7 +78,6 @@ export const TransactionTable = ({
 }: TransactionTableProps) => {
   const [sortBy, setSortBy] = useState<SortField>('invoice_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
 
   const getPageNumbers = () => {
     const pages = [];
@@ -118,15 +117,7 @@ export const TransactionTable = ({
     }
   };
 
-  const toggleRowExpansion = (transactionId: number) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(transactionId)) {
-      newExpanded.delete(transactionId);
-    } else {
-      newExpanded.add(transactionId);
-    }
-    setExpandedRows(newExpanded);
-  };
+
 
   const sortedTransactions = useMemo(() => {
     return [...transactions].sort((a, b) => {
@@ -316,132 +307,6 @@ export const TransactionTable = ({
           <div className="text-center py-8 text-slate-400">No transactions found with the current filters.</div>
         )}
       </div>
-
-      {/* Expanded Row Details */}
-      {sortedTransactions.map((transaction) => (
-        expandedRows.has(transaction.id) && (
-          <div key={`details-${transaction.id}`} className="border-t border-slate-700 mt-4 pt-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-              <div>
-                <h4 className="text-sm font-semibold text-white mb-2">Transaction Details</h4>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Invoice No:</span>
-                    <span className="text-white">{transaction.invoice_no}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Type:</span>
-                    <span className="text-white">{transaction.type.toUpperCase()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Date:</span>
-                    <span className="text-white">{formatDate(transaction.invoice_date)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Payment Mode:</span>
-                    <span className="text-white">{getPaymentModeText(transaction.payment_mode)}</span>
-                  </div>
-                  {transaction.transport && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Transport:</span>
-                      <span className="text-white">{transaction.transport}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-white mb-2">Financial Summary</h4>
-                <div className="space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Items Total:</span>
-                    <span className="text-white">₹{transaction.items_total?.toLocaleString('en-IN') || '0'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Freight:</span>
-                    <span className="text-white">₹{transaction.freight?.toLocaleString('en-IN') || '0'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Taxable Value:</span>
-                    <span className="text-white">₹{transaction.total_taxable_value.toLocaleString('en-IN')}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Total Tax:</span>
-                    <span className="text-white">₹{transaction.total_tax?.toLocaleString('en-IN') || '0'}</span>
-                  </div>
-                  <div className="flex justify-between font-semibold">
-                    <span className="text-slate-400">Grand Total:</span>
-                    <span className="text-white">₹{transaction.total.toLocaleString('en-IN')}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-sm font-semibold text-white mb-2">GST Breakdown</h4>
-                <div className="space-y-1 text-sm">
-                  {transaction.total_cgst && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">CGST:</span>
-                      <span className="text-white">₹{transaction.total_cgst.toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                  {transaction.total_sgst && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">SGST:</span>
-                      <span className="text-white">₹{transaction.total_sgst.toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                  {transaction.total_igst && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">IGST:</span>
-                      <span className="text-white">₹{transaction.total_igst.toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                  {transaction.notes && (
-                    <div className="mt-2">
-                      <span className="text-slate-400 text-xs">Notes:</span>
-                      <p className="text-white text-xs mt-1">{transaction.notes}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Items Table */}
-            {transaction.items && transaction.items.length > 0 && (
-              <div>
-                <h4 className="text-sm font-semibold text-white mb-2">Items</h4>
-                <div className="overflow-x-auto">
-                  <table className="table table-sm">
-                    <thead>
-                      <tr>
-                        <th>Product</th>
-                        <th>HSN</th>
-                        <th>Part No</th>
-                        <th>Qty</th>
-                        <th>Rate</th>
-                        <th>Subtotal</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transaction.items.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="text-slate-300">{item.name_of_product}</td>
-                          <td className="text-slate-300">{item.hsn || '-'}</td>
-                          <td className="text-slate-300">{item.part || '-'}</td>
-                          <td className="text-slate-300">{item.qty}</td>
-                          <td className="text-slate-300">₹{item.rate.toLocaleString('en-IN')}</td>
-                          <td className="text-slate-300">₹{item.subtotal.toLocaleString('en-IN')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </div>
-        )
-      ))}
 
       {pagination.totalPages > 1 && (
         <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
