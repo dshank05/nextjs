@@ -90,7 +90,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name || 'N/A']))
+    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name]))
     const gstinMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_gstin || '']))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
@@ -115,7 +115,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_no: invoice.invoice_no,
         // OPTIMIZATION: Commented out unused customer ID field
         // select_customer: invoice.select_customer,
-        customer_name: customerMap.get(invoice.id) || 'N/A',
+        customer_name: customerMap.get(invoice.id),
         // OPTIMIZATION: Removed customer_gstin as it's always empty
         // OPTIMIZATION: Commented out fields only used in removed expanded details
         // items_total: invoice.items_total || 0,

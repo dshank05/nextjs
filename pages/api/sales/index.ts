@@ -166,7 +166,7 @@ export default async function handler(
         invoice_no: invoice.invoice_no,
         // OPTIMIZATION: Commented out unused customer ID field
         // select_customer: invoice.select_customer,
-        customer_name: customerMap.get(invoice.id) || 'N/A',
+        customer_name: customerMap.get(invoice.id),
         // OPTIMIZATION: Removed customer_gstin as it's always empty
         // OPTIMIZATION: Commented out fields only used in removed expanded details
         // items_total: invoice.items_total || 0,

@@ -196,10 +196,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           invoice_no: invoice.invoice_no,
           bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
           vendor_id: invoice.vendor_id,
-          vendor_name: vendorInfo?.vendor_name || 'N/A',
+          vendor_name: vendorInfo?.vendor_name,
           vendor_address: vendorInfo?.address || '',
           vendor_gstin: vendorInfo?.tax_id || '',
-          staff_name: staffInfo?.name || 'N/A',
+          staff_name: staffInfo?.name,
           staff_phone: staffInfo?.phone || '',
           staff_email: staffInfo?.email || '',
           taxrate: calculatedTaxrate, // ✅ Calculated taxrate

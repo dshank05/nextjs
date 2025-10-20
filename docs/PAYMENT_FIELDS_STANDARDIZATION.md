@@ -31,10 +31,10 @@ payment_mode             Int?      // Payment mode: 1=Cash, 2=Bank   // ❌ NEED
    - **Root Cause**: Existing item update logic only checked quantity changes, ignored product name/model updates
    - **Fix**: Enhanced update logic to sync `name_of_product` and `car_model` from UI changes
 
-7. **Tax Summary Fields Not Populated in Edit Mode**: Main tax fields (TOTAL CGST, SGST, IGST, TAX) showed 0.00 instead of calculated values from product data
-   - **Status**: ✅ FIXED - Removed condition preventing tax recalculation in edit mode
-   - **Root Cause**: useEffect had `if (isEditMode && !isInitialDataLoaded) return;` preventing tax calculation updates
-   - **Fix**: Tax fields now always calculate from current product data, ensuring UI displays correct tax breakdown
+7. **Tax Summary Fields Not Populated in Edit Mode**: Main tax fields (TOTAL CGST, SGST, IGST, TAX) showed 0.00 instead of database values on load
+   - **Status**: ✅ FIXED - Modified tax calculation to preserve database values in edit mode
+   - **Root Cause**: useEffect recalculated tax from products immediately on load, overriding correct database values
+   - **Fix**: Added condition to preserve database tax values during initial edit load, only recalculate when user modifies products
 
 ## Files Affected
 
@@ -177,6 +177,29 @@ payment_mode             Int?      // Payment mode: 1=Cash, 2=Bank   // ❌ NEED
 ### Low Priority
 - Documentation updates
 - Test files (if any)
+
+## ✅ COMPLETED FIXES
+
+### Payment Fields Validation ✅
+- **Fixed**: Payment fields now validate [0,1] values properly in purchase edit API
+- **Fixed**: Default values set correctly (status=0, mode=1)
+- **Fixed**: Frontend dropdowns use correct values (0=Cash, 1=Bank)
+
+### Tax Calculation Issues Resolved ✅
+- **Fixed**: Tax fields now populate directly from database on edit load
+- **Fixed**: Tax recalculates when products change in edit mode
+- **Fixed**: Product subtotals store base amounts (qty × rate) without tax
+- **Fixed**: Purchase table totals recalculated correctly (excludes freight)
+
+### Edit Mode Data Loading ✅
+- **Fixed**: All form data populated from database with fallback defaults
+- **Fixed**: Invoice number displays actual DB value instead of loading spinner
+- **Fixed**: Product names, vendor info, tax values all load correctly
+- **Fixed**: Item data synchronization working properly
+
+### Product Name Mapping ✅
+- **Fixed**: Product names correctly mapped from frontend `product_name` field
+- **Fixed**: Database product names updated properly on save
 
 ## Validation Rules to Implement
 

@@ -84,13 +84,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name || 'N/A']))
+    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name]))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
     const enhancedInvoices = invoices.map((invoice: any) => ({
       ...invoice,
-      customerName: customerMap.get(invoice.id) || 'N/A',
+      customerName: customerMap.get(invoice.id),
       itemCount: itemCountMap.get(invoice.id) || 0,
       formattedDate: new Date(invoice.invoice_date * 1000).toLocaleDateString('en-IN'),
       formattedTotal: invoice.total.toLocaleString('en-IN', {

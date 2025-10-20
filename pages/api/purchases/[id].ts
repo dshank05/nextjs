@@ -45,19 +45,71 @@ export default async function handler(
           });
         }
 
-        const enhancedPurchase = {
-          ...purchase,
-          payment_status: purchase.payment_status, // Use Prisma 'payment_status' field directly
-          items: purchaseItems,
+        // ✅ Transform to POST/PUT compatible structure
+        const transformedPurchase = {
+          // Main purchase fields - ensure all required fields are populated
+          id: purchase.id,
+          invoice_number: purchase.invoice_no?.toString() || '',
+          bill_reference: purchase.bill_reference || '',
+          staff_id: purchase.staff_id || null,
+          date: purchase.invoice_date,  // Keep as number for proper formatting
+          vendor_id: purchase.vendor_id,
+          transport_name: purchase.transport || '',
+          vehicle_number: purchase.vehicle_number || '',
+          transport_cost: purchase.freight || 0,
+
+          // Financial summary fields - ensure these are populated
+          items_total: purchase.items_total || 0,
+          total_taxable_value: purchase.total_taxable_value || purchase.items_total || 0,
+          total_tax: purchase.total_tax || 0,
+          total: purchase.total || (purchase.items_total + (purchase.total_tax || 0)),
+          freight: purchase.freight || 0,
+
+          // Transform items to POST structure
+          items: purchaseItems.map(item => ({
+            product_id: item.product_id,
+            product_name: item.name_of_product || 'Unknown Product',  // Use name_of_product as product_name
+            category_id: item.category_id,
+            subcategory_id: item.subcategory_id,
+            company_id: item.company_id,
+            model_id: item.model_id,
+            car_model: item.car_model || '',  // Keep as string for now
+            part: item.part || '',  // Use part field
+            qty: item.qty,
+            rate: item.rate,
+            tax: 0,  // Individual item tax not stored in DB
+            total: item.subtotal || (item.qty * item.rate),  // Use subtotal as total
+            subtotal: item.subtotal || (item.qty * item.rate),  // Also include subtotal for compatibility
+            hsn: item.hsn || ''
+          })),
+
+          // Additional fields
+          descriptions: purchase.descriptions || '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty || 0,
+          packing_forwarding_rate: purchase.packing_forwarding_rate || 0,
+          packing_forwarding_total: purchase.packing_forwarding_total || 0,
+
+          // Tax summary fields
+          total_cgst: purchase.total_cgst || 0,
+          total_sgst: purchase.total_sgst || 0,
+          total_igst: purchase.total_igst || 0,
+          notes: purchase.notes || '',
+
+          // Payment fields
+          payment_status: purchase.payment_status || 0,
+          payment_mode: purchase.payment_mode || 1,
+
+          // Metadata
+          fy: purchase.fy,
+          item_count: purchaseItems.length,
+
+          // Keep original fields for backward compatibility
           formattedDate: purchase.invoice_date,
-          bill_reference: purchase.bill_reference,
-          descriptions: purchase.descriptions || null, // Note: descriptions field may also be missing
-          // Return full master objects
           vendor: vendorData,
           staff: staffData
         }
 
-        res.status(200).json(enhancedPurchase)
+        res.status(200).json(transformedPurchase)
 
       } catch (error) {
         console.error('Get purchase error:', error)
@@ -125,6 +177,29 @@ export default async function handler(
 
         // Start transaction for purchase and item updates
         const result = await prisma.$transaction(async (tx) => {
+          // Calculate totals from items if provided
+          let calculatedItemsTotal = 0;
+          let calculatedPackingTotal = 0;
+          let calculatedTotalTax = 0;
+
+          if (items && Array.isArray(items)) {
+            // Calculate items total (sum of qty * rate for all items)
+            calculatedItemsTotal = items.reduce((sum: number, item: any) => {
+              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0));
+            }, 0);
+
+            // Get packing/forwarding total if provided
+            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0;
+            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0;
+            calculatedPackingTotal = packingQty * packingRate;
+
+            // Get total tax from request body
+            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0;
+          }
+
+          // Calculate grand total (excluding freight as per requirement)
+          const calculatedGrandTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax;
+
           // Update purchase record
           const updatedPurchase = await tx.purchase.update({
             where: { id: purchaseId },
@@ -135,10 +210,13 @@ export default async function handler(
               payment_status: parsedPaymentStatus,
               payment_mode: parsedPaymentMode,
               transport: transport || null,
+              items_total: calculatedItemsTotal,
+              total_taxable_value: calculatedItemsTotal,
               total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
               total_sgst: total_sgst ? parseFloat(total_sgst.toString()) : 0,
               total_igst: total_igst ? parseFloat(total_igst.toString()) : 0,
-              total_tax: total_tax ? parseFloat(total_tax.toString()) : 0,
+              total_tax: calculatedTotalTax,
+              total: calculatedGrandTotal,
               freight: transport_cost ? parseFloat(transport_cost.toString()) : 0,
             }
           })
@@ -170,7 +248,7 @@ export default async function handler(
                 company_id: item.company_id,
                 model_id: item.model_id,
                 car_model: item.car_model || '',
-                name_of_product: item.name_of_product || '',
+                name_of_product: item.product_name || item.name_of_product || '',
                 part: item.part || '',
                 rate: item.rate,
                 total: item.total,
@@ -233,7 +311,7 @@ export default async function handler(
                     part: newData.part || '',
                     qty: newData.qty,
                     rate: newData.rate,
-                    subtotal: newData.total,
+                    subtotal: newData.qty * newData.rate, // Base amount without tax
                     fy: updatedPurchase.fy,
                     invoice_date: parseInt(updatedPurchase.invoice_date)
                   }
@@ -268,7 +346,7 @@ export default async function handler(
                     data: {
                       qty: newData.qty,
                       rate: newData.rate,
-                      subtotal: newData.total,
+                      subtotal: newData.qty * newData.rate, // Base amount without tax
                       name_of_product: newData.name_of_product,
                       car_model: newData.car_model
                     }

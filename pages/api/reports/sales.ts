@@ -293,7 +293,7 @@ async function generateDetailedReport(dateFilter: any) {
       const billing = billingMap.get(inv.id)
       return {
         ...inv,
-        customer_name: billing?.customer?.billing_name || 'N/A',
+        customer_name: billing?.customer?.billing_name,
         customer_gstin: billing?.customer?.billing_gstin || '',
         type: 'regular'
       }
@@ -302,7 +302,7 @@ async function generateDetailedReport(dateFilter: any) {
       const billing = billingXMap.get(inv.id)
       return {
         ...inv,
-        customer_name: billing?.customer?.billing_name || 'N/A',
+        customer_name: billing?.customer?.billing_name,
         customer_gstin: billing?.customer?.billing_gstin || '',
         type: 'tax_exempt'
       }

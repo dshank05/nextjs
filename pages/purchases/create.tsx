@@ -234,6 +234,7 @@ export default function PurchaseCreate() {
     if (edit && typeof edit === 'string') {
       setIsEditMode(true);
       setEditPurchaseId(parseInt(edit));
+      setInvoiceNumberLoading(false); // Not generating new invoice in edit mode
 
       // First try to get data from sessionStorage
       const cachedData = SessionStorageService.get('purchases', edit);
@@ -395,11 +396,9 @@ export default function PurchaseCreate() {
     // Manual filter selection doesn't auto-select products anymore
   }, []);
 
-  // Auto-calculate tax totals ONLY when vendor state changes and not in edit mode
-  // Don't recalculate existing purchase data, preserve what's in the database
+  // Auto-calculate tax totals when products change or vendor state changes
   useEffect(() => {
-    // Don't auto-recalculate in edit mode - preserve existing calculations
-    if (isEditMode || selectedProducts.length === 0) return;
+    if (selectedProducts.length === 0) return;
 
     // Only recalculate if vendor state actually changed due to vendor selection
     // Check if we need to update tax breakdowns
@@ -443,11 +442,16 @@ export default function PurchaseCreate() {
 
     // Update products with corrected tax breakdowns
     setSelectedProducts(updatedProducts);
-  }, [selectedProducts, vendorStateForTax, isEditMode]);
+  }, [selectedProducts, vendorStateForTax]);
 
   // Separate effect to update tax fields from product changes
-  // Important: Always runs when products change to ensure tax fields are populated
+  // Important: Only runs when products change AND not during initial data loading in edit mode
   useEffect(() => {
+    // In edit mode, don't recalculate tax from products during initial load - preserve database values
+    if (isEditMode && !isInitialDataLoaded) {
+      return;
+    }
+
     // If no products, reset tax fields to empty
     if (selectedProducts.length === 0) {
       setFormData(prev => ({
@@ -471,7 +475,7 @@ export default function PurchaseCreate() {
       total_sgst: totalSgst.toFixed(2),
       total_igst: totalIgst.toFixed(2)
     }));
-  }, [selectedProducts]);
+  }, [selectedProducts, isEditMode, isInitialDataLoaded]);
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -585,11 +589,11 @@ export default function PurchaseCreate() {
 
         // Prefill form data - preserve tax values from database
         setFormData({
-          invoice_number: purchase.invoice_no?.toString() || '',
+          invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
           staff_id: purchase.staff_id || null,
-          date: formatDateForInput(purchase.invoice_date),
-          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
+          date: formatDateForInput(purchase.date || purchase.invoice_date),
+          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
           contact_number: purchase.vendor?.contact_no || '',
           email_id: purchase.vendor?.email || '',
           address: purchase.vendor?.address || '',
@@ -597,24 +601,24 @@ export default function PurchaseCreate() {
           city: purchase.vendor?.city || '',
           state: purchase.vendor?.state || '',
           gst_number: purchase.vendor?.tax_id || '',
-          transport_name: purchase.transport || '',
+          transport_name: purchase.transport_name || purchase.transport || '',
           vehicle_number: purchase.vehicle_number || '',
-          transport_cost: purchase.freight?.toString() || '',
+          transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
           bill: '',
-          tax: purchase.total_tax?.toString() || '',
+          tax: purchase.total_tax?.toString() || '0',
           descriptions: purchase.descriptions || '',
-          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
-          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
-          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
-          tax_rate: purchase.taxrate?.toString() || '',
-          basic_value: purchase.total_taxable_value?.toString() || '',
-          total_cgst: purchase.total_cgst?.toString() || '',
-          total_sgst: purchase.total_sgst?.toString() || '',
-          total_igst: purchase.total_igst?.toString() || '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
+          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
+          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
+          tax_rate: purchase.taxrate?.toString() || '0',
+          basic_value: purchase.total_taxable_value?.toString() || '0',
+          total_cgst: purchase.total_cgst?.toString() || '0',
+          total_sgst: purchase.total_sgst?.toString() || '0',
+          total_igst: purchase.total_igst?.toString() || '0',
           notes: purchase.notes || '',
-          total_tax: purchase.total_tax?.toString() || '',
-          payment_status: purchase.status || 0,
-          payment_mode: purchase.payment_mode || 1,
+          total_tax: purchase.total_tax?.toString() || '0',
+          payment_status: purchase.payment_status || purchase.status,
+          payment_mode: purchase.payment_mode,
         });
 
     // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
@@ -688,11 +692,11 @@ export default function PurchaseCreate() {
 
         // Prefill form data
         setFormData({
-          invoice_number: purchase.invoice_no?.toString() || '',
+          invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
           staff_id: purchase.staff_id || null,
-          date: formatDateForInput(purchase.invoice_date),
-          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
+          date: formatDateForInput(purchase.date || purchase.invoice_date),
+          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
           contact_number: purchase.vendor?.contact_no || '',
           email_id: purchase.vendor?.email || '',
           address: purchase.vendor?.address || '',
@@ -700,23 +704,23 @@ export default function PurchaseCreate() {
           city: purchase.vendor?.city || '',
           state: purchase.vendor?.state || '',
           gst_number: purchase.vendor?.tax_id || '',
-          transport_name: purchase.transport || '',
+          transport_name: purchase.transport_name || purchase.transport || '',
           vehicle_number: purchase.vehicle_number || '',
-          transport_cost: purchase.freight?.toString() || '',
+          transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
           bill: '',
-          tax: purchase.total_tax?.toString() || '',
+          tax: purchase.total_tax?.toString() || '0',
           descriptions: purchase.descriptions || '',
-          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
-          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
-          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
-          tax_rate: purchase.taxrate?.toString() || '',
-          basic_value: purchase.total_taxable_value?.toString() || '',
-          total_cgst: purchase.total_cgst?.toString() || '',
-          total_sgst: purchase.total_sgst?.toString() || '',
-          total_igst: purchase.total_igst?.toString() || '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
+          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
+          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
+          tax_rate: purchase.taxrate?.toString() || '0',
+          basic_value: purchase.total_taxable_value?.toString() || '0',
+          total_cgst: purchase.total_cgst?.toString() || '0',
+          total_sgst: purchase.total_sgst?.toString() || '0',
+          total_igst: purchase.total_igst?.toString() || '0',
           notes: purchase.notes || '',
-          total_tax: purchase.total_tax?.toString() || '',
-          payment_status: purchase.status || 0,
+          total_tax: purchase.total_tax?.toString() || '0',
+          payment_status: purchase.payment_status || purchase.status || 0,
           payment_mode: purchase.payment_mode || 1,
         });
 
@@ -787,10 +791,10 @@ export default function PurchaseCreate() {
               id: (index + 1).toString(),
               product_id: item.product_id || item.category_id || 1,
               product_name: item.product_name || item.name_of_product || '',
-              car_model: item.model_id?.toString() || '', // Store model_id as string for dropdown
-              category: item.category_id?.toString() || '', // Store category_id as string for dropdown
-              sub_category: item.subcategory_id?.toString() || '', // Store subcategory_id as string for dropdown
-              company: item.company_id?.toString() || '', // Store company_id as string for dropdown
+              car_model: item.car_model || '', // Keep as string - mapping to IDs would need complex logic
+              category: item.category_id?.toString() || item.category || '', // Store category_id as string for dropdown
+              sub_category: item.subcategory_id?.toString() || item.sub_category || '', // Store subcategory_id as string for dropdown
+              company: item.company_id?.toString() || item.company || '', // Store company_id as string for dropdown
               part_number: item.part_number || item.part || '',
               qty: qty,
               rate: rate,
@@ -1158,10 +1162,6 @@ export default function PurchaseCreate() {
             rate: item.rate,
             tax: item.tax,
             total: item.total,
-            // ===== EXTRA FIELDS - COMMENTED OUT (FALLBACK NAMES NOT STORED) =====
-            // category_name: item.category,
-            // subcategory_name: item.sub_category,
-            // company_name: item.company
           };
         }),
         descriptions: formData.descriptions,
@@ -2091,12 +2091,7 @@ export default function PurchaseCreate() {
                   <input
                     type="number"
                     step="0.01"
-                    value={(formData.total_cgst !== '' || formData.total_sgst !== '' || formData.total_igst !== '')
-                      ? (parseFloat(formData.total_cgst) + parseFloat(formData.total_sgst) + parseFloat(formData.total_igst)).toFixed(2)
-                      : vendorStateForTax === 'Uttar Pradesh'
-                        ? (parseFloat(formData.total_cgst) + parseFloat(formData.total_sgst)).toFixed(2)
-                        : formData.total_igst
-                    }
+                    value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
                     readOnly
                     disabled
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"

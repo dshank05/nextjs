@@ -201,7 +201,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         return {
           ...tx,
           transaction_type: 'regular_sale' as const,
-          customer_name: billing?.billing_name || 'N/A',
+          customer_name: billing?.billing_name,
           customer_gstin: billing?.billing_gstin || '',
           invoice_no: invoice_no,
           invoice_id: tx.invoice_id
@@ -213,7 +213,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         return {
           ...tx,
           transaction_type: 'tax_exempt_sale' as const,
-          customer_name: billing?.billing_name || 'N/A',
+          customer_name: billing?.billing_name,
           customer_gstin: billing?.billing_gstin || '',
           invoice_no: invoice_no,
           invoice_id: tx.invoice_id

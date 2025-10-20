@@ -5,20 +5,28 @@ import { Edit, Trash2, FileText, Truck } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
 
 interface PurchaseItem {
-  id: number;
-  invoice_no: number;
-  name_of_product: string;
+  id?: number; // Optional since API creates new IDs
+  invoice_no?: number;
+  product_name: string; // Updated to match API
   category_id?: number;
   model_id?: number;
   company_id?: number;
   hsn?: string;
-  part?: string;
+  part?: string; // Now uses "part" instead of "part_number"
   qty: number;
   unit?: number;
   rate: number;
-  subtotal: number;
-  fy: number;
-  invoice_date: number | string;
+  tax?: number; // Added tax field
+  total?: number; // Updated to match API (uses total instead of subtotal)
+  subtotal?: number; // Keep for backward compatibility
+  fy?: number;
+  invoice_date?: number | string;
+  product_id?: number; // Added from API
+  car_model?: string; // Added from API
+  gst_percentage?: number; // Added from API
+  cgst?: number; // Added from API
+  sgst?: number; // Added from API
+  igst?: number; // Added from API
 }
 
 interface Vendor {
@@ -43,31 +51,50 @@ interface Staff {
 }
 
 interface Purchase {
-  transport_name?: string;
+  // Main purchase fields
   id: number;
-  invoice_no: number;
-  select_vendor?: number;
+  invoice_number: string;
+  bill_reference?: string;
+  staff_id?: number | null;
+  date: number;  // Unix timestamp
+  vendor_id?: number;
+  transport_name?: string;
+  vehicle_number?: string;
+  transport_cost?: number;
+
+  // Financial summary fields
   items_total: number;
-  freight?: number;
   total_taxable_value: number;
-  taxrate?: number;
+  total_tax: number;
+  total: number;
+  freight?: number;  // For backward compatibility
+
+  // Tax breakdown
   total_cgst?: number;
   total_sgst?: number;
   total_igst?: number;
-  total_tax?: number;
-  total: number;
+
+  // Additional fields
+  descriptions?: string;
+  packing_forwarding_qty?: number;
+  packing_forwarding_rate?: number;
+  packing_forwarding_total?: number;
   notes?: string;
-  invoice_date: number | string;
+
+  // Payment fields
   payment_status?: number;
   payment_mode?: number;
-  fy: number;
+
+  // Legacy fields for compatibility
+  invoice_no?: number;  // May still be used in some places
+  invoice_date?: number | string;  // May still be used
+  fy?: number;
   transport?: string;
-  vehicle_number?: string;
   items?: PurchaseItem[];
   item_count?: number;
   formattedDate?: string;
-  bill_reference?: string;
-  descriptions?: string;
+
+  // Related data
   vendor?: Vendor | null;
   staff?: Staff | null;
 }
@@ -168,8 +195,8 @@ export default function PurchaseView() {
             <div className="w-48 h-32 bg-slate-600 rounded-xl flex items-center justify-center mb-4">
               <div className="text-6xl">🧾</div>
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Purchase Invoice #{purchase.invoice_no}</h3>
-            <p className="text-slate-400 text-sm mb-2">{purchase.vendor?.vendor_name } • {formatDate(purchase.invoice_date)}</p>
+            <h3 className="text-lg font-semibold text-white mb-2">Purchase Invoice #{purchase.invoice_number || purchase.invoice_no}</h3>
+            <p className="text-slate-400 text-sm mb-2">{purchase.vendor?.vendor_name } • {formatDate(purchase.date || purchase.invoice_date)}</p>
             <div className="flex items-center gap-2 mt-2">{getStatusBadge(purchase.payment_status)}</div>
           </div>
 
@@ -181,7 +208,7 @@ export default function PurchaseView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Invoice Number:</span>
-              <span className="text-white font-medium">{purchase.invoice_no}</span>
+              <span className="text-white font-medium">{purchase.invoice_number || purchase.invoice_no}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Bill Reference:</span>
@@ -197,11 +224,11 @@ export default function PurchaseView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Items Total:</span>
-              <span className="text-white font-medium">₹{purchase.items_total.toLocaleString('en-IN')}</span>
+              <span className="text-white font-medium">₹{purchase.items_total?.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Total Amount:</span>
-              <span className="text-white font-semibold text-lg">₹{purchase.total.toLocaleString('en-IN')}</span>
+              <span className="text-white font-semibold text-lg">₹{purchase.total?.toLocaleString('en-IN')}</span>
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
@@ -227,11 +254,11 @@ export default function PurchaseView() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-slate-400">Invoice Number:</span>
-                <span className="text-white font-medium">{purchase.invoice_no}</span>
+                <span className="text-white font-medium">{purchase.invoice_number || purchase.invoice_no}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Date:</span>
-                <span className="text-white font-medium">{formatDate(purchase.invoice_date)}</span>
+                <span className="text-white font-medium">{formatDate(purchase.date || purchase.invoice_date)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Status:</span>
@@ -271,7 +298,7 @@ export default function PurchaseView() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-slate-400">Items Total:</span>
-                <span className="text-white font-medium">₹{purchase.items_total.toLocaleString('en-IN')}</span>
+                <span className="text-white font-medium">₹{purchase.items_total?.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Freight:</span>
@@ -279,7 +306,7 @@ export default function PurchaseView() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Taxable Value:</span>
-                <span className="text-white font-medium">₹{purchase.total_taxable_value.toLocaleString('en-IN')}</span>
+                <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Total Tax:</span>
@@ -287,7 +314,7 @@ export default function PurchaseView() {
               </div>
               <div className="flex justify-between font-semibold">
                 <span className="text-slate-400">Grand Total:</span>
-                <span className="text-white font-medium">₹{purchase.total.toLocaleString('en-IN')}</span>
+                <span className="text-white font-medium">₹{purchase.total?.toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>
@@ -369,12 +396,12 @@ export default function PurchaseView() {
                 {purchase.items?.map((item, index) => (
                   <tr key={item.id}>
                     <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.name_of_product}</td>
+                    <td className="font-medium text-white">{item.product_name}</td>
                     <td className="text-slate-300">{item.part || 'N/A'}</td>
                     <td className="text-slate-300">{item.hsn || 'N/A'}</td>
                     <td className="text-slate-300 font-medium">{item.qty}</td>
-                    <td className="text-slate-300">₹{item.rate.toLocaleString('en-IN')}</td>
-                    <td className="text-slate-300 font-semibold">₹{item.subtotal.toLocaleString('en-IN')}</td>
+                    <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
+                    <td className="text-slate-300 font-semibold">₹{(item.total || item.subtotal)?.toLocaleString('en-IN')}</td>
                   </tr>
                 )) || (
                   <tr>
@@ -388,7 +415,7 @@ export default function PurchaseView() {
                 <tfoot>
                   <tr className="border-t border-slate-700">
                     <td colSpan={5} className="text-right text-slate-300 font-semibold py-2">Items Total:</td>
-                    <td className="text-white font-bold pl-6">₹{purchase.items_total.toLocaleString('en-IN')}</td>
+                    <td className="text-white font-bold pl-6">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               )}

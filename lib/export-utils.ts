@@ -70,7 +70,7 @@ const getPaymentModeText = (mode?: number): string => {
   switch (mode) {
     case 0: return 'Cash';
     case 1: return 'Bank';
-    default: return 'N/A';
+    default: return `INVALID_PAYMENT_MODE:${mode}`;
   }
 };
 
@@ -198,7 +198,7 @@ export const exportToExcel = (
     const excelData = transactions.map((transaction, index) => ({
       'SN': index + 1,
       'Invoice No': transaction.invoice_no,
-      'Customer/Vendor': transaction.customer_vendor_name || 'N/A',
+      'Customer/Vendor': transaction.customer_vendor_name,
       'Items Qty': transaction.item_count || transaction.items?.length || 0,
       'Total': transaction.total,
       'Tax Amount': transaction.total_tax || 0,

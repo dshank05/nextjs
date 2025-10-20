@@ -521,7 +521,7 @@ export default function InvoiceCCreate() {
         const itemObj: InvoiceItem = {
           id: (index + 1).toString(),
           product_id: item.product_id || item.name_of_product || 1,
-          product_name: item.name_of_product || 'Unknown Product',
+          product_name: item.name_of_product,
           car_model_ids: item.model_id ? [item.model_id.toString()] : [],
           car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
           category_id: item.category_id || 0,
