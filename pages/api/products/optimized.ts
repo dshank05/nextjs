@@ -60,7 +60,7 @@ export default async function handler(
       category = '',
       subcategory = '', // Filters actual subcategories
       model = '', // NEW: Filters car models (comma-separated IDs)
-      company = '',
+      company_id = '',
       lowStock = 'false'
     } = req.query
 
@@ -106,8 +106,8 @@ export default async function handler(
       }
 
       // Handle company filtering with ID directly
-      if (company && company !== '') {
-        where.company = company as string
+      if (company_id && company_id !== '') {
+        where.company_id = parseInt(company_id as string)
       }
 
       // Get all products that match database filters (only active products)
@@ -211,8 +211,8 @@ export default async function handler(
       }
 
       // Handle company filtering with ID directly
-      if (company && company !== '') {
-        where.company = company as string
+      if (company_id && company_id !== '') {
+        where.company_id = parseInt(company_id as string)
       }
 
       // Get products with efficient pagination (only active products)
@@ -276,7 +276,7 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
         : []
     )
   ))
-  const companyIds = Array.from(new Set(products.map(p => p.company).filter(Boolean).map(id => parseInt(id as string)).filter(id => !isNaN(id))))
+  const companyIds = Array.from(new Set(products.map(p => p.company_id).filter(Boolean)))
 
   // Batch fetch names using foreign key relationships
   const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords] = await Promise.all([
@@ -337,7 +337,8 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
       rate,
       part_no: product.part_no || '',
       categoryName,
-      companyName: product.company ? companyMap.get(product.company) || '' : '',
+      company_id: product.company_id || undefined,
+      companyName: product.company_id ? companyMap.get(product.company_id.toString()) || '' : '',
       subcategoryName: subcategoryName || undefined, // UI expects singular form
       carModelsDisplay, // UI expects this separate field for car models column
       latestPurchaseRate,

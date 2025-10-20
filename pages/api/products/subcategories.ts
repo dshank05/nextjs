@@ -142,7 +142,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           category_id: finalCategoryId
         },
       });
-      res.status(201).json(subcategory);
+      res.status(201).json({
+        status: "success",
+        message: "Subcategory created successfully"
+      });
     } else if (req.method === 'PUT') {
       const { id, subcategory_name, category_id, category_name } = req.body;
       if (!id || !subcategory_name || (!category_id && !category_name)) {
@@ -179,7 +182,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           category_id: finalCategoryId
         },
       });
-      res.status(200).json(subcategory);
+      res.status(200).json({
+        status: "success",
+        message: "Subcategory updated successfully"
+      });
     } else if (req.method === 'DELETE') {
       const { id } = req.body;
       if (!id) {

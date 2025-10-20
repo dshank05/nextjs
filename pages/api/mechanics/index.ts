@@ -80,7 +80,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: mechanicData,
     })
 
-    res.status(201).json(mechanic)
+    res.status(201).json({
+      status: "success",
+      message: "Mechanic created successfully"
+    })
   } catch (error) {
     console.error('Create mechanic error:', error)
     res.status(500).json({

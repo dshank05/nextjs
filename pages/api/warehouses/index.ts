@@ -117,7 +117,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json(warehouse)
+    res.status(201).json({
+      status: "success",
+      message: "Warehouse created successfully"
+    })
   } catch (error) {
     console.error('Warehouse creation error:', error)
     res.status(500).json({
@@ -172,7 +175,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(200).json(updatedWarehouse)
+    res.status(200).json({
+      status: "success",
+      message: "Warehouse updated successfully"
+    })
   } catch (error) {
     console.error('Warehouse update error:', error)
     res.status(500).json({
@@ -264,7 +270,10 @@ async function handleIndividualPut(req: NextApiRequest, res: NextApiResponse, wa
       data: updateData,
     })
 
-    res.status(200).json(updatedWarehouse)
+    res.status(200).json({
+      status: "success",
+      message: "Warehouse updated successfully"
+    })
   } catch (error) {
     console.error('Update warehouse error:', error)
     res.status(500).json({
@@ -293,8 +302,8 @@ async function handleIndividualDelete(req: NextApiRequest, res: NextApiResponse,
     })
 
     res.status(200).json({
-      message: 'Warehouse deactivated successfully',
-      warehouse: deactivatedWarehouse
+      status: "success",
+      message: "Warehouse deactivated successfully"
     })
   } catch (error) {
     console.error('Delete warehouse error:', error)

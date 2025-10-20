@@ -21,7 +21,8 @@ interface TransactionFiltersProps {
   limit: number;
   handleLimitChange: (value: number) => void;
   clearFilters: () => void;
-  hideTransactionType?: boolean; // New optional prop to hide transaction type filter
+  hideTransactionType?: boolean; // Optional prop to hide transaction type filter
+  allowedTransactionTypes?: string[]; // Optional prop to limit transaction types shown
 }
 
 interface CustomerVendor {
@@ -49,7 +50,8 @@ export const TransactionFilters = ({
   amountMax, setAmountMax,
   limit, handleLimitChange,
   clearFilters,
-  hideTransactionType = false
+  hideTransactionType = false,
+  allowedTransactionTypes = ['sale', 'salex', 'purchase']
 }: TransactionFiltersProps) => {
   const [customerVendorSearch, setCustomerVendorSearch] = useState('');
   const [showCustomerVendorDropdown, setShowCustomerVendorDropdown] = useState(false);
@@ -128,9 +130,14 @@ export const TransactionFilters = ({
               className="select w-full"
             >
               <option value="all">All Types</option>
-              <option value="sale">Sales</option>
-              <option value="salex">Sales Extended</option>
-              <option value="purchase">Purchases</option>
+              {allowedTransactionTypes.map(type => (
+                <option key={type} value={type}>
+                  {type === 'sale' ? 'Invoice' :
+                   type === 'salex' ? 'Invoicex' :
+                   type === 'purchase' ? 'Purchase' :
+                   type.charAt(0).toUpperCase() + type.slice(1)}
+                </option>
+              ))}
             </select>
           </div>
         )}

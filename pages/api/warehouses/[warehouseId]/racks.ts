@@ -117,7 +117,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
       }
     })
 
-    res.status(201).json(rack)
+    res.status(201).json({
+      status: "success",
+      message: "Rack created successfully"
+    })
   } catch (error) {
     console.error('Warehouse rack creation error:', error)
     res.status(500).json({
@@ -202,7 +205,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       data: updateData
     })
 
-    res.status(200).json(updatedRack)
+    res.status(200).json({
+      status: "success",
+      message: "Rack updated successfully"
+    })
   } catch (error) {
     console.error('Warehouse rack update error:', error)
     res.status(500).json({
@@ -251,7 +257,10 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, warehouse
       where: { id: parseInt(rackId as string) }
     })
 
-    res.status(200).json({ message: 'Rack deleted successfully' })
+    res.status(200).json({
+      status: "success",
+      message: "Rack deleted successfully"
+    })
   } catch (error) {
     console.error('Warehouse rack delete error:', error)
     res.status(500).json({

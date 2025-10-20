@@ -125,14 +125,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
     res.status(201).json({
-      message: 'Bank account created successfully',
-      bankAccount: {
-        id: bankAccount.id.toString(),
-        bank_name: bankAccount.bank_name,
-        account_number: bankAccount.account_number,
-        bank_address: bankAccount.bank_address,
-        ifsc: bankAccount.ifsc
-      }
+      status: "success",
+      message: "Bank account created successfully"
     })
   } catch (error) {
     console.error('Bank account creation error:', error)

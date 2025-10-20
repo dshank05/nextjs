@@ -371,18 +371,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
 
     res.status(201).json({
-      message: 'Invoice created successfully',
-      invoice: {
-        id: result.id,
-        invoice_no: result.invoice_no,
-        total: result.total,
-      }
+      status: "success",
+      message: "Invoice created successfully"
     })
   } catch (error) {
     console.error('Invoice creation error:', error)
-    res.status(500).json({ 
-      message: 'Failed to create invoice',
-      error: error instanceof Error ? error.message : 'Unknown error'
+    res.status(500).json({
+      status: "failure",
+      message: 'Failed to create invoice'
     })
   }
 }

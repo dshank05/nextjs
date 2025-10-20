@@ -46,7 +46,8 @@ interface Product {
   product_category_id?: number;
   product_subcategory_id?: number;
   car_model_ids?: string;
-  company?: string;
+  company?: string; // Keep for backward compatibility
+  company_id?: number; // New field for company ID
   pic?: string;
   part_no?: string;
   min_stock?: number;
@@ -255,7 +256,7 @@ export default function InvoiceCreate() {
       category: product.product_category_id || 0,
       subcategory: product.product_subcategory_id || 0,
       carModels: [], // Initially unselected
-      company: product.company ? parseInt(product.company, 10) : 0,
+      company: product.company_id || 0,
       partNo: product.part_no || ''
     }));
 
@@ -266,7 +267,7 @@ export default function InvoiceCreate() {
         category: product.product_category_id,
         subcategory: product.product_subcategory_id,
         carModels: [], // unselected
-        company: product.company
+        company: product.company_id
       }
     });
   };

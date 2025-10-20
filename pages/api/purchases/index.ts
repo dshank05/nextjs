@@ -126,11 +126,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.purchase.count({ where })
     ])
 
-    // Get item counts and vendor info in batch queries
+    // Get item counts, vendor info, and staff info in batch queries
     const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
     const vendorIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.vendor_id).filter(Boolean)))
+    const staffIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.staff_id).filter(Boolean)))
 
-    const [itemCounts, vendorData] = await Promise.all([
+    const [itemCounts, vendorData, staffData] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
@@ -141,12 +142,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       vendorIds.length > 0 ? prisma.vendor_details.findMany({
         where: { id: { in: vendorIds } },
         select: { id: true, vendor_name: true, address: true, tax_id: true }
+      }) : Promise.resolve([]),
+      // Get staff details for all purchases
+      staffIds.length > 0 ? prisma.staff.findMany({
+        where: { id: { in: staffIds } },
+        select: { id: true, name: true, phone: true, email: true }
       }) : Promise.resolve([])
     ])
 
     // Create lookup maps for fast access
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
     const vendorMap = new Map(vendorData.map(vendor => [vendor.id, vendor]))
+    const staffMap = new Map(staffData.map(staff => [staff.id, staff]))
 
     // Enhanced purchase invoices using maps
     const enhancedPurchases = purchaseInvoices.map((invoice: any) => {
@@ -180,6 +187,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
 
         const vendorInfo = vendorMap.get(invoice.vendor_id)
+        const staffInfo = staffMap.get(invoice.staff_id)
+        // ✅ Calculate taxrate as total_tax/total_taxable_value (invoice level)
+        const calculatedTaxrate = invoice.total_taxable_value > 0 ? invoice.total_tax / invoice.total_taxable_value : 0;
 
         return {
           id: invoice.id,
@@ -189,11 +199,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           vendor_name: vendorInfo?.vendor_name || 'N/A',
           vendor_address: vendorInfo?.address || '',
           vendor_gstin: vendorInfo?.tax_id || '',
+          staff_name: staffInfo?.name || 'N/A',
+          staff_phone: staffInfo?.phone || '',
+          staff_email: staffInfo?.email || '',
+          taxrate: calculatedTaxrate, // ✅ Calculated taxrate
           // OPTIMIZATION: Commented out fields only used in removed expanded details
           // items_total: invoice.items_total || 0,
           // freight: invoice.freight || 0,
           // total_taxable_value: invoice.total_taxable_value,
-          // taxrate: invoice.taxrate || 0,
           // total_cgst: invoice.total_cgst || 0,
           // total_sgst: invoice.total_sgst || 0,
           // total_igst: invoice.total_igst || 0,
@@ -247,7 +260,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
       bill_reference,           // ✓ Purchase.bill_reference
-      staff_details,            // ✓ Purchase.staff_details (string for backward compatibility)
       staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
@@ -371,7 +383,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: {
         invoice_no: parseInt(invoice_number),
         bill_reference: bill_reference, // Keep bill reference separate from vendor name
-        staff_details: staff_details,    // Keep for backward compatibility
         staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
         vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
         items_total: itemsTotal,
@@ -435,6 +446,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await prisma.purchaseitems.create({
         data: {
           invoice_no: purchase.invoice_no,
+          product_id: parseInt(item.product_id), // ✅ CRITICAL FIX: Save product_id to maintain relationship
           name_of_product: productName,
           category_id: categoryId,
           subcategory_id: subcategoryId,
@@ -509,7 +521,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
       bill_reference,           // ✓ Purchase.bill_reference
-      staff_details,            // ✓ Purchase.staff_details (string for backward compatibility)
       staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
@@ -590,27 +601,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
-      // Get existing purchase items for stock adjustment
-      const existingItems = await tx.purchaseitems.findMany({
-        where: { invoice_no: existingPurchase.invoice_no }
-      })
-
-      // Create a map of existing items for quick lookup
-      const existingItemsMap = new Map()
-      existingItems.forEach(item => {
-        existingItemsMap.set(item.name_of_product, {
-          qty: item.qty || 0,
-          item: item
-        })
-      })
-
-      // Update purchase record
+      // Update purchase record (invoice_number stays the same)
       const purchase = await tx.purchase.update({
         where: { id: parseInt(id as string) },
         data: {
-          invoice_no: parseInt(invoice_number),
           bill_reference: bill_reference, // Keep bill reference separate from vendor name
-          staff_details: staff_details,    // Keep for backward compatibility
           staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
           items_total: itemsTotal,
@@ -634,8 +629,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           // tax: tax,
           invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
           updated_at: new Date().toISOString().split('T')[0], // Current date
-          payment_status: payment_status,
-          payment_mode: payment_mode,
+          payment_status: payment_status || 0,  // Ensure we set a valid default if null
+          payment_mode: payment_mode || 1,      // Ensure we set a valid default if null
           fy: financialYear,
           transport: transport_name || '',
           transport_name: transport_name,
@@ -643,19 +638,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Handle item-level updates instead of delete/recreate all
+      // Handle item-level updates using product_id matching
       if (items) {
         // Get existing purchase items for comparison
         const existingItems = await tx.purchaseitems.findMany({
           where: { invoice_no: purchase.invoice_no }
         })
 
-        // Create maps for efficient lookup
-        const existingItemsMap = new Map<string, any>()
-        const newItemsMap = new Map<string, any>()
+        // Create maps for efficient lookup using product_id
+        const existingItemsMap = new Map<number, any>()
+        const newItemsMap = new Map<number, any>()
 
         existingItems.forEach(item => {
-          existingItemsMap.set(item.name_of_product, {
+          existingItemsMap.set(item.product_id, {
             id: item.id,
             qty: item.qty || 0,
             item: item
@@ -663,7 +658,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         })
 
         items.forEach(item => {
-          newItemsMap.set(item.product_name, {
+          newItemsMap.set(parseInt(item.product_id), {
             qty: item.qty || 0,
             category_id: item.category_id,
             subcategory_id: item.subcategory_id,
@@ -673,22 +668,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             part: item.part,
             rate: item.rate,
             total: item.total,
-            product_id: item.product_id,
+            product_id: parseInt(item.product_id),
             item: item
           })
         })
 
         // Process deletions: items that exist in DB but not in new list
-        for (const [productName, existingData] of Array.from(existingItemsMap.entries())) {
-          if (!newItemsMap.has(productName)) {
+        for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
+          if (!newItemsMap.has(productId)) {
             // Item was removed - decrease stock (remove purchased items)
-            // We need to find the product_id by matching the name_of_product
-            const product = await tx.product.findFirst({
-              where: { product_name: productName }
-            });
-            if (product && existingData.qty > 0) {
+            if (existingData.qty > 0) {
               await tx.product.update({
-                where: { id: product.id },
+                where: { id: productId },
                 data: {
                   stock: {
                     decrement: existingData.qty
@@ -704,28 +695,37 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
 
         // Process additions and updates
-        for (const [productName, newData] of Array.from(newItemsMap.entries())) {
-          const existingData = existingItemsMap.get(productName)
+        for (const [productId, newData] of Array.from(newItemsMap.entries())) {
+          const existingData = existingItemsMap.get(productId)
 
           if (!existingData) {
             // New item - create it and increase stock
+            // Fetch product details from database for new item
+            const product = await tx.product.findUnique({
+              where: { id: productId }
+            })
+
+            if (!product) {
+              throw new Error(`Product with ID ${productId} not found`)
+            }
+
             // Use model_id directly from frontend (already looked up)
             const modelId = newData.model_id ? parseInt(newData.model_id) : null;
 
             await tx.purchaseitems.create({
               data: {
                 invoice_no: purchase.invoice_no,
-                name_of_product: productName,
-                category_id: newData.category_id ? parseInt(newData.category_id) : null,
-                subcategory_id: newData.subcategory_id ? parseInt(newData.subcategory_id) : null,
+                product_id: productId,
+                name_of_product: product.product_name || '',
+                category_id: product.product_category_id || null,
+                subcategory_id: product.product_subcategory_id || null,
                 model_id: modelId,
-                company_id: newData.company_id ? parseInt(newData.company_id) : null,
+                company_id: product.company_id || null,
                 car_model: newData.car_model || '',
                 vendor_id: parseInt(vendor_id),
-                hsn: newData.item?.hsn || '',
-                part: newData.part, // ✅ Part number now stored
+                hsn: product.hsn || '',
+                part: newData.part || '',
                 qty: newData.qty,
-                // unit: 1, // @deprecated - Default unit (not used for products)
                 rate: newData.rate,
                 subtotal: newData.total,
                 fy: financialYear,
@@ -734,20 +734,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             })
 
             // Increase stock and update rate for new purchase
-            if (newData.product_id) {
-              await tx.product.update({
-                where: { id: parseInt(newData.product_id) },
-                data: {
-                  stock: {
-                    increment: newData.qty
-                  },
-                  // ===== RATE MANAGEMENT =====
-                  // Update latest purchase rate and timestamp when purchase item is added/updated
-                  latest_purchase_rate: newData.rate,
-                  last_purchase_date: invoiceDate
-                }
-              })
-            }
+            await tx.product.update({
+              where: { id: productId },
+              data: {
+                stock: {
+                  increment: newData.qty
+                },
+                // ===== RATE MANAGEMENT =====
+                // Update latest purchase rate and timestamp when purchase item is added/updated
+                latest_purchase_rate: newData.rate,
+                last_purchase_date: invoiceDate
+              }
+            })
           } else {
             // Existing item - check if quantity changed
             const qtyDifference = newData.qty - existingData.qty
@@ -764,16 +762,14 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               })
 
               // Adjust stock based on quantity difference
-              if (newData.product_id && Math.abs(qtyDifference) > 0.001) {
-                await tx.product.update({
-                  where: { id: parseInt(newData.product_id) },
-                  data: {
-                    stock: {
-                      increment: qtyDifference // Add the difference (can be negative)
-                    }
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: {
+                    increment: qtyDifference // Add the difference (can be negative)
                   }
-                })
-              }
+                }
+              })
             }
           }
         }

@@ -50,7 +50,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const company = await prisma.product_company.create({
         data: { company_name },
       });
-      res.status(201).json(company);
+      res.status(201).json({
+        status: "success",
+        message: "Company created successfully"
+      });
     } else if (req.method === 'PUT') {
       const { id, company_name } = req.body;
       if (!id || !company_name) {
@@ -60,7 +63,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where: { id: parseInt(id, 10) },
         data: { company_name },
       });
-      res.status(200).json(company);
+      res.status(200).json({
+        status: "success",
+        message: "Company updated successfully"
+      });
     } else if (req.method === 'DELETE') {
       const { id } = req.body;
       if (!id) {

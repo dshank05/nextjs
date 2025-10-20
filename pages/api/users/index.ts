@@ -150,15 +150,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
     res.status(201).json({
-      message: 'User created successfully',
-      user: {
-        id: user.id.toString(),
-        username: user.username,
-        email: user.email,
-        status: user.status,
-        created_at: user.created_at,
-        updated_at: user.updated_at
-      }
+      status: "success",
+      message: "User created successfully"
     })
   } catch (error) {
     console.error('User creation error:', error)

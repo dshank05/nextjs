@@ -79,10 +79,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const category = await prisma.product_category.create({
       data: { category_name },
     });
-    res.status(201).json(category);
+    res.status(201).json({
+      status: "success",
+      message: "Category created successfully"
+    });
   } catch (error) {
     console.error('Category creation error:', error);
-    res.status(500).json({ message: 'Failed to create category' });
+    res.status(500).json({
+      status: "failure",
+      message: 'Failed to create category'
+    });
   }
 }
 
@@ -116,10 +122,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       where: { id: parseInt(id, 10) },
       data: { category_name },
     });
-    res.status(200).json(category);
+    res.status(200).json({
+      status: "success",
+      message: "Category updated successfully"
+    });
   } catch (error) {
     console.error('Category update error:', error);
-    res.status(500).json({ message: 'Failed to update category' });
+    res.status(500).json({
+      status: "failure",
+      message: 'Failed to update category'
+    });
   }
 }
 

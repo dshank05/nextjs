@@ -12,7 +12,8 @@ export interface Product {
     product_category_id?: number;
     product_subcategory_id?: number;
     car_model_ids?: string;
-    company?: string;
+    company?: string; // Keep for backward compatibility
+    company_id?: number; // New field for company ID
     pic?: string;
     part_no?: string;
     min_stock?: number;

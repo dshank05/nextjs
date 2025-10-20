@@ -105,11 +105,8 @@ export default async function handler(
       });
 
       res.status(201).json({
-        message: 'Vendor created successfully',
-        vendor: {
-          id: vendor.id.toString(),
-          ...vendorData
-        }
+        status: "success",
+        message: "Vendor created successfully"
       });
     } catch (error) {
       console.error('Vendor creation error:', error);

@@ -52,7 +52,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const model = await prisma.car_models.create({
         data: { model_name: subcategory_name },
       });
-      res.status(201).json(model);
+      res.status(201).json({
+        status: "success",
+        message: "Model created successfully"
+      });
     } else if (req.method === 'PUT') {
       const { id, subcategory_name } = req.body;
       if (!id || !subcategory_name) {
@@ -62,7 +65,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where: { id: parseInt(id, 10) },
         data: { model_name: subcategory_name },
       });
-      res.status(200).json(model);
+      res.status(200).json({
+        status: "success",
+        message: "Model updated successfully"
+      });
     } else if (req.method === 'DELETE') {
       const { id } = req.body;
       if (!id) {

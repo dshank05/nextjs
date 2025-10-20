@@ -48,12 +48,9 @@ model Product {
   product_name           String               @db.VarChar(255)
   display_name           String?              @db.VarChar(255)
   hsn                    String?              @db.VarChar(50)
-  product_category       String?              @db.VarChar(100)
-  product_subcategory    String?              @db.VarChar(100)
   product_category_id    Int?
   product_subcategory_id Int?
   car_model_ids          String?
-  company                String?              @db.VarChar(255)
   company_id             Int?
   pic                    String?              @db.VarChar(255)
   part_no                String?              @db.VarChar(100)
@@ -82,8 +79,7 @@ model Product {
   invoice_items          Invoiceitems[]
   invoice_itemsx         invoice_itemsx[]
 
-  @@index([product_category], map: "idx_product_category")
-  @@index([company], map: "idx_product_company")
+
   @@index([product_name], map: "idx_product_name")
   @@index([part_no], map: "idx_product_part_no")
   @@index([stock, min_stock], map: "idx_product_stock")
@@ -131,6 +127,7 @@ model Invoice {
   packing_forwarding_total Float?    // Total packing/forwarding amount
   mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
   staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
+  sale_returns             sale_returns[]
 
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
@@ -164,6 +161,7 @@ model Invoiceitems {
   invoice_date    Int
   fy              Int
   product         Product @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
+  sale_return_items sale_return_items[]
 
   @@index([invoice_date], map: "idx_invoiceitems_invoice_date")
   @@index([product_id], map: "invoiceitems_product_fkey")
@@ -174,7 +172,6 @@ model Purchase {
   id                       Int             @id @default(autoincrement())
   invoice_no               Int
   bill_reference           String?         @db.VarChar(255)
-  staff_details            String?         @db.VarChar(255)
   vendor_id                Int?
   items_total              Float?
   freight                  Float?
@@ -204,6 +201,7 @@ model Purchase {
   staff_id                 Int?
   staff                    staff?          @relation(fields: [staff_id], references: [id])
   vendor                   vendor_details? @relation(fields: [vendor_id], references: [id])
+  purchase_returns         purchase_returns[]
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
   @@index([payment_status], map: "idx_purchase_payment_status")
@@ -227,12 +225,12 @@ model Purchaseitems {
   hsn             String?         @db.VarChar(50)
   part            String?         @db.VarChar(100)
   qty             Float?
-  unit            Int? // @deprecated - not used for products
   rate            Float?
   subtotal        Float
   fy              Int
   invoice_date    Int
   vendor          vendor_details? @relation(fields: [vendor_id], references: [id])
+  purchase_return_items purchase_return_items[]
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
   @@index([vendor_id], map: "purchase_items_vendor_id_fkey")
@@ -375,6 +373,7 @@ model invoice_itemsx {
   invoice_date    Int
   fy              Int
   product         Product @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
+  salex_return_items salex_return_items[]
 
   @@index([invoice_date], map: "idx_invoice_itemsx_invoice_date")
   @@index([product_id], map: "invoiceitemsx_product_fkey")
@@ -412,6 +411,7 @@ model invoicex {
   packing_forwarding_total Float?    // Total packing/forwarding amount
   mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
   staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
+  salex_returns            salex_returns[]
 
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")
@@ -608,4 +608,166 @@ model mechanic {
   @@index([phone], map: "idx_mechanic_phone")
   @@index([status], map: "idx_mechanic_status")
   @@map("mechanic")
+}
+
+// Return Management System Tables
+
+// Shared return reasons catalog
+model return_reasons {
+  id           Int      @id @default(autoincrement())
+  reason_name  String   @db.VarChar(255) // "Damaged", "Wrong Item", "Customer Dissatisfaction"
+  type         String   @db.VarChar(20)  // 'sale', 'purchase'
+  status       String   @default("Active") @db.VarChar(20)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  sale_return_items     sale_return_items[]
+  purchase_return_items purchase_return_items[]
+  salex_return_items    salex_return_items[]
+
+  @@index([type], map: "idx_return_reasons_type")
+  @@map("return_reasons")
+}
+
+// Refund/payment processing for all return types
+model return_transactions {
+  id               Int      @id @default(autoincrement())
+  return_id        Int      // References specific return record
+  return_type      String   @db.VarChar(20) // 'sale', 'purchase', 'salex'
+  amount           Float
+  payment_mode     Int      // 1=Cash, 2=Bank
+  transaction_date String   @db.VarChar(30)
+  status           String   @default("Pending") @db.VarChar(20) // Pending, Processing, Completed, Failed
+  notes            String?  @db.VarChar(255)
+  fy               Int
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([return_type, return_id], map: "idx_return_transactions_return")
+  @@index([status], map: "idx_return_transactions_status")
+  @@map("return_transactions")
+}
+
+// Sale Return Tables (References Invoice System)
+model sale_returns {
+  id             Int      @id @default(autoincrement())
+  invoice_id     Int      // FK to Invoice
+  return_date    Int      // Unix timestamp (matches Invoice format)
+  total_amount   Float
+  total_tax      Float
+  status         String   @default("Pending") @db.VarChar(20) // Pending, Approved, Processed, Cancelled
+  notes          String?  @db.Text
+  fy             Int
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  invoice        Invoice  @relation(fields: [invoice_id], references: [id], map: "sale_returns_invoice_fkey")
+  items          sale_return_items[]
+
+  @@index([invoice_id], map: "sale_returns_invoice_fkey")
+  @@index([status], map: "idx_sale_returns_status")
+  @@index([fy, return_date], map: "idx_sale_returns_fy_date")
+  @@map("sale_returns")
+}
+
+model sale_return_items {
+  id                 Int      @id @default(autoincrement())
+  sale_return_id     Int      // FK to sale_returns
+  invoice_item_id    Int      // FK to Invoiceitems
+  return_qty         Float
+  return_reason_id   Int      // FK to return_reasons
+  unit_price         Float
+  tax_amount         Float
+  notes              String?  @db.VarChar(255)
+
+  sale_return       sale_returns     @relation(fields: [sale_return_id], references: [id], map: "sale_return_items_return_fkey")
+  invoice_item      Invoiceitems    @relation(fields: [invoice_item_id], references: [id], map: "sale_return_items_invoice_item_fkey")
+  reason            return_reasons  @relation(fields: [return_reason_id], references: [id], map: "sale_return_items_reason_fkey")
+
+  @@index([sale_return_id], map: "sale_return_items_return_fkey")
+  @@index([invoice_item_id], map: "sale_return_items_invoice_item_fkey")
+  @@index([return_reason_id], map: "sale_return_items_reason_fkey")
+  @@map("sale_return_items")
+}
+
+// Purchase Return Tables (References Purchase System)
+model purchase_returns {
+  id             Int      @id @default(autoincrement())
+  purchase_id    Int      // FK to Purchase
+  return_date    String   @db.VarChar(30) // String date (matches Purchase format)
+  total_amount   Float
+  total_tax      Float
+  status         String   @default("Pending") @db.VarChar(20)
+  notes          String?  @db.Text
+  fy             Int
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  purchase       Purchase @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
+  items          purchase_return_items[]
+
+  @@index([purchase_id], map: "purchase_returns_purchase_fkey")
+  @@index([status], map: "idx_purchase_returns_status")
+  @@index([fy], map: "idx_purchase_returns_fy")
+  @@map("purchase_returns")
+}
+
+model purchase_return_items {
+  id                    Int      @id @default(autoincrement())
+  purchase_return_id    Int      // FK to purchase_returns
+  purchase_item_id      Int      // FK to Purchaseitems
+  return_qty            Float
+  return_reason_id      Int      // FK to return_reasons
+  unit_price            Float
+  tax_amount            Float
+  notes                 String?  @db.VarChar(255)
+
+  purchase_return      purchase_returns @relation(fields: [purchase_return_id], references: [id], map: "purchase_return_items_return_fkey")
+  purchase_item        Purchaseitems   @relation(fields: [purchase_item_id], references: [id], map: "purchase_return_items_purchase_item_fkey")
+  reason               return_reasons  @relation(fields: [return_reason_id], references: [id], map: "purchase_return_items_reason_fkey")
+
+  @@index([purchase_return_id], map: "purchase_return_items_return_fkey")
+  @@index([purchase_item_id], map: "purchase_return_items_purchase_item_fkey")
+  @@index([return_reason_id], map: "purchase_return_items_reason_fkey")
+  @@map("purchase_return_items")
+}
+
+// Salex Return Tables (References Invoicex System)
+model salex_returns {
+  id             Int      @id @default(autoincrement())
+  invoicex_id    Int      // FK to invoicex
+  return_date    Int      // Unix timestamp (matches invoicex format)
+  total_amount   Float
+  status         String   @default("Pending") @db.VarChar(20)
+  notes          String?  @db.Text
+  fy             Int
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  invoicex       invoicex @relation(fields: [invoicex_id], references: [id], map: "salex_returns_invoicex_fkey")
+  items          salex_return_items[]
+
+  @@index([invoicex_id], map: "salex_returns_invoicex_fkey")
+  @@index([status], map: "idx_salex_returns_status")
+  @@index([fy, return_date], map: "idx_salex_returns_fy_date")
+  @@map("salex_returns")
+}
+
+model salex_return_items {
+  id                 Int      @id @default(autoincrement())
+  salex_return_id    Int      // FK to salex_returns
+  invoice_itemx_id   Int      // FK to invoice_itemsx
+  return_qty         Float
+  return_reason_id   Int      // FK to return_reasons
+  unit_price         Float
+  notes              String?  @db.VarChar(255)
+
+  salex_return      salex_returns    @relation(fields: [salex_return_id], references: [id], map: "salex_return_items_return_fkey")
+  invoice_itemx     invoice_itemsx   @relation(fields: [invoice_itemx_id], references: [id], map: "salex_return_items_invoice_itemx_fkey")
+  reason            return_reasons   @relation(fields: [return_reason_id], references: [id], map: "salex_return_items_reason_fkey")
+
+  @@index([salex_return_id], map: "salex_return_items_return_fkey")
+  @@index([invoice_itemx_id], map: "salex_return_items_invoice_itemx_fkey")
+  @@index([return_reason_id], map: "salex_return_items_reason_fkey")
+  @@map("salex_return_items")
 }

@@ -46,7 +46,8 @@ interface Product {
   product_category_id?: number;
   product_subcategory_id?: number;
   car_model_ids?: string;
-  company?: string;
+  company?: string; // Keep for backward compatibility
+  company_id?: number; // New field for company ID
   pic?: string;
   part_no?: string;
   min_stock?: number;
@@ -190,7 +191,7 @@ export default function InvoiceCCreate() {
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
     const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company || 'COMPANY';
+    const companyName = filterOptions.companies.find(comp => comp.id.toString() === (product.company_id || product.company)?.toString())?.name || product.company || 'COMPANY';
 
     // If no specific car model is selected, show base product name
     if (selectedCarModelIds.length === 0) {
@@ -231,7 +232,7 @@ export default function InvoiceCCreate() {
       category: product.product_category_id ? product.product_category_id.toString() : '',
       subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
       carModels: [], // Initially unselected
-      company: product.company || '',
+      company: product.company_id ? product.company_id.toString() : '',
       partNo: product.part_no || ''
     }));
 
@@ -242,7 +243,7 @@ export default function InvoiceCCreate() {
         category: product.product_category_id,
         subcategory: product.product_subcategory_id,
         carModels: [], // unselected
-        company: product.company
+        company: product.company_id
       }
     });
   };
@@ -904,7 +905,7 @@ export default function InvoiceCCreate() {
       category_name: product.category_name || '',
       subcategory_id: product.product_subcategory_id || 0,
       subcategory_name: product.subcategory_name || '',
-      company_id: product.company ? parseInt(product.company) : 0,
+      company_id: product.company_id || (product.company ? parseInt(product.company) : 0),
       company_name: filterOptions.companies.find(c => c.id.toString() === product.company)?.name || '',
       part_number: product.part_no || '',
       qty: qty,

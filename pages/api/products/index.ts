@@ -42,13 +42,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         const searchTerm = (search as string).trim()
         where.OR = [
           { product_name: { contains: searchTerm, mode: 'insensitive' } },
-          { part_no: { contains: searchTerm, mode: 'insensitive' } },
-          { company: { contains: searchTerm, mode: 'insensitive' } }
+          { part_no: { contains: searchTerm, mode: 'insensitive' } }
         ]
       }
 
     if (category && category !== '') {
-      where.product_category = parseInt(category as string)
+      where.product_category_id = parseInt(category as string)
     }
 
     if (lowStock === 'true') {
@@ -156,7 +155,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       product_category_id,
       product_subcategory_id,
       car_model_ids,
-      company,
+      company_id,
       part_no,
       min_stock,
       opening_stock,
@@ -195,9 +194,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Validate company FK if provided (integer input expected)
-    if (company && !isNaN(parseInt(company))) {
+    if (company_id && !isNaN(parseInt(company_id))) {
       const companyExists = await prisma.product_company.findUnique({
-        where: { id: parseInt(company) }
+        where: { id: parseInt(company_id) }
       });
       if (!companyExists) {
         return res.status(400).json({ message: 'Invalid company selected' })
@@ -238,7 +237,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       product_category_id: product_category_id ? parseInt(product_category_id) : null,
       product_subcategory_id: product_subcategory_id ? parseInt(product_subcategory_id) : null,
       car_model_ids: car_model_ids || null, // Comma-separated car model IDs
-      company: company ? company.toString() : null, // Convert to string for schema
+      company_id: company_id ? parseInt(company_id) : null, // Foreign key to product_company
       part_no: part_no || null,
       min_stock: min_stock ? parseInt(min_stock) : null,
       stock: stock ? parseInt(stock) : null,
@@ -268,12 +267,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: productData,
     })
 
-    res.status(201).json(product)
+    res.status(201).json({
+      status: "success",
+      message: "Product created successfully"
+    })
   } catch (error) {
     console.error('❌ Product creation error:', error)
     res.status(500).json({
-      message: 'Failed to create product',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      status: "failure",
+      message: 'Failed to create product'
     })
   }
 }

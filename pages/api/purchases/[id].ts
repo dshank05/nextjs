@@ -104,27 +104,17 @@ export default async function handler(
           });
         }
 
-        const enhancedPurchase = {
-          ...updatedPurchase,
-          payment_status: updatedPurchase.payment_status, // Use Prisma 'payment_status' field directly
-          // Remove vendor details from PUT response - send vendor_id instead
-          // vendor_name: vendorData?.vendor_name || updatedPurchase.bill_reference || 'Unknown Vendor',
-          // vendor_address: vendorData?.address || null,
-          // vendor_gstin: vendorData?.tax_id || null,
-          items: purchaseItems,
-          formattedDate: updatedPurchase.invoice_date,
-          bill_reference: updatedPurchase.bill_reference,
-          staff_details: updatedPurchase.staff_details,
-          descriptions: updatedPurchase.descriptions,
-          // contact_number: vendorData?.contact_no || null,
-          // email_id: vendorData?.email || null
-        }
-
-        res.status(200).json(enhancedPurchase)
+        res.status(200).json({
+          status: "success",
+          message: "Purchase updated successfully"
+        })
 
       } catch (error) {
         console.error('Update purchase error:', error)
-        res.status(500).json({ message: 'Failed to update purchase', error: error instanceof Error ? error.message : 'Unknown error' })
+        res.status(500).json({
+          status: "failure",
+          message: 'Failed to update purchase'
+        })
       }
       break
 

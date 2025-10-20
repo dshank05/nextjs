@@ -109,7 +109,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json(gstRate)
+    res.status(201).json({
+      status: "success",
+      message: "GST rate created successfully"
+    })
   } catch (error) {
     console.error('GST rate creation error:', error)
     res.status(500).json({
@@ -140,7 +143,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         where: { id: parseInt(id) },
         data: { status }
       })
-      return res.status(200).json(updatedRate)
+      return res.status(200).json({
+        status: "success",
+        message: "GST rate updated successfully"
+      })
     }
 
     // Full update validation - accept snake_case field names like the frontend sends
@@ -181,7 +187,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       data: updateData
     })
 
-    res.status(200).json(updatedRate)
+    res.status(200).json({
+      status: "success",
+      message: "GST rate updated successfully"
+    })
   } catch (error) {
     console.error('GST rate update error:', error)
     res.status(500).json({

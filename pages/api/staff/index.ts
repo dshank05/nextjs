@@ -82,12 +82,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: staffData,
     })
 
-    res.status(201).json(staff)
+    res.status(201).json({
+      status: "success",
+      message: "Staff member created successfully"
+    })
   } catch (error) {
     console.error('Create staff error:', error)
     res.status(500).json({
-      message: 'Failed to create staff member',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      status: "failure",
+      message: 'Failed to create staff member'
     })
   }
 }

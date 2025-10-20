@@ -108,11 +108,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
     res.status(201).json({
-      message: 'State created successfully',
-      state: {
-        id: state.id.toString(),
-        state_name: state.state_name
-      }
+      status: "success",
+      message: "State created successfully"
     })
   } catch (error) {
     console.error('State creation error:', error)

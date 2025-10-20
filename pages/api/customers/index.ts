@@ -38,11 +38,8 @@ export default async function handler(
       });
 
       res.status(201).json({
-        message: 'Customer created successfully',
-        customer: {
-          id: customer.id.toString(),
-          ...customerData
-        }
+        status: "success",
+        message: "Customer created successfully"
       });
     } catch (error) {
       console.error('Customer creation error:', error);

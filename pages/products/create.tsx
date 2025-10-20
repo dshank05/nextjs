@@ -10,7 +10,7 @@ interface ProductFormData {
   product_category: string;
   product_subcategory: string;
   car_models: string[]; // Changed to array for multi-select
-  company: string;
+  company_id: string;
   part_no: string;
   min_stock: string;
   opening_stock: string;
@@ -53,7 +53,7 @@ export default function ProductCreate() {
     product_category: '',
     product_subcategory: '',
     car_models: [],
-    company: '',
+    company_id: '',
     part_no: '',
     min_stock: '',
     opening_stock: '',
@@ -283,7 +283,7 @@ export default function ProductCreate() {
           product_category: product.product_category_id?.toString() || '',
           product_subcategory: product.product_subcategory_id?.toString() || '',
           car_models: product.car_model_ids ? product.car_model_ids.split(',').map((id: string) => id.trim()) : [],
-          company: product.company?.toString() || '',
+          company_id: product.company_id?.toString() || '',
           part_no: product.part_no || '',
           min_stock: product.min_stock?.toString() || '',
           opening_stock: product.opening_stock?.toString() || '',
@@ -313,7 +313,7 @@ export default function ProductCreate() {
   const generateProductDisplay = () => {
     const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
     const subcategory = subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
-    const company = filterOptions.companies.find(c => c.id.toString() === formData.company)?.name || '';
+    const company = filterOptions.companies.find(c => c.id.toString() === formData.company_id)?.name || '';
 
     // Get first selected car model name
     const firstCarModelId = formData.car_models.length > 0 ? formData.car_models[0] : '';
@@ -338,8 +338,8 @@ export default function ProductCreate() {
     if (!formData.product_category) {
       newErrors.product_category = 'Category is required';
     }
-    if (!formData.company) {
-      newErrors.company = 'Company is required';
+    if (!formData.company_id) {
+      newErrors.company_id = 'Company is required';
     }
     if (!formData.warehouse) {
       newErrors.warehouse = 'Warehouse is required';
@@ -370,14 +370,14 @@ export default function ProductCreate() {
       // Generate display name first
       const displayName = generateProductDisplay();
 
-    
+
       // Use foreign key IDs instead of names
       const submitData = {
         product_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
         car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
-        company: formData.company ? parseInt(formData.company) : null, // Company should be FK to product_company table
+        company_id: formData.company_id ? parseInt(formData.company_id) : null, // Company should be FK to product_company table
         part_no: formData.part_no || null,
         min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
         opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
@@ -428,8 +428,9 @@ export default function ProductCreate() {
     } catch (error) {
       console.error('Network error:', error);
       showSnackbar('error', 'Network error occurred');
+      setShowConfirmModal(false); // Close modal on network error
     } finally {
-      setLoading(false);
+      setIsSaving(false); // Reset loading state regardless of success/failure
     }
   };
 
@@ -532,8 +533,8 @@ export default function ProductCreate() {
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
               <select
-                value={formData.company}
-                onChange={(e) => handleInputChange('company', e.target.value)}
+                value={formData.company_id}
+                onChange={(e) => handleInputChange('company_id', e.target.value)}
                 className="select w-full"
               >
                 <option value="">Select Company</option>
@@ -541,7 +542,7 @@ export default function ProductCreate() {
                   <option key={comp.id} value={comp.id}>{comp.name}</option>
                 ))}
               </select>
-              {errors.company && <p className="text-red-400 text-xs mt-1">{errors.company}</p>}
+              {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
             </div>
           </div>
 

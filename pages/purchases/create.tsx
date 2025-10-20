@@ -22,6 +22,7 @@ interface Vendor {
 }
 
 interface Product {
+  company_id?: number;
   id: number;
   product_name: string;
   display_name?: string;
@@ -134,6 +135,7 @@ export default function PurchaseCreate() {
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
+  const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -317,7 +319,7 @@ export default function PurchaseCreate() {
       ? filterOptions.subcategories.find(sub => sub.id === product.product_subcategory_id)?.name || ''
       : '';
 
-    const companyId = product.company ? parseInt(product.company) : 0;
+    const companyId = product.company_id || 0;
     const companyName = companyId > 0
       ? filterOptions.companies.find(comp => comp.id === companyId)?.name || ''
       : '';
@@ -446,10 +448,10 @@ export default function PurchaseCreate() {
       return;
     }
 
-    // In edit mode, only recalculate if tax fields are empty (first load) or if user has modified products
-    // Don't overwrite existing tax values from database during initial edit load
-    if (isEditMode && (formData.total_cgst || formData.total_sgst || formData.total_igst)) {
-      // Skip recalculation in edit mode if tax fields already have database values
+    // In edit mode, preserve database tax values during initial load
+    // Only recalculate when user modifies products after initial data loading
+    if (isEditMode && !isInitialDataLoaded) {
+      // Skip recalculation during initial edit mode data loading
       return;
     }
 
@@ -465,7 +467,7 @@ export default function PurchaseCreate() {
       total_sgst: totalSgst.toFixed(2),
       total_igst: totalIgst.toFixed(2)
     }));
-  }, [selectedProducts, isEditMode, formData.total_cgst, formData.total_sgst, formData.total_igst]);
+  }, [selectedProducts, isEditMode, isInitialDataLoaded]);
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -577,7 +579,7 @@ export default function PurchaseCreate() {
       return new Date(dateValue * 1000).toISOString().split('T')[0];
     };
 
-    // Prefill form data
+    // Prefill form data - preserve tax values from database
     setFormData({
       invoice_number: purchase.invoice_no?.toString() || '',
       bill_reference: purchase.bill_reference || '',
@@ -678,6 +680,9 @@ export default function PurchaseCreate() {
 
       setSelectedProducts(convertedItems);
     }
+
+    // Mark initial data loading as complete
+    setIsInitialDataLoaded(true);
   };
 
   const fetchPurchaseForEdit = async (purchaseId: number) => {
@@ -848,9 +853,10 @@ export default function PurchaseCreate() {
           const convertedItems: PurchaseItem[] = await convertItemsWithNames(purchase.items);
 
           setSelectedProducts(convertedItems);
-
-
         }
+
+        // Mark initial data loading as complete
+        setIsInitialDataLoaded(true);
       } else {
         showSnackbar('error', 'Failed to load purchase data. Please try again.');
       }

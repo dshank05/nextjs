@@ -27,7 +27,20 @@ interface Product {
   mrp?: string;
   discount?: string;
   sale_price?: string;
+  opening_rate?: number;
   is_active?: boolean;
+}
+
+interface TransactionRow {
+  sn: number;
+  invoice_number?: string;
+  voucher_number?: string;
+  vendor?: string;
+  customer?: string;
+  qty: number;
+  rate: number;
+  amount: number;
+  date: string;
 }
 
 export default function ProductView() {
@@ -39,9 +52,17 @@ export default function ProductView() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  // Transaction data state
+  const [purchases, setPurchases] = useState<TransactionRow[]>([]);
+  const [sales, setSales] = useState<TransactionRow[]>([]);
+  const [salex, setSalex] = useState<TransactionRow[]>([]);
+  const [saleReturns, setSaleReturns] = useState<TransactionRow[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<TransactionRow[]>([]);
+
   useEffect(() => {
     if (id) {
       fetchProduct();
+      fetchTransactionData();
     }
   }, [id]);
 
@@ -56,6 +77,36 @@ export default function ProductView() {
       console.error('Error fetching product:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTransactionData = async () => {
+    if (!id) return;
+
+    try {
+      const endpoints = [
+        { key: 'purchases', endpoint: 'purchases' },
+        { key: 'sales', endpoint: 'sales' },
+        { key: 'salex', endpoint: 'salex' },
+        { key: 'saleReturns', endpoint: 'sale-returns' },
+        { key: 'purchaseReturns', endpoint: 'purchase-returns' }
+      ];
+
+      const responses = await Promise.all(
+        endpoints.map(({ endpoint }) =>
+          fetch(`/api/products/${id}/${endpoint}`)
+            .then(res => res.ok ? res.json() : [])
+            .catch(() => [])
+        )
+      );
+
+      setPurchases(responses[0] || []);
+      setSales(responses[1] || []);
+      setSalex(responses[2] || []);
+      setSaleReturns(responses[3] || []);
+      setPurchaseReturns(responses[4] || []);
+    } catch (error) {
+      console.error('Error fetching transaction data:', error);
     }
   };
 
@@ -219,6 +270,10 @@ export default function ProductView() {
             <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🛒 Sales & Pricing</h3>
             <div className="space-y-3">
               <div className="flex justify-between">
+                <span className="text-slate-400">Opening Rate:</span>
+                <span className="text-white font-medium">₹{product.opening_rate || '0.00'}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-400">MRP:</span>
                 <span className="text-white font-medium">₹{product.mrp || '0.00'}</span>
               </div>
@@ -312,51 +367,23 @@ export default function ProductView() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>1</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>4</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>5</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
+                {purchases.length > 0 ? purchases.map((purchase, index) => (
+                  <tr key={index}>
+                    <td>{purchase.sn}</td>
+                    <td>{purchase.invoice_number || '-'}</td>
+                    <td>{purchase.vendor || '-'}</td>
+                    <td>{purchase.qty}</td>
+                    <td>₹{purchase.rate}</td>
+                    <td>₹{purchase.amount}</td>
+                    <td>{purchase.date}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-8">
+                      No purchase records found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -379,51 +406,23 @@ export default function ProductView() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>1</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>4</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>5</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
+                {sales.length > 0 ? sales.map((sale, index) => (
+                  <tr key={index}>
+                    <td>{sale.sn}</td>
+                    <td>{sale.invoice_number || '-'}</td>
+                    <td>{sale.customer || '-'}</td>
+                    <td>{sale.qty}</td>
+                    <td>₹{sale.rate}</td>
+                    <td>₹{sale.amount}</td>
+                    <td>{sale.date}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-8">
+                      No sales records found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -446,51 +445,23 @@ export default function ProductView() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>1</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>4</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>5</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
+                {salex.length > 0 ? salex.map((salexItem, index) => (
+                  <tr key={index}>
+                    <td>{salexItem.sn}</td>
+                    <td>{salexItem.invoice_number || '-'}</td>
+                    <td>{salexItem.customer || '-'}</td>
+                    <td>{salexItem.qty}</td>
+                    <td>₹{salexItem.rate}</td>
+                    <td>₹{salexItem.amount}</td>
+                    <td>{salexItem.date}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-8">
+                      No salex records found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -513,51 +484,23 @@ export default function ProductView() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>1</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>2</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>3</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>4</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
-                <tr>
-                  <td>5</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
+                {saleReturns.length > 0 ? saleReturns.map((saleReturn, index) => (
+                  <tr key={index}>
+                    <td>{saleReturn.sn}</td>
+                    <td>{saleReturn.voucher_number || '-'}</td>
+                    <td>{saleReturn.customer || '-'}</td>
+                    <td>{saleReturn.qty}</td>
+                    <td>₹{saleReturn.rate}</td>
+                    <td>₹{saleReturn.amount}</td>
+                    <td>{saleReturn.date}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-8">
+                      No sale return records found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -580,15 +523,23 @@ export default function ProductView() {
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td>1</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                  <td className="text-slate-400">-</td>
-                </tr>
+                {purchaseReturns.length > 0 ? purchaseReturns.map((purchaseReturn, index) => (
+                  <tr key={index}>
+                    <td>{purchaseReturn.sn}</td>
+                    <td>{purchaseReturn.voucher_number || '-'}</td>
+                    <td>{purchaseReturn.vendor || '-'}</td>
+                    <td>{purchaseReturn.qty}</td>
+                    <td>₹{purchaseReturn.rate}</td>
+                    <td>₹{purchaseReturn.amount}</td>
+                    <td>{purchaseReturn.date}</td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={7} className="text-center text-slate-400 py-8">
+                      No purchase return records found
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

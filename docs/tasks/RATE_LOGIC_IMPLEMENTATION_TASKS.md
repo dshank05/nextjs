@@ -153,16 +153,18 @@ interface ProductRates {
   latest_purchase_rate: number; // Latest purchase - auto-updated, reference only
   mrp: number;                // Manual MRP - selling ceiling
   display_rate: number;       // opening_rate || latest_purchase_rate || 0
-  calculated_selling_price: number; // opening_rate + margin - discount
+  sale_price: number;         // (MRP || latest_purchase_rate) + margin - discount
 }
 ```
 
 ### Business Rules
 - Display rate defaults to original price for stability
 - Latest purchase rate tracks actual costs for analysis
-- Selling prices calculated from original price + margin - discount
+- Selling prices calculated as: `(latest_purchase_rate || MRP || 0) + margin - discount`
+- Initially: MRP + margin - discount (when no purchases exist)
+- After purchases: latest_purchase_rate + margin - discount (auto-updated when purchases are made)
 - All rates must be > 0 for active products
-- MRP acts as ceiling but selling price based on original
+- MRP acts as ceiling but selling price based on latest purchase cost
 
 ### API Comment Standards
 ```typescript

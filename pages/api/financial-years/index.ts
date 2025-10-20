@@ -111,11 +111,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
     res.status(201).json({
-      message: 'Financial year created successfully',
-      financialYear: {
-        id: financialYear.id.toString(),
-        fy: financialYear.fy
-      }
+      status: "success",
+      message: "Financial year created successfully"
     })
   } catch (error) {
     console.error('Financial year creation error:', error)

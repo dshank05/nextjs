@@ -54,6 +54,14 @@ interface Pagination {
   totalPages: number;
 }
 
+interface CustomAction {
+  label: string;
+  icon: ReactNode;
+  onClick: (transaction: Transaction) => void;
+  className?: string;
+  title?: string;
+}
+
 interface TransactionTableProps {
   transactions: Transaction[];
   pagination: Pagination;
@@ -62,6 +70,8 @@ interface TransactionTableProps {
   onViewDetails: (transaction: Transaction) => void;
   onPrintDetails?: (transaction: Transaction) => void; // New optional callback for print action
   hideTypeColumn?: boolean; // New optional prop to hide type column
+  customActions?: CustomAction[]; // New optional prop for custom action buttons
+  allowedTransactionTypes?: string[]; // New optional prop to limit transaction types shown
 }
 
 type SortField = 'invoice_no' | 'customer_vendor_name' | 'total' | 'invoice_date' | 'status';
@@ -74,7 +84,8 @@ export const TransactionTable = ({
   onPageChange,
   onViewDetails,
   onPrintDetails,
-  hideTypeColumn = false
+  hideTypeColumn = false,
+  customActions = []
 }: TransactionTableProps) => {
   const [sortBy, setSortBy] = useState<SortField>('invoice_date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
@@ -296,6 +307,16 @@ export const TransactionTable = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
+                    {customActions.map((action, actionIndex) => (
+                      <button
+                        key={actionIndex}
+                        onClick={() => action.onClick(transaction)}
+                        title={action.title}
+                        className={`btn-icon ${action.className}`}
+                      >
+                        {action.icon}
+                      </button>
+                    ))}
                   </div>
                 </td>
               </tr>

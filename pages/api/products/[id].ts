@@ -5,18 +5,34 @@ import { prisma } from '../../../lib/db'
 async function enhanceProduct(product: any) {
   if (!product) return null
 
+  // Get latest purchase rate for this product
+  const latestPurchaseData = await prisma.purchaseitems.findFirst({
+    where: {
+      product_id: product.id,
+      rate: { gt: 0 } // Only consider valid rates > 0
+    },
+    select: {
+      rate: true,
+      invoice_date: true
+    },
+    orderBy: { invoice_date: 'desc' }
+  });
+
+  const latestPurchaseRate = latestPurchaseData?.rate || 0;
+
   // Get foreign key IDs using new relationships - handle comma-separated car models
   const categoryIds = product.product_category_id ? [product.product_category_id] : []
   const subcategoryIds = product.product_subcategory_id ? [product.product_subcategory_id] : []
   const carModelIds = product.car_model_ids ?
     product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter((id: any) => !isNaN(id))
     : []
-  const companyIds = product.company ? [parseInt(product.company)].filter(id => !isNaN(id)) : []
+  const companyIds = product.company_id ? [product.company_id] : []
   const warehouseIds = product.warehouse_id ? [product.warehouse_id] : []
   const rackIds = product.rack_id ? [product.rack_id] : []
+  const gstRateIds = product.hsn ? [product.hsn] : []
 
   // Batch fetch names using foreign key relationships
-  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, warehouseRecords, rackRecords] = await Promise.all([
+  const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, warehouseRecords, rackRecords, gstRateRecords] = await Promise.all([
     categoryIds.length > 0 ? prisma.product_category.findMany({
       where: { id: { in: categoryIds } },
       select: { id: true, category_name: true }
@@ -40,6 +56,10 @@ async function enhanceProduct(product: any) {
     rackIds.length > 0 ? prisma.warehouse_racks.findMany({
       where: { id: { in: rackIds } },
       select: { id: true, rack_number: true }
+    }) : Promise.resolve([]),
+    gstRateIds.length > 0 ? prisma.gst_tax_rate.findMany({
+      where: { hsn_code: { in: gstRateIds } },
+      select: { id: true, rate: true, hsn_code: true }
     }) : Promise.resolve([])
   ])
 
@@ -50,14 +70,16 @@ async function enhanceProduct(product: any) {
   const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]))
   const warehouseMap = new Map(warehouseRecords.map(wh => [wh.id, { name: wh.name, location: wh.location }]))
   const rackMap = new Map(rackRecords.map(rack => [rack.id, rack.rack_number]))
+  const gstRateMap = new Map(gstRateRecords.map(gst => [gst.hsn_code, gst.rate]))
 
   // Look up names using foreign key maps
   const categoryName = product.product_category_id ? categoryMap.get(product.product_category_id) || '' : ''
   const subcategoryName = product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : ''
-  const companyName = product.company ? companyMap.get(product.company) || '' : ''
+  const companyName = product.company_id ? companyMap.get(product.company_id.toString()) || '' : ''
   const warehouseData = product.warehouse_id ? warehouseMap.get(product.warehouse_id) : null
   const warehouseName = warehouseData ? `${warehouseData.name} - ${warehouseData.location}` : ''
   const rackNumber = product.rack_id ? rackMap.get(product.rack_id) || '' : ''
+  const gstRate = product.hsn ? gstRateMap.get(product.hsn) || 0 : 0
 
   // Handle comma-separated car model IDs
   let carModelNames: string[] = [];
@@ -78,6 +100,9 @@ async function enhanceProduct(product: any) {
     carModelsDisplay, // Separate car models field
     warehouse: warehouseName, // Warehouse name with location
     rack_number: rackNumber, // Rack number
+    sale_price: (latestPurchaseRate || product.mrp || 0) + (product.margin || 0) - (product.discount || 0), // Latest purchase rate if exists, else MRP + margin - discount
+    gst_rate: gstRate, // GST rate percentage
+    opening_rate: product.opening_rate || 0, // Opening rate field
   }
 }
 
