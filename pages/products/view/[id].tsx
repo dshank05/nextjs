@@ -110,20 +110,11 @@ export default function ProductView() {
     }
   };
 
-  const handleEditProduct = async () => {
-    try {
-      const response = await fetch(`/api/products/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        SessionStorageService.set('products', id.toString(), data);
-        router.push(`/products/create?edit=${id}`);
-      } else {
-        alert('Failed to prepare product for editing');
-      }
-    } catch (error) {
-      console.error('Error preparing product for edit:', error);
-      alert('Failed to prepare product for editing');
+  const handleEditProduct = () => {
+    if (product) {
+      SessionStorageService.set('products', id.toString(), product);
     }
+    router.push(`/products/create?edit=${id}`);
   };
 
   const toggleProductStatus = () => {

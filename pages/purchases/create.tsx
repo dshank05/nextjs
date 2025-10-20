@@ -249,6 +249,17 @@ export default function PurchaseCreate() {
     }
   }, [router.query]);
 
+  // Set selected vendor when vendors are loaded in edit mode
+  useEffect(() => {
+    if (isEditMode && selectedVendorId && vendors.length > 0) {
+      const vendor = vendors.find(v => v.id === selectedVendorId);
+      if (vendor) {
+        setSelectedVendor(vendor);
+        setVendorStateForTax(vendor.state || '');
+      }
+    }
+  }, [vendors, isEditMode, selectedVendorId]);
+
   // Fetch vendors, staff, and products on mount
   useEffect(() => {
     fetchVendors();
@@ -448,13 +459,6 @@ export default function PurchaseCreate() {
       return;
     }
 
-    // In edit mode, preserve database tax values during initial load
-    // Only recalculate when user modifies products after initial data loading
-    if (isEditMode && !isInitialDataLoaded) {
-      // Skip recalculation during initial edit mode data loading
-      return;
-    }
-
     // Calculate totals from current products
     const totalCgst = selectedProducts.reduce((sum, item) => sum + item.cgst, 0);
     const totalSgst = selectedProducts.reduce((sum, item) => sum + item.sgst, 0);
@@ -467,7 +471,7 @@ export default function PurchaseCreate() {
       total_sgst: totalSgst.toFixed(2),
       total_igst: totalIgst.toFixed(2)
     }));
-  }, [selectedProducts, isEditMode, isInitialDataLoaded]);
+  }, [selectedProducts]);
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -579,68 +583,44 @@ export default function PurchaseCreate() {
       return new Date(dateValue * 1000).toISOString().split('T')[0];
     };
 
-    // Prefill form data - preserve tax values from database
-    setFormData({
-      invoice_number: purchase.invoice_no?.toString() || '',
-      bill_reference: purchase.bill_reference || '',
-      staff_id: purchase.staff_id || null,
-      date: formatDateForInput(purchase.invoice_date),
-      vendor_name: purchase.vendor_name || '',
-      contact_number: purchase.contact_number || '',
-      email_id: purchase.email_id || '',
-      address: purchase.vendor_address || '',
-      address_2: '',
-      city: '',
-      state: purchase.vendor_gstin ? 'Uttar Pradesh' : '', // Approximate based on GSTIN
-      gst_number: purchase.vendor_gstin || '',
-      transport_name: purchase.transport || '',
-      vehicle_number: purchase.vehicle_number || '',
-      transport_cost: purchase.freight?.toString() || '',
-      bill: '',
-      tax: purchase.total_tax?.toString() || '',
-      descriptions: purchase.descriptions || '',
-      packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
-      packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
-      packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
-      tax_rate: purchase.taxrate?.toString() || '',
-      basic_value: purchase.total_taxable_value?.toString() || '',
-      total_cgst: purchase.total_cgst?.toString() || '',
-      total_sgst: purchase.total_sgst?.toString() || '',
-      total_igst: purchase.total_igst?.toString() || '',
-      notes: purchase.notes || '',
-      total_tax: purchase.total_tax?.toString() || '',
-      payment_status: purchase.status || 0,
-      payment_mode: purchase.payment_mode || 1,
-    });
+        // Prefill form data - preserve tax values from database
+        setFormData({
+          invoice_number: purchase.invoice_no?.toString() || '',
+          bill_reference: purchase.bill_reference || '',
+          staff_id: purchase.staff_id || null,
+          date: formatDateForInput(purchase.invoice_date),
+          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
+          contact_number: purchase.vendor?.contact_no || '',
+          email_id: purchase.vendor?.email || '',
+          address: purchase.vendor?.address || '',
+          address_2: purchase.vendor?.address_2 || '',
+          city: purchase.vendor?.city || '',
+          state: purchase.vendor?.state || '',
+          gst_number: purchase.vendor?.tax_id || '',
+          transport_name: purchase.transport || '',
+          vehicle_number: purchase.vehicle_number || '',
+          transport_cost: purchase.freight?.toString() || '',
+          bill: '',
+          tax: purchase.total_tax?.toString() || '',
+          descriptions: purchase.descriptions || '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
+          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
+          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
+          tax_rate: purchase.taxrate?.toString() || '',
+          basic_value: purchase.total_taxable_value?.toString() || '',
+          total_cgst: purchase.total_cgst?.toString() || '',
+          total_sgst: purchase.total_sgst?.toString() || '',
+          total_igst: purchase.total_igst?.toString() || '',
+          notes: purchase.notes || '',
+          total_tax: purchase.total_tax?.toString() || '',
+          payment_status: purchase.status || 0,
+          payment_mode: purchase.payment_mode || 1,
+        });
 
-    // Set vendor data
+    // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
     if (purchase.vendor_id) {
       setSelectedVendorId(purchase.vendor_id.toString());
       setVendorIdToSave(purchase.vendor_id);
-
-      // Find vendor in loaded vendors list, or create from cached data
-      let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
-
-      // If not found in loaded vendors, create from purchase data
-      if (!vendor && purchase.vendor_name) {
-        vendor = {
-          id: purchase.vendor_id.toString(),
-          vendor_name: purchase.vendor_name,
-          contact_no: purchase.contact_number || '',
-          email: purchase.email_id || '',
-          address: purchase.vendor_address || '',
-          address_2: '',
-          city: '',
-          state: purchase.vendor_gstin ? 'Uttar Pradesh' : '',
-          state_code: 0,
-          tax_id: purchase.vendor_gstin || ''
-        };
-      }
-
-      if (vendor) {
-        setSelectedVendor(vendor);
-        setVendorStateForTax(vendor.state || '');
-      }
     }
 
     // Convert purchase items to local format
@@ -712,14 +692,14 @@ export default function PurchaseCreate() {
           bill_reference: purchase.bill_reference || '',
           staff_id: purchase.staff_id || null,
           date: formatDateForInput(purchase.invoice_date),
-          vendor_name: purchase.vendor_name || '',
-          contact_number: purchase.contact_number || '',
-          email_id: purchase.email_id || '',
-          address: purchase.vendor_address || '',
-          address_2: '',
-          city: '',
-          state: purchase.vendor_gstin ? 'Uttar Pradesh' : '', // Approximate based on GSTIN
-          gst_number: purchase.vendor_gstin || '',
+          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference || 'Unknown Vendor',
+          contact_number: purchase.vendor?.contact_no || '',
+          email_id: purchase.vendor?.email || '',
+          address: purchase.vendor?.address || '',
+          address_2: purchase.vendor?.address_2 || '',
+          city: purchase.vendor?.city || '',
+          state: purchase.vendor?.state || '',
+          gst_number: purchase.vendor?.tax_id || '',
           transport_name: purchase.transport || '',
           vehicle_number: purchase.vehicle_number || '',
           transport_cost: purchase.freight?.toString() || '',
@@ -740,34 +720,10 @@ export default function PurchaseCreate() {
           payment_mode: purchase.payment_mode || 1,
         });
 
-        // Set vendor data - fetch from vendor table or use data from purchase API
+        // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
         if (purchase.vendor_id) {
           setSelectedVendorId(purchase.vendor_id.toString());
           setVendorIdToSave(purchase.vendor_id);
-
-          // Try to find vendor in already loaded vendors list, or create from purchase data
-          let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
-
-          // If not found in vendors list, create vendor object from purchase data
-          if (!vendor && purchase.vendor_name) {
-            vendor = {
-              id: purchase.vendor_id.toString(),
-              vendor_name: purchase.vendor_name,
-              contact_no: purchase.contact_number || '',
-              email: purchase.email_id || '',
-              address: purchase.vendor_address || '',
-              address_2: '',
-              city: '',
-              state: purchase.vendor_gstin ? 'Uttar Pradesh' : '',
-              state_code: 0,
-              tax_id: purchase.vendor_gstin || ''
-            };
-          }
-
-          if (vendor) {
-            setSelectedVendor(vendor);
-            setVendorStateForTax(vendor.state || '');
-          }
         }
 
         // Convert purchase items to local format - preserve existing calculations
@@ -1083,6 +1039,9 @@ export default function PurchaseCreate() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
+    if (editingRowId) {
+      newErrors.inlineEdit = 'Please save or cancel the inline edit before submitting';
+    }
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
@@ -2205,8 +2164,8 @@ export default function PurchaseCreate() {
                       className="select w-full"
                       required
                     >
-                      <option value="1">Cash</option>
-                      <option value="2">Bank</option>
+                      <option value="0">Cash</option>
+                      <option value="1">Bank</option>
                     </select>
                   </div>
                 </div>

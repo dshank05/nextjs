@@ -142,26 +142,17 @@ export default function InvoiceView() {
     }
   };
 
-  const handleEditInvoice = async () => {
-    try {
-      const response = await fetch(`/api/invoices/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        SessionStorageService.set('sales', id.toString(), {
-          invoice: data.invoice,
-          billingDetails: data.billingDetails,
-          shippingDetails: data.shippingDetails,
-          transportDetails: data.transportDetails,
-          invoiceItems: data.invoiceItems
-        });
-        router.push(`/sale/create?edit=${id}`);
-      } else {
-        alert('Failed to prepare invoice for editing');
-      }
-    } catch (error) {
-      console.error('Error preparing invoice for edit:', error);
-      alert('Failed to prepare invoice for editing');
+  const handleEditInvoice = () => {
+    if (invoice) {
+      SessionStorageService.set('sales', id.toString(), {
+        invoice,
+        billingDetails,
+        shippingDetails,
+        transportDetails,
+        invoiceItems
+      });
     }
+    router.push(`/sale/create?edit=${id}`);
   };
 
   if (loading) {
@@ -190,10 +181,8 @@ export default function InvoiceView() {
 
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
-      case 1: return 'Cash';
-      case 2:
-      case 3: return 'Bank';
-      case 4: return 'Credit';
+      case 0: return 'Cash';
+      case 1: return 'Bank';
       default: return 'N/A';
     }
   };

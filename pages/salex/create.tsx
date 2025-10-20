@@ -2066,8 +2066,8 @@ export default function InvoiceCCreate() {
                         className="select w-full"
                         required
                       >
-                        <option value="1">Cash</option>
-                        <option value="2">Bank</option>
+                        <option value="0">Cash</option>
+                        <option value="1">Bank</option>
                       </select>
                     </div>
                   </div>

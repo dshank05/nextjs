@@ -207,10 +207,8 @@ export const TransactionTable = ({
 
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
-      case 1: return 'Cash';
-      case 2:
-      case 3: return 'Bank';
-      case 4: return 'Credit';
+      case 0: return 'Cash';
+      case 1: return 'Bank';
       default: return 'N/A';
     }
   };

@@ -21,13 +21,32 @@ interface PurchaseItem {
   invoice_date: number | string;
 }
 
+interface Vendor {
+  id: string;
+  vendor_name: string;
+  contact_no?: string;
+  email?: string;
+  address?: string;
+  address_2?: string;
+  city?: string;
+  state?: string;
+  state_code?: number;
+  tax_id?: string;
+}
+
+interface Staff {
+  id: number;
+  name: string;
+  phone: string;
+  email?: string;
+  status: string;
+}
+
 interface Purchase {
+  transport_name?: string;
   id: number;
   invoice_no: number;
   select_vendor?: number;
-  vendor_name?: string;
-  vendor_address?: string;
-  vendor_gstin?: string;
   items_total: number;
   freight?: number;
   total_taxable_value: number;
@@ -48,10 +67,9 @@ interface Purchase {
   item_count?: number;
   formattedDate?: string;
   bill_reference?: string;
-  staff_details?: string;
   descriptions?: string;
-  contact_number?: string;
-  email_id?: string;
+  vendor?: Vendor | null;
+  staff?: Staff | null;
 }
 
 export default function PurchaseView() {
@@ -81,20 +99,11 @@ export default function PurchaseView() {
     }
   };
 
-  const handleEditPurchase = async () => {
-    try {
-      const response = await fetch(`/api/purchases/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        SessionStorageService.set('purchases', id.toString(), data.purchase || data);
-        router.push(`/purchases/create?edit=${id}`);
-      } else {
-        alert('Failed to prepare purchase for editing');
-      }
-    } catch (error) {
-      console.error('Error preparing purchase for edit:', error);
-      alert('Failed to prepare purchase for editing');
+  const handleEditPurchase = () => {
+    if (purchase) {
+      SessionStorageService.set('purchases', id.toString(), purchase);
     }
+    router.push(`/purchases/create?edit=${id}`);
   };
 
   if (loading) {
@@ -123,10 +132,8 @@ export default function PurchaseView() {
 
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
-      case 1: return 'Cash';
-      case 2:
-      case 3: return 'Bank';
-      case 4: return 'Credit';
+      case 0: return 'Cash';
+      case 1: return 'Bank';
       default: return 'N/A';
     }
   };
@@ -162,7 +169,7 @@ export default function PurchaseView() {
               <div className="text-6xl">🧾</div>
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Purchase Invoice #{purchase.invoice_no}</h3>
-            <p className="text-slate-400 text-sm mb-2">{purchase.vendor_name} • {formatDate(purchase.invoice_date)}</p>
+            <p className="text-slate-400 text-sm mb-2">{purchase.vendor?.vendor_name } • {formatDate(purchase.invoice_date)}</p>
             <div className="flex items-center gap-2 mt-2">{getStatusBadge(purchase.payment_status)}</div>
           </div>
 
@@ -170,7 +177,7 @@ export default function PurchaseView() {
           <div className="space-y-4">
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Vendor:</span>
-              <span className="text-white font-medium">{purchase.vendor_name || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vendor?.vendor_name }</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Invoice Number:</span>
@@ -182,11 +189,11 @@ export default function PurchaseView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Staff Details:</span>
-              <span className="text-white font-medium">{purchase.staff_details || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.staff?.name || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{purchase.contact_number || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vendor?.contact_no || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Items Total:</span>
@@ -242,19 +249,19 @@ export default function PurchaseView() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-slate-400">Vendor Name:</span>
-                <span className="text-white font-medium">{purchase.vendor_name || 'N/A'}</span>
+                <span className="text-white font-medium">{purchase.vendor?.vendor_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Contact:</span>
-                <span className="text-white font-medium">{purchase.contact_number || 'N/A'}</span>
+                <span className="text-white font-medium">{purchase.vendor?.contact_no || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">{purchase.email_id || 'N/A'}</span>
+                <span className="text-white font-medium">{purchase.vendor?.email || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">GSTIN:</span>
-                <span className="text-white font-medium">{purchase.vendor_gstin || 'N/A'}</span>
+                <span className="text-white font-medium">{purchase.vendor?.tax_id || 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -309,7 +316,7 @@ export default function PurchaseView() {
               <div>
                 <label className="block text-slate-400 text-sm mb-1">Transport Name:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {purchase.transport || 'No transport information available'}
+                  {purchase.transport_name || 'No transport information available'}
                 </div>
               </div>
               <div>

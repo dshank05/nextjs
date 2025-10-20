@@ -1372,8 +1372,8 @@ export default function InvoiceCreate() {
       newErrors.payment_status = `Payment status must be either Paid (1) or Unpaid (0), got: ${formData.payment_status}`;
       console.log('❌ INVALID PAYMENT STATUS');
     }
-    if (!formData.payment_mode || ![1, 2].includes(paymentModeNum)) {
-      newErrors.payment_mode = `Payment mode must be either Cash (1) or Bank (2), got: ${formData.payment_mode}`;
+    if (!formData.payment_mode || ![0, 1].includes(paymentModeNum)) {
+      newErrors.payment_mode = `Payment mode must be either Cash (0) or Bank (1), got: ${formData.payment_mode}`;
       console.log('❌ INVALID PAYMENT MODE');
     }
 
@@ -2558,8 +2558,8 @@ export default function InvoiceCreate() {
                         className="select w-full"
                         required
                       >
-                        <option value={1}>Cash</option>
-                        <option value={2}>Bank</option>
+                        <option value={0}>Cash</option>
+                        <option value={1}>Bank</option>
                       </select>
                     </div>
                   </div>

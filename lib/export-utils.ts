@@ -68,8 +68,8 @@ const getStatusText = (status?: number, type?: string): string => {
 // Helper function to get payment mode text (only Cash or Bank)
 const getPaymentModeText = (mode?: number): string => {
   switch (mode) {
-    case 1: return 'Cash';
-    case 2: return 'Bank';
+    case 0: return 'Cash';
+    case 1: return 'Bank';
     default: return 'N/A';
   }
 };

@@ -112,7 +112,7 @@ model Invoice {
   invoice_date             Int
   updated_at               String    @db.VarChar(100)
   payment_status           Int?      // Payment status: 0=Unpaid, 1=Paid
-  payment_mode             Int?      // Payment mode: 1=Cash, 2=Bank
+  payment_mode             Int?      // Payment mode: 0=Cash, 1=Bank
   fy                       Int
   staff_details            String?   @db.VarChar(255)
   staff_id                 Int?
@@ -635,7 +635,7 @@ model return_transactions {
   return_id        Int      // References specific return record
   return_type      String   @db.VarChar(20) // 'sale', 'purchase', 'salex'
   amount           Float
-  payment_mode     Int      // 1=Cash, 2=Bank
+  payment_mode     Int      // 0=Cash, 1=Bank
   transaction_date String   @db.VarChar(30)
   status           String   @default("Pending") @db.VarChar(20) // Pending, Processing, Completed, Failed
   notes            String?  @db.VarChar(255)

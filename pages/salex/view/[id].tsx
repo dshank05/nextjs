@@ -142,26 +142,17 @@ export default function InvoiceCView() {
     }
   };
 
-  const handleEditInvoice = async () => {
-    try {
-      const response = await fetch(`/api/salex/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        SessionStorageService.set('salex', id.toString(), {
-          invoice: data.invoice,
-          billingDetails: data.billingDetails,
-          shippingDetails: data.shippingDetails,
-          transportDetails: data.transportDetails,
-          invoiceItems: data.invoiceItems
-        });
-        router.push(`/salex/create?edit=${id}`);
-      } else {
-        alert('Failed to prepare invoice for editing');
-      }
-    } catch (error) {
-      console.error('Error preparing invoice for edit:', error);
-      alert('Failed to prepare invoice for editing');
+  const handleEditInvoice = () => {
+    if (invoice) {
+      SessionStorageService.set('salex', id.toString(), {
+        invoice,
+        billingDetails,
+        shippingDetails,
+        transportDetails,
+        invoiceItems
+      });
     }
+    router.push(`/salex/create?edit=${id}`);
   };
 
   if (loading) {
@@ -190,8 +181,9 @@ export default function InvoiceCView() {
 
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
-      case 1: return 'Cash';
-      case 2: return 'Bank';
+      case 0: return 'Cash';
+      case 1: return 'Bank';
+      default: return 'N/A';
     }
   };
 
