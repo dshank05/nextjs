@@ -47,8 +47,8 @@ export default async function handler(
           items: purchaseItems,
           formattedDate: purchase.invoice_date,
           bill_reference: purchase.bill_reference,
-          staff_details: purchase.staff_details,
-          descriptions: purchase.descriptions,
+          staff_details: null, // TODO: staff_details field removed from schema - set to null for backward compatibility
+          descriptions: purchase.descriptions || null, // Note: descriptions field may also be missing
           // contact_number: vendorData?.contact_no || null,
           // email_id: vendorData?.email || null
         }
@@ -70,9 +70,9 @@ export default async function handler(
 
         const {
           bill_reference,
-          staff_details,
+          // staff_details, // TODO: Field removed from schema
           notes,
-          descriptions,
+          // descriptions, // TODO: Field removed from schema
           payment_status,
           payment_mode,
           transport
@@ -82,9 +82,9 @@ export default async function handler(
           where: { id: purchaseId },
           data: {
             bill_reference: bill_reference || null,
-            staff_details: staff_details || null,
+            // staff_details: staff_details || null, // TODO: Field removed from schema
             notes: notes || null,
-            descriptions: descriptions || null,
+            // descriptions: descriptions || null, // TODO: Field removed from schema
             payment_status: payment_status ? parseInt(payment_status) : null,
             payment_mode: payment_mode ? parseInt(payment_mode) : null,
             transport: transport || null,
