@@ -316,9 +316,17 @@ export default function PurchaseReturnCreatePage() {
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0) {
       console.log('🔄 Converting raw purchase items to formatted items now that filters are available');
+      console.log('Raw items data:', rawInvoiceItems);
       const convertedItems: ReturnItem[] = rawInvoiceItems.map((item: any, index: number) => {
+        const originalQty = item.qty;
+        const processedQty = originalQty !== undefined && originalQty !== null ? originalQty : 0;
+
+        if (originalQty !== processedQty) {
+          console.warn(`⚠️ Qty changed from ${originalQty} to ${processedQty} for item:`, item.product_name);
+        }
+
         const itemObj: ReturnItem = {
-          id: (index + 1).toString(),
+          id: item.id?.toString(), // ✅ Use real database ID
           product_id: item.product_id || item.name_of_product || 1,
           product_name: item.product_name || item.name_of_product || '',
           car_model: item.model_id?.toString() || '',
@@ -326,7 +334,7 @@ export default function PurchaseReturnCreatePage() {
           sub_category: item.subcategory_id?.toString() || '',
           company: item.company_id?.toString() || '',
           part_number: item.part_number || item.part || '',
-          qty: item.qty || 1,
+          qty: processedQty,
           rate: item.rate || 0,
           gst_percentage: item.gst_percentage || item.gst_rate || 0,
           tax: item.tax || 0,
@@ -339,6 +347,8 @@ export default function PurchaseReturnCreatePage() {
           return_qty: 0, // Start with 0 (not returning)
           return_notes: ''
         };
+
+        console.log(`✅ Converted item ${index + 1}: ${itemObj.product_name} - Qty: ${itemObj.qty} (from ${originalQty}), DB ID: ${itemObj.id}`);
         return itemObj;
       });
 
@@ -368,7 +378,7 @@ export default function PurchaseReturnCreatePage() {
       gst_number: purchase.vendor_gstin || '',
       transport_name: purchase.transport || '',
       vehicle_number: purchase.vehicle_number || '',
-          transport_cost: purchase.freight?.toString() || '',
+      transport_cost: purchase.freight?.toString() || '',
       descriptions: purchase.descriptions || '',
       packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
       packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
@@ -515,21 +525,61 @@ export default function PurchaseReturnCreatePage() {
         const data = await response.json();
         const purchase = data.purchase || data;
 
-        const formatDateForInput = (dateValue: number | string) => {
-          if (typeof dateValue === 'string') {
-            if (/^\d+$/.test(dateValue)) {
-              const timestamp = parseInt(dateValue);
-              if (timestamp > 1000000000) {
-                return new Date(timestamp * 1000).toISOString().split('T')[0];
+        const formatDateForInput = (dateValue: number | string | null | undefined) => {
+          try {
+            if (!dateValue) {
+              console.warn('No date value provided, using current date');
+              return new Date().toISOString().split('T')[0];
+            }
+
+            if (typeof dateValue === 'string') {
+              // Handle date strings like "2025-01-15" or "2025-01-15T00:00:00.000Z"
+              if (dateValue.includes('-')) {
+                // If it has time component, split it off
+                if (dateValue.includes('T')) {
+                  return dateValue.split('T')[0];
+                }
+                // It's already in YYYY-MM-DD format
+                return dateValue;
+              }
+
+              // Handle Unix timestamp strings
+              if (/^\d+$/.test(dateValue)) {
+                const timestamp = parseInt(dateValue);
+                if (timestamp > 1000000000) { // Likely Unix timestamp
+                  return new Date(timestamp * 1000).toISOString().split('T')[0];
+                }
+              }
+
+              // Try parsing as general date string
+              const parsedDate = new Date(dateValue);
+              if (!isNaN(parsedDate.getTime())) {
+                return parsedDate.toISOString().split('T')[0];
+              }
+
+              console.warn('Could not parse date string:', dateValue);
+              return new Date().toISOString().split('T')[0];
+            }
+
+            // Handle numeric timestamps
+            if (typeof dateValue === 'number') {
+              if (dateValue > 1000000000) { // Unix timestamp in seconds
+                return new Date(dateValue * 1000).toISOString().split('T')[0];
+              } else if (dateValue > 1000000000000) { // Unix timestamp in milliseconds
+                return new Date(dateValue).toISOString().split('T')[0];
               }
             }
-            return new Date(dateValue).toISOString().split('T')[0];
+
+            console.warn('Unexpected date format:', typeof dateValue, dateValue);
+            return new Date().toISOString().split('T')[0];
+          } catch (error) {
+            console.error('Date formatting error:', error, 'for value:', dateValue);
+            return new Date().toISOString().split('T')[0]; // Fallback to today
           }
-          return new Date(dateValue * 1000).toISOString().split('T')[0];
         };
 
         setFormData({
-          invoice_number: purchase.invoice_no?.toString() || '',
+          invoice_number: purchase.invoice_number?.toString() || '',
           bill_reference: purchase.bill_reference || '',
           staff_id: purchase.staff_id || null,
           date: formatDateForInput(purchase.invoice_date),
@@ -544,10 +594,10 @@ export default function PurchaseReturnCreatePage() {
           transport_name: purchase.transport || '',
           vehicle_number: purchase.vehicle_number || '',
           transport_cost: purchase.freight?.toString() || '',
-      descriptions: purchase.descriptions || '',
-      packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
-      packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
-      packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
+          descriptions: purchase.descriptions || '',
+          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '',
+          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '',
+          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '',
           total_cgst: purchase.total_cgst?.toString() || '',
           total_sgst: purchase.total_sgst?.toString() || '',
           total_igst: purchase.total_igst?.toString() || '',
@@ -565,15 +615,15 @@ export default function PurchaseReturnCreatePage() {
           if (!vendor && purchase.vendor_name) {
             vendor = {
               id: purchase.vendor_id.toString(),
-              vendor_name: purchase.vendor_name,
-              contact_no: purchase.contact_number || '',
-              email: purchase.email_id || '',
-              address: purchase.vendor_address || '',
-              address_2: '',
-              city: '',
-              state: purchase.vendor_gstin ? 'Uttar Pradesh' : '',
-              state_code: 0,
-              tax_id: purchase.vendor_gstin || ''
+              vendor_name: purchase?.vendor?.vendor_name,
+              contact_no: purchase?.vendor?.contact_number || '',
+              email: purchase?.vendor?.email_id || '',
+              address: purchase?.vendor?.address || '',
+              address_2: purchase?.vendor?.address_2,
+              city:purchase?.vendor?.city,
+              state: purchase?.vendor?.state,
+              state_code: purchase?.vendor?.state_code,
+              tax_id: purchase?.vendor?.vendor_gstin || ''
             };
           }
 
@@ -584,7 +634,11 @@ export default function PurchaseReturnCreatePage() {
         }
 
         if (purchase.items && purchase.items.length > 0) {
-          console.log('Storing raw purchase items for conversion:', purchase.items);
+          console.log('🛒 Purchase items from API:', purchase.items.map(item => ({
+            product_name: item.product_name,
+            qty: item.qty,
+            rate: item.rate
+          })));
           setRawInvoiceItems(purchase.items);
         }
       } else {
@@ -598,20 +652,27 @@ export default function PurchaseReturnCreatePage() {
     }
   };
 
-  // Update return quantity
+  // Update return quantity with validation
   const updateReturnQuantity = (id: string, quantity: number) => {
     setSelectedProducts(prev =>
-      prev.map(item =>
-        item.id === id ? {
-          ...item,
-          return_qty: Math.min(Math.max(quantity, 0), item.qty),
-          cgst: (item.cgst / item.qty) * Math.min(Math.max(quantity, 0), item.qty),
-          sgst: (item.sgst / item.qty) * Math.min(Math.max(quantity, 0), item.qty),
-          igst: (item.igst / item.qty) * Math.min(Math.max(quantity, 0), item.qty),
-          tax: (item.tax / item.qty) * Math.min(Math.max(quantity, 0), item.qty),
-          total: (item.total / item.qty) * Math.min(Math.max(quantity, 0), item.qty)
-        } : item
-      )
+      prev.map(currentItem => {
+        if (currentItem.id === id) {
+          // Ensure quantity doesn't exceed available quantity
+          const validatedQuantity = Math.max(0, Math.min(quantity, currentItem.qty)); // Max is item.qty
+
+        return {
+          ...currentItem,
+          return_qty: validatedQuantity,
+          cgst: currentItem.qty > 0 ? (currentItem.cgst / currentItem.qty) * validatedQuantity : 0,
+          sgst: currentItem.qty > 0 ? (currentItem.sgst / currentItem.qty) * validatedQuantity : 0,
+          igst: currentItem.qty > 0 ? (currentItem.igst / currentItem.qty) * validatedQuantity : 0,
+          tax: currentItem.qty > 0 ? (currentItem.tax / currentItem.qty) * validatedQuantity : 0,
+          total: currentItem.rate * validatedQuantity, // ✅ Fix: Unit price × return quantity
+          quantityError: quantity > currentItem.qty ? `Cannot return more than ${currentItem.qty} items` : ''
+        };
+        }
+        return currentItem;
+      })
     );
   };
 
@@ -668,7 +729,7 @@ export default function PurchaseReturnCreatePage() {
     try {
       const submitData = {
         purchase_id: editPurchaseId,
-        return_date: Math.floor(new Date(returnDate).getTime() / 1000),
+        return_date: returnDate, // ✅ Send string date instead of Unix timestamp
         total_amount: totalReturnAmount,
         total_tax: totalReturnTax,
         status: returnStatus,
@@ -730,69 +791,8 @@ export default function PurchaseReturnCreatePage() {
 
   return (
     <div className="space-y-6">
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Return Information */}
-        <div className="card">
-          <div className="p-6">
-            <h2 className="text-xl font-semibold text-slate-200 mb-6">Return Information</h2>
-
-            {/* Return Configuration */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">RETURN DATE *</label>
-                <input
-                  type="date"
-                  value={returnDate}
-                  onChange={(e) => setReturnDate(e.target.value)}
-                  className="input w-full"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">STATUS</label>
-                <select
-                  value={returnStatus}
-                  onChange={(e) => setReturnStatus(e.target.value)}
-                  className="select w-full"
-                >
-                  <option value="Pending">Pending</option>
-                  <option value="Approved">Approved</option>
-                  <option value="Processed">Processed</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">RETURN REASON</label>
-                <select
-                  value="" // Not storing at header level
-                  className="select w-full"
-                >
-                  <option value="" disabled>Select reason per item below</option>
-                  {returnReasons.map((reason) => (
-                    <option key={reason.id} value={reason.id}>
-                      {reason.reason_name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-slate-400 mt-1">Set reason for each item individually</p>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-300 mb-2">RETURN NOTES</label>
-              <textarea
-                value={returnNotes}
-                onChange={(e) => setReturnNotes(e.target.value)}
-                rows={3}
-                className="input w-full"
-                placeholder="Additional notes for the return"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Original Purchase Details */}
+      <form onSubmit={handleSubmit} className="space-y-0">
+        {/* Combined Purchase Details and Return Item Selection */}
         <div className="card">
           <div className="p-6">
             <h2 className="text-xl font-semibold text-slate-200 mb-6">Original Purchase Details</h2>
@@ -883,10 +883,7 @@ export default function PurchaseReturnCreatePage() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Return Item Selection */}
-        <div className="card">
           <div className="p-6">
             <h2 className="text-xl font-semibold text-slate-200 mb-6">Return Item Selection</h2>
 
@@ -1004,17 +1001,16 @@ export default function PurchaseReturnCreatePage() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Error Display */}
-        {errors.submit && (
-          <div className="bg-red-900 border border-red-700 rounded p-3">
-            <p className="text-red-200 text-sm">{errors.submit}</p>
-          </div>
-        )}
 
-        {/* Form Actions */}
-        <div className="card">
+          {/* Error Display */}
+          {errors.submit && (
+            <div className="bg-red-900 border border-red-700 rounded p-3">
+              <p className="text-red-200 text-sm">{errors.submit}</p>
+            </div>
+          )}
+
+
           <div className="p-6 flex justify-end space-x-3">
             <button
               type="button"

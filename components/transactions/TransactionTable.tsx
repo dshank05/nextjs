@@ -20,6 +20,7 @@ interface TransactionItem {
 }
 
 interface Transaction {
+  payment_status: number;
   id: number;
   invoice_no: number;
   type: 'sale' | 'salex' | 'purchase';
@@ -286,7 +287,7 @@ export const TransactionTable = ({
                 <td className="text-slate-300 font-semibold">₹{transaction.total.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(transaction.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(transaction.payment_mode)}</td>
-                <td>{getStatusBadge(transaction.status, transaction.type)}</td>
+                <td>{getStatusBadge(transaction.payment_status, transaction.type)}</td>
                 <td>
                   <div className="flex items-center space-x-2">
                     <Link

@@ -67,6 +67,7 @@ export default async function handler(
 
           // Transform items to POST structure
           items: purchaseItems.map(item => ({
+            id: item.id,  // ✅ CRITICAL FIX: Include real database ID
             product_id: item.product_id,
             product_name: item.name_of_product || 'Unknown Product',  // Use name_of_product as product_name
             category_id: item.category_id,

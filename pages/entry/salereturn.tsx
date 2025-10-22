@@ -416,7 +416,7 @@ export default function SaleReturnPage() {
         onPageChange={handlePageChange}
         onViewDetails={handleViewDetails}
         customActions={customActions}
-        hideTypeColumn={true}
+        hideTypeColumn={false}
       />
 
       {/* Confirmation Modal for Full Order Return */}

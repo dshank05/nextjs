@@ -92,7 +92,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
-    // Vendor filtering removed - vendor_id is stored directly
+    // Filter out fully returned purchases (return_status = 2)
+    where.return_status = { not: 2 }; // 0=none, 1=partial, 2=full (hide fully returned)
 
     // Get purchase invoices with related vendor data
     const [purchaseInvoices, total] = await Promise.all([
@@ -117,7 +118,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           payment_status: true,
           fy: true,
           transport: true,
-          vendor_id: true
+          vendor_id: true,
+          return_status: true // Include return status for client-side indicators
         },
         skip,
         take: limitNum,
@@ -406,7 +408,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         fy: financialYear,
         transport: transport_name || '',
         transport_name: transport_name,
-        vehicle_number: vehicle_number
+        vehicle_number: vehicle_number,
+        return_status: 0 // 0=none, 1=partial, 2=full - new purchases have no returns
         // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
         // taxrate: tax_rate || 0,
         // basic_value: basic_value || 0,

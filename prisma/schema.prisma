@@ -199,6 +199,7 @@ model Purchase {
   fy                       Int
   payment_status           Int?
   staff_id                 Int?
+  return_status            Int?            @default(0) // 0=none, 1=partial, 2=full
   staff                    staff?          @relation(fields: [staff_id], references: [id])
   vendor                   vendor_details? @relation(fields: [vendor_id], references: [id])
   purchase_returns         purchase_returns[]
