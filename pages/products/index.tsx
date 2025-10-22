@@ -38,6 +38,8 @@ export default function Products() {
   const [modelFilter, setModelFilter] = useState<string[]>([]); // NEW: car models filter array
   const [companyFilter, setCompanyFilter] = useState('');
   const [stockFilter, setStockFilter] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [filterOptions, setFilterOptions] = useState<{ categories: any[], subcategories: any[], companies: any[], models: any[] }>({ categories: [], subcategories: [], companies: [], models: [] }); // UPDATED: added models
 
 
@@ -60,7 +62,7 @@ export default function Products() {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm, categoryFilter, subcategoryFilter, modelFilter, companyFilter, stockFilter]) // ADDED: modelFilter
+  }, [debouncedSearchTerm, categoryFilter, subcategoryFilter, modelFilter, companyFilter, stockFilter, startDate, endDate]) // ADDED: startDate, endDate
 
 
   // This effect handles the actual data fetching whenever a dependency changes
@@ -79,6 +81,8 @@ export default function Products() {
     modelFilter, // ADDED: car models filter
     companyFilter,
     stockFilter,
+    startDate,
+    endDate,
   ]);
 
   const fetchFilterOptions = async () => {
@@ -99,7 +103,9 @@ export default function Products() {
         subcategory: subcategoryFilter,
         model: modelFilter.length > 0 ? modelFilter.join(',') : '', // FIXED: convert array to comma-separated string
         company: companyFilter,
-        lowStock: stockFilter === 'low-stock' ? 'true' : 'false'
+        lowStock: stockFilter === 'low-stock' ? 'true' : 'false',
+        ...(startDate && { startDate }),
+        ...(endDate && { endDate }),
       });
       const response = await fetch(`/api/products/optimized?${params}`);
       if (response.ok) {
@@ -133,6 +139,8 @@ export default function Products() {
     setModelFilter([]); // FIXED: clear car models filter with empty array
     setCompanyFilter('');
     setStockFilter('all');
+    setStartDate('');
+    setEndDate('');
   };
 
   return (
@@ -151,6 +159,10 @@ export default function Products() {
         setCompanyFilter={setCompanyFilter}
         stockFilter={stockFilter}
         setStockFilter={setStockFilter}
+        startDate={startDate}
+        setStartDate={setStartDate}
+        endDate={endDate}
+        setEndDate={setEndDate}
         limit={pagination.limit}
         handleLimitChange={handleLimitChange}
         clearFilters={clearFilters}

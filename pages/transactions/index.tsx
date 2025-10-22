@@ -20,6 +20,7 @@ interface TransactionItem {
 }
 
 interface Transaction {
+  payment_status: number;
   id: number;
   invoice_no: number;
   type: 'sale' | 'salex' | 'purchase';
@@ -40,9 +41,11 @@ interface Transaction {
   notes?: string;
   status?: number;
   payment_mode?: number;
+  bill_reference?: string;
   transport?: string;
   items?: TransactionItem[];
   item_count?: number;
+  select_customer?: number;
 }
 
 interface Pagination {
@@ -77,6 +80,7 @@ export default function TransactionsPage() {
   // Mock data for demonstration
   const mockTransactions: Transaction[] = [
     {
+      payment_status: 1,
       id: 1,
       invoice_no: 1001,
       type: 'sale',
@@ -135,6 +139,7 @@ export default function TransactionsPage() {
       ]
     },
     {
+      payment_status: 0,
       id: 2,
       invoice_no: 2001,
       type: 'purchase',
@@ -156,6 +161,7 @@ export default function TransactionsPage() {
       item_count: 4
     },
     {
+      payment_status: 2,
       id: 3,
       invoice_no: 1002,
       type: 'salex',
@@ -176,6 +182,7 @@ export default function TransactionsPage() {
       item_count: 2
     },
     {
+      payment_status: 0,
       id: 4,
       invoice_no: 1003,
       type: 'sale',

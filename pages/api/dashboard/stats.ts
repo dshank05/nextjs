@@ -54,18 +54,46 @@ export default async function handler(
         },
       }),
 
-      // Today's purchases total (Purchase uses Unix timestamps)
-      prisma.purchase.aggregate({
-        where: {
-          invoice_date: {
-            gte: String(todayStartUnix),
-            lte: String(todayEndUnix),
+      // Today's purchases total - handle mixed date formats
+      (() => {
+        // Primary query for Unix timestamp records
+        const timestampQuery = prisma.purchase.aggregate({
+          where: {
+            invoice_date: {
+              gte: todayStartUnix,
+              lte: todayEndUnix,
+            },
           },
-        },
-        _sum: {
-          total: true,
-        },
-      }),
+          _sum: {
+            total: true,
+          },
+        });
+
+        // Fallback for any string date records
+        const stringQuery = prisma.$queryRaw`
+          SELECT SUM(total) as total FROM purchase
+          WHERE invoice_date >= ${todayStartUnix}
+            AND invoice_date <= ${todayEndUnix}
+             OR (invoice_date = ${todayDateString} OR invoice_date LIKE ${todayDateString + '%'})
+        `;
+
+        return Promise.all([timestampQuery, stringQuery]).then(([timestampResult, stringResult]) => {
+          // Use timestamp query result if available, otherwise fallback
+          if (timestampResult._sum.total) {
+            return timestampResult;
+          }
+
+          // Handle string result
+          const stringTotal = Array.isArray(stringResult) && stringResult[0] ?
+            Number(stringResult[0].total) || 0 : 0;
+
+          return {
+            _sum: {
+              total: stringTotal
+            }
+          };
+        });
+      })(),
 
       // Last sale
       prisma.invoice.findFirst({
@@ -79,21 +107,20 @@ export default async function handler(
         }
       }),
 
-      // Last purchase
-      prisma.purchase.findFirst({
-        orderBy: {
-          invoice_date: 'desc' // Using invoice_date since it's a timestamp
-        },
-        select: {
-          total: true,
-          invoice_date: true,
-          invoice_no: true
-        }
-      }),
+      // Last purchase - handle mixed date formats for ordering and selection
+      prisma.$queryRaw`
+        SELECT total, invoice_date, invoice_no FROM purchase
+        ORDER BY
+          CASE
+            WHEN invoice_date REGEXP '^[0-9]+$' THEN CAST(invoice_date AS UNSIGNED)
+            ELSE CAST(UNIX_TIMESTAMP(invoice_date) AS UNSIGNED)
+          END DESC
+        LIMIT 1
+      `,
     ])
 
     // Extract count from raw query result
-    const lowStockCount = Array.isArray(lowStockProducts) && lowStockProducts[0] ? 
+    const lowStockCount = Array.isArray(lowStockProducts) && lowStockProducts[0] ?
       Number(lowStockProducts[0].count) : 0
 
     const stats = {
@@ -108,10 +135,10 @@ export default async function handler(
         date: lastSale.invoice_date,
         invoiceNo: lastSale.invoice_no
       } : null,
-      lastPurchase: lastPurchase ? {
-        amount: lastPurchase.total,
-        date: lastPurchase.invoice_date,
-        invoiceNo: lastPurchase.invoice_no
+      lastPurchase: Array.isArray(lastPurchase) && lastPurchase[0] ? {
+        amount: (lastPurchase[0] as any).total,
+        date: (lastPurchase[0] as any).invoice_date,
+        invoiceNo: (lastPurchase[0] as any).invoice_no
       } : null,
     }
 

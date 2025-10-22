@@ -59,6 +59,7 @@ interface Product {
   subcategory_name?: string;
   gst_rate?: number;
   selling_price?: number;
+  latest_selling_price?: number;
   gst_rate_percentage?: number;
 }
 
@@ -2366,7 +2367,7 @@ export default function InvoiceCCreate() {
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
-            rate: product.selling_price?.toString() || '',
+            rate: product.latest_selling_price?.toString() || product.selling_price?.toString() || product.rate?.toString() || '0',
             gst: '0',
             discount: '0'
           });

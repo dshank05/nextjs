@@ -61,6 +61,7 @@ interface CustomAction {
   onClick: (transaction: Transaction) => void;
   className?: string;
   title?: string;
+  enabled?: (transaction: Transaction) => boolean; // Optional function to check if action is enabled
 }
 
 interface TransactionTableProps {
@@ -306,16 +307,20 @@ export const TransactionTable = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
-                    {customActions.map((action, actionIndex) => (
-                      <button
-                        key={actionIndex}
-                        onClick={() => action.onClick(transaction)}
-                        title={action.title}
-                        className={`btn-icon ${action.className}`}
-                      >
-                        {action.icon}
-                      </button>
-                    ))}
+                    {customActions.map((action, actionIndex) => {
+                      const isEnabled = action.enabled ? action.enabled(transaction) : true;
+                      return (
+                        <button
+                          key={actionIndex}
+                          onClick={() => action.onClick(transaction)}
+                          title={action.title}
+                          className={`btn-icon ${action.className} ${!isEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          disabled={!isEnabled}
+                        >
+                          {action.icon}
+                        </button>
+                      );
+                    })}
                   </div>
                 </td>
               </tr>

@@ -44,6 +44,11 @@ const Layout = ({ children }: LayoutProps) => {
 
   const navigation: NavigationItem[] = [
     {
+      name: 'DASHBOARD',
+      href: '/',
+      icon: '📊',
+    },
+    {
       name: 'PRODUCTS',
       icon: '📦',
       subpages: [
@@ -84,7 +89,7 @@ const Layout = ({ children }: LayoutProps) => {
       icon: '📝',
       subpages: [
         { name: 'SALE RETURN', href: '/entry/salereturn' },
-        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' },
+        // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
         { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },
@@ -120,7 +125,7 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'SALE X', href: '/reports/salex' },
         { name: 'PURCHASE', href: '/purchases' },
         { name: 'SALE RETURN', href: '/entry/salereturn' },
-        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' },
+        // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'OPENING / CLOSING STOCK', href: '/reports/openingclosing' },
         { name: 'MECHANIC SALE', href: '/reports/mechanic' },

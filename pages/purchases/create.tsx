@@ -551,6 +551,8 @@ export default function PurchaseCreate() {
   };
 
   const fetchLastInvoiceNumber = async () => {
+    if (isEditMode) return;
+
     try {
       const response = await fetch('/api/purchases/last-invoice');
       if (response.ok) {
@@ -1106,13 +1108,13 @@ export default function PurchaseCreate() {
 
     try {
       const submitData = {
-        invoice_number: isEditMode ? undefined : formData.invoice_number, // Don't send invoice_number in edit mode to preserve existing
+        invoice_number: formData.invoice_number, // Always send invoice_number (required by API)
         bill_reference: formData.bill_reference,
         staff_id: formData.staff_id,
         date: formData.date,
         vendor_id: vendorIdToSave, // Only send vendor relationship ID
         // Removed all vendor detail fields - they're only for UI display
-        transport: formData.transport_name, // Send as 'transport' field for API compatibility
+        transport_name: formData.transport_name, // Fixed: Send as 'transport_name' field
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
         // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====

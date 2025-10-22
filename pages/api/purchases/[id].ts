@@ -328,7 +328,7 @@ export default async function handler(
                     igst: newData.igst || 0,
                     tax: newData.tax || 0,
                     fy: updatedPurchase.fy,
-                    invoice_date: parseInt(updatedPurchase.invoice_date)
+                    invoice_date: updatedPurchase.invoice_date
                   }
                 })
 
@@ -341,7 +341,7 @@ export default async function handler(
                     },
                     // Update latest purchase rate and timestamp
                     latest_purchase_rate: parseFloat(newData.rate.toString()),
-                    last_purchase_date: parseInt(updatedPurchase.invoice_date)
+                    last_purchase_date: updatedPurchase.invoice_date
                   }
                 })
               } else {

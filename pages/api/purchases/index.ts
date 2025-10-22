@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -222,6 +223,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: invoice.payment_mode || 0,
           fy: invoice.fy,
           item_count: itemCountMap.get(invoice.invoice_no) || 0,
+          return_status: invoice.return_status || 0, // ✅ Include return status
           // OPTIMIZATION: Commented out unused fields - uncomment if needed
           // type: 'purchase',
           // formattedDate: formattedDate, // Frontend handles formatting
@@ -401,7 +403,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         // bill: bill,
         // tax: tax,
         // taxrate: tax_rate || 0,
-        invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
+        invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
         updated_at: new Date().toISOString().split('T')[0], // Current date
         payment_status: payment_status,
         payment_mode: payment_mode,
@@ -630,7 +632,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           // basic_value: basic_value || 0,
           // bill: bill,
           // tax: tax,
-          invoice_date: new Date(invoiceDate * 1000).toISOString().split('T')[0], // Convert to date string
+          invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
           updated_at: new Date().toISOString().split('T')[0], // Current date
           payment_status: payment_status || 0,  // Ensure we set a valid default if null
           payment_mode: payment_mode || 1,      // Ensure we set a valid default if null
@@ -805,3 +807,5 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
+
+export default withObservability(handler)

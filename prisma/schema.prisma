@@ -51,14 +51,11 @@ model Product {
   product_category_id    Int?
   product_subcategory_id Int?
   car_model_ids          String?
-  company_id             Int?
   pic                    String?              @db.VarChar(255)
   part_no                String?              @db.VarChar(100)
   min_stock              Int?
   stock                  Int?
   opening_rate           Float?
-  latest_purchase_rate   Float?    // Latest purchase rate (auto-updated)
-  last_purchase_date     Int?      // Unix timestamp of last purchase
   notes                  String?              @db.VarChar(255)
   warehouse_id           Int?
   gst_rate_id            Int?
@@ -70,15 +67,17 @@ model Product {
   mrp                    Float?
   rack_number            String?              @db.VarChar(100)
   rack_id                Int?
+  company_id             Int?
+  last_purchase_date     Int?
+  latest_purchase_rate   Float?
+  invoice_items          Invoiceitems[]
+  invoice_itemsx         invoice_itemsx[]
   category_ref           product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
+  product_company_ref    product_company?     @relation(fields: [company_id], references: [id], map: "product_company_fkey")
   gst_rate               gst_tax_rate?        @relation(fields: [gst_rate_id], references: [id], map: "product_gst_rate_fkey")
   rack                   warehouse_racks?     @relation(fields: [rack_id], references: [id], map: "product_rack_fkey")
   subcategory_ref        product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
-  product_company_ref    product_company?     @relation(fields: [company_id], references: [id], map: "product_company_fkey")
   warehouse              warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
-  invoice_items          Invoiceitems[]
-  invoice_itemsx         invoice_itemsx[]
-
 
   @@index([product_name], map: "idx_product_name")
   @@index([part_no], map: "idx_product_part_no")
@@ -91,42 +90,42 @@ model Product {
   @@index([rack_id], map: "product_rack_fkey")
   @@index([product_subcategory_id], map: "product_subcategory_fkey")
   @@index([warehouse_id], map: "product_warehouse_fkey")
+  @@index([company_id], map: "product_company_fkey")
   @@map("product")
 }
 
 model Invoice {
-  id                       Int       @id @default(autoincrement())
+  id                       Int            @id @default(autoincrement())
   invoice_no               Int
   select_customer          Int
   items_total              Float?
   freight                  Float?
   total_taxable_value      Float
-  taxrate                  Int?      // Invoice-level tax rate (calculated from total tax)
+  taxrate                  Int?
   total_cgst               Float?
   total_sgst               Float?
   total_igst               Float?
   total_tax                Float?
   total                    Float
-  notes                    String?   @db.VarChar(255)
-  descriptions             String?   @db.Text
+  notes                    String?        @db.VarChar(255)
   invoice_date             Int
-  updated_at               String    @db.VarChar(100)
-  payment_status           Int?      // Payment status: 0=Unpaid, 1=Paid
-  payment_mode             Int?      // Payment mode: 0=Cash, 1=Bank
+  updated_at               String         @db.VarChar(100)
+  payment_mode             Int?
   fy                       Int
-  staff_details            String?   @db.VarChar(255)
+  staff_details            String?        @db.VarChar(255)
   staff_id                 Int?
   commission               Float?
   mechanic_id              Int?
-  bill_reference           String?   @db.VarChar(255)
-  // Invoice-level fields now stored
-  discount                 Float?    // Invoice-level discount amount
-  discount_percentage      Float?    // Invoice-level discount percentage (backend calculation)
-  packing_forwarding_qty   Float?    // Packing/forwarding quantity
-  packing_forwarding_rate  Float?    // Packing/forwarding rate per unit
-  packing_forwarding_total Float?    // Total packing/forwarding amount
-  mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
-  staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
+  bill_reference           String?        @db.VarChar(255)
+  descriptions             String?        @db.Text
+  discount                 Float?
+  packing_forwarding_qty   Float?
+  packing_forwarding_rate  Float?
+  packing_forwarding_total Float?
+  discount_percentage      Float?
+  payment_status           Int?
+  mechanic                 mechanic?      @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
+  staff                    staff?         @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
   sale_returns             sale_returns[]
 
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
@@ -138,29 +137,29 @@ model Invoice {
 }
 
 model Invoiceitems {
-  id         Int      @id @default(autoincrement())
-  invoice_no Int
-  product_id Int
-  name_of_product String  @db.VarChar(255)
-  category_id     Int?
-  subcategory_id  Int?
-  model_id        Int?
-  company_id      Int?
-  hsn             String? @db.VarChar(50)
-  part            String? @db.VarChar(100)
-  qty             Float?
-  rate            Float?
-  subtotal        Float
-  gst_percentage  Float? // GST percentage applied to this item
-  cgst            Float? // CGST amount for this item
-  sgst            Float? // SGST amount for this item
-  igst            Float? // IGST amount for this item
-  tax             Float? // Total tax amount for this item
-  discount        Float? // Item-level discount amount
-  discountrate    Float? // Item-level discount percentage
-  invoice_date    Int
-  fy              Int
-  product         Product @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
+  id                Int                 @id @default(autoincrement())
+  invoice_no        Int
+  name_of_product   String              @db.VarChar(255)
+  category_id       Int?
+  model_id          Int?
+  company_id        Int?
+  hsn               String?             @db.VarChar(50)
+  part              String?             @db.VarChar(100)
+  qty               Float?
+  rate              Float?
+  subtotal          Float
+  invoice_date      Int
+  fy                Int
+  product_id        Int
+  cgst              Float?
+  gst_percentage    Float?
+  igst              Float?
+  sgst              Float?
+  tax               Float?
+  discount          Float?
+  discountrate      Float?
+  subcategory_id    Int?
+  product           Product             @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
   sale_return_items sale_return_items[]
 
   @@index([invoice_date], map: "idx_invoiceitems_invoice_date")
@@ -169,9 +168,9 @@ model Invoiceitems {
 }
 
 model Purchase {
-  id                       Int             @id @default(autoincrement())
+  id                       Int                @id @default(autoincrement())
   invoice_no               Int
-  bill_reference           String?         @db.VarChar(255)
+  bill_reference           String?            @db.VarChar(255)
   vendor_id                Int?
   items_total              Float?
   freight                  Float?
@@ -182,26 +181,26 @@ model Purchase {
   total_igst               Float?
   total_tax                Float?
   total                    Float
-  notes                    String?         @db.VarChar(255)
-  descriptions             String?         @db.Text
+  notes                    String?            @db.VarChar(255)
+  descriptions             String?            @db.Text
   packing_forwarding_qty   Float?
   packing_forwarding_rate  Float?
   packing_forwarding_total Float?
   basic_value              Float?
-  bill                     String?         @db.VarChar(255)
-  tax                      String?         @db.VarChar(255)
-  invoice_date             String          @db.VarChar(30)
-  updated_at               String          @db.VarChar(100)
+  bill                     String?            @db.VarChar(255)
+  tax                      String?            @db.VarChar(255)
+  invoice_date             Int
+  updated_at               String             @db.VarChar(100)
   payment_mode             Int?
-  transport                String?         @db.VarChar(255)
-  transport_name           String?         @db.VarChar(255)
-  vehicle_number           String?         @db.VarChar(100)
+  transport                String?            @db.VarChar(255)
+  transport_name           String?            @db.VarChar(255)
+  vehicle_number           String?            @db.VarChar(100)
   fy                       Int
   payment_status           Int?
   staff_id                 Int?
-  return_status            Int?            @default(0) // 0=none, 1=partial, 2=full
-  staff                    staff?          @relation(fields: [staff_id], references: [id])
-  vendor                   vendor_details? @relation(fields: [vendor_id], references: [id])
+  return_status            Int?               @default(0)
+  staff                    staff?             @relation(fields: [staff_id], references: [id])
+  vendor                   vendor_details?    @relation(fields: [vendor_id], references: [id])
   purchase_returns         purchase_returns[]
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
@@ -213,29 +212,29 @@ model Purchase {
 }
 
 model Purchaseitems {
-  id              Int             @id @default(autoincrement())
-  invoice_no      Int
-  product_id      Int?
-  name_of_product String          @db.VarChar(255)
-  category_id     Int?
-  subcategory_id  Int?
-  model_id        Int?
-  company_id      Int?
-  car_model       String?         @db.VarChar(255)
-  vendor_id       Int?
-  hsn             String?         @db.VarChar(50)
-  part            String?         @db.VarChar(100)
-  qty             Float?
-  rate            Float?
-  subtotal        Float
-  gst_percentage  Float?          // GST percentage applied to this item
-  cgst            Float?          // CGST amount for this item
-  sgst            Float?          // SGST amount for this item
-  igst            Float?          // IGST amount for this item
-  tax             Float?          // Total tax amount for this item
-  fy              Int
-  invoice_date    Int
-  vendor          vendor_details? @relation(fields: [vendor_id], references: [id])
+  id                    Int                     @id @default(autoincrement())
+  invoice_no            Int
+  name_of_product       String                  @db.VarChar(255)
+  category_id           Int?
+  subcategory_id        Int?
+  model_id              Int?
+  company_id            Int?
+  car_model             String?                 @db.VarChar(255)
+  vendor_id             Int?
+  hsn                   String?                 @db.VarChar(50)
+  part                  String?                 @db.VarChar(100)
+  qty                   Float?
+  rate                  Float?
+  subtotal              Float
+  fy                    Int
+  invoice_date          Int
+  product_id            Int?
+  cgst                  Float?
+  gst_percentage        Float?
+  igst                  Float?
+  sgst                  Float?
+  tax                   Float?
+  vendor                vendor_details?         @relation(fields: [vendor_id], references: [id])
   purchase_return_items purchase_return_items[]
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
@@ -282,17 +281,21 @@ model bill_to {
 }
 
 model bill_tosales {
-  id          Int                @id @default(autoincrement())
-  invoice_no  Int?               @unique
+  id          Int               @id @default(autoincrement())
+  invoice_no  Int?              @unique
   customer_id Int?
-  customer    customer_details?  @relation(fields: [customer_id], references: [id])
+  customer    customer_details? @relation(fields: [customer_id], references: [id])
+
+  @@index([customer_id], map: "bill_tosales_customer_id_fkey")
 }
 
 model bill_tosalesx {
-  id          Int                @id @default(autoincrement())
-  invoice_no  Int?               @unique
+  id          Int               @id @default(autoincrement())
+  invoice_no  Int?              @unique
   customer_id Int?
-  customer    customer_details?  @relation(fields: [customer_id], references: [id])
+  customer    customer_details? @relation(fields: [customer_id], references: [id])
+
+  @@index([customer_id], map: "bill_tosalesx_customer_id_fkey")
 }
 
 model business_details {
@@ -309,23 +312,23 @@ model business_details {
 }
 
 model customer_details {
-  id                  Int          @id @default(autoincrement())
-  billing_name        String       @db.VarChar(200)
-  billing_address     String       @db.VarChar(255)
-  billing_address_2   String?      @db.VarChar(255)
-  billing_state       String?      @db.VarChar(100)
+  id                  Int             @id @default(autoincrement())
+  billing_name        String          @db.VarChar(200)
+  billing_address     String          @db.VarChar(255)
+  billing_address_2   String?         @db.VarChar(255)
+  billing_state       String?         @db.VarChar(100)
   billing_state_code  Int?
-  billing_gstin       String?      @db.VarChar(30)
-  contact_no          String?      @db.VarChar(20)
-  email               String?      @db.VarChar(100)
-  shipping_name       String?      @db.VarChar(200)
-  shipping_address    String       @db.VarChar(255)
-  shipping_address_2  String?      @db.VarChar(255)
-  shipping_state      String?      @db.VarChar(100)
+  billing_gstin       String?         @db.VarChar(30)
+  contact_no          String?         @db.VarChar(20)
+  email               String?         @db.VarChar(100)
+  shipping_name       String?         @db.VarChar(200)
+  shipping_address    String          @db.VarChar(255)
+  shipping_address_2  String?         @db.VarChar(255)
+  shipping_state      String?         @db.VarChar(100)
   shipping_state_code Int?
-  shipping_gstin      String?      @db.VarChar(30)
-  billing_city        String?      @db.VarChar(100)
-  shipping_city       String?      @db.VarChar(100)
+  shipping_gstin      String?         @db.VarChar(30)
+  billing_city        String?         @db.VarChar(100)
+  shipping_city       String?         @db.VarChar(100)
   bill_tosales        bill_tosales[]
   bill_tosalesx       bill_tosalesx[]
   shiptos             shipto[]
@@ -356,29 +359,29 @@ model incexpx {
 }
 
 model invoice_itemsx {
-  id              Int      @id @default(autoincrement())
-  invoice_no      Int
-  product_id      Int
-  name_of_product String   @db.VarChar(255)
-  category_id     Int?
-  subcategory_id  Int?
-  model_id        Int?
-  company_id      Int?
-  hsn             String?  @db.VarChar(50)
-  part            String?  @db.VarChar(100)
-  qty             Float?
-  rate            Float?
-  subtotal        Float
-  gst_percentage  Float?  // GST percentage applied to this item
-  cgst            Float?  // CGST amount for this item
-  sgst            Float?  // SGST amount for this item
-  igst            Float?  // IGST amount for this item
-  tax             Float?  // Total tax amount for this item
-  discount        Float?  // Item-level discount amount
-  discountrate    Float?  // Item-level discount percentage
-  invoice_date    Int
-  fy              Int
-  product         Product @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
+  id                 Int                  @id @default(autoincrement())
+  invoice_no         Int
+  name_of_product    String               @db.VarChar(255)
+  category_id        Int?
+  model_id           Int?
+  company_id         Int?
+  hsn                String?              @db.VarChar(50)
+  part               String?              @db.VarChar(100)
+  qty                Float?
+  rate               Float?
+  subtotal           Float
+  invoice_date       Int
+  fy                 Int
+  product_id         Int
+  cgst               Float?
+  gst_percentage     Float?
+  igst               Float?
+  sgst               Float?
+  tax                Float?
+  discount           Float?
+  discountrate       Float?
+  subcategory_id     Int?
+  product            Product              @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
   salex_return_items salex_return_items[]
 
   @@index([invoice_date], map: "idx_invoice_itemsx_invoice_date")
@@ -386,7 +389,7 @@ model invoice_itemsx {
 }
 
 model invoicex {
-  id                       Int       @id @default(autoincrement())
+  id                       Int             @id @default(autoincrement())
   invoice_no               Int
   select_customer          Int?
   items_total              Float?
@@ -398,25 +401,24 @@ model invoicex {
   total_igst               Float?
   total_tax                Float?
   total                    Float
-  notes                    String?   @db.VarChar(255)
+  notes                    String?         @db.VarChar(255)
   invoice_date             Int
-  descriptions             String?   @db.Text
-  updated_at               String    @db.VarChar(100)
-  payment_status           Int?
+  updated_at               String          @db.VarChar(100)
   payment_mode             Int?
   fy                       Int
-  staff_details            String?   @db.VarChar(255)
+  staff_details            String?         @db.VarChar(255)
   staff_id                 Int?
   commission               Float?
   mechanic_id              Int?
-  // Invoice-level fields now stored
-  discount                 Float?    // Invoice-level discount amount
-  bill_reference           String?   @db.VarChar(255)
-  packing_forwarding_qty   Float?    // Packing/forwarding quantity
-  packing_forwarding_rate  Float?    // Packing/forwarding rate per unit
-  packing_forwarding_total Float?    // Total packing/forwarding amount
-  mechanic                 mechanic? @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
-  staff                    staff?    @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
+  descriptions             String?         @db.Text
+  packing_forwarding_qty   Float?
+  packing_forwarding_rate  Float?
+  packing_forwarding_total Float?
+  bill_reference           String?         @db.VarChar(255)
+  discount                 Float?
+  payment_status           Int?
+  mechanic                 mechanic?       @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
+  staff                    staff?          @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
   salex_returns            salex_returns[]
 
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
@@ -469,19 +471,23 @@ model product_company {
 }
 
 model shipto {
-  id          Int                @id @default(autoincrement())
-  invoice_no  Int?               @unique
+  id          Int               @id @default(autoincrement())
+  invoice_no  Int?              @unique
   customer_id Int?
-  shipping    Boolean            @default(false)
-  customer    customer_details?  @relation(fields: [customer_id], references: [id])
+  shipping    Boolean           @default(false)
+  customer    customer_details? @relation(fields: [customer_id], references: [id])
+
+  @@index([customer_id], map: "shipto_customer_id_fkey")
 }
 
 model shiptox {
-  id          Int                @id @default(autoincrement())
-  invoice_no  Int?               @unique
+  id          Int               @id @default(autoincrement())
+  invoice_no  Int?              @unique
   customer_id Int?
-  shipping    Boolean            @default(false)
-  customer    customer_details?  @relation(fields: [customer_id], references: [id])
+  shipping    Boolean           @default(false)
+  customer    customer_details? @relation(fields: [customer_id], references: [id])
+
+  @@index([customer_id], map: "shiptox_customer_id_fkey")
 }
 
 model transport_details {
@@ -616,34 +622,29 @@ model mechanic {
   @@map("mechanic")
 }
 
-// Return Management System Tables
-
-// Shared return reasons catalog
 model return_reasons {
-  id           Int      @id @default(autoincrement())
-  reason_name  String   @db.VarChar(255) // "Damaged", "Wrong Item", "Customer Dissatisfaction"
-  type         String   @db.VarChar(20)  // 'sale', 'purchase'
-  status       String   @default("Active") @db.VarChar(20)
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
-
-  sale_return_items     sale_return_items[]
+  id                    Int                     @id @default(autoincrement())
+  reason_name           String                  @db.VarChar(255)
+  type                  String                  @db.VarChar(20)
+  status                String                  @default("Active") @db.VarChar(20)
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @updatedAt
   purchase_return_items purchase_return_items[]
+  sale_return_items     sale_return_items[]
   salex_return_items    salex_return_items[]
 
   @@index([type], map: "idx_return_reasons_type")
   @@map("return_reasons")
 }
 
-// Refund/payment processing for all return types
 model return_transactions {
   id               Int      @id @default(autoincrement())
-  return_id        Int      // References specific return record
-  return_type      String   @db.VarChar(20) // 'sale', 'purchase', 'salex'
+  return_id        Int
+  return_type      String   @db.VarChar(20)
   amount           Float
-  payment_mode     Int      // 0=Cash, 1=Bank
+  payment_mode     Int
   transaction_date String   @db.VarChar(30)
-  status           String   @default("Pending") @db.VarChar(20) // Pending, Processing, Completed, Failed
+  status           String   @default("Pending") @db.VarChar(20)
   notes            String?  @db.VarChar(255)
   fy               Int
   created_at       DateTime @default(now())
@@ -654,21 +655,19 @@ model return_transactions {
   @@map("return_transactions")
 }
 
-// Sale Return Tables (References Invoice System)
 model sale_returns {
-  id             Int      @id @default(autoincrement())
-  invoice_id     Int      // FK to Invoice
-  return_date    Int      // Unix timestamp (matches Invoice format)
-  total_amount   Float
-  total_tax      Float
-  status         String   @default("Pending") @db.VarChar(20) // Pending, Approved, Processed, Cancelled
-  notes          String?  @db.Text
-  fy             Int
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  invoice        Invoice  @relation(fields: [invoice_id], references: [id], map: "sale_returns_invoice_fkey")
-  items          sale_return_items[]
+  id           Int                 @id @default(autoincrement())
+  invoice_id   Int
+  return_date  Int
+  total_amount Float
+  total_tax    Float
+  status       String              @default("Pending") @db.VarChar(20)
+  notes        String?             @db.Text
+  fy           Int
+  created_at   DateTime            @default(now())
+  updated_at   DateTime            @updatedAt
+  items        sale_return_items[]
+  invoice      Invoice             @relation(fields: [invoice_id], references: [id], map: "sale_returns_invoice_fkey")
 
   @@index([invoice_id], map: "sale_returns_invoice_fkey")
   @@index([status], map: "idx_sale_returns_status")
@@ -677,18 +676,17 @@ model sale_returns {
 }
 
 model sale_return_items {
-  id                 Int      @id @default(autoincrement())
-  sale_return_id     Int      // FK to sale_returns
-  invoice_item_id    Int      // FK to Invoiceitems
-  return_qty         Float
-  return_reason_id   Int      // FK to return_reasons
-  unit_price         Float
-  tax_amount         Float
-  notes              String?  @db.VarChar(255)
-
-  sale_return       sale_returns     @relation(fields: [sale_return_id], references: [id], map: "sale_return_items_return_fkey")
-  invoice_item      Invoiceitems    @relation(fields: [invoice_item_id], references: [id], map: "sale_return_items_invoice_item_fkey")
-  reason            return_reasons  @relation(fields: [return_reason_id], references: [id], map: "sale_return_items_reason_fkey")
+  id               Int            @id @default(autoincrement())
+  sale_return_id   Int
+  invoice_item_id  Int
+  return_qty       Float
+  return_reason_id Int
+  unit_price       Float
+  tax_amount       Float
+  notes            String?        @db.VarChar(255)
+  invoice_item     Invoiceitems   @relation(fields: [invoice_item_id], references: [id], map: "sale_return_items_invoice_item_fkey")
+  reason           return_reasons @relation(fields: [return_reason_id], references: [id], map: "sale_return_items_reason_fkey")
+  sale_return      sale_returns   @relation(fields: [sale_return_id], references: [id], map: "sale_return_items_return_fkey")
 
   @@index([sale_return_id], map: "sale_return_items_return_fkey")
   @@index([invoice_item_id], map: "sale_return_items_invoice_item_fkey")
@@ -696,21 +694,19 @@ model sale_return_items {
   @@map("sale_return_items")
 }
 
-// Purchase Return Tables (References Purchase System)
 model purchase_returns {
-  id             Int      @id @default(autoincrement())
-  purchase_id    Int      // FK to Purchase
-  return_date    String   @db.VarChar(30) // String date (matches Purchase format)
-  total_amount   Float
-  total_tax      Float
-  status         String   @default("Pending") @db.VarChar(20)
-  notes          String?  @db.Text
-  fy             Int
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  purchase       Purchase @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
-  items          purchase_return_items[]
+  id           Int                     @id @default(autoincrement())
+  purchase_id  Int
+  return_date  Int
+  total_amount Float
+  total_tax    Float
+  status       String                  @default("Pending") @db.VarChar(20)
+  notes        String?                 @db.Text
+  fy           Int
+  created_at   DateTime                @default(now())
+  updated_at   DateTime                @updatedAt
+  items        purchase_return_items[]
+  purchase     Purchase                @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
 
   @@index([purchase_id], map: "purchase_returns_purchase_fkey")
   @@index([status], map: "idx_purchase_returns_status")
@@ -719,18 +715,17 @@ model purchase_returns {
 }
 
 model purchase_return_items {
-  id                    Int      @id @default(autoincrement())
-  purchase_return_id    Int      // FK to purchase_returns
-  purchase_item_id      Int      // FK to Purchaseitems
-  return_qty            Float
-  return_reason_id      Int      // FK to return_reasons
-  unit_price            Float
-  tax_amount            Float
-  notes                 String?  @db.VarChar(255)
-
-  purchase_return      purchase_returns @relation(fields: [purchase_return_id], references: [id], map: "purchase_return_items_return_fkey")
-  purchase_item        Purchaseitems   @relation(fields: [purchase_item_id], references: [id], map: "purchase_return_items_purchase_item_fkey")
-  reason               return_reasons  @relation(fields: [return_reason_id], references: [id], map: "purchase_return_items_reason_fkey")
+  id                 Int              @id @default(autoincrement())
+  purchase_return_id Int
+  purchase_item_id   Int
+  return_qty         Float
+  return_reason_id   Int
+  unit_price         Float
+  tax_amount         Float
+  notes              String?          @db.VarChar(255)
+  purchase_item      Purchaseitems    @relation(fields: [purchase_item_id], references: [id], map: "purchase_return_items_purchase_item_fkey")
+  reason             return_reasons   @relation(fields: [return_reason_id], references: [id], map: "purchase_return_items_reason_fkey")
+  purchase_return    purchase_returns @relation(fields: [purchase_return_id], references: [id], map: "purchase_return_items_return_fkey")
 
   @@index([purchase_return_id], map: "purchase_return_items_return_fkey")
   @@index([purchase_item_id], map: "purchase_return_items_purchase_item_fkey")
@@ -738,20 +733,18 @@ model purchase_return_items {
   @@map("purchase_return_items")
 }
 
-// Salex Return Tables (References Invoicex System)
 model salex_returns {
-  id             Int      @id @default(autoincrement())
-  invoicex_id    Int      // FK to invoicex
-  return_date    Int      // Unix timestamp (matches invoicex format)
-  total_amount   Float
-  status         String   @default("Pending") @db.VarChar(20)
-  notes          String?  @db.Text
-  fy             Int
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-
-  invoicex       invoicex @relation(fields: [invoicex_id], references: [id], map: "salex_returns_invoicex_fkey")
-  items          salex_return_items[]
+  id           Int                  @id @default(autoincrement())
+  invoicex_id  Int
+  return_date  Int
+  total_amount Float
+  status       String               @default("Pending") @db.VarChar(20)
+  notes        String?              @db.Text
+  fy           Int
+  created_at   DateTime             @default(now())
+  updated_at   DateTime             @updatedAt
+  items        salex_return_items[]
+  invoicex     invoicex             @relation(fields: [invoicex_id], references: [id], map: "salex_returns_invoicex_fkey")
 
   @@index([invoicex_id], map: "salex_returns_invoicex_fkey")
   @@index([status], map: "idx_salex_returns_status")
@@ -760,17 +753,16 @@ model salex_returns {
 }
 
 model salex_return_items {
-  id                 Int      @id @default(autoincrement())
-  salex_return_id    Int      // FK to salex_returns
-  invoice_itemx_id   Int      // FK to invoice_itemsx
-  return_qty         Float
-  return_reason_id   Int      // FK to return_reasons
-  unit_price         Float
-  notes              String?  @db.VarChar(255)
-
-  salex_return      salex_returns    @relation(fields: [salex_return_id], references: [id], map: "salex_return_items_return_fkey")
-  invoice_itemx     invoice_itemsx   @relation(fields: [invoice_itemx_id], references: [id], map: "salex_return_items_invoice_itemx_fkey")
-  reason            return_reasons   @relation(fields: [return_reason_id], references: [id], map: "salex_return_items_reason_fkey")
+  id               Int            @id @default(autoincrement())
+  salex_return_id  Int
+  invoice_itemx_id Int
+  return_qty       Float
+  return_reason_id Int
+  unit_price       Float
+  notes            String?        @db.VarChar(255)
+  invoice_itemx    invoice_itemsx @relation(fields: [invoice_itemx_id], references: [id], map: "salex_return_items_invoice_itemx_fkey")
+  reason           return_reasons @relation(fields: [return_reason_id], references: [id], map: "salex_return_items_reason_fkey")
+  salex_return     salex_returns  @relation(fields: [salex_return_id], references: [id], map: "salex_return_items_return_fkey")
 
   @@index([salex_return_id], map: "salex_return_items_return_fkey")
   @@index([invoice_itemx_id], map: "salex_return_items_invoice_itemx_fkey")

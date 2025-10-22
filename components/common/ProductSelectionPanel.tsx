@@ -24,6 +24,7 @@ export interface Product {
     subcategory_name?: string;
     gst_rate?: number;
     selling_price?: number;
+    latest_selling_price?: number;
     gst_rate_percentage?: number;
 }
 

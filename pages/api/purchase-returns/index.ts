@@ -141,7 +141,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
         }
 
-        // Create purchase return in a transaction
+        // Create purchase return in a transaction with extended timeout
         const result = await prisma.$transaction(async (tx) => {
           let finalReturnItems = returnItems || [];
 
@@ -285,24 +285,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             })),
           });
 
-          // Update inventory for purchase returns (decrease stock)
-          for (const item of finalReturnItems) {
-            const purchaseItem = await tx.purchaseitems.findUnique({
-              where: { id: parseInt(item.purchase_item_id) },
-              select: { product_id: true },
-            });
+          // OPTIMIZATION: Batch inventory updates for better performance
+          // Step 1: Pre-fetch all purchase items in one query
+          const purchaseItemIds = finalReturnItems.map(item => parseInt(item.purchase_item_id));
+          const purchaseItemsData = await tx.purchaseitems.findMany({
+            where: { id: { in: purchaseItemIds } },
+            select: { id: true, product_id: true }
+          });
 
-            if (purchaseItem?.product_id) {
-              await tx.product.update({
-                where: { id: purchaseItem.product_id },
-                data: {
-                  stock: {
-                    decrement: parseFloat(item.return_qty),
-                  },
-                },
-              });
+          // Step 2: Create lookup map for product_ids
+          const purchaseItemMap = new Map(
+            purchaseItemsData.map(item => [item.id, item.product_id])
+          );
+
+          // Step 3: Aggregate return quantities by product_id
+          const productReturnMap = new Map<number, number>();
+          for (const item of finalReturnItems) {
+            const productId = purchaseItemMap.get(parseInt(item.purchase_item_id));
+            if (productId) {
+              const currentQty = productReturnMap.get(productId) || 0;
+              productReturnMap.set(productId, currentQty + parseFloat(item.return_qty));
             }
           }
+
+          // Step 4: Execute inventory updates (one per unique product)
+          const inventoryUpdatePromises = Array.from(productReturnMap.entries()).map(
+            ([productId, totalReturnQty]) =>
+              tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: { decrement: totalReturnQty }
+                }
+              })
+          );
+
+          // Execute all updates in parallel for better performance
+          await Promise.all(inventoryUpdatePromises);
 
           // Determine return type: Check if all items are returned at full quantity
           let isFullReturn = false;
@@ -344,6 +362,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             purchaseReturn,
             items: createdItems,
           };
+        }, {
+          timeout: 15000  // 15 seconds timeout for complex return operations
         });
 
         res.status(201).json({

@@ -46,12 +46,12 @@ export default async function handler(
         },
       }),
 
-      // Purchases total for the day (Purchase uses Unix timestamps as strings)
+      // Purchases total for the day (Purchase uses date strings in YYYY-MM-DD format)
       prisma.purchase.aggregate({
         where: {
           invoice_date: {
-            gte: String(dayStartUnix),
-            lte: String(dayEndUnix),
+            gte: dayStartUnix, // Unix timestamp in seconds
+            lte: dayEndUnix, // Unix timestamp in seconds
           },
         },
         _sum: {

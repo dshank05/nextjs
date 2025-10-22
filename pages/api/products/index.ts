@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -107,22 +108,24 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       // latest_purchase_rate: Latest purchase rate (primary display, auto-updated)
       // mrp: Manual maximum retail price (selling ceiling)
       // display_rate: latest_purchase_rate || opening_rate || 0
-      // calculated_selling_price: latest_purchase_rate + margin - discount
+      // calculated_selling_price: opening_rate + margin - discount (legacy)
+      // latest_selling_price: (latest_purchase_rate || opening_rate) - discount + margin
 
       const displayRate = (latestPurchaseData?.rate || 0) || product.opening_rate || 0
       const calculatedSellingPrice = (product.opening_rate || 0) + (product.margin || 0) - (product.discount || 0)
+      const latestSellingPrice = (latestPurchaseData?.rate || product.opening_rate || 0) - (product.discount || 0) + (product.margin || 0)
 
       return {
         ...product,
         // ===== RATE FIELDS =====
         display_rate: displayRate,
         calculated_selling_price: calculatedSellingPrice,
+        latest_selling_price: latestSellingPrice,
         latest_purchase_rate: latestPurchaseData?.rate || null,
         last_purchase_date: latestPurchaseData?.date || null,
         // Legacy field for backward compatibility
         selling_price: calculatedSellingPrice,
         gst_rate_percentage: gstRatePercentage,
-        // Keep backward compatibility with existing gst_rate field
       }
     })
 
@@ -279,3 +282,5 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
+
+export default withObservability(handler)

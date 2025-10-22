@@ -17,6 +17,7 @@ interface Product {
   companyName?: string;
   subcategoryNames?: string;
   latestPurchaseRate?: number;
+  lastPurchaseDate?: string;
 }
 
 interface Pagination {
@@ -33,7 +34,7 @@ interface ProductTableProps {
   onPageChange: (newPage: number) => void;
 }
 
-type SortField = 'id' | 'categoryName' | 'companyName' | 'subcategoryName' | 'part_no' | 'stock' | 'rate';
+type SortField = 'id' | 'categoryName' | 'companyName' | 'subcategoryName' | 'part_no' | 'stock' | 'rate' | 'lastPurchaseDate';
 type SortOrder = 'asc' | 'desc';
 
 export const ProductTable = ({ products, pagination, loading, onPageChange }: ProductTableProps) => {
@@ -90,6 +91,10 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
         case 'rate':
           aValue = a.latestPurchaseRate || a.rate || 0;
           bValue = b.latestPurchaseRate || b.rate || 0;
+          break;
+        case 'lastPurchaseDate':
+          aValue = (a as any).lastPurchaseDate || '';
+          bValue = (b as any).lastPurchaseDate || '';
           break;
         default:
           return 0;
@@ -154,6 +159,9 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
                 Rate {getSortIcon('rate')}
               </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('lastPurchaseDate')}>
+                Last Purchase {getSortIcon('lastPurchaseDate')}
+              </th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -183,6 +191,7 @@ export const ProductTable = ({ products, pagination, loading, onPageChange }: Pr
                 <td className="text-slate-300">{product.part_no || '-'}</td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
+                <td className="text-slate-300">{(product as any).lastPurchaseDate || '-'}</td>
                 <td>
                   <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
                     <Eye className="w-4 h-4" />

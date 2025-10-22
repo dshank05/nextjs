@@ -354,15 +354,18 @@ export default function PurchaseReturnPage() {
       </div>
 
       {/* Purchase Table with Return Actions */}
-      <TransactionTable
-        transactions={purchasesAsTransactions}
-        pagination={pagination}
-        loading={loading}
-        onPageChange={handlePageChange}
-        onViewDetails={handleViewDetails}
-        customActions={customActions}
-        hideTypeColumn={true}
-      />
+      <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-4">
+       
+        <TransactionTable
+          transactions={purchasesAsTransactions}
+          pagination={pagination}
+          loading={loading}
+          onPageChange={handlePageChange}
+          onViewDetails={handleViewDetails}
+          customActions={customActions}
+          hideTypeColumn={true}
+        />
+      </div>
 
       {/* Confirmation Modal for Full Order Return */}
       <ConfirmationModal

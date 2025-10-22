@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { format } from 'date-fns'
 import { prisma } from '../../../lib/db'
 
 // Simple in-memory cache for lookup data (resets on server restart)
@@ -61,14 +62,37 @@ export default async function handler(
       subcategory = '', // Filters actual subcategories
       model = '', // NEW: Filters car models (comma-separated IDs)
       company_id = '',
-      lowStock = 'false'
+      lowStock = 'false',
+      startDate = '',
+      endDate = ''
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
 
+    // Parse date filters - convert to Unix timestamps for comparison with last_purchase_date
+    let startDateTimestamp: number | undefined
+    let endDateTimestamp: number | undefined
+
+    if (startDate && startDate !== '') {
+      // Convert date string (YYYY-MM-DD or DD/MM/YYYY) to Unix timestamp
+      const date = new Date(startDate as string)
+      if (!isNaN(date.getTime())) {
+        startDateTimestamp = Math.floor(date.getTime() / 1000)
+      }
+    }
+
+    if (endDate && endDate !== '') {
+      // Convert date string to Unix timestamp and set to end of day
+      const date = new Date(endDate as string)
+      if (!isNaN(date.getTime())) {
+        date.setHours(23, 59, 59, 999) // End of day
+        endDateTimestamp = Math.floor(date.getTime() / 1000)
+      }
+    }
+
     // Handle complex filtering that requires post-processing
-    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '') || (model && model !== '')
+    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '') || (model && model !== '') || (startDateTimestamp || endDateTimestamp)
 
     if (needsPostFiltering) {
       // For complex filters, get all matching products first
@@ -114,16 +138,35 @@ export default async function handler(
       let allProducts = await prisma.product.findMany({
         where: {
           ...where,
-          is_active: true  // Only fetch active products
+          is_active: true,  // Only fetch active products
+          // Apply date filtering at database level if possible
+          ...(startDateTimestamp ? {
+            last_purchase_date: { gte: startDateTimestamp }
+          } : {}),
+          ...(endDateTimestamp ? {
+            last_purchase_date: { lte: endDateTimestamp }
+          } : {}),
         },
         orderBy: { id: 'desc' },
       })
 
       // Apply post-filters
       if (lowStock === 'true') {
-        allProducts = allProducts.filter((product: any) => 
+        allProducts = allProducts.filter((product: any) =>
           (product.stock || 0) < (product.min_stock || 0) || (product.stock || 0) < 2
         )
+      }
+
+      // Apply date filtering as post-filter if needed (for products without last_purchase_date)
+      if (startDateTimestamp || endDateTimestamp) {
+        allProducts = allProducts.filter((product: any) => {
+          const purchaseDate = product.last_purchase_date
+          if (!purchaseDate) return !startDateTimestamp && !endDateTimestamp // Include if no dates specified
+
+          if (startDateTimestamp && purchaseDate < startDateTimestamp) return false
+          if (endDateTimestamp && purchaseDate > endDateTimestamp) return false
+          return true
+        })
       }
 
       if (subcategory && subcategory !== '') {
@@ -213,6 +256,17 @@ export default async function handler(
       // Handle company filtering with ID directly
       if (company_id && company_id !== '') {
         where.company_id = parseInt(company_id as string)
+      }
+
+      // Handle date filtering
+      if (startDateTimestamp) {
+        where.last_purchase_date = { gte: startDateTimestamp }
+      }
+      if (endDateTimestamp) {
+        where.last_purchase_date = {
+          ...where.last_purchase_date,
+          lte: endDateTimestamp
+        }
       }
 
       // Get products with efficient pagination (only active products)
@@ -342,6 +396,7 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
       subcategoryName: subcategoryName || undefined, // UI expects singular form
       carModelsDisplay, // UI expects this separate field for car models column
       latestPurchaseRate,
+      lastPurchaseDate: product.last_purchase_date ? format(new Date(product.last_purchase_date * 1000), 'dd/MM/yyyy') : '-',
       index: undefined // Will be set by frontend
 
       // OPTIMIZATION: Commented out unused product fields - uncomment if needed
@@ -353,46 +408,46 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
 // OPTIMIZED: Get all purchase rates efficiently using Prisma groupBy and batch queries
 async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<string, number>> {
   if (productIds.length === 0) return new Map()
-  
+
   try {
     // Get latest purchase for each product using a more efficient approach
     // This uses a single query with proper ordering and grouping
     const latestPurchases = await prisma.$queryRaw`
       SELECT DISTINCT
-        pi.name_of_product,
+        pi.product_id,
         pi.rate,
         pi.invoice_date
       FROM purchase_items pi
       INNER JOIN (
-        SELECT 
-          name_of_product,
+        SELECT
+          product_id,
           MAX(invoice_date) as max_date
-        FROM purchase_items 
-        WHERE name_of_product IN (${productIds.map(id => `'${id}'`).join(',')})
-        GROUP BY name_of_product
-      ) latest ON pi.name_of_product = latest.name_of_product 
+        FROM purchase_items
+        WHERE product_id IN (${productIds.map(id => `'${id}'`).join(',')})
+        GROUP BY product_id
+      ) latest ON pi.product_id = latest.product_id
                  AND pi.invoice_date = latest.max_date
-      ORDER BY pi.name_of_product
+      ORDER BY pi.product_id
     ` as any[]
 
-    return new Map(latestPurchases.map((r: any) => [r.name_of_product, r.rate]))
+    return new Map(latestPurchases.map((r: any) => [r.product_id.toString(), r.rate]))
   } catch (error) {
     console.error('Raw SQL query failed, using safer Prisma approach:', error)
-    
+
     // Fallback: Use batch Prisma queries (still efficient, just not raw SQL)
     const ratesMap = new Map<string, number>()
-    
+
     // Process in smaller batches to avoid overwhelming the database
     const batchSize = 20
     for (let i = 0; i < productIds.length; i += batchSize) {
       const batch = productIds.slice(i, i + batchSize)
-      
+
       // Get latest purchase for each product in this batch
       const latestRates = await Promise.all(
         batch.map(async (productId) => {
           try {
             const latest = await prisma.purchaseitems.findFirst({
-              where: { name_of_product: productId },
+              where: { product_id: parseInt(productId) },
               orderBy: { invoice_date: 'desc' },
               select: { rate: true }
             })
@@ -402,7 +457,7 @@ async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<stri
           }
         })
       )
-      
+
       // Add to map (only if rate exists)
       latestRates.forEach(([productId, rate]) => {
         if (rate !== null) {
@@ -410,7 +465,7 @@ async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<stri
         }
       })
     }
-    
+
     return ratesMap
   }
 }

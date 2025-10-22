@@ -366,7 +366,7 @@ export default function ProductView() {
                     <td>{purchase.qty}</td>
                     <td>₹{purchase.rate}</td>
                     <td>₹{purchase.amount}</td>
-                    <td>{purchase.date}</td>
+                    <td>{new Date(purchase.date).toLocaleDateString('en-IN')}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -405,7 +405,7 @@ export default function ProductView() {
                     <td>{sale.qty}</td>
                     <td>₹{sale.rate}</td>
                     <td>₹{sale.amount}</td>
-                    <td>{sale.date}</td>
+                    <td>{new Date(sale.date).toLocaleDateString('en-IN')}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -444,7 +444,7 @@ export default function ProductView() {
                     <td>{salexItem.qty}</td>
                     <td>₹{salexItem.rate}</td>
                     <td>₹{salexItem.amount}</td>
-                    <td>{salexItem.date}</td>
+                    <td>{new Date(salexItem.date).toLocaleDateString('en-IN')}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -483,7 +483,7 @@ export default function ProductView() {
                     <td>{saleReturn.qty}</td>
                     <td>₹{saleReturn.rate}</td>
                     <td>₹{saleReturn.amount}</td>
-                    <td>{saleReturn.date}</td>
+                    <td>{new Date(saleReturn.date).toLocaleDateString('en-IN')}</td>
                   </tr>
                 )) : (
                   <tr>
@@ -522,7 +522,7 @@ export default function ProductView() {
                     <td>{purchaseReturn.qty}</td>
                     <td>₹{purchaseReturn.rate}</td>
                     <td>₹{purchaseReturn.amount}</td>
-                    <td>{purchaseReturn.date}</td>
+                    <td>{new Date(purchaseReturn.date).toLocaleDateString('en-IN')}</td>
                   </tr>
                 )) : (
                   <tr>

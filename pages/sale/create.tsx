@@ -59,6 +59,7 @@ interface Product {
   subcategory_name?: string;
   gst_rate?: number;
   selling_price?: number;
+  latest_selling_price?: number;
   gst_rate_percentage?: number;
 }
 
@@ -1057,7 +1058,7 @@ export default function InvoiceCreate() {
     const { companyId, companyName } = getCompanyInfo(product);
 
     const qty = 1;
-    const rate = product.selling_price || product.rate || 0;
+    const rate = product.latest_selling_price || product.selling_price || product.rate || 0;
     const gstPercent = product.gst_rate_percentage || product.gst_rate || 0;
     const subtotal = qty * rate;
 
@@ -2816,14 +2817,14 @@ export default function InvoiceCreate() {
         onProductSelect={(product) => {
           console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
             product: product.product_name,
-            selling_price: product.selling_price,
+            latest_selling_price: product.latest_selling_price,
             gst_rate_percentage: product.gst_rate_percentage,
             gst_rate: product.gst_rate
           });
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
-            rate: product.selling_price?.toString() || product.rate?.toString() || '0',
+            rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
             gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '18',
             discount: '0'
           });

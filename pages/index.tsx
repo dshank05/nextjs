@@ -15,13 +15,20 @@ interface DashboardStats {
   } | null
   lastPurchase: {
     amount: number
-    date: string // Unix timestamp as string
+    date: number // Unix timestamp
     invoiceNo: number
   } | null
 }
 
 interface DailyStats {
   date: string
+  sales: number
+  purchases: number
+}
+
+interface TrendsData {
+  date: string
+  label: string
   sales: number
   purchases: number
 }
@@ -38,12 +45,20 @@ export default function Dashboard() {
     lastPurchase: null,
   })
   const [loading, setLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState(() => {
+  const [selectedSalesDate, setSelectedSalesDate] = useState(() => {
     const today = new Date()
     return today.toISOString().split('T')[0] // YYYY-MM-DD format
   })
-  const [dailyStats, setDailyStats] = useState<DailyStats | null>(null)
-  const [dailyStatsLoading, setDailyStatsLoading] = useState(false)
+  const [selectedPurchasesDate, setSelectedPurchasesDate] = useState(() => {
+    const today = new Date()
+    return today.toISOString().split('T')[0] // YYYY-MM-DD format
+  })
+  const [dailySalesStats, setDailySalesStats] = useState<DailyStats | null>(null)
+  const [dailyPurchasesStats, setDailyPurchasesStats] = useState<DailyStats | null>(null)
+  const [dailySalesStatsLoading, setDailySalesStatsLoading] = useState(false)
+  const [dailyPurchasesStatsLoading, setDailyPurchasesStatsLoading] = useState(false)
+  const [trendsData, setTrendsData] = useState<TrendsData[]>([])
+  const [trendsLoading, setTrendsLoading] = useState(false)
 
   // Generate last 5 days for navigation
   const last5Days = Array.from({ length: 5 }, (_, i) => {
@@ -55,14 +70,20 @@ export default function Dashboard() {
   })
 
   useEffect(() => {
-    // Fetch dashboard stats
+    // Fetch dashboard stats and trends data
     fetchDashboardStats()
+    fetchTrendsData()
   }, [])
 
   useEffect(() => {
-    // Fetch daily stats when selected date changes
-    fetchDailyStats(selectedDate)
-  }, [selectedDate])
+    // Fetch daily sales stats when selected sales date changes
+    fetchDailySalesStats(selectedSalesDate)
+  }, [selectedSalesDate])
+
+  useEffect(() => {
+    // Fetch daily purchases stats when selected purchases date changes
+    fetchDailyPurchasesStats(selectedPurchasesDate)
+  }, [selectedPurchasesDate])
 
   const fetchDashboardStats = async () => {
     try {
@@ -78,18 +99,48 @@ export default function Dashboard() {
     }
   }
 
-  const fetchDailyStats = async (date: string) => {
-    setDailyStatsLoading(true)
+  const fetchDailySalesStats = async (date: string) => {
+    setDailySalesStatsLoading(true)
     try {
       const response = await fetch(`/api/dashboard/daily-stats?date=${date}`)
       if (response.ok) {
         const data = await response.json()
-        setDailyStats(data)
+        setDailySalesStats(data)
       }
     } catch (error) {
-      console.error('Error fetching daily stats:', error)
+      console.error('Error fetching daily sales stats:', error)
     } finally {
-      setDailyStatsLoading(false)
+      setDailySalesStatsLoading(false)
+    }
+  }
+
+  const fetchDailyPurchasesStats = async (date: string) => {
+    setDailyPurchasesStatsLoading(true)
+    try {
+      const response = await fetch(`/api/dashboard/daily-stats?date=${date}`)
+      if (response.ok) {
+        const data = await response.json()
+        setDailyPurchasesStats(data)
+      }
+    } catch (error) {
+      console.error('Error fetching daily purchases stats:', error)
+    } finally {
+      setDailyPurchasesStatsLoading(false)
+    }
+  }
+
+  const fetchTrendsData = async () => {
+    setTrendsLoading(true)
+    try {
+      const response = await fetch('/api/dashboard/trends')
+      if (response.ok) {
+        const data = await response.json()
+        setTrendsData(data)
+      }
+    } catch (error) {
+      console.error('Error fetching trends data:', error)
+    } finally {
+      setTrendsLoading(false)
     }
   }
 
@@ -102,27 +153,27 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 p-8 min-h-screen bg-slate-900">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
         <div className="text-slate-400 text-sm">
           {format(new Date(), 'PPPP')}
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <div className="stat-card primary">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                <span className="text-lg">📦</span>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">📦</span>
               </div>
             </div>
-            <div className="ml-5 w-0 flex-1">
+            <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-blue-100 truncate">Total Products</dt>
-                <dd className="text-lg font-semibold text-white">{stats.totalProducts}</dd>
+                <dd className="text-xl font-bold text-white">{stats.totalProducts.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -131,14 +182,14 @@ export default function Dashboard() {
         <div className="stat-card warning">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                <span className="text-lg">⚠️</span>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">⚠️</span>
               </div>
             </div>
-            <div className="ml-5 w-0 flex-1">
+            <div className="ml-4 w-0 flex-1">
               <dl>
-                <dt className="text-sm font-medium text-amber-100 truncate">Low Stock Items</dt>
-                <dd className="text-lg font-semibold text-white">{stats.lowStockProducts}</dd>
+                <dt className="text-sm font-medium text-amber-100 truncate">Low Stock</dt>
+                <dd className="text-xl font-bold text-white">{stats.lowStockProducts.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -147,14 +198,14 @@ export default function Dashboard() {
         <div className="stat-card success">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                <span className="text-lg">🧾</span>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">🧾</span>
               </div>
             </div>
-            <div className="ml-5 w-0 flex-1">
+            <div className="ml-4 w-0 flex-1">
               <dl>
-                <dt className="text-sm font-medium text-emerald-100 truncate">Total Invoices</dt>
-                <dd className="text-lg font-semibold text-white">{stats.totalInvoices}</dd>
+                <dt className="text-sm font-medium text-emerald-100 truncate">Total Sales</dt>
+                <dd className="text-xl font-bold text-white">{stats.totalInvoices.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -163,19 +214,53 @@ export default function Dashboard() {
         <div className="stat-card danger">
           <div className="flex items-center">
             <div className="flex-shrink-0">
-              <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                <span className="text-lg">🛒</span>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">🛒</span>
               </div>
             </div>
-            <div className="ml-5 w-0 flex-1">
+            <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-red-100 truncate">Total Purchases</dt>
-                <dd className="text-lg font-semibold text-white">{stats.totalPurchases}</dd>
+                <dd className="text-xl font-bold text-white">{stats.totalPurchases.toLocaleString()}</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card info">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">💰</span>
+              </div>
+            </div>
+            <div className="ml-4 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-cyan-100 truncate">Today's Sales</dt>
+                <dd className="text-xl font-bold text-white">₹{stats.todaysSales.toLocaleString()}</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        <div className="stat-card secondary">
+          <div className="flex items-center">
+            <div className="flex-shrink-0">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <span className="text-xl">📈</span>
+              </div>
+            </div>
+            <div className="ml-4 w-0 flex-1">
+              <dl>
+                <dt className="text-sm font-medium text-purple-100 truncate">Today's Purchases</dt>
+                <dd className="text-xl font-bold text-white">₹{stats.todaysPurchases.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
         </div>
       </div>
+
+
 
       {/* Daily Sales and Purchases with Navigation */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -186,29 +271,28 @@ export default function Dashboard() {
               {last5Days.map((day) => (
                 <button
                   key={day.date}
-                  onClick={() => setSelectedDate(day.date)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-200 ${
-                    selectedDate === day.date
+                  onClick={() => setSelectedSalesDate(day.date)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-200 ${selectedSalesDate === day.date
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
+                    }`}
                 >
                   {day.label}
                 </button>
               ))}
             </div>
           </div>
-          {dailyStatsLoading ? (
+          {dailySalesStatsLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-400"></div>
             </div>
           ) : (
             <div>
               <div className="text-3xl font-bold text-emerald-400 mb-2">
-                ₹{(dailyStats?.sales || 0).toLocaleString()}
+                ₹{(dailySalesStats?.sales || 0).toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm">
-                Sales for {last5Days.find(d => d.date === selectedDate)?.label || format(new Date(selectedDate), 'MMM d')}
+                Sales for {last5Days.find(d => d.date === selectedSalesDate)?.label || format(new Date(selectedSalesDate), 'MMM d')}
               </p>
             </div>
           )}
@@ -221,29 +305,28 @@ export default function Dashboard() {
               {last5Days.map((day) => (
                 <button
                   key={day.date}
-                  onClick={() => setSelectedDate(day.date)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-200 ${
-                    selectedDate === day.date
+                  onClick={() => setSelectedPurchasesDate(day.date)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors duration-200 ${selectedPurchasesDate === day.date
                       ? 'bg-blue-600 text-white'
                       : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                  }`}
+                    }`}
                 >
                   {day.label}
                 </button>
               ))}
             </div>
           </div>
-          {dailyStatsLoading ? (
+          {dailyPurchasesStatsLoading ? (
             <div className="flex items-center justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
             </div>
           ) : (
             <div>
               <div className="text-3xl font-bold text-blue-400 mb-2">
-                ₹{(dailyStats?.purchases || 0).toLocaleString()}
+                ₹{(dailyPurchasesStats?.purchases || 0).toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm">
-                Purchases for {last5Days.find(d => d.date === selectedDate)?.label || format(new Date(selectedDate), 'MMM d')}
+                Purchases for {last5Days.find(d => d.date === selectedPurchasesDate)?.label || format(new Date(selectedPurchasesDate), 'MMM d')}
               </p>
             </div>
           )}
@@ -265,7 +348,7 @@ export default function Dashboard() {
               <p className="text-slate-400 text-xs">
                 {(() => {
                   try {
-                    const date = typeof stats.lastSale.date === 'number' 
+                    const date = typeof stats.lastSale.date === 'number'
                       ? new Date(stats.lastSale.date * 1000)
                       : new Date(stats.lastSale.date)
                     return isNaN(date.getTime()) ? String(stats.lastSale.date) : format(date, 'PPP')
@@ -293,12 +376,11 @@ export default function Dashboard() {
               <p className="text-slate-400 text-xs">
                 {(() => {
                   try {
-                    // Purchase date is Unix timestamp as string
-                    const timestamp = parseInt(stats.lastPurchase.date, 10)
-                    const date = new Date(timestamp * 1000) // Convert to milliseconds
-                    return isNaN(date.getTime()) ? stats.lastPurchase.date : format(date, 'PPP')
+                    // Last purchase date comes as Unix timestamp (number)
+                    const date = new Date(stats.lastPurchase.date * 1000)
+                    return format(date, 'PPP')
                   } catch (error) {
-                    return stats.lastPurchase.date
+                    return String(stats.lastPurchase.date)
                   }
                 })()}
               </p>
@@ -309,43 +391,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <a
-            href="/invoices/new"
-            className="flex flex-col items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors duration-200"
-          >
-            <span className="text-2xl mb-2">🧾</span>
-            <span className="text-sm text-slate-300">New Invoice</span>
-          </a>
-          
-          <a
-            href="/purchases/new"
-            className="flex flex-col items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors duration-200"
-          >
-            <span className="text-2xl mb-2">🛒</span>
-            <span className="text-sm text-slate-300">New Purchase</span>
-          </a>
-          
-          <a
-            href="/products/new"
-            className="flex flex-col items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors duration-200"
-          >
-            <span className="text-2xl mb-2">📦</span>
-            <span className="text-sm text-slate-300">Add Product</span>
-          </a>
-          
-          <a
-            href="/products/lowstock"
-            className="flex flex-col items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors duration-200"
-          >
-            <span className="text-2xl mb-2">⚠️</span>
-            <span className="text-sm text-slate-300">Low Stock</span>
-          </a>
-        </div>
-      </div>
+
     </div>
   )
 }

@@ -33,6 +33,10 @@ interface ProductFiltersProps {
   setCompanyFilter: (value: string) => void;
   stockFilter: string;
   setStockFilter: (value: string) => void;
+  startDate: string;
+  setStartDate: (value: string) => void;
+  endDate: string;
+  setEndDate: (value: string) => void;
   limit: number;
   handleLimitChange: (value: number) => void;
   clearFilters: () => void;
@@ -47,6 +51,8 @@ export const ProductFilters = ({
   modelFilter, setModelFilter, // UPDATED: now array
   companyFilter, setCompanyFilter,
   stockFilter, setStockFilter,
+  startDate, setStartDate,
+  endDate, setEndDate,
   limit, handleLimitChange,
   clearFilters, filterOptions,
   refreshFilterOptions
@@ -176,7 +182,7 @@ export const ProductFilters = ({
   return (
     <div className="card">
       <h3 className="text-lg font-semibold text-white mb-3">Search & Filter Products</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-9 gap-4">
         {/* Search */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Search Product/Part No</label>
@@ -400,14 +406,26 @@ export const ProductFilters = ({
           </select>
         </div> */}
 
-        {/* Items Per Page */}
+        {/* Start Date Filter */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Items Per Page</label>
-          <select value={limit} onChange={(e) => handleLimitChange(parseInt(e.target.value))} className="select w-full">
-            <option value="10">10</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Start Date</label>
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="input w-full"
+          />
+        </div>
+
+        {/* End Date Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">End Date</label>
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="input w-full"
+          />
         </div>
 
         {/* Clear Filters */}
