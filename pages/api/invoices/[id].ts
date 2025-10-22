@@ -303,7 +303,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         where: { id: parseInt(invoiceId) },
         data: {
           invoice_no,
-          invoice_date: Math.floor(new Date(invoice_date).getTime() / 1000),
+          invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
+            ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
+            : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
           select_customer,
           items_total: items_total || 0,
           freight: freight || 0,

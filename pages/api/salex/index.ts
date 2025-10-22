@@ -205,7 +205,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Convert date to timestamp
-    const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
+    const invoiceDateTimestamp = typeof invoice_date === 'number' && invoice_date > 1000000000
+      ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
+      : Math.floor(new Date(invoice_date).getTime() / 1000); // Convert date string to timestamp
     const fy = new Date().getFullYear()
 
     // Process operations sequentially to avoid transaction timeout
@@ -437,7 +439,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert date to Unix timestamp
-    const invoiceDate = new Date(date).getTime() / 1000
+    const invoiceDate = typeof date === 'number' && date > 1000000000
+      ? Math.floor(date) // Already a Unix timestamp in seconds
+      : Math.floor(new Date(date).getTime() / 1000); // Convert date string to timestamp
 
     // Calculate totals if items provided
     let itemsTotal = 0
@@ -473,7 +477,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           packing_forwarding_qty: packing_forwarding_qty || null,
           packing_forwarding_rate: packing_forwarding_rate || null,
           packing_forwarding_total: packing_forwarding_total || null,
-          invoice_date: Math.floor(invoiceDate / 1000),
+        invoice_date: Math.floor(invoiceDate),
           payment_status: parsedPaymentStatus,
           payment_mode: parsedPaymentMode,
           fy: financialYear,

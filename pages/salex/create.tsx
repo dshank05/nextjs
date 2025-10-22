@@ -928,6 +928,19 @@ export default function InvoiceCCreate() {
       console.log('✅ handleCustomerSelect found customer:', customer.billing_name);
       console.log('📊 handleCustomerSelect setting selectedCustomer');
       setSelectedCustomer(customer);
+
+      // Populate form fields with customer data
+      // setFormData(prev => ({
+      //   ...prev,
+      //   customer_name: customer.billing_name,
+      //   contact_number: customer.contact_no || '',
+      //   address: customer.billing_address || '',
+      //   city: customer.billing_city || '',
+      //   state: customer.billing_state?.toString() || '',
+      //   gst_number: customer.billing_gstin || '',
+      //   email_id: customer.email || ''
+      // }));
+
       // No GST calculations needed for salex - all tax values remain 0
     } else {
       console.log('❌ handleCustomerSelect customer not found, setting selectedCustomer to null');
@@ -1139,7 +1152,7 @@ export default function InvoiceCCreate() {
         invoice_date: formData.date,
         select_customer: parseInt(selectedCustomerId),
         staff_id: formData.staff_id,
-        staff_details: staffList.find(e => e.id === formData.staff_id.toString()).staff_name,
+        staff_details: staffList.find(e => e.id === formData?.staff_id?.toString())?.staff_name,
 
         // Invoice items
         invoiceItems: selectedProducts.map(item => ({
@@ -1267,10 +1280,12 @@ export default function InvoiceCCreate() {
       });
 
       if (response.ok) {
+        if (editInvoiceId) {
+          SessionStorageService.remove('salex', editInvoiceId.toString());
+        }
         setShowConfirmationModal(false);
-        showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
-        SessionStorageService.remove('salex', editInvoiceId.toString());
         router.push('/salex');
+        showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
       } else {
         const error = await response.json();
         console.error('❌ API Error:', error);
@@ -1785,7 +1800,7 @@ export default function InvoiceCCreate() {
                           })()}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-center w-20">
+                      <td className="px-4 py-3 text-center w-20 flex flex-row mt-2 mr-4">
                         <button
                           type="button"
                           onClick={() => {
@@ -1866,13 +1881,44 @@ export default function InvoiceCCreate() {
                             }
                           }}
                           disabled={!selectedRowProduct}
-                          className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                          className={`px-3 py-1 text-xs mr-2 rounded font-medium transition-colors ${selectedRowProduct
                             ? 'bg-blue-600 hover:bg-blue-700 text-white'
                             : 'bg-slate-600 text-slate-400 cursor-not-allowed'
                             }`}
                         >
                           Add
                         </button>
+                        <div className="flex items-center justify-center space-x-1">
+                          {selectedRowProduct && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Clear selected product and reset template row
+                                setSelectedRowProduct(null);
+                                setProductRowFilters({
+                                  category: '',
+                                  subcategory: '',
+                                  carModels: [],
+                                  company: '',
+                                  partNo: ''
+                                });
+                                setFilteredCarModels([]);
+                                setFilteredSubcategories([]);
+                                setTemplateRow({
+                                  qty: '1',
+                                  rate: '',
+                                  gst: '0',
+                                  discount: '0'
+                                });
+                              }}
+                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                              title="Clear selected product"
+                            >
+                              ×
+                            </button>
+                          )}
+
+                        </div>
                       </td>
                     </tr>
 

@@ -127,7 +127,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_qty: packing_forwarding_qty || 0,
       packing_forwarding_rate: packing_forwarding_rate || 0,
       packing_forwarding_total: packing_forwarding_total || 0,
-      invoice_date: Math.floor(invoiceDate / 1000),
+      invoice_date: Math.floor(invoiceDate),
       payment_status: parsedPaymentStatus,
       payment_mode: parsedPaymentMode,
       fy: financialYear
@@ -374,7 +374,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         packing_forwarding_qty: packing_forwarding_qty || 0,
         packing_forwarding_rate: packing_forwarding_rate || 0,
         packing_forwarding_total: packing_forwarding_total || 0,
-        invoice_date: Math.floor(invoiceDate / 1000),
+        invoice_date: Math.floor(invoiceDate),
         payment_status: parsedPaymentStatus,
         payment_mode: parsedPaymentMode,
         fy: financialYear
@@ -722,6 +722,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Enhanced sales invoices using maps
     const enhancedSales = salesInvoices.map((invoice: any) => {
+
       // Handle integer timestamp format for sales
       let formattedDate = 'Invalid Date'
       try {

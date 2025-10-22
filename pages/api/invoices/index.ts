@@ -229,7 +229,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       const invoice = await tx.invoice.create({
         data: {
           invoice_no,                                    // Invoice.invoice_no
-          invoice_date: Math.floor(new Date(invoice_date).getTime() / 1000), // Invoice.invoice_date (converted to timestamp)
+          invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
+            ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
+            : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
           select_customer,                               // Invoice.select_customer
           items_total: items_total || 0,                 // Invoice.items_total
           freight: freight || 0,                         // Invoice.freight
