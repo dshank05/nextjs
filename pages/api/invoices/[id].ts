@@ -38,7 +38,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     }
 
     // Get related data
-    const [billingDetails, shippingDetails, transportDetails, invoiceItems, transactions] = await Promise.all([
+    const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, customerDetails, staffDetails, mechanicDetails] = await Promise.all([
       prisma.bill_tosales.findFirst({
         where: { invoice_no: invoice.id },
         include: { customer: true }
@@ -75,31 +75,129 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           fy: true
         }
       }),
-      prisma.incexp.findMany({ where: { invoice_id: invoice.id } })
+      prisma.incexp.findMany({ where: { invoice_id: invoice.id } }),
+      // Fetch complete customer data from customer_details table
+      prisma.customer_details.findUnique({
+        where: { id: invoice.select_customer },
+        select: {
+          id: true,
+          billing_name: true,
+          billing_address: true,
+          billing_address_2: true,
+          billing_city: true,
+          billing_state: true,
+          billing_state_code: true,
+          billing_gstin: true,
+          contact_no: true,
+          email: true,
+          shipping_name: true,
+          shipping_address: true,
+          shipping_address_2: true,
+          shipping_city: true,
+          shipping_state: true,
+          shipping_state_code: true,
+          shipping_gstin: true
+        }
+      }),
+      // Fetch complete staff data from staff table
+      invoice.staff_id ? prisma.staff.findUnique({
+        where: { id: invoice.staff_id },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true
+        }
+      }) : Promise.resolve(null),
+      // Fetch complete mechanic data from mechanic table
+      invoice.mechanic_id ? prisma.mechanic.findUnique({
+        where: { id: invoice.mechanic_id },
+        select: {
+          id: true,
+          name: true,
+          phone: true
+        }
+      }) : Promise.resolve(null)
     ])
 
+    // Handle null transportDetails properly
+    const transportDetails = transportDetailsResult || null
+
+    // Return data in the same structure that POST/PUT expect for edit mode compatibility
     res.status(200).json({
-      invoice: {
-        ...invoice,
-        // Add fields that UI expects
-        customer_id: invoice.select_customer, // UI expects customer_id field
-        customer_name: billingDetails?.customer?.billing_name || '',
-        contact_number: billingDetails?.customer?.contact_no || '',
-        email_id: billingDetails?.customer?.email || '',
-        address: billingDetails?.customer?.billing_address || '',
-        gst_number: billingDetails?.customer?.billing_gstin || '',
-        vehicle_number: transportDetails?.vehicle_no || '',
-        transport_name: transportDetails?.trans_mode || '',
-        // Now use actual database values for packing/forwarding fields
-        packing_forwarding_qty: invoice.packing_forwarding_qty?.toString() || '0',
-        packing_forwarding_rate: invoice.packing_forwarding_rate?.toString() || '0',
-        packing_forwarding_total: invoice.packing_forwarding_total?.toString() || '0',
-      },
-      billingDetails,
-      shippingDetails,
-      transportDetails,
+      // Main invoice fields (same as POST/PUT input)
+      invoice_no: invoice.invoice_no,
+      invoice_date: invoice.invoice_date,
+      select_customer: invoice.select_customer,
+      customer_id: invoice.select_customer?.toString(), // Add top-level customer_id for backward compatibility
+      items_total: invoice.items_total,
+      freight: invoice.freight,
+      total_taxable_value: invoice.total_taxable_value,
+      total_cgst: invoice.total_cgst,
+      total_sgst: invoice.total_sgst,
+      total_igst: invoice.total_igst,
+      total_tax: invoice.total_tax,
+      total: invoice.total,
+      notes: invoice.notes,
+      descriptions: invoice.descriptions,
+      fy: invoice.fy,
+      bill_reference: invoice.bill_reference,
+      payment_mode: invoice.payment_mode,
+      payment_status: invoice.payment_status,
+
+      // Related entity IDs
+      staff_details: invoice.staff_details,
+      staff_id: staffDetails?.id || invoice.staff?.id,
+      mechanic_id: mechanicDetails?.id || invoice.mechanic?.id,
+      commission: invoice.commission,
+
+      // Invoice-level financial fields
+      discount: invoice.discount,
+      packing_forwarding_qty: invoice.packing_forwarding_qty,
+      packing_forwarding_rate: invoice.packing_forwarding_rate,
+      packing_forwarding_total: invoice.packing_forwarding_total,
+
+      // Top-level fields expected by UI
+      customer_name: customerDetails?.billing_name || '',
+      vehicle_number: transportDetails?.vehicle_no || '',
+      transport_name: transportDetails?.trans_mode || '',
+
+      // Related data arrays
       invoiceItems,
-      transactions
+      billingDetails: {
+        customer_id: invoice.select_customer?.toString()
+      },
+      shippingDetails: shippingDetails ? {
+        id: shippingDetails.id,
+        invoice_no: shippingDetails.invoice_no,
+        customer_id: shippingDetails.customer_id,
+        shipping: shippingDetails.shipping
+      } : null,
+      transportDetails,
+      transactions,
+
+      // Complete entity data for UI compatibility
+      customer: customerDetails ? {
+        id: customerDetails.id.toString(),
+        billing_name: customerDetails.billing_name,
+        billing_address: customerDetails.billing_address || '',
+        billing_address_2: customerDetails.billing_address_2 || '',
+        billing_city: customerDetails.billing_city || '',
+        billing_state: customerDetails.billing_state,
+        billing_state_code: customerDetails.billing_state_code,
+        billing_gstin: customerDetails.billing_gstin || '',
+        contact_no: customerDetails.contact_no || '',
+        email: customerDetails.email || '',
+        shipping_name: customerDetails.shipping_name || '',
+        shipping_address: customerDetails.shipping_address || '',
+        shipping_address_2: customerDetails.shipping_address_2 || '',
+        shipping_city: customerDetails.shipping_city || '',
+        shipping_state: customerDetails.shipping_state,
+        shipping_state_code: customerDetails.shipping_state_code,
+        shipping_gstin: customerDetails.shipping_gstin || ''
+      } : null,
+      staff: staffDetails,
+      mechanic: mechanicDetails
     })
   } catch (error) {
     console.error('Invoice fetch error:', error)
@@ -118,6 +216,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       invoice_no,
       invoice_date,
       select_customer,
+      customer_id, // Alternative customer ID location (for backward compatibility)
       items_total,
       freight,
       total_taxable_value,
@@ -141,7 +240,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
 
       // Newly stored invoice-level fields
       discount,
-      tax,
       packing_forwarding_qty,
       packing_forwarding_rate,
       packing_forwarding_total,
@@ -172,21 +270,36 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       return res.status(404).json({ message: 'Invoice not found' })
     }
 
-    // ===== SPLIT INTO MULTIPLE TRANSACTIONS TO AVOID TIMEOUT =====
+    // ===== SINGLE OPTIMIZED TRANSACTION TO PREVENT TIMEOUT =====
 
-    // Transaction 1: Update main invoice data
-    const totalItemDiscount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.discount?.toString()) || 0), 0);
-    const discountPercentage = items_total > 0 ? (totalItemDiscount / items_total) * 100 : 0;
-
-    console.log('💰 UPDATE: INVOICE-LEVEL DISCOUNT CALCULATIONS:', {
-      totalItemDiscount,
-      items_total,
-      discountPercentage,
-      taxrate: discountPercentage > 0 ? (total_tax / (items_total - totalItemDiscount)) * 100 : (total_tax / items_total) * 100
+    console.log('💰 UPDATE: INVOICE-LEVEL DISCOUNT FROM UI:', {
+      discount_received: discount || 0,
+      note: 'UI sends calculated total discount, API saves it directly'
     });
 
+    // Validate customer data first (outside transaction for better error handling)
+    let customerIdSource: string | undefined;
+    if (select_customer) {
+      customerIdSource = select_customer;
+      console.log('✅ Using customer_id from select_customer:', customerIdSource);
+    } else if (customer_id) {
+      customerIdSource = customer_id;
+      console.log('✅ Using customer_id from top-level customer_id:', customerIdSource);
+    } else {
+      throw new Error('Customer selection is required for invoice update (select_customer or customer_id)')
+    }
+
+    const customerId = parseInt(customerIdSource.toString());
+    if (isNaN(customerId) || customerId <= 0) {
+      throw new Error('Invalid customer ID provided')
+    }
+
+    console.log('🎯 FINAL CUSTOMER ID FOR UPDATE:', customerId);
+
+    // Single comprehensive transaction with proper timeout and error handling
     const updatedInvoice = await prisma.$transaction(async (tx: any) => {
-      return await tx.invoice.update({
+      // 1. Update main invoice data
+      const invoiceUpdate = await tx.invoice.update({
         where: { id: parseInt(invoiceId) },
         data: {
           invoice_no,
@@ -195,7 +308,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           items_total: items_total || 0,
           freight: freight || 0,
           total_taxable_value,
-          taxrate: discountPercentage > 0 ? Math.round((total_tax / (items_total - totalItemDiscount)) * 100) : Math.round((total_tax / items_total) * 100),
           total_cgst: total_cgst || 0,
           total_sgst: total_sgst || 0,
           total_igst: total_igst || 0,
@@ -216,125 +328,140 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           commission: commission || 0,
 
           // Newly stored invoice-level fields
-          discount: totalItemDiscount,
-          discount_percentage: discountPercentage,
+          discount: parseFloat(discount?.toString()) || 0, // Invoice.discount (from UI - calculated sum of item discounts)
+          discount_percentage: items_total > 0 ? (parseFloat(discount?.toString() || '0') / items_total) * 100 : 0, // Invoice.discount_percentage (calculated discount percentage)
+          taxrate: Math.round((total_tax / items_total) * 100),    // Invoice.taxrate (calculated tax rate percentage)
           packing_forwarding_qty: packing_forwarding_qty || 0,
           packing_forwarding_rate: packing_forwarding_rate || 0,
           packing_forwarding_total: packing_forwarding_total || 0
         }
-      })
-    },{ timeout: 15000 }) //  15 seconds timeout
+      });
 
-    // Transaction 2: Handle stock adjustments and invoice items (most expensive operation)
-    if (invoiceItems && invoiceItems.length > 0) {
-      await prisma.$transaction(async (tx: any) => {
-        // First, reverse previous stock changes
+      // 2. Handle stock adjustments and invoice items (optimized)
+      if (invoiceItems && invoiceItems.length > 0) {
+        // Pre-calculate stock adjustments to avoid multiple loops
+        const stockAdjustments = new Map<number, number>();
+
+        // Calculate reversals for old items
         for (const oldItem of currentInvoiceItems) {
           const productId = parseInt(oldItem.product_id?.toString() || oldItem.name_of_product?.toString() || '0');
           if (productId > 0) {
-            await tx.product.update({
-              where: { id: productId },
-              data: {
-                stock: { increment: oldItem.qty } // Add back the stock that was deducted
-              }
-            })
+            const currentAdjustment = stockAdjustments.get(productId) || 0;
+            stockAdjustments.set(productId, currentAdjustment + oldItem.qty);
           }
         }
 
-        // Delete old invoice items
-        await tx.invoiceitems.deleteMany({
-          where: { invoice_no: parseInt(invoiceId) }
-        })
-
-        // Create new invoice items
-        for (const item of invoiceItems) {
-          await tx.invoiceitems.create({
-            data: {
-              product_id: item.product_id,
-              invoice_no: parseInt(invoiceId),
-              name_of_product: item.name_of_product,
-              qty: item.qty,
-              rate: item.rate,
-              subtotal: item.subtotal,
-              gst_percentage: item.gst_percentage,
-              cgst: item.cgst,
-              sgst: item.sgst,
-              igst: item.igst,
-              tax: item.tax,
-              discount: item.discount || 0,
-              discountrate: item.discountrate || 0,
-              hsn: item.hsn,
-              part: item.part,
-              category_id: item.category_id,
-              subcategory_id: item.subcategory_id,
-              model_id: item.model_id,
-              company_id: item.company_id,
-              invoice_date: updatedInvoice.invoice_date,
-              fy: updatedInvoice.fy
-            }
-          })
+        // Calculate deductions for new items
+        for (const newItem of invoiceItems) {
+          const productId = parseInt(newItem.product_id?.toString() || '0');
+          if (productId > 0) {
+            const currentAdjustment = stockAdjustments.get(productId) || 0;
+            stockAdjustments.set(productId, currentAdjustment - newItem.qty);
+          }
         }
 
-        // Deduct new stock for all new items
-        for (const item of invoiceItems) {
-          await tx.product.update({
-            where: { id: parseInt(item.product_id.toString()) },
-            data: {
-              stock: { decrement: item.qty }
-            }
+        // Execute all stock adjustments in batch
+        const stockUpdatePromises = Array.from(stockAdjustments.entries()).map(([productId, adjustment]) =>
+          tx.product.update({
+            where: { id: productId },
+            data: { stock: { increment: adjustment } }
           })
-        }
-      })
-    }
+        );
 
-    // Transaction 3: Update related tables (separate transaction)
-    await prisma.$transaction(async (tx: any) => {
-      // Update billing details (now uses customer_id foreign key)
-      await tx.bill_tosales.upsert({
-        where: { invoice_no: parseInt(invoiceId) },
-        update: {
-          customer_id: parseInt(select_customer)
-        },
-        create: {
+        // Delete old invoice items and update stock in parallel
+        const [deleteResult] = await Promise.all([
+          tx.invoiceitems.deleteMany({ where: { invoice_no: parseInt(invoiceId) } }),
+          ...stockUpdatePromises
+        ]);
+
+        // Create new invoice items in batch
+        const newItemsData = invoiceItems.map(item => ({
+          product_id: item.product_id,
           invoice_no: parseInt(invoiceId),
-          customer_id: parseInt(select_customer)
-        }
-      })
+          name_of_product: item.name_of_product,
+          qty: item.qty,
+          rate: item.rate,
+          subtotal: item.subtotal,
+          gst_percentage: item.gst_percentage,
+          cgst: item.cgst,
+          sgst: item.sgst,
+          igst: item.igst,
+          tax: item.tax,
+          discount: item.discount || 0,
+          discountrate: item.discountrate || 0,
+          hsn: item.hsn,
+          part: item.part,
+          category_id: item.category_id,
+          subcategory_id: item.subcategory_id,
+          model_id: item.model_id,
+          company_id: item.company_id,
+          invoice_date: invoiceUpdate.invoice_date,
+          fy: invoiceUpdate.fy
+        }));
 
-      // Update shipping details (now uses customer_id foreign key)
-      if (shippingDetails && shippingDetails !== null) {
-        await tx.shipto.upsert({
+        await tx.invoiceitems.createMany({
+          data: newItemsData
+        });
+      }
+
+      // 3. Update related tables (billing, shipping, transport) - all in same transaction
+      const relatedTablePromises = [];
+
+      // Update billing details
+      relatedTablePromises.push(
+        tx.bill_tosales.upsert({
+          where: { invoice_no: parseInt(invoiceId) },
+          update: { customer_id: customerId },
+          create: {
+            invoice_no: parseInt(invoiceId),
+            customer_id: customerId
+          }
+        })
+      );
+
+      // Update shipping details
+      relatedTablePromises.push(
+        tx.shipto.upsert({
           where: { invoice_no: parseInt(invoiceId) },
           update: {
-            customer_id: parseInt(select_customer),
-            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
+            customer_id: customerId,
+            shipping: !!shippingDetails
           },
           create: {
             invoice_no: parseInt(invoiceId),
-            customer_id: parseInt(select_customer),
-            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
+            customer_id: customerId,
+            shipping: !!shippingDetails
           }
         })
+      );
+
+      // Update transport details if provided
+      if (transportDetails) {
+        relatedTablePromises.push(
+          tx.transport_details.upsert({
+            where: { invoice_id: parseInt(invoiceId) },
+            update: {
+              trans_mode: transportDetails.trans_mode,
+              vehicle_no: transportDetails.vehicle_no,
+              supply_date: transportDetails.supply_date
+            },
+            create: {
+              invoice_id: parseInt(invoiceId),
+              trans_mode: transportDetails.trans_mode,
+              vehicle_no: transportDetails.vehicle_no,
+              supply_date: transportDetails.supply_date
+            }
+          })
+        );
       }
 
-      // Update transport details
-      if (transportDetails) {
-        await tx.transport_details.upsert({
-          where: { invoice_id: parseInt(invoiceId) },
-          update: {
-            trans_mode: transportDetails.trans_mode,
-            vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date
-          },
-          create: {
-            invoice_id: parseInt(invoiceId),
-            trans_mode: transportDetails.trans_mode,
-            vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date
-          }
-        })
-      }
-    })
+      // Execute all related table updates in parallel
+      await Promise.all(relatedTablePromises);
+
+      return invoiceUpdate;
+    }, {
+      timeout: 30000 // Increased timeout to 30 seconds for the comprehensive transaction
+    });
 
     // Update transaction record (outside transaction since it's not critical)
     await prisma.incexp.updateMany({

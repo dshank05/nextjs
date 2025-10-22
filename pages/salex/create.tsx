@@ -4,6 +4,7 @@ import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 
 interface Customer {
@@ -139,6 +140,9 @@ interface FilterOptions {
 export default function InvoiceCCreate() {
   const router = useRouter();
 
+  // Initialize snackbar hook
+  const { showSnackbar } = useSnackbar();
+
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
@@ -187,7 +191,14 @@ export default function InvoiceCCreate() {
   // State for sidepanel car model filtering
   const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
 
-// Function to generate dynamic product name based on car model selection
+  // Helper function to get consistent company info from product
+  const getCompanyInfo = (product: Product) => {
+    const companyId = product.company_id || (product.company ? parseInt(product.company) : null);
+    const companyName = companyId ? filterOptions.companies.find(comp => comp.id.toString() === companyId.toString())?.name : null;
+    return { companyId, companyName };
+  };
+
+  // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
     const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
@@ -372,17 +383,17 @@ export default function InvoiceCCreate() {
         const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
 
         setFormData({
-          invoice_number: invoiceData.invoice_no?.toString() || '',
+          invoice_number: invoiceData.invoice_no?.toString() || invoiceData.invoice_number || '',
           bill_reference: invoiceData.bill_reference || '',
           staff_id: invoiceData.staff_id || null,
-          date: new Date(invoiceData.invoice_date * 1000).toISOString().split('T')[0],
+          date: new Date((invoiceData.invoice_date || invoiceData.date) * 1000).toISOString().split('T')[0],
           customer_name: invoiceData.customer_name || '',
           contact_number: invoiceData.contact_number || '',
           mechanic_name: invoiceData.mechanic?.mechanic_name || '',
-          vehicle_number: transportDetails.vehicle_no || '',
+          vehicle_number: transportDetails?.vehicle_no || '',
           commission: invoiceData.commission ? invoiceData.commission.toString() : '',
           address: invoiceData.address || '',
-          transport_name: transportDetails.trans_mode || '',
+          transport_name: transportDetails?.trans_mode || '',
           city: invoiceData.city || '',
           email_id: invoiceData.email_id || '',
           discount: invoiceData.discount ? invoiceData.discount.toString() : '0',
@@ -390,8 +401,8 @@ export default function InvoiceCCreate() {
           gst_number: invoiceData.gst_number || '',
           tax: invoiceData.tax || '',
           notes: invoiceData.notes || '',
-          payment_status: invoiceData.status || 1,
-          payment_mode: invoiceData.mode || 1,
+          payment_status: invoiceData.status || invoiceData.payment_status || 1,
+          payment_mode: invoiceData.mode || invoiceData.payment_mode || 1,
           total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
           subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
           total_tax: '0', // Always 0 for salex invoices
@@ -404,12 +415,9 @@ export default function InvoiceCCreate() {
           basic_value: invoiceData.basic_value || '0'
         });
 
-        // Set customer data from billingDetails
-        if (billingDetails?.customer) {
-          const customer = billingDetails.customer;
-          setSelectedCustomerId(customer.id.toString());
-          setSelectedCustomer(customer);
-        }
+        // Set customer data from billingDetails and select customer immediately
+        console.log("setting customer id ")
+        selectCustomerById(invoiceData?.customer_id.toString())
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -428,13 +436,14 @@ export default function InvoiceCCreate() {
         setInvoiceNumberLoading(false);
 
         // Remove the cached data after using it
-        SessionStorageService.remove('salex', editInvoiceId.toString());
+        // SessionStorageService.remove('salex', editInvoiceId.toString());
         return;
       }
 
       // Fallback to API call if no cached data
       fetchInvoiceForEdit(editInvoiceId);
     }
+
   }, [customersLoaded, isEditMode, editInvoiceId]);
 
   // Fetch last invoice number only in create mode
@@ -469,6 +478,54 @@ export default function InvoiceCCreate() {
     } catch (error) {
       console.error('Error fetching subcategories for table:', error);
       setFilteredSubcategories([]);
+    }
+  };
+
+
+
+  // Consolidated customer selection function
+  const selectCustomerById = (customerId: string) => {
+    console.log('🔄 selectCustomerById called with customerId:', customerId);
+    console.log('📋 Current customers list length:', customers.length);
+    console.log('📋 Current customers:', customers.map(c => ({ id: c.id, name: c.billing_name })));
+
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      console.log('✅ Customer found in loaded list, setting customer data:', customer.billing_name);
+      console.log('📊 Customer details:', {
+        id: customer.id,
+        billing_name: customer.billing_name,
+        contact_no: customer.contact_no,
+        billing_address: customer.billing_address
+      });
+
+      // Set selection state
+      console.log('🔄 Calling setSelectedCustomerId with:', customerId);
+      setSelectedCustomerId(customerId);
+
+      console.log('🔄 Calling setSelectedCustomer with customer object');
+      setSelectedCustomer(customer);
+
+      console.log('🔄 Calling setVendorIdToSave with:', parseInt(customerId));
+      setVendorIdToSave(parseInt(customerId));
+
+      // Populate form fields with customer data
+      console.log('🔄 Updating formData with customer details');
+      setFormData(prev => ({
+        ...prev,
+        customer_name: customer.billing_name,
+        contact_number: customer.contact_no || '',
+        address: customer.billing_address || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state?.toString() || '',
+        gst_number: customer.billing_gstin || '',
+        email_id: customer.email || ''
+      }));
+
+      console.log('✅ selectCustomerById completed successfully');
+    } else {
+      console.warn(`❌ Customer with ID ${customerId} not found in loaded customers list`);
+      console.log('📋 Available customer IDs:', customers.map(c => c.id));
     }
   };
 
@@ -520,8 +577,8 @@ export default function InvoiceCCreate() {
       const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
         const itemObj: InvoiceItem = {
           id: (index + 1).toString(),
-          product_id: item.product_id || item.name_of_product || 1,
-          product_name: item.name_of_product,
+          product_id: item.product_id,
+          product_name: item.product_name,
           car_model_ids: item.model_id ? [item.model_id.toString()] : [],
           car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
           category_id: item.category_id || 0,
@@ -597,6 +654,9 @@ export default function InvoiceCCreate() {
       if (response.ok) {
         const data = await response.json();
         setCustomers(data.customers || []);
+        setCustomersLoaded(true);
+      } else {
+        setCustomers([]);
         setCustomersLoaded(true);
       }
     } catch (error) {
@@ -701,49 +761,84 @@ export default function InvoiceCCreate() {
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
-        const transportDetails = data.transportDetails
+        const transportDetails = data.transportDetails || {};
         console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
         const formatDateForInput = (dateValue: number | string) => {
-          if (typeof dateValue === 'string') {
-            if (/^\d+$/.test(dateValue)) {
-              const timestamp = parseInt(dateValue);
-              if (timestamp > 1000000000) {
-                return new Date(timestamp * 1000).toISOString().split('T')[0];
+          try {
+            if (typeof dateValue === 'string') {
+              if (/^\d+$/.test(dateValue)) {
+                const timestamp = parseInt(dateValue);
+                if (timestamp > 1000000000) {
+                  const date = new Date(timestamp * 1000);
+                  if (!isNaN(date.getTime())) {
+                    return date.toISOString().split('T')[0];
+                  }
+                }
+              }
+              const date = new Date(dateValue);
+              if (!isNaN(date.getTime())) {
+                return date.toISOString().split('T')[0];
+              }
+            } else if (typeof dateValue === 'number') {
+              if (dateValue > 1000000000) {
+                const date = new Date(dateValue * 1000);
+                if (!isNaN(date.getTime())) {
+                  return date.toISOString().split('T')[0];
+                }
+              } else {
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                  return date.toISOString().split('T')[0];
+                }
               }
             }
-            return new Date(dateValue).toISOString().split('T')[0];
+            // Fallback for invalid dates
+            return new Date().toISOString().split('T')[0];
+          } catch (error) {
+            console.warn('Error formatting date:', dateValue, error);
+            return new Date().toISOString().split('T')[0];
           }
-          return new Date(dateValue * 1000).toISOString().split('T')[0];
         };
 
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
         console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
 
+        // Store data in sessionStorage for future reuse
+        if (typeof invoiceId === 'number') {
+          SessionStorageService.set('salex', invoiceId.toString(), {
+            invoice: invoice,
+            billingDetails: data.billingDetails,
+            shippingDetails: data.shippingDetails,
+            transportDetails: data.transportDetails,
+            invoiceItems: data.invoiceItems
+          });
+        }
+
         // Prefill form data with all available fields for salex
         const formDataToSet = {
           invoice_number: invoiceNo,
           bill_reference: invoice.bill_reference || '',
           staff_id: invoice.staff_id || null,
-          date: formatDateForInput(invoice.invoice_date),
-          customer_name: invoice.customer_name || '',
-          contact_number: invoice.contact_number || '',
-          mechanic_name: invoice.mechanic?.mechanic_name || '',
+          date: formatDateForInput(invoice.date), // API field is 'date', not 'invoice_date'
+          customer_name: invoice.customer?.billing_name || '', // From customer object, not invoice.customer_name
+          contact_number: invoice.customer?.contact_no || '', // From customer object, not invoice.contact_number
+          mechanic_name: invoice.mechanic?.name || '', // API mechanic field is 'name', not 'mechanic_name'
           mechanic_id: invoice.mechanic_id || null,
           vehicle_number: transportDetails.vehicle_no || '',
           commission: invoice.commission ? invoice.commission.toString() : '',
-          address: invoice.address || '',
+          address: invoice.customer?.billing_address || '', // Get from customer object
           transport_name: transportDetails.trans_mode || '',
-          city: invoice.city || '',
-          email_id: invoice.email_id || '',
+          city: invoice.customer?.billing_city || '', // Get from customer object
+          email_id: invoice.customer?.email || '', // Get from customer object
           discount: invoice.discount ? invoice.discount.toString() : '0',
-          state: invoice.state || '',
-          gst_number: invoice.gst_number || '',
+          state: invoice.customer?.billing_state || '', // Get from customer object
+          gst_number: invoice.customer?.billing_gstin || '', // Get from customer object
           tax: invoice.tax || '',
           notes: invoice.notes || '',
-          payment_status: invoice.status || 1,
+          payment_status: invoice.payment_status || 1, // API field is 'payment_status', not 'status'
           payment_mode: invoice.payment_mode || 1,
           total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
           subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
@@ -757,16 +852,16 @@ export default function InvoiceCCreate() {
           basic_value: invoice.basic_value || '0'
         };
 
-        console.log('📝 SETTING FORM DATA:', formDataToSet);
+        console.log('📝 SETTING API FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
 
         // Set customer data - find customer in loaded customers list
-        if (invoice.select_customer) {
+        if (invoice.select_customer || invoice.customer_id) {
           setSelectedCustomerId(invoice.select_customer.toString());
           setVendorIdToSave(parseInt(invoice.select_customer.toString()));
 
-          // Find customer in loaded customers list
-          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString());
+          // Find customer in loaded customers list for proper data population
+          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString() || invoice.customer_id);
           if (existingCustomer) {
             setSelectedCustomer(existingCustomer);
             handleCustomerSelect(existingCustomer.id);
@@ -825,11 +920,18 @@ export default function InvoiceCCreate() {
   };
 
   const handleCustomerSelect = (customerId: string) => {
+    console.log('🔄 handleCustomerSelect called with customerId:', customerId);
+    console.log('📋 Current customers list state:', customersLoaded ? 'loaded' : 'not loaded');
+
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
+      console.log('✅ handleCustomerSelect found customer:', customer.billing_name);
+      console.log('📊 handleCustomerSelect setting selectedCustomer');
       setSelectedCustomer(customer);
       // No GST calculations needed for salex - all tax values remain 0
     } else {
+      console.log('❌ handleCustomerSelect customer not found, setting selectedCustomer to null');
+      console.log('📋 Available customer IDs for reference:', customers.map(c => c.id));
       setSelectedCustomer(null);
     }
   };
@@ -891,6 +993,8 @@ export default function InvoiceCCreate() {
   };
 
   const addProductToInvoice = (product: Product) => {
+    const { companyId, companyName } = getCompanyInfo(product);
+
     const qty = 1;
     const rate = product.selling_price || product.rate || 0;
     const subtotal = qty * rate;
@@ -905,8 +1009,8 @@ export default function InvoiceCCreate() {
       category_name: product.category_name || '',
       subcategory_id: product.product_subcategory_id || 0,
       subcategory_name: product.subcategory_name || '',
-      company_id: product.company_id || (product.company ? parseInt(product.company) : 0),
-      company_name: filterOptions.companies.find(c => c.id.toString() === product.company)?.name || '',
+      company_id: companyId,
+      company_name: companyName,
       part_number: product.part_no || '',
       qty: qty,
       rate: rate,
@@ -1051,7 +1155,7 @@ export default function InvoiceCCreate() {
           discountrate: item.discount_percentage,
           model_id: item.car_model_ids[0] ? parseInt(item.car_model_ids[0]) : null,
           company_id: item.company_id,
-          subcategory_id:item.subcategory_id,
+          subcategory_id: item.subcategory_id,
         })),
 
         // Customer ID instead of billing details object
@@ -1088,8 +1192,6 @@ export default function InvoiceCCreate() {
         // Skip tax-related fields entirely for salex
         // total_cgst, total_sgst, total_igst are not included
       };
-
-      console.log('📤 UI SENDING SALEX PAYLOAD:', submitData);
 
       console.log('📤 UI SENDING SALEX PAYLOAD:', submitData);
 
@@ -1166,11 +1268,14 @@ export default function InvoiceCCreate() {
 
       if (response.ok) {
         setShowConfirmationModal(false);
+        showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
+        SessionStorageService.remove('salex', editInvoiceId.toString());
         router.push('/salex');
       } else {
         const error = await response.json();
         console.error('❌ API Error:', error);
-        setErrors({ submit: error.message || 'Failed to create salex invoice' });
+        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice`);
+        setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice` });
       }
     } catch (error) {
       console.error('❌ Network Error:', error);
@@ -1281,9 +1386,11 @@ export default function InvoiceCCreate() {
                     </button>
                   </div>
                   <select
-                    value={selectedCustomerId}
+                    key={`customer-dropdown-${customers.length}-${selectedCustomerId}`}
+                    value={selectedCustomerId || ''}
                     onChange={(e) => {
                       const customerId = e.target.value;
+                      console.log('Customer dropdown manual change:', customerId);
                       setSelectedCustomerId(customerId);
                       handleCustomerSelect(customerId);
                     }}
@@ -1291,7 +1398,9 @@ export default function InvoiceCCreate() {
                   >
                     <option value="" disabled>Select Customer</option>
                     {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>{customer.billing_name}</option>
+                      <option key={customer.id} value={customer.id} selected={customer.id === selectedCustomerId}>
+                        {customer.billing_name}
+                      </option>
                     ))}
                   </select>
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
@@ -1683,6 +1792,9 @@ export default function InvoiceCCreate() {
                             if (selectedRowProduct !== null) {
                               const selectedProduct = selectedRowProduct;
                               if (selectedProduct) {
+                                // Get company info properly using the helper function (like sale/create.tsx)
+                                const { companyId, companyName } = getCompanyInfo(selectedProduct);
+
                                 // Convert car model IDs to names for display
                                 const carModelNames = productRowFilters.carModels
                                   .map(id => {
@@ -1711,9 +1823,9 @@ export default function InvoiceCCreate() {
                                   category_id: selectedProduct.product_category_id || 0,
                                   category_name: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
                                   subcategory_id: selectedProduct.product_subcategory_id || 0,
-          subcategory_name: productRowFilters.subcategory ? filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '' : '',
-                                  company_id: selectedProduct.company ? parseInt(selectedProduct.company) : 0,
-                                  company_name: filterOptions.companies.find(c => c.id.toString() === productRowFilters.company)?.name || '',
+                                  subcategory_name: productRowFilters.subcategory ? filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '' : '',
+                                  company_id: companyId, // Use helper function result instead of product.company
+                                  company_name: companyName, // Use helper function result instead of filter lookup
                                   part_number: productRowFilters.partNo,
                                   qty: qty,
                                   rate: rate,
@@ -1779,9 +1891,86 @@ export default function InvoiceCCreate() {
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.subcategory_name || '-'}
                         </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          {product.car_model_names.join(', ') || '-'}
-                        </td>
+                        {editingRowId === product.id ? (
+                          <td className="px-3 py-2">
+                            {(() => {
+                              // Find the product being edited to filter compatible car models
+                              const editingProduct = products.find(p => p.id === product.product_id);
+                              // Filter compatible models for this product
+                              const compatibleModels = editingProduct ? getFilteredCarModelsForProduct(editingProduct) : [];
+                              // Get current car model names - use editingRowData if available, otherwise product data
+                              const currentCarModels = editingRowData?.car_model_names || product.car_model_names || [];
+                              // Find the first car model for pre-selection (single selection)
+                              const currentModel = filterOptions.models.find(model =>
+                                currentCarModels.includes(model.name)
+                              );
+                              const selectedModelId = currentModel ? currentModel.id.toString() : '';
+
+                              return (
+                                <SearchableMultiSelect
+                                  options={compatibleModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                                  selectedValues={[selectedModelId].filter(Boolean)}
+                                  onSelectionChange={(values) => {
+                                    // For inline editing, only allow single car model selection
+                                    let newCarModelNames: string[] = [];
+                                    let updatedProductName = editingRowData?.product_name || product.product_name || '';
+
+                                    if (values.length > 0) {
+                                      const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
+                                      const newCarModel = selectedModel ? selectedModel.name : '';
+                                      newCarModelNames = [newCarModel];
+
+                                      // Update the product name directly when car model changes
+                                      if (newCarModel) {
+                                        // Parse product name format: category-subcategory-carModel-company
+                                        const productName = updatedProductName;
+                                        const parts = productName.split('-');
+                                        if (parts.length >= 4) {
+                                          // Replace the car model part (index 2) with selected model name
+                                          parts[2] = newCarModel;
+                                          updatedProductName = parts.join('-');
+                                        }
+                                      }
+                                    }
+
+                                    // Update editing row data with both car model changes and updated product name
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      car_model_names: newCarModelNames,
+                                      product_name: updatedProductName
+                                    } : null);
+
+                                    // Recalculate totals based on changes
+                                    if (editingRowData) {
+                                      const subtotal = editingRowData.qty * editingRowData.rate;
+                                      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+
+                                      const updatedItem = {
+                                        ...editingRowData,
+                                        car_model_names: newCarModelNames,
+                                        product_name: updatedProductName,
+                                        discount_amount: discountAmount,
+                                        total: subtotal - discountAmount, // No tax for salex
+                                        // Tax fields always 0 for salex
+                                        tax: 0,
+                                        cgst: 0,
+                                        sgst: 0,
+                                        igst: 0
+                                      };
+
+                                      setEditingRowData(updatedItem);
+                                    }
+                                  }}
+                                  placeholder="Select car model..."
+                                />
+                              );
+                            })()}
+                          </td>
+                        ) : (
+                          <td className="px-3 py-2 text-center text-xs text-slate-200">
+                            {product.car_model_names.join(', ') || '-'}
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.company_name || '-'}
                         </td>
@@ -2095,7 +2284,10 @@ export default function InvoiceCCreate() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => router.push('/salex')}
+                onClick={() => {
+                  SessionStorageService.remove('salex', editInvoiceId.toString());
+                  router.push('/salex')
+                }}
                 className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
               >
                 Cancel

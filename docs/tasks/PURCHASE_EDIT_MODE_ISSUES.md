@@ -83,6 +83,35 @@ Since `formData.total_cgst`, etc. are initialized as empty strings `''`, and emp
 - [x] Product item fix implemented
 - [x] Testing completed
 
+## Additional Tax Fields Implementation (NEW)
+
+### 3. Add Item-Level Tax Fields to Purchase Items
+**Status**: Ready for implementation
+**Description**:
+- Add tax-related fields to Purchaseitems model (matching Invoiceitems structure)
+- Update all API endpoints to handle tax fields properly
+- Ensure all fields flow from UI → API → Database
+
+**New Fields to Add**:
+- `gst_percentage: Float?` - GST percentage applied to item
+- `cgst: Float?` - CGST amount for item
+- `sgst: Float?` - SGST amount for item
+- `igst: Float?` - IGST amount for item
+- `tax: Float?` - Total tax amount for item
+
+**Implementation Steps**:
+1. [x] Update Prisma schema (Purchaseitems model)
+2. [x] Run `prisma generate && prisma db push`
+3. [x] Update `/api/purchases/[id].ts` GET/PUT handlers
+4. [x] Update `/api/purchases/index.ts` POST/PUT handlers
+5. [x] Ensure all tax fields are included in responses
+6. [ ] Test tax field persistence in edit mode
+
+**Files Affected**:
+- `prisma/schema.prisma`
+- `pages/api/purchases/[id].ts`
+- `pages/api/purchases/index.ts`
+
 ## Notes
 - Both issues affect the core purchase editing functionality
 - Tax issue is caused by faulty state management logic

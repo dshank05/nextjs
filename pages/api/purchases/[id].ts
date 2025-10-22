@@ -77,7 +77,11 @@ export default async function handler(
             part: item.part || '',  // Use part field
             qty: item.qty,
             rate: item.rate,
-            tax: 0,  // Individual item tax not stored in DB
+            gst_percentage: item.gst_percentage || 0,  // GST percentage applied to item
+            cgst: item.cgst || 0,  // CGST amount for item
+            sgst: item.sgst || 0,  // SGST amount for item
+            igst: item.igst || 0,  // IGST amount for item
+            tax: item.tax || 0,  // Total tax amount for item
             total: item.subtotal || (item.qty * item.rate),  // Use subtotal as total
             subtotal: item.subtotal || (item.qty * item.rate),  // Also include subtotal for compatibility
             hsn: item.hsn || ''
@@ -131,7 +135,7 @@ export default async function handler(
           // descriptions, // TODO: Field removed from schema
           payment_status,
           payment_mode,
-          transport,
+          transport_name,
           items, // Include items for update logic
           total_cgst,
           total_sgst,
@@ -209,7 +213,7 @@ export default async function handler(
               descriptions: descriptions || null,
               payment_status: parsedPaymentStatus,
               payment_mode: parsedPaymentMode,
-              transport: transport || null,
+              transport: transport_name || null,
               items_total: calculatedItemsTotal,
               total_taxable_value: calculatedItemsTotal,
               total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
@@ -252,6 +256,11 @@ export default async function handler(
                 part: item.part || '',
                 rate: item.rate,
                 total: item.total,
+                gst_percentage: item.gst_percentage || 0,
+                cgst: item.cgst || 0,
+                sgst: item.sgst || 0,
+                igst: item.igst || 0,
+                tax: item.tax || 0,
                 product_id: parseInt(item.product_id),
                 item: item
               })
@@ -300,11 +309,11 @@ export default async function handler(
                   data: {
                     invoice_no: updatedPurchase.invoice_no,
                     product_id: productId,
-                    name_of_product: product.product_name || '',
-                    category_id: product.product_category_id || null,
-                    subcategory_id: product.product_subcategory_id || null,
+                    name_of_product: newData.name_of_product || product.product_name || '',
+                    category_id: newData.category_id || product.product_category_id || null,
+                    subcategory_id: newData.subcategory_id || product.product_subcategory_id || null,
                     model_id: modelId,
-                    company_id: product.company_id || null,
+                    company_id: newData.company_id || product.company_id || null,
                     car_model: newData.car_model || '',
                     vendor_id: updatedPurchase.vendor_id,
                     hsn: product.hsn || '',
@@ -312,6 +321,11 @@ export default async function handler(
                     qty: newData.qty,
                     rate: newData.rate,
                     subtotal: newData.qty * newData.rate, // Base amount without tax
+                    gst_percentage: newData.gst_percentage || 0,
+                    cgst: newData.cgst || 0,
+                    sgst: newData.sgst || 0,
+                    igst: newData.igst || 0,
+                    tax: newData.tax || 0,
                     fy: updatedPurchase.fy,
                     invoice_date: parseInt(updatedPurchase.invoice_date)
                   }
@@ -348,7 +362,12 @@ export default async function handler(
                       rate: newData.rate,
                       subtotal: newData.qty * newData.rate, // Base amount without tax
                       name_of_product: newData.name_of_product,
-                      car_model: newData.car_model
+                      car_model: newData.car_model,
+                      gst_percentage: newData.gst_percentage || 0,
+                      cgst: newData.cgst || 0,
+                      sgst: newData.sgst || 0,
+                      igst: newData.igst || 0,
+                      tax: newData.tax || 0
                     }
                   })
 

@@ -1,5 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { PrismaClient } from '@prisma/client'
+
+type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
 export default async function handler(
   req: NextApiRequest,
@@ -84,26 +87,35 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name]))
+    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, { customer_id: c.customer_id, customer: c.customer }]))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
-    const enhancedInvoices = invoices.map((invoice: any) => ({
-      ...invoice,
-      customerName: customerMap.get(invoice.id),
-      itemCount: itemCountMap.get(invoice.id) || 0,
-      formattedDate: new Date(invoice.invoice_date * 1000).toLocaleDateString('en-IN'),
-      formattedTotal: invoice.total.toLocaleString('en-IN', {
-        style: 'currency',
-        currency: 'INR'
-      }),
-      // Include newly added invoice-level fields in the response
-      discount: invoice.discount || 0,
-      tax: invoice.tax || null,
-      packing_forwarding_qty: invoice.packing_forwarding_qty || 0,
-      packing_forwarding_rate: invoice.packing_forwarding_rate || 0,
-      packing_forwarding_total: invoice.packing_forwarding_total || 0
-    }))
+    const enhancedInvoices = invoices.map((invoice: any) => {
+      const customerData = customerMap.get(invoice.id)
+      return {
+        ...invoice,
+        customerName: customerData?.customer?.billing_name || 'N/A',
+        customer_id: customerData?.customer_id || null,
+        customer: customerData?.customer || null,
+        itemCount: itemCountMap.get(invoice.id) || 0,
+        formattedDate: new Date(invoice.invoice_date * 1000).toLocaleDateString('en-IN'),
+        formattedTotal: invoice.total.toLocaleString('en-IN', {
+          style: 'currency',
+          currency: 'INR'
+        }),
+        // Map payment_status to status for TransactionTable compatibility
+        status: invoice.payment_status,
+        payment_status: invoice.payment_status,
+        payment_mode: invoice.payment_mode,
+        // Include newly added invoice-level fields in the response
+        discount: invoice.discount || 0,
+        tax: invoice.tax || null,
+        packing_forwarding_qty: invoice.packing_forwarding_qty || 0,
+        packing_forwarding_rate: invoice.packing_forwarding_rate || 0,
+        packing_forwarding_total: invoice.packing_forwarding_total || 0
+      }
+    })
 
     const totalPages = Math.ceil(total / limitNum)
 
@@ -133,6 +145,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       invoice_no,                        // ✓ Invoice.invoice_no
       invoice_date,                      // ✓ Invoice.invoice_date (converted to timestamp)
       select_customer,                   // ✓ Invoice.select_customer
+      customer_id,                       // Alternative customer ID location (for backward compatibility)
       items_total,                       // ✓ Invoice.items_total
       freight,                           // ✓ Invoice.freight
       total_taxable_value,               // ✓ Invoice.total_taxable_value
@@ -191,32 +204,20 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Required fields missing' })
     }
 
-    console.log('� INVOICE API RECEIVED PAYLOAD:');
+    console.log(' INVOICE API RECEIVED PAYLOAD:');
     console.log('✅ FIELDS BEING STORED IN DATABASE:', {
       invoice_no, invoice_date, select_customer, items_total, freight,
       total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, descriptions, fy, bill_reference, payment_mode,
-      has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems
+      has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems,
+      customer_id_sources: {
+        select_customer: select_customer,
+        customer_id: customer_id,
+        billingDetails_customer_id: billingDetails?.customer_id
+      }
     });
-    // ===== CALCULATE INVOICE-LEVEL DISCOUNTS =====
-    // Calculate total discount from all invoice items
-    const totalItemDiscount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.discount?.toString()) || 0), 0);
-    const discountPercentage = items_total > 0 ? (totalItemDiscount / items_total) * 100 : 0;
-
-    console.log('💰 INVOICE-LEVEL DISCOUNT CALCULATIONS:', {
-      totalItemDiscount,
-      items_total,
-      discountPercentage,
-      taxrate: discountPercentage > 0 ? (total_tax / (items_total - totalItemDiscount)) * 100 : (total_tax / items_total) * 100
-    });
-
-    console.log('✅ FIELDS NOW SAVED IN DATABASE:', {
-      staff_details, staff_id, mechanic_id, commission,
-      invoice_discount: totalItemDiscount,
-      invoice_discount_percentage: discountPercentage,
-      packing_forwarding_qty, packing_forwarding_rate, packing_forwarding_total
-    });
-    console.log('❌ LEGACY FIELDS IGNORED:', {
-      tax_rate, basic_value, payment_status, total_discount, subtotal, grand_total
+    console.log('💰 INVOICE-LEVEL DISCOUNT FROM UI:', {
+      discount_received: discount || 0,
+      note: 'UI sends calculated total discount, API saves it directly'
     });
 
 
@@ -233,7 +234,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           items_total: items_total || 0,                 // Invoice.items_total
           freight: freight || 0,                         // Invoice.freight
           total_taxable_value,                           // Invoice.total_taxable_value
-          taxrate: discountPercentage > 0 ? Math.round((total_tax / (items_total - totalItemDiscount)) * 100) : Math.round((total_tax / items_total) * 100), // Invoice.taxrate (calculated from total tax %)
           total_cgst: total_cgst || 0,                   // Invoice.total_cgst
           total_sgst: total_sgst || 0,                   // Invoice.total_sgst
           total_igst: total_igst || 0,                   // Invoice.total_igst
@@ -243,7 +243,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           descriptions,                                  // Invoice.descriptions (NEWLY ADDED)
           fy,                                            // Invoice.fy
           bill_reference,                                // Invoice.bill_reference (NEWLY ADDED)
-          status: payment_status ? parseInt(payment_status) : 0,                   // Invoice.status (from UI payment_status: 0=Unpaid, 1=Paid)
+          payment_status: payment_status ? parseInt(payment_status) : 0,             // Invoice.payment_status (from UI payment_status: 0=Unpaid, 1=Paid)
           payment_mode: payment_mode ? parseInt(payment_mode) : 1,               // Invoice.payment_mode (from UI: 1=Cash, 2=Bank)
           updated_at: new Date().toISOString(),          // Invoice.updated_at
           staff_details,                                 // Invoice.staff_details (optional, for backward compatibility)
@@ -252,8 +252,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           commission: commission || 0,                   // Invoice.commission (optional, commission amount)
 
           // Newly stored invoice-level fields (added to schema)
-          discount: totalItemDiscount,                   // Invoice.discount (calculated as sum of item discounts)
-          discount_percentage: discountPercentage,       // Invoice.discount_percentage (calculated discount percentage)
+          discount: parseFloat(discount?.toString()) || 0, // Invoice.discount (from UI - calculated sum of item discounts)
+          discount_percentage: items_total > 0 ? (parseFloat(discount?.toString() || '0') / items_total) * 100 : 0, // Invoice.discount_percentage (calculated discount percentage)
+          taxrate: Math.round((total_tax / items_total) * 100),    // Invoice.taxrate (calculated tax rate percentage)
           packing_forwarding_qty: packing_forwarding_qty || 0,     // Invoice.packing_forwarding_qty
           packing_forwarding_rate: packing_forwarding_rate || 0,   // Invoice.packing_forwarding_rate
           packing_forwarding_total: packing_forwarding_total || 0, // Invoice.packing_forwarding_total
@@ -261,9 +262,28 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // ===== PHASE 1: PARALLEL CREATION OF RELATED RECORDS =====
+      // Validate required customer data - accept from either location for backward compatibility
+      let customerIdSource: string | undefined;
+      if (billingDetails?.customer_id) {
+        customerIdSource = billingDetails.customer_id;
+        console.log('✅ Using customer_id from billingDetails.customer_id:', customerIdSource);
+      } else if (customer_id) {
+        customerIdSource = customer_id;
+        console.log('✅ Using customer_id from top-level customer_id:', customerIdSource);
+      } else {
+        throw new Error('Customer billing details are required for invoice creation (billingDetails.customer_id or customer_id)')
+      }
+
+      const customerId = parseInt(customerIdSource.toString());
+      if (isNaN(customerId) || customerId <= 0) {
+        throw new Error('Invalid customer ID provided')
+      }
+
+      console.log('🎯 FINAL CUSTOMER ID FOR CREATION:', customerId);
+
       // Create incexp, billing, shipping, and transport details in parallel
       const parallelOperations = [
-        // Record income transaction in incexp table
+        // Record income transaction in incexp table (MANDATORY - invoice creation fails if this fails)
         tx.incexp.create({
           data: {
             invoice_id: invoice.id,
@@ -277,27 +297,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         }),
 
-        // Customer ID reference creation
-        billingDetails ? tx.bill_tosales.create({
+        // Customer ID reference creation (ALWAYS REQUIRED)
+        tx.bill_tosales.create({
           data: {
             invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
-            customer_id: parseInt(billingDetails.customer_id)    // BillToSales.customer_id (FK to customer_details)
+            customer_id: customerId                       // BillToSales.customer_id (FK to customer_details)
           }
-        }) : Promise.resolve(null),
+        }),
 
-        // Shipping details creation
-        shippingDetails ? tx.ship_to.create({
+        // Shipping relationship creation - links invoice to customer with shipping flag (ALWAYS REQUIRED)
+        tx.shipto.create({
           data: {
-            invoice_no: invoice.id,                       // ShipTo.invoice_no (FK to invoice)
-            user_name: shippingDetails.user_name,          // ShipTo.user_name
-            address: shippingDetails.address,              // ShipTo.address
-            state: shippingDetails.state,                  // ShipTo.state
-            state_code: shippingDetails.state_code,        // ShipTo.state_code
-            gstin: shippingDetails.gstin                   // ShipTo.gstin
+            invoice_no: invoice.id,                        // shipto.invoice_no (FK to invoice)
+            customer_id: customerId,                       // shipto.customer_id (FK to customer_details)
+            shipping: !!shippingDetails                    // shipping flag: true if shipping to shipping address, false for billing
           }
-        }) : Promise.resolve(null),
+        }),
 
-        // Transport details creation
+        // Transport details creation (OPTIONAL)
         transportDetails ? tx.transport_details.create({
           data: {
             invoice_id: invoice.id,                       // TransportDetails.invoice_id (FK to invoice)

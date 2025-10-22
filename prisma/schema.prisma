@@ -227,6 +227,11 @@ model Purchaseitems {
   qty             Float?
   rate            Float?
   subtotal        Float
+  gst_percentage  Float?          // GST percentage applied to this item
+  cgst            Float?          // CGST amount for this item
+  sgst            Float?          // SGST amount for this item
+  igst            Float?          // IGST amount for this item
+  tax             Float?          // Total tax amount for this item
   fy              Int
   invoice_date    Int
   vendor          vendor_details? @relation(fields: [vendor_id], references: [id])

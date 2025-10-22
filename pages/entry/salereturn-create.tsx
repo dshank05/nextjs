@@ -502,7 +502,7 @@ export default function SaleReturnCreatePage() {
       const customer = billingDetails.customer;
       setSelectedCustomerId(customer.id.toString());
       setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE);
+      setCustomerStateForTax(customer.billing_state_code);
       if (customer.billing_state) {
         setFormData(prev => ({
           ...prev,
@@ -613,7 +613,7 @@ export default function SaleReturnCreatePage() {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE); // Set customer's state for tax calculations
+      setCustomerStateForTax(customer.billing_state_code); // Set customer's state for tax calculations
 
       // Clear tax calculations when customer changes
       setSelectedProducts([]);
@@ -751,7 +751,7 @@ export default function SaleReturnCreatePage() {
           if (existingCustomer) {
             // Use real customer data from the API
             setSelectedCustomer(existingCustomer);
-            setCustomerStateForTax(existingCustomer.billing_state_code || BUSINESS_STATE_CODE);
+            setCustomerStateForTax(existingCustomer.billing_state_code );
 
             // CRITICAL: Call handleCustomerSelect to populate customer form fields (STATE, etc.)
             handleCustomerSelect(existingCustomer.id);

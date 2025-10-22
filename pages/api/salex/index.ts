@@ -337,15 +337,297 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
+// PUT handler for updating salex invoices (needed for consistency)
+async function handlePut(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const { id } = req.query
+
+    if (!id) {
+      return res.status(400).json({ message: 'Sale ID is required' })
+    }
+
+    const {
+      // ===== MAIN SALEX TABLE FIELDS (ALL STORED) =====
+      invoice_number,
+      bill_reference,
+      staff_id,
+      mechanic_id,
+      commission,
+      date,
+
+      // ===== CUSTOMER RELATIONSHIP (ONLY FK STORED) =====
+      customer_id,
+
+      // ===== TRANSPORT FIELDS =====
+      transport_cost,
+
+      // ===== ITEMS AND CALCULATIONS =====
+      items,
+      descriptions,
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
+
+      // ===== TAX FIELDS =====
+      total_cgst,
+      total_sgst,
+      total_igst,
+      notes,
+      total_tax,
+      payment_status,
+      payment_mode
+    } = req.body
+
+    // ===== VALIDATION =====
+    if (!invoice_number || !customer_id) {
+      return res.status(400).json({
+        message: 'Missing required fields: invoice_number or customer_id'
+      })
+    }
+
+    // ===== VALIDATE CUSTOMER EXISTS =====
+    const existingCustomer = await prisma.customer_details.findUnique({
+      where: { id: parseInt(customer_id) }
+    })
+
+    if (!existingCustomer) {
+      return res.status(400).json({
+        message: 'Invalid customer selected - customer does not exist'
+      })
+    }
+
+    // ===== VALIDATE SALEX EXISTS =====
+    const existingSalex = await prisma.invoicex.findUnique({
+      where: { id: parseInt(id as string) }
+    })
+
+    if (!existingSalex) {
+      return res.status(404).json({
+        message: 'Salex not found'
+      })
+    }
+
+    // ===== VALIDATE PAYMENT FIELDS =====
+    const validPaymentStatuses = [0, 1];
+    const validPaymentModes = [0, 1];
+
+    const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
+      ? parseInt(payment_status.toString())
+      : 0;
+
+    const parsedPaymentMode = payment_mode !== undefined && payment_mode !== null
+      ? parseInt(payment_mode.toString())
+      : 1;
+
+    if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
+      return res.status(400).json({
+        message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
+      })
+    }
+
+    if (!validPaymentModes.includes(parsedPaymentMode)) {
+      return res.status(400).json({
+        message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
+      })
+    }
+
+    // Get current financial year
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+
+    // Convert date to Unix timestamp
+    const invoiceDate = new Date(date).getTime() / 1000
+
+    // Calculate totals if items provided
+    let itemsTotal = 0
+    let totalTaxable = 0
+    if (items && items.length > 0) {
+      itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
+      totalTaxable = itemsTotal
+    }
+
+    // Start transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update salex record
+      const sale = await tx.invoicex.update({
+        where: { id: parseInt(id as string) },
+        data: {
+          invoice_no: parseInt(invoice_number),
+          select_customer: parseInt(customer_id),
+          bill_reference: bill_reference || '',
+          staff_id: staff_id ? parseInt(staff_id) : null,
+          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null,
+          commission: commission || 0,
+          items_total: itemsTotal,
+          freight: transport_cost || 0,
+          total_taxable_value: totalTaxable,
+          taxrate: 0, // No tax for salex
+          total_cgst: total_cgst || 0,
+          total_sgst: total_sgst || 0,
+          total_igst: total_igst || 0,
+          total_tax: total_tax || 0,
+          total: itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0),
+          notes: notes || '',
+          descriptions: descriptions || '',
+          packing_forwarding_qty: packing_forwarding_qty || null,
+          packing_forwarding_rate: packing_forwarding_rate || null,
+          packing_forwarding_total: packing_forwarding_total || null,
+          invoice_date: Math.floor(invoiceDate / 1000),
+          payment_status: parsedPaymentStatus,
+          payment_mode: parsedPaymentMode,
+          fy: financialYear,
+          updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+        }
+      })
+
+      // Handle item-level updates if items provided
+      if (items && items.length > 0) {
+        // Get existing salex items for comparison
+        const existingItems = await tx.invoice_itemsx.findMany({
+          where: { invoice_no: sale.id }
+        })
+
+        // Create maps for efficient lookup using product_id
+        const existingItemsMap = new Map<number, any>()
+        const newItemsMap = new Map<number, any>()
+
+        existingItems.forEach(item => {
+          existingItemsMap.set(item.product_id, {
+            id: item.id,
+            qty: item.qty || 0,
+            item: item
+          })
+        })
+
+        items.forEach(item => {
+          newItemsMap.set(parseInt(item.product_id), {
+            qty: item.qty || 0,
+            rate: item.rate || 0,
+            product_id: parseInt(item.product_id),
+            item: item
+          })
+        })
+
+        // Process deletions: items that exist in DB but not in new list
+        for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
+          if (!newItemsMap.has(productId)) {
+            // Item was removed - salex doesn't affect stock
+            await tx.invoice_itemsx.delete({
+              where: { id: existingData.id }
+            })
+          }
+        }
+
+        // Process additions and updates
+        for (const [productId, newData] of Array.from(newItemsMap.entries())) {
+          const existingData = existingItemsMap.get(productId)
+
+          if (!existingData) {
+            // New item - create it (salex doesn't affect stock)
+            const product = await tx.product.findUnique({
+              where: { id: productId },
+              select: {
+                product_name: true,
+                hsn: true,
+                product_category_id: true,
+                product_subcategory_id: true,
+                company_id: true
+              }
+            })
+
+            if (!product) {
+              throw new Error(`Product with ID ${productId} not found`)
+            }
+
+            const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null;
+
+            await tx.invoice_itemsx.create({
+              data: {
+                invoice_no: sale.id,
+                product_id: productId,
+                name_of_product: newData.item.product_name || product.product_name || '',
+                category_id: product.product_category_id,
+                subcategory_id: product.product_subcategory_id,
+                model_id: modelId,
+                company_id: product.company_id,
+                hsn: product.hsn,
+                part: newData.item.part || '',
+                qty: newData.qty,
+                rate: newData.rate,
+                subtotal: newData.qty * newData.rate,
+                gst_percentage: newData.item.gst_percentage || 0,
+                cgst: newData.item.cgst || 0,
+                sgst: newData.item.sgst || 0,
+                igst: newData.item.igst || 0,
+                tax: newData.item.tax || 0,
+                fy: financialYear,
+                invoice_date: invoiceDate
+              }
+            })
+          } else {
+            // Existing item - check if quantity changed
+            const qtyDifference = newData.qty - existingData.qty
+
+            if (Math.abs(qtyDifference) > 0.001) {
+              // Update quantity and subtotal
+              await tx.invoice_itemsx.update({
+                where: { id: existingData.id },
+                data: {
+                  qty: newData.qty,
+                  rate: newData.rate,
+                  subtotal: newData.qty * newData.rate
+                }
+              })
+            }
+          }
+        }
+      }
+
+      // Update customer relationship
+      await tx.bill_tosalesx.upsert({
+        where: { invoice_no: sale.id },
+        update: { customer_id: parseInt(customer_id) },
+        create: {
+          invoice_no: sale.id,
+          customer_id: parseInt(customer_id)
+        }
+      })
+
+      return sale
+    })
+
+    res.status(200).json({
+      message: 'Salex updated successfully',
+      sale: {
+        id: result.id,
+        invoice_no: result.invoice_no,
+        total: result.total,
+        customer_name: existingCustomer.billing_name
+      }
+    })
+
+  } catch (error) {
+    console.error('Salex update error:', error)
+    res.status(500).json({
+      message: 'Failed to update salex',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  if (req.method === 'GET') {
-    return handleGet(req, res)
-  } else if (req.method === 'POST') {
-    return handlePost(req, res)
-  } else {
-    return res.status(405).json({ message: 'Method not allowed' })
+  switch (req.method) {
+    case 'GET':
+      return handleGet(req, res)
+    case 'POST':
+      return handlePost(req, res)
+    case 'PUT':
+      return handlePut(req, res)
+    default:
+      return res.status(405).json({ message: 'Method not allowed' })
   }
 }

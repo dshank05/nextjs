@@ -195,9 +195,8 @@ export const TransactionFilters = ({
             className="select w-full"
           >
             <option value="all">All Status</option>
-            <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
-            <option value="unknown">Unknown</option>
+            <option value="0">Paid</option>
+            <option value="1">Unpaid</option>
           </select>
         </div>
 

@@ -25,47 +25,145 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: string) {
   try {
-    const invoice = await prisma.invoicex.findUnique({
-      where: { id: parseInt(invoiceId) },
-      include: {
-        mechanic: true,
-        staff: true
-      }
-    })
-
-    if (!invoice) {
-      return res.status(404).json({ message: 'Invoice not found' })
+    const salexId = parseInt(invoiceId)
+    if (isNaN(salexId)) {
+      return res.status(400).json({ message: 'Invalid salex ID' })
     }
 
-    // Get related data
-    const [billingDetails, shippingDetails, transportDetails, invoiceItems, transactions] = await Promise.all([
-      prisma.bill_tosalesx.findFirst({
-        where: { invoice_no: invoice.id },
-        include: { customer: true }
-      }),
-      prisma.shiptox.findFirst({
-        where: { invoice_no: invoice.id },
-        include: { customer: true }
-      }),
-      prisma.transport_detailsx.findFirst({ where: { invoice_id: invoice.id } }),
-      prisma.invoice_itemsx.findMany({ where: { invoice_no: invoice.id } }),
-      prisma.incexpx.findMany({ where: { invoice_id: invoice.id } })
-    ])
+    // Get the salex record
+    const salex = await prisma.invoicex.findUnique({
+      where: { id: salexId }
+    })
 
-    res.status(200).json({
-      invoice,
-      billingDetails,
-      shippingDetails,
-      transportDetails,
-      invoiceItems,
-      transactions
+    if (!salex) {
+      return res.status(404).json({ message: 'Salex not found' })
+    }
+
+    // Get the salex items for this invoice
+    const salexItems = await prisma.invoice_itemsx.findMany({
+      where: { invoice_no: salex.id }
     })
+
+    // Get customer data via bill_tosalesx relationship
+    let customerData = null
+    const billToSalex = await prisma.bill_tosalesx.findFirst({
+      where: { invoice_no: salex.id },
+      include: { customer: true }
+    })
+
+    if (billToSalex?.customer) {
+      customerData = {
+        id: billToSalex.customer.id,
+        billing_name: billToSalex.customer.billing_name,
+        billing_address: billToSalex.customer.billing_address,
+        billing_gstin: billToSalex.customer.billing_gstin,
+        contact_no: billToSalex.customer.contact_no || '',
+        email: billToSalex.customer.email || ''
+      }
+    }
+
+    // Get transport details
+    const transportDetails = await prisma.transport_detailsx.findFirst({
+      where: { invoice_id: salex.id }
+    })
+
+    // Get staff details if staff_id exists
+    let staffData = null
+    if (salex.staff_id) {
+      staffData = await prisma.staff.findUnique({
+        where: { id: salex.staff_id },
+        select: { id: true, name: true, phone: true, email: true }
+      })
+    }
+
+    // Get mechanic details if mechanic_id exists
+    let mechanicData = null
+    if (salex.mechanic_id) {
+      mechanicData = await prisma.mechanic.findUnique({
+        where: { id: salex.mechanic_id },
+        select: { id: true, name: true, phone: true }
+      })
+    }
+
+    // Transform to POST/PUT compatible structure
+    const transformedSalex = {
+      // Main salex fields - ensure all required fields are populated
+      id: salex.id,
+      invoice_number: salex.invoice_no?.toString() || '',
+      bill_reference: salex.bill_reference || '',
+      staff_id: salex.staff_id || null,
+      mechanic_id: salex.mechanic_id || null,
+      commission: salex.commission || 0,
+      date: salex.invoice_date,  // Keep as number for proper formatting
+      customer_id: billToSalex?.customer_id || null,
+      transport_cost: salex.freight || 0,
+
+      // Financial summary fields - ensure these are populated
+      items_total: salex.items_total || 0,
+      total_taxable_value: salex.total_taxable_value || salex.items_total || 0,
+      total_tax: salex.total_tax || 0,
+      total: salex.total || (salex.items_total + (salex.total_tax || 0)),
+      freight: salex.freight || 0,
+
+      // Transform items to POST structure
+      items: salexItems.map(item => ({
+        product_id: item.product_id,
+        product_name: item.name_of_product || 'Unknown Product',
+        category_id: item.category_id,
+        subcategory_id: item.subcategory_id,
+        company_id: item.company_id,
+        model_id: item.model_id,
+        part: item.part || '',
+        qty: item.qty,
+        rate: item.rate,
+        gst_percentage: item.gst_percentage || 0,
+        cgst: item.cgst || 0,
+        sgst: item.sgst || 0,
+        igst: item.igst || 0,
+        tax: item.tax || 0,
+        total: item.subtotal || (item.qty * item.rate),
+        subtotal: item.subtotal || (item.qty * item.rate),
+        hsn: item.hsn || ''
+      })),
+
+      // Additional fields
+      descriptions: salex.descriptions || '',
+      packing_forwarding_qty: salex.packing_forwarding_qty || 0,
+      packing_forwarding_rate: salex.packing_forwarding_rate || 0,
+      packing_forwarding_total: salex.packing_forwarding_total || 0,
+
+      // Tax summary fields
+      total_cgst: salex.total_cgst || 0,
+      total_sgst: salex.total_sgst || 0,
+      total_igst: salex.total_igst || 0,
+      notes: salex.notes || '',
+
+      // Payment fields
+      payment_status: salex.payment_status || 0,
+      payment_mode: salex.payment_mode || 1,
+
+      // Metadata
+      fy: salex.fy,
+      item_count: salexItems.length,
+
+      // Backward compatibility
+      select_customer: billToSalex?.customer_id || null,
+      customer: customerData,
+      staff: staffData,
+      mechanic: mechanicData,
+
+      // Transport details for UI compatibility
+      transportDetails: {
+        vehicle_no: transportDetails?.vehicle_no || '',
+        trans_mode: transportDetails?.trans_mode || ''
+      }
+    }
+
+    res.status(200).json(transformedSalex)
+
   } catch (error) {
-    console.error('Salex invoice fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch invoice',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    console.error('Get salex error:', error)
+    res.status(500).json({ message: 'Failed to fetch salex', error: error instanceof Error ? error.message : 'Unknown error' })
   }
 }
 

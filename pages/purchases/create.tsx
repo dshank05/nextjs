@@ -646,7 +646,7 @@ export default function PurchaseCreate() {
           id: (index + 1).toString(),
           product_id: item.product_id || item.category_id || 1,
           product_name: item.product_name || item.name_of_product || '',
-          car_model: item.model_id?.toString() || '',
+          car_model: item.car_model || '',
           category: item.category_id?.toString() || '',
           sub_category: item.subcategory_id?.toString() || '',
           company: item.company_id?.toString() || '',
@@ -1106,13 +1106,13 @@ export default function PurchaseCreate() {
 
     try {
       const submitData = {
-        invoice_number: formData.invoice_number,
+        invoice_number: isEditMode ? undefined : formData.invoice_number, // Don't send invoice_number in edit mode to preserve existing
         bill_reference: formData.bill_reference,
         staff_id: formData.staff_id,
         date: formData.date,
         vendor_id: vendorIdToSave, // Only send vendor relationship ID
         // Removed all vendor detail fields - they're only for UI display
-        transport_name: formData.transport_name,
+        transport: formData.transport_name, // Send as 'transport' field for API compatibility
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
         // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
@@ -1160,7 +1160,11 @@ export default function PurchaseCreate() {
             part: item.part_number, // ✅ Use stored part number from item
             qty: item.qty,
             rate: item.rate,
-            tax: item.tax,
+            gst_percentage: item.gst_percentage || 0,
+            cgst: item.cgst || 0,
+            sgst: item.sgst || 0,
+            igst: item.igst || 0,
+            tax: item.tax || 0,
             total: item.total,
           };
         }),
@@ -1902,7 +1906,7 @@ export default function PurchaseCreate() {
                           {index + 1}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.product_name}
+                          {editingRowId === product.id ? editingRowData?.product_name : product.product_name}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {(() => {
@@ -1916,9 +1920,60 @@ export default function PurchaseCreate() {
                             return subCatOption?.name || product.sub_category;
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-200">
-                          {product.car_model}
-                        </td>
+                        {editingRowId === product.id ? (
+                          <td className="px-4 py-3">
+                            {(() => {
+                              // Find the product being edited
+                              const editingProduct = products.find(p => p.id === product.product_id);
+                              // Filter compatible models for this product
+                              const compatibleModels = editingProduct ? getFilteredCarModelsForProduct(editingProduct) : [];
+                              // Convert current car_model name to model_id for pre-selection
+                              const currentModel = filterOptions.models.find(model => model.name.trim() === editingRowData?.car_model?.trim());
+                              const selectedModelId = currentModel ? currentModel.id.toString() : '';
+
+                              return (
+                                <SearchableMultiSelect
+                                  options={compatibleModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                                  selectedValues={[selectedModelId].filter(Boolean)}
+                                  onSelectionChange={(values) => {
+                                    // For inline editing, only allow single car model selection
+                                    let newCarModel = '';
+                                    let updatedProductName = editingRowData?.product_name || '';
+
+                                    if (values.length > 0) {
+                                      const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
+                                      newCarModel = selectedModel ? selectedModel.name : '';
+
+                                      // Update the product name directly when car model changes
+                                      if (newCarModel && editingRowData?.product_name) {
+                                        // Parse product name format: category-subcategory-carModel-company
+                                        const productName = editingRowData.product_name;
+                                        const parts = productName.split('-');
+                                        if (parts.length >= 4) {
+                                          // Replace the car model part (index 2) with selected model name
+                                          parts[2] = newCarModel;
+                                          updatedProductName = parts.join('-');
+                                        }
+                                      }
+                                    }
+
+                                    // Update editing row data with both car model and updated product name
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      car_model: newCarModel,
+                                      product_name: updatedProductName
+                                    } : null);
+                                  }}
+                                  placeholder="Select car model..."
+                                />
+                              );
+                            })()}
+                          </td>
+                        ) : (
+                          <td className="px-4 py-3 text-xs text-slate-200">
+                            {product.car_model}
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {(() => {
                             const compOption = filterOptions.companies.find(comp => comp.id.toString() === product.company);

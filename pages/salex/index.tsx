@@ -42,7 +42,8 @@ interface Salex {
   bill_reference?: string
   invoice_date: number | string
   status?: number
-  payment_mode?: number
+  payment_status?: number  // Payment status from API (0=Unpaid, 1=Paid)
+  payment_mode?: number    // Payment mode from API (0=Cash, 1=Bank)
   fy: number
   mode?: number
   type?: 'sale' | 'salex' | 'purchase'
@@ -201,7 +202,10 @@ export default function SalexPage() {
     customer_vendor_name: sale.customer_name,
     customer_vendor_address: sale.customer_address,
     customer_vendor_gstin: sale.customer_gstin,
-    invoice_date: sale.invoice_date
+    invoice_date: sale.invoice_date,
+    status: sale.payment_status,  // Map payment_status to status for TransactionTable compatibility
+    payment_status: sale.payment_status,
+    payment_mode: sale.payment_mode
   }))
 
   // Customer filtering: For now, disable filtering since we're properly storing IDs

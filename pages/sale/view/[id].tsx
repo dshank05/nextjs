@@ -6,114 +6,113 @@ import SessionStorageService from '../../../lib/sessionStorage';
 
 
 interface InvoiceItem {
-  id: number;
-  invoice_no: number;
   product_id: number;
   name_of_product: string;
   category_id?: number;
+  subcategory_id?: number;
   model_id?: number;
   company_id?: number;
   hsn?: string;
   part?: string;
   qty: number;
   rate: number;
-  subtotal: number;
-  invoice_date: number;
-  fy: number;
+  subtotal?: number;
+  gst_percentage?: number;
+  cgst?: number;
+  sgst?: number;
+  igst?: number;
+  tax?: number;
+  discount?: number;
+  discountrate?: number;
+  invoice_date?: number;
+  fy?: number;
 }
 
-interface Invoice {
-  id: number;
-  invoice_no: number;
-  select_customer?: number;
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  items_total: number;
-  freight?: number;
-  total_taxable_value: number;
-  taxrate?: number;
-  total_cgst?: number;
-  total_sgst?: number;
-  total_igst?: number;
-  total_tax?: number;
-  total: number;
-  notes?: string;
-  descriptions?: string;
-  invoice_date: number;
-  payment_status?: number;
-  payment_mode?: number;
-  fy: number;
-  staff_details?: string;
-  staff_id?: number;
-  commission?: number;
-  mechanic_id?: number;
-  formattedDate?: string;
-  mechanic?: {
-    id: number;
-    name: string;
-    phone: string;
-    status: string;
-  };
-  staff?: {
-    id: number;
-    name: string;
-    phone: string;
-    status: string;
-  };
-}
-
-interface CustomerData {
-  id: number;
-  billing_name: string;
-  billing_address: string;
-  billing_address_2?: string;
-  billing_city?: string;
-  billing_state?: string;
-  billing_state_code?: number;
+interface Customer {
+  id?: number;
+  billing_name?: string;
+  billing_address?: string;
+  contact_no?: string;
+  email?: string;
   billing_gstin?: string;
-  contact_no: string;
-  email: string;
-  shipping_name?: string;
-  shipping_address: string;
-  shipping_address_2?: string;
-  shipping_city?: string;
-  shipping_state?: string;
-  shipping_state_code?: number;
-  shipping_gstin?: string;
 }
 
-interface BillingDetails {
+interface Staff {
   id: number;
-  invoice_no: number;
-  customer_id: number;
-  customer?: CustomerData;
+  name: string;
+  phone: string;
+  email?: string;
+  status: string;
+}
+
+interface Mechanic {
+  id: number;
+  name: string;
+  phone: string;
+  status: string;
 }
 
 interface ShippingDetails {
-  id: number;
-  invoice_no: number;
-  customer_id: number;
-  shipping: boolean;
-  customer?: CustomerData;
+  user_name: string;
+  address: string;
+  gstin: string;
 }
 
 interface TransportDetails {
-  id: number;
-  invoice_id: number;
-  trans_mode?: string;
-  vehicle_no?: string;
-  supply_date?: string;
-  place_of_supply?: string;
+  trans_mode: string;
+  vehicle_no: string;
+}
+
+interface Invoice {
+  invoice_no: number;
+  invoice_date: number;
+  select_customer: number;
+  items_total: number;
+  freight: number;
+  total_taxable_value: number;
+  total_cgst: number;
+  total_sgst: number;
+  total_igst: number;
+  total_tax: number;
+  total: number;
+  bill_reference?: string;
+  staff_id?: number;
+  staff_details?: string;
+  mechanic_id?: number;
+  commission?: number;
+  discount?: number;
+  tax?: string;
+  packing_forwarding_qty?: number;
+  packing_forwarding_rate?: number;
+  packing_forwarding_total?: number;
+  payment_status: number;
+  payment_mode: number;
+  notes?: string;
+  descriptions?: string;
+  fy: number;
+  updated_at: string;
+
+  invoiceItems: InvoiceItem[];
+  customer_id: number;
+  shippingDetails?: ShippingDetails;
+  useShippingAddress: boolean;
+  transportDetails: TransportDetails;
+
+  // Derived properties for UI
+  formattedDate?: string;
+  customer?: Customer;
+  staff?: Staff;
+  mechanic?: Mechanic;
+  vehicle_number?: string;
+  transport_name?: string;
+  item_count?: number;
+  items?: InvoiceItem[]; // Alias for invoiceItems for compatibility
 }
 
 export default function InvoiceView() {
   const router = useRouter();
   const { id } = router.query;
   const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(null);
-  const [shippingDetails, setShippingDetails] = useState<ShippingDetails | null>(null);
-  const [transportDetails, setTransportDetails] = useState<TransportDetails | null>(null);
   const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -125,14 +124,25 @@ export default function InvoiceView() {
 
   const fetchInvoice = async () => {
     try {
-      const response = await fetch(`/api/invoices/${id}`);
+      const response = await fetch(`/api/sales/${id}`);
       if (response.ok) {
         const data = await response.json();
-        const invoiceData = data.invoice || data;
-        setInvoice(invoiceData);
-        setBillingDetails(data.billingDetails || null);
-        setShippingDetails(data.shippingDetails || null);
-        setTransportDetails(data.transportDetails || null);
+
+        // Create derived transport properties
+        const vehicle_number = data.transportDetails?.vehicle_no || '';
+        const transport_name = data.transportDetails?.trans_mode || '';
+
+        // Create enhanced invoice object - customer, staff, mechanic data now comes directly from API
+        const enhancedInvoice = {
+          ...data,
+          vehicle_number,
+          transport_name,
+          item_count: data.invoiceItems?.length || 0,
+          items: data.invoiceItems || [], // Alias for compatibility
+          formattedDate: new Date(data.invoice_date * 1000).toLocaleDateString('en-IN')
+        };
+
+        setInvoice(enhancedInvoice);
         setInvoiceItems(data.invoiceItems || []);
       }
     } catch (error) {
@@ -146,9 +156,6 @@ export default function InvoiceView() {
     if (invoice) {
       SessionStorageService.set('sales', id.toString(), {
         invoice,
-        billingDetails,
-        shippingDetails,
-        transportDetails,
         invoiceItems
       });
     }
@@ -218,7 +225,7 @@ export default function InvoiceView() {
               <div className="text-6xl">🧾</div>
             </div>
             <h3 className="text-lg font-semibold text-white mb-2">Sales Invoice #{invoice.invoice_no}</h3>
-            <p className="text-slate-400 text-sm mb-2">{billingDetails?.customer?.billing_name || 'N/A'} • {formatDate(invoice.invoice_date)}</p>
+            <p className="text-slate-400 text-sm mb-2">{invoice.customer?.billing_name || 'N/A'} • {formatDate(invoice.invoice_date)}</p>
             <div className="flex items-center gap-2 mt-2">{getStatusBadge(invoice.payment_status)}</div>
           </div>
 
@@ -226,7 +233,7 @@ export default function InvoiceView() {
           <div className="space-y-4">
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Customer:</span>
-              <span className="text-white font-medium">{billingDetails?.customer?.billing_name || 'N/A'}</span>
+              <span className="text-white font-medium">{invoice.customer?.billing_name || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Invoice Number:</span>
@@ -238,7 +245,7 @@ export default function InvoiceView() {
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{billingDetails?.customer?.contact_no || 'N/A'}</span>
+              <span className="text-white font-medium">{invoice.customer?.contact_no || 'N/A'}</span>
             </div>
             <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Items Total:</span>
@@ -294,19 +301,19 @@ export default function InvoiceView() {
             <div className="space-y-3">
               <div className="flex justify-between">
                 <span className="text-slate-400">Customer Name:</span>
-                <span className="text-white font-medium">{billingDetails?.customer?.billing_name || 'N/A'}</span>
+                <span className="text-white font-medium">{invoice.customer?.billing_name || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Contact:</span>
-                <span className="text-white font-medium">{billingDetails?.customer?.contact_no || 'N/A'}</span>
+                <span className="text-white font-medium">{invoice.customer?.contact_no || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">{billingDetails?.customer?.email || 'N/A'}</span>
+                <span className="text-white font-medium">{invoice.customer?.email || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">GSTIN:</span>
-                <span className="text-white font-medium">{billingDetails?.customer?.billing_gstin || 'N/A'}</span>
+                <span className="text-white font-medium">{invoice.customer?.billing_gstin || 'N/A'}</span>
               </div>
             </div>
           </div>
@@ -389,29 +396,23 @@ export default function InvoiceView() {
             <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🚚 Complete Transport Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
-                <label className="block text-slate-400 text-sm mb-1">Transport Mode:</label>
+                <label className="block text-slate-400 text-sm mb-1">Transport Name:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {transportDetails?.trans_mode || 'N/A'}
+                  {invoice.transport_name || 'N/A'}
                 </div>
               </div>
               <div>
                 <label className="block text-slate-400 text-sm mb-1">Vehicle Number:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {transportDetails?.vehicle_no || 'N/A'}
+                  {invoice.vehicle_number || 'N/A'}
                 </div>
               </div>
               <div>
-                <label className="block text-slate-400 text-sm mb-1">Supply Date:</label>
+                <label className="block text-slate-400 text-sm mb-1">Freight:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {transportDetails?.supply_date ? formatDate(transportDetails.supply_date) : 'N/A'}
+                  ₹{invoice.freight?.toLocaleString('en-IN') || '0'}
                 </div>
               </div>
-              {/* <div>
-                <label className="block text-slate-400 text-sm mb-1">Place of Supply:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {transportDetails?.place_of_supply || 'N/A'}
-                </div>
-              </div> */}
             </div>
           </div>
 
@@ -422,19 +423,19 @@ export default function InvoiceView() {
               <div>
                 <label className="block text-slate-400 text-sm mb-1">QTY:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm font-medium">
-                  0.00
+                  {invoice.packing_forwarding_qty?.toString() || '0'}
                 </div>
               </div>
               <div>
                 <label className="block text-slate-400 text-sm mb-1">RATE:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm font-medium">
-                  ₹0.00
+                  ₹{invoice.packing_forwarding_rate?.toLocaleString('en-IN') || '0'}
                 </div>
               </div>
               <div>
                 <label className="block text-slate-400 text-sm mb-1">TOTAL:</label>
                 <div className="bg-slate-700 rounded p-3 text-white text-sm font-semibold text-green-400">
-                  ₹0.00
+                  ₹{invoice.packing_forwarding_total?.toLocaleString('en-IN') || '0'}
                 </div>
               </div>
             </div>
@@ -480,7 +481,7 @@ export default function InvoiceView() {
               </thead>
               <tbody>
                 {invoiceItems.map((item, index) => (
-                  <tr key={item.id}>
+                  <tr key={item.product_id}>
                     <td>{index + 1}</td>
                     <td className="font-medium text-white">{item.name_of_product}</td>
                     <td className="text-slate-300">{item.part || 'N/A'}</td>

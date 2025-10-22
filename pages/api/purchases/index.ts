@@ -287,12 +287,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       total_tax,                // ✓ Purchase.total_tax
       payment_status,           // ✓ Purchase.status
       payment_mode,             // ✓ Purchase.payment_mode
-      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
-      // grand_total,              // ❌ NOT STORED (calculated field)
 
-      // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-      // bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
-      // tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
     console.log('📝 API Received POST data:', req.body);
@@ -461,6 +456,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           // unit: 1, // @deprecated - Default unit (not used for products)
           rate: item.rate,
           subtotal: item.total,
+          gst_percentage: item.gst_percentage || 0,
+          cgst: item.cgst || 0,
+          sgst: item.sgst || 0,
+          igst: item.igst || 0,
+          tax: item.tax || 0,
           fy: financialYear,
           invoice_date: invoiceDate
         }
@@ -728,6 +728,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 qty: newData.qty,
                 rate: newData.rate,
                 subtotal: newData.total,
+                gst_percentage: newData.gst_percentage || 0,
+                cgst: newData.cgst || 0,
+                sgst: newData.sgst || 0,
+                igst: newData.igst || 0,
+                tax: newData.tax || 0,
                 fy: financialYear,
                 invoice_date: invoiceDate
               }

@@ -5,6 +5,7 @@ import { SearchableMultiSelect } from '../../components/common/SearchableMultiSe
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import SessionStorageService from '../../lib/sessionStorage';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface Customer {
   id: string;
@@ -149,6 +150,7 @@ export default function InvoiceCreate() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
@@ -190,16 +192,23 @@ export default function InvoiceCreate() {
   // State for sidepanel car model filtering
   const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
 
+  // Helper function to get consistent company info from product
+  const getCompanyInfo = (product: Product) => {
+    const companyId = product.company_id || (product.company ? parseInt(product.company) : null);
+    const companyName = companyId ? filterOptions.companies.find(comp => comp.id.toString() === companyId.toString())?.name : null;
+    return { companyId, companyName };
+  };
+
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name;
     const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name;
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company;
+    const { companyName } = getCompanyInfo(product);
 
-    // If no specific car model is selected, show base product name
-    if (selectedCarModelIds.length === 0) {
-      return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
-    }
+    // // If no specific car model is selected, show base product name
+    // if (selectedCarModelIds.length === 0) {
+    //   return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
+    // }
 
     // Use the first selected car model for the product name
     const firstCarModelId = selectedCarModelIds[0];
@@ -295,7 +304,7 @@ export default function InvoiceCreate() {
   const [gstRates, setGstRates] = useState<any[]>([]);
 
   // State for customer state code (like vendor state in purchase create)
-  const [customerStateForTax, setCustomerStateForTax] = useState<number>(BUSINESS_STATE_CODE); // Track customer's state code for tax calculations (default to business state)
+  const [customerStateForTax, setCustomerStateForTax] = useState<number>(); // Track customer's state code for tax calculations (default to business state)
 
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -307,6 +316,9 @@ export default function InvoiceCreate() {
     companies: [],
     models: []
   });
+
+  // Initialize snackbar hook
+  const { showSnackbar } = useSnackbar();
 
   // Memoize the filterOptions to prevent unnecessary re-renders
   const memoizedFilterOptions = useMemo(() => filterOptions, [
@@ -464,7 +476,7 @@ export default function InvoiceCreate() {
 
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
-    if (isEditMode && editInvoiceId) {
+    if (customersLoaded && isEditMode && editInvoiceId) {
       console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
 
       // First try to get data from sessionStorage
@@ -473,6 +485,7 @@ export default function InvoiceCreate() {
         console.log('🔄 Using cached invoice data from sessionStorage:', cachedData);
         // Process the cached data directly inline
         const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
+
 
         setFormData({
           invoice_number: invoiceData.invoice_no?.toString() || '',
@@ -483,10 +496,10 @@ export default function InvoiceCreate() {
           contact_number: invoiceData.contact_number || '',
           mechanic_name: invoiceData.mechanic?.mechanic_name || '',
           mechanic_id: invoiceData.mechanic_id || null,
-          vehicle_number: transportDetails.vehicle_no || '',
+          vehicle_number: transportDetails?.vehicle_no || '',
           commission: invoiceData.commission ? invoiceData.commission.toString() : '',
           address: invoiceData.address || '',
-          transport_name: transportDetails.trans_mode || '',
+          transport_name: transportDetails?.trans_mode || '',
           city: invoiceData.city || '',
           email_id: invoiceData.email_id || '',
           discount: invoiceData.discount || '',
@@ -510,18 +523,9 @@ export default function InvoiceCreate() {
         });
 
         // Set customer data from billingDetails
-        if (billingDetails?.customer) {
-          const customer = billingDetails.customer;
-          setSelectedCustomerId(customer.id.toString());
-          setSelectedCustomer(customer);
-          setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE);
-          if (customer.billing_state) {
-            setFormData(prev => ({
-              ...prev,
-              state: customer.billing_state,
-              gst_number: customer.billing_gstin || ''
-            }));
-          }
+        console.log("setting customer id ")
+        if (invoiceData?.select_customer) {
+          selectCustomerById(invoiceData.select_customer.toString())
         }
 
         // Set other IDs
@@ -541,14 +545,62 @@ export default function InvoiceCreate() {
         setInvoiceNumberLoading(false);
 
         // Remove the cached data after using it
-        SessionStorageService.remove('sales', editInvoiceId.toString());
+        // SessionStorageService.remove('sales', editInvoiceId.toString());
         return;
       }
 
       // Fallback to API call if no cached data
       fetchInvoiceForEdit(editInvoiceId);
     }
-  }, [isEditMode, editInvoiceId]);
+
+  }, [customersLoaded, isEditMode, editInvoiceId]);
+
+  const selectCustomerById = (customerId: string) => {
+    console.log('🔄 selectCustomerById called with customerId:', customerId);
+    console.log('📋 Current customers list length:', customers.length);
+    console.log('📋 Current customers:', customers.map(c => ({ id: c.id, name: c.billing_name })));
+
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      console.log('✅ Customer found in loaded list, setting customer data:', customer.billing_name);
+      console.log('📊 Customer details:', {
+        id: customer.id,
+        billing_name: customer.billing_name,
+        contact_no: customer.contact_no,
+        billing_address: customer.billing_address
+      });
+
+      // Set selection state
+      console.log('🔄 Calling setSelectedCustomerId with:', customerId);
+      setSelectedCustomerId(customerId);
+
+      console.log('🔄 Calling setSelectedCustomer with customer object');
+      setSelectedCustomer(customer);
+
+      console.log('🔄 Calling setVendorIdToSave with:', parseInt(customerId));
+      setVendorIdToSave(parseInt(customerId));
+
+      // Populate form fields with customer data
+      console.log('🔄 Updating formData with customer details');
+      setFormData(prev => ({
+        ...prev,
+        customer_name: customer.billing_name,
+        contact_number: customer.contact_no || '',
+        address: customer.billing_address || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state?.toString() || '',
+        gst_number: customer.billing_gstin || '',
+        email_id: customer.email || ''
+      }));
+
+      console.log('✅ selectCustomerById completed successfully');
+    } else {
+      console.warn(`❌ Customer with ID ${customerId} not found in loaded customers list`);
+      console.log('📋 Available customer IDs:', customers.map(c => c.id));
+    }
+  };
+
+
 
   // Filter subcategories for table filters when category changes (using loaded filter data)
   useEffect(() => {
@@ -569,6 +621,9 @@ export default function InvoiceCreate() {
       setFilteredSubcategories(filterOptions.subcategories);
     }
   }, [productRowFilters.category, productRowFilters.subcategory, filterOptions.subcategories]);
+
+
+
 
   // Filter products based on car model selection and search term
   useEffect(() => {
@@ -640,12 +695,15 @@ export default function InvoiceCreate() {
       if (response.ok) {
         const data = await response.json();
         setCustomers(data.customers || []);
+        setCustomersLoaded(true);
       } else {
-        setCustomers([]); // Set empty array on error
+        setCustomers([]);
+        setCustomersLoaded(true);
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
       setCustomers([]); // Set empty array on error
+      setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
     }
   };
 
@@ -775,7 +833,7 @@ export default function InvoiceCreate() {
           vehicle_number: transportDetails.vehicle_no || '',
           commission: invoiceData.commission ? invoiceData.commission.toString() : '',
           address: invoiceData.address || '',
-          transport_name: transportDetails.trans_mode || '',
+          transport_name: transportDetails?.trans_mode || '',
           city: invoiceData.city || '',
           email_id: invoiceData.email_id || '',
           discount: invoiceData.discount || '',
@@ -800,20 +858,7 @@ export default function InvoiceCreate() {
 
         setFormData(formDataToSet);
 
-        // Set customer data from billingDetails
-        if (billingDetails?.customer) {
-          const customer = billingDetails.customer;
-          setSelectedCustomerId(customer.id.toString());
-          setSelectedCustomer(customer);
-          setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE);
-          if (customer) {
-            setFormData(prev => ({
-              ...prev,
-              state: customer.billing_state || '',
-              gst_number: customer.billing_gstin || ''
-            }));
-          }
-        }
+        selectCustomerById(invoiceData?.customer_id.toString())
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -912,7 +957,7 @@ export default function InvoiceCreate() {
         setFormData(formDataToSet);
 
         // Set customer data - find customer in loaded customers list for proper state codes
-        if (invoice.select_customer) {  // API field is select_customer, not customer_id
+        if (invoice.select_customer || invoice.customer_id) {  // API field is select_customer, not customer_id
           setSelectedCustomerId(invoice.select_customer.toString());
           setVendorIdToSave(invoice.select_customer); // For consistency with purchase create
 
@@ -921,7 +966,7 @@ export default function InvoiceCreate() {
           if (existingCustomer) {
             // Use real customer data from the API
             setSelectedCustomer(existingCustomer);
-            setCustomerStateForTax(existingCustomer.billing_state_code || BUSINESS_STATE_CODE);
+            setCustomerStateForTax(existingCustomer.billing_state_code);
 
             // CRITICAL: Call handleCustomerSelect to populate customer form fields (STATE, etc.)
             handleCustomerSelect(existingCustomer.id);
@@ -986,7 +1031,7 @@ export default function InvoiceCreate() {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state_code || BUSINESS_STATE_CODE); // Set customer's state for tax calculations
+      setCustomerStateForTax(customer.billing_state_code); // Set customer's state for tax calculations
 
       // Clear tax calculations when customer changes
       setSelectedProducts([]);
@@ -1009,6 +1054,8 @@ export default function InvoiceCreate() {
       return;
     }
 
+    const { companyId, companyName } = getCompanyInfo(product);
+
     const qty = 1;
     const rate = product.selling_price || product.rate || 0;
     const gstPercent = product.gst_rate_percentage || product.gst_rate || 0;
@@ -1030,8 +1077,8 @@ export default function InvoiceCreate() {
       category_name: product.category_name || '',
       subcategory_id: product.product_subcategory_id || 0,
       subcategory_name: product.subcategory_name || '',
-      company_id: product.company ? parseInt(product.company) : 0,
-      company_name: filterOptions.companies.find(c => c.id.toString() === product.company)?.name || '',
+      company_id: companyId,
+      company_name: companyName,
       part_number: product.part_no || '',
       qty: qty,
       rate: rate,
@@ -1235,12 +1282,17 @@ export default function InvoiceCreate() {
   const validateTaxData = (item: InvoiceItem): Record<string, string> => {
     const taxErrors: Record<string, string> = {};
 
+    // Skip validation if GST breakdown hasn't been calculated yet
+    if (item.cgst === undefined || item.sgst === undefined || item.igst === undefined) {
+      return taxErrors; // Skip validation if GST breakdown not calculated
+    }
+
     // Validate GST percentage range
     if (item.gst_percentage < 0 || item.gst_percentage > 100) {
       taxErrors.gstPercentage = 'GST percentage must be between 0 and 100';
     }
 
-    // Ensure positive tax values
+    // Ensure non-negative tax values (allow 0 for products with 0% GST)
     if (item.cgst < 0) taxErrors.cgst = 'CGST cannot be negative';
     if (item.sgst < 0) taxErrors.sgst = 'SGST cannot be negative';
     if (item.igst < 0) taxErrors.igst = 'IGST cannot be negative';
@@ -1252,26 +1304,8 @@ export default function InvoiceCreate() {
       taxErrors.consistency = `Tax breakdown does not match total tax amount (Expected: ${expectedTotalTax.toFixed(2)}, Got: ${item.tax.toFixed(2)})`;
     }
 
-    // Validate state-based tax logic
-    const isIntraState = !selectedCustomer?.billing_state_code || selectedCustomer.billing_state_code === BUSINESS_STATE_CODE;
-
-    if (isIntraState) {
-      // Intra-state: Must have CGST + SGST, no IGST
-      if (item.igst > 0) {
-        taxErrors.stateLogic = 'Intra-state transactions should not have IGST';
-      }
-      if (item.cgst <= 0 && item.sgst <= 0) {
-        taxErrors.stateLogic = 'Intra-state transactions require CGST or SGST';
-      }
-    } else {
-      // Inter-state: Must have IGST, no CGST/SGST
-      if (item.cgst > 0 || item.sgst > 0) {
-        taxErrors.stateLogic = 'Inter-state transactions should not have CGST or SGST';
-      }
-      if (item.igst <= 0) {
-        taxErrors.stateLogic = 'Inter-state transactions require IGST';
-      }
-    }
+    // NOTE: State-based tax logic (CGST/SGST vs IGST requirements) is validated at totals level only
+    // Individual products can legitimately have CGST=0, SGST=0 if they have 0% GST
 
     return taxErrors;
   };
@@ -1283,6 +1317,7 @@ export default function InvoiceCreate() {
     console.log('🏢 BUSINESS STATE CODE:', BUSINESS_STATE_CODE);
     console.log('👤 CUSTOMER STATE CODE:', selectedCustomer?.billing_state_code);
 
+    // First, validate individual products for basic issues (GST percentages, calculation consistency)
     selectedProducts.forEach((item, index) => {
       console.log(`📦 PRODUCT ${index + 1}:`, {
         name: item.product_name,
@@ -1301,6 +1336,37 @@ export default function InvoiceCreate() {
         taxErrors[`product_${index}_${key}`] = `Product ${index + 1}: ${error}`;
       });
     });
+
+    // Then, validate overall state-based tax logic based on TOTALS, not individual products
+    if (selectedProducts.length > 0 && selectedCustomer) {
+      const { totalCgst, totalSgst, totalIgst } = calculateExpectedTax();
+      const isIntraState = !selectedCustomer.billing_state_code || selectedCustomer.billing_state_code === BUSINESS_STATE_CODE;
+
+      // Check if there are any products with GST > 0
+      const hasTaxableProducts = selectedProducts.some(product => product.gst_percentage > 0);
+
+      console.log('💰 TOTAL TAX VALIDATION:', { totalCgst, totalSgst, totalIgst, isIntraState, hasTaxableProducts });
+
+      if (isIntraState) {
+        // Intra-state: Must have CGST + SGST in totals if there are taxable products, no IGST
+        if (totalIgst > 0) {
+          taxErrors.stateLogic = 'Intra-state transactions should not have IGST';
+        }
+        // Only require CGST/SGST > 0 if there are products with GST > 0
+        if (hasTaxableProducts && totalCgst <= 0 && totalSgst <= 0) {
+          taxErrors.stateLogic = 'Intra-state transactions with taxable products require CGST or SGST totals to be greater than 0';
+        }
+      } else {
+        // Inter-state: Must have IGST in totals if there are taxable products, no CGST/SGST
+        if (totalCgst > 0 || totalSgst > 0) {
+          taxErrors.stateLogic = 'Inter-state transactions should not have CGST or SGST';
+        }
+        // Only require IGST > 0 if there are products with GST > 0
+        if (hasTaxableProducts && totalIgst <= 0) {
+          taxErrors.stateLogic = 'Inter-state transactions with taxable products require IGST total to be greater than 0';
+        }
+      }
+    }
 
     console.log('📊 FINAL TAX ERRORS:', taxErrors);
     return taxErrors;
@@ -1451,7 +1517,7 @@ export default function InvoiceCreate() {
         staff_details: selectedStaffId ? staffList.find(s => s.id === selectedStaffId)?.staff_name || '' : '', // Invoice.staff_details (deprecated but kept for backward compatibility)
         mechanic_id: selectedMechanicId ? parseInt(selectedMechanicId) : null, // Invoice.mechanic_id (foreign key)
         commission: parseFloat(formData.commission) || 0,            // Invoice.commission
-        discount: parseFloat(formData.discount) || 0,                // Invoice.discount (invoice-level discount)
+        discount: totalDiscount,                                     // Invoice.discount (calculated as sum of item discounts)
         tax: formData.tax,                                           // Invoice.tax (tax description/notes)
         packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,   // Invoice.packing_forwarding_qty
         packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0, // Invoice.packing_forwarding_rate
@@ -1484,7 +1550,7 @@ export default function InvoiceCreate() {
           hsn: item.hsn || '',                                        // Invoiceitems.hsn
           part: item.part_number,                                     // Invoiceitems.part
           category_id: item.category_id,                              // Invoiceitems.category_id
-          subcategory_id:item.subcategory_id,
+          subcategory_id: item.subcategory_id,
           model_id: item.car_model_ids && item.car_model_ids.length > 0 ? parseInt(item.car_model_ids[0]) : null, // Invoiceitems.model_id (first car model)
           company_id: item.company_id,                                // Invoiceitems.company_id
           invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoiceitems.invoice_date
@@ -1528,12 +1594,17 @@ export default function InvoiceCreate() {
 
       if (response.ok) {
         setShowConfirmationModal(false);
+        showSnackbar('success', `Invoice ${isEditMode ? 'updated' : 'created'} successfully!`);
+        SessionStorageService.remove('sales', editInvoiceId.toString());
         router.push('/sale');
       } else {
         const error = await response.json();
         console.error('❌ API Error:', error);
+        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
         setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice` });
       }
+      // Always close modal after API completes (regardless of success/failure)
+      setShowConfirmationModal(false);
     } catch (error) {
       console.error('❌ Network Error:', error);
       setErrors({ submit: 'Network error occurred' });
@@ -1646,9 +1717,11 @@ export default function InvoiceCreate() {
                     </button>
                   </div>
                   <select
-                    value={selectedCustomerId}
+                    key={`customer-dropdown-${customers.length}-${selectedCustomerId}`}
+                    value={selectedCustomerId || ''}
                     onChange={(e) => {
                       const customerId = e.target.value;
+                      console.log('🔄 CUSTOMER DROPDOWN MANUAL CHANGE:', customerId);
                       setSelectedCustomerId(customerId);
                       handleCustomerSelect(customerId);
                     }}
@@ -1656,7 +1729,9 @@ export default function InvoiceCreate() {
                   >
                     <option value="" disabled>Select Customer</option>
                     {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>{customer.billing_name}</option>
+                      <option key={customer.id} value={customer.id} selected={customer.id === selectedCustomerId}>
+                        {customer.billing_name}
+                      </option>
                     ))}
                   </select>
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
@@ -2118,6 +2193,8 @@ export default function InvoiceCreate() {
                                 const sgst = gstBreakdown.sgst;
                                 const igst = gstBreakdown.igst;
 
+                                const { companyId, companyName } = getCompanyInfo(selectedProduct);
+
                                 const newItem: InvoiceItem = {
                                   id: Date.now().toString(),
                                   product_id: selectedProduct.id,
@@ -2128,8 +2205,8 @@ export default function InvoiceCreate() {
                                   category_name: selectedProduct.category_name || filterOptions.categories.find(c => c.id.toString() === selectedProduct.product_category_id?.toString())?.name || '',
                                   subcategory_id: selectedProduct.product_subcategory_id || 0,
                                   subcategory_name: selectedProduct.subcategory_name || filterOptions.subcategories.find(s => s.id.toString() === selectedProduct.product_subcategory_id?.toString() && s.category_id === selectedProduct.product_category_id)?.name || '',
-                                  company_id: selectedProduct.company ? parseInt(selectedProduct.company) : 0,
-                                  company_name: filterOptions.companies.find(c => c.id.toString() === selectedProduct.company)?.name || selectedProduct.company || '',
+                                  company_id: companyId,
+                                  company_name: companyName,
                                   part_number: productRowFilters.partNo,
                                   qty: qty,
                                   rate: rate,
@@ -2198,9 +2275,88 @@ export default function InvoiceCreate() {
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.subcategory_name || '-'}
                         </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
-                          {product.car_model_names.join(', ') || '-'}
-                        </td>
+                        {editingRowId === product.id ? (
+                          <td className="px-3 py-2">
+                            {(() => {
+                              // Find the product being edited to filter compatible car models
+                              const editingProduct = products.find(p => p.id === product.product_id);
+                              // Filter compatible models for this product
+                              const compatibleModels = editingProduct ? getFilteredCarModelsForProduct(editingProduct) : [];
+                              // Get current car model names - use editingRowData if available, otherwise product data
+                              const currentCarModels = editingRowData?.car_model_names || product.car_model_names || [];
+                              // Find the first car model for pre-selection (single selection)
+                              const currentModel = filterOptions.models.find(model =>
+                                currentCarModels.includes(model.name)
+                              );
+                              const selectedModelId = currentModel ? currentModel.id.toString() : '';
+
+                              return (
+                                <SearchableMultiSelect
+                                  options={compatibleModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                                  selectedValues={[selectedModelId].filter(Boolean)}
+                                  onSelectionChange={(values) => {
+                                    // For inline editing, only allow single car model selection
+                                    let newCarModelNames: string[] = [];
+                                    let updatedProductName = editingRowData?.product_name || product.product_name || '';
+
+                                    if (values.length > 0) {
+                                      const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
+                                      const newCarModel = selectedModel ? selectedModel.name : '';
+                                      newCarModelNames = [newCarModel];
+
+                                      // Update the product name directly when car model changes
+                                      if (newCarModel) {
+                                        // Parse product name format: category-subcategory-carModel-company
+                                        const productName = updatedProductName;
+                                        const parts = productName.split('-');
+                                        if (parts.length >= 4) {
+                                          // Replace the car model part (index 2) with selected model name
+                                          parts[2] = newCarModel;
+                                          updatedProductName = parts.join('-');
+                                        }
+                                      }
+                                    }
+
+                                    // Update editing row data with both car model changes and updated product name
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      car_model_names: newCarModelNames,
+                                      product_name: updatedProductName
+                                    } : null);
+
+                                    // Recalculate totals based on changes
+                                    if (editingRowData) {
+                                      const subtotal = editingRowData.qty * editingRowData.rate;
+                                      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+                                      const taxableAmount = subtotal - discountAmount;
+                                      const taxAmount = (taxableAmount * editingRowData.gst_percentage) / 100;
+
+                                      // Recalculate GST breakdown based on customer's state
+                                      const gstBreakdown = calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code);
+                                      const updatedItem = {
+                                        ...editingRowData,
+                                        car_model_names: newCarModelNames,
+                                        product_name: updatedProductName,
+                                        tax: taxAmount,
+                                        total: taxableAmount + taxAmount,
+                                        cgst: gstBreakdown.cgst,
+                                        sgst: gstBreakdown.sgst,
+                                        igst: gstBreakdown.igst
+                                      };
+
+                                      setEditingRowData(updatedItem);
+                                    }
+                                  }}
+                                  placeholder="Select car model..."
+                                />
+                              );
+                            })()}
+                          </td>
+                        ) : (
+                          <td className="px-3 py-2 text-center text-xs text-slate-200">
+                            {product.car_model_names.join(', ') || '-'}
+                          </td>
+                        )}
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.company_name || '-'}
                         </td>
@@ -2587,7 +2743,10 @@ export default function InvoiceCreate() {
             <div className="flex justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => router.push('/sale')}
+                onClick={() => {
+                  SessionStorageService.remove('sales', editInvoiceId.toString());
+                  router.push('/sale')
+                }}
                 className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
               >
                 Cancel

@@ -172,7 +172,6 @@ export default function PurchaseReturnPage() {
     switch (statusFilter) {
       case 'paid': return '1';
       case 'unpaid': return '0';
-      case 'unknown': return 'unknown';
       default: return '';
     }
   };
