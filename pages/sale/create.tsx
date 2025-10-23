@@ -265,7 +265,7 @@ export default function InvoiceCreate() {
       ...prev,
       category: product.product_category_id || 0,
       subcategory: product.product_subcategory_id || 0,
-      carModels: [product.car_model_ids.split(",")[0]], 
+      carModels: [product.car_model_ids.split(",")[0]],
       company: product.company_id || 0,
       partNo: product.part_no || ''
     }));
@@ -1888,7 +1888,7 @@ export default function InvoiceCreate() {
 
             {/* Discount Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-row-reverse mb-3">
                 {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
@@ -2169,133 +2169,133 @@ export default function InvoiceCreate() {
                           type="button"
                           onClick={() => {
                             if (selectedRowProduct !== null) {
-                            const selectedProduct = selectedRowProduct;
-                            if (selectedProduct) {
-                              // Convert car model IDs to names for display
-                              const carModelNames = productRowFilters.carModels
-                                .map(id => {
-                                  const model = filterOptions.models.find(m => m.id.toString() === id);
-                                  return model ? model.name : id;
-                                })
-                                .filter(name => name)
-                                .join(', ');
+                              const selectedProduct = selectedRowProduct;
+                              if (selectedProduct) {
+                                // Convert car model IDs to names for display
+                                const carModelNames = productRowFilters.carModels
+                                  .map(id => {
+                                    const model = filterOptions.models.find(m => m.id.toString() === id);
+                                    return model ? model.name : id;
+                                  })
+                                  .filter(name => name)
+                                  .join(', ');
 
-                              // Use product details and template values
-                              const qty = parseFloat(templateRow.qty) || 1;
-                              const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                              const gstPercent = parseFloat(templateRow.gst) || 0;
-                              const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+                                // Use product details and template values
+                                const qty = parseFloat(templateRow.qty) || 1;
+                                const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
+                                const gstPercent = parseFloat(templateRow.gst) || 0;
+                                const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
-                              // Calculate amounts
-                              const subtotal = qty * rate;
-                              const discountAmount = (subtotal * discountPercent) / 100;
-                              const taxableAmount = subtotal - discountAmount;
-                              const tax = (taxableAmount * gstPercent) / 100; // Tax on discounted price
+                                // Calculate amounts
+                                const subtotal = qty * rate;
+                                const discountAmount = (subtotal * discountPercent) / 100;
+                                const taxableAmount = subtotal - discountAmount;
+                                const tax = (taxableAmount * gstPercent) / 100; // Tax on discounted price
 
-                              // Calculate tax breakdown based on customer's state
-                              const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
-                              const cgst = gstBreakdown.cgst;
-                              const sgst = gstBreakdown.sgst;
-                              const igst = gstBreakdown.igst;
+                                // Calculate tax breakdown based on customer's state
+                                const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
+                                const cgst = gstBreakdown.cgst;
+                                const sgst = gstBreakdown.sgst;
+                                const igst = gstBreakdown.igst;
 
-                              const { companyId, companyName } = getCompanyInfo(selectedProduct);
+                                const { companyId, companyName } = getCompanyInfo(selectedProduct);
 
-                              const newItem: InvoiceItem = {
-                                id: Date.now().toString(),
-                                product_id: selectedProduct.id,
-                                product_name: selectedProduct.product_name,
-                                car_model_ids: selectedProduct.car_model_ids ? selectedProduct.car_model_ids.split(',').map(id => id.trim()) : [],
-                                car_model_names: carModelNames ? carModelNames.split(', ') : [],
-                                category_id: selectedProduct.product_category_id || 0,
-                                category_name: selectedProduct.category_name || filterOptions.categories.find(c => c.id.toString() === selectedProduct.product_category_id?.toString())?.name || '',
-                                subcategory_id: selectedProduct.product_subcategory_id || null,
-                                subcategory_name: selectedProduct.subcategory_name || filterOptions.subcategories.find(s => s.id.toString() === selectedProduct.product_subcategory_id?.toString() && s.category_id === selectedProduct.product_category_id)?.name || '',
-                                company_id: companyId,
-                                company_name: companyName,
-                                part_number: productRowFilters.partNo,
-                                qty: qty,
-                                rate: rate,
-                                gst_percentage: gstPercent, // Store GST percentage
-                                discount_percentage: discountPercent,
-                                tax: tax,
-                                discount_amount: discountAmount,
-                                total: taxableAmount + tax,
-                                // New pricing fields
-                                hsn: selectedProduct.hsn || '',
-                                mrp: 0, // Default MRP
-                                discount: discountPercent, // Store discount percentage
-                                margin: 0, // Default margin
-                                // GST breakdown
-                                cgst: cgst,
-                                sgst: sgst,
-                                igst: igst
-                              };
-                              console.log("newItem", newItem)
-                              setSelectedProducts(prev => [...prev, newItem]);
+                                const newItem: InvoiceItem = {
+                                  id: Date.now().toString(),
+                                  product_id: selectedProduct.id,
+                                  product_name: selectedProduct.product_name,
+                                  car_model_ids: selectedProduct.car_model_ids ? selectedProduct.car_model_ids.split(',').map(id => id.trim()) : [],
+                                  car_model_names: carModelNames ? carModelNames.split(', ') : [],
+                                  category_id: selectedProduct.product_category_id || 0,
+                                  category_name: selectedProduct.category_name || filterOptions.categories.find(c => c.id.toString() === selectedProduct.product_category_id?.toString())?.name || '',
+                                  subcategory_id: selectedProduct.product_subcategory_id || null,
+                                  subcategory_name: selectedProduct.subcategory_name || filterOptions.subcategories.find(s => s.id.toString() === selectedProduct.product_subcategory_id?.toString() && s.category_id === selectedProduct.product_category_id)?.name || '',
+                                  company_id: companyId,
+                                  company_name: companyName,
+                                  part_number: productRowFilters.partNo,
+                                  qty: qty,
+                                  rate: rate,
+                                  gst_percentage: gstPercent, // Store GST percentage
+                                  discount_percentage: discountPercent,
+                                  tax: tax,
+                                  discount_amount: discountAmount,
+                                  total: taxableAmount + tax,
+                                  // New pricing fields
+                                  hsn: selectedProduct.hsn || '',
+                                  mrp: 0, // Default MRP
+                                  discount: discountPercent, // Store discount percentage
+                                  margin: 0, // Default margin
+                                  // GST breakdown
+                                  cgst: cgst,
+                                  sgst: sgst,
+                                  igst: igst
+                                };
+                                console.log("newItem", newItem)
+                                setSelectedProducts(prev => [...prev, newItem]);
 
-                              // Reset form
-                              setSelectedRowProduct(null);
-                              setProductRowFilters({
-                                category: 0,
-                                categoryName: '',
-                                subcategory: 0,
-                                subcategoryName: '',
-                                carModels: [],
-                                company: 0,
-                                companyName: '',
-                                partNo: ''
-                              });
-                              setTemplateRow({
-                                qty: '1',
-                                rate: '0',
-                                gst: '0',
-                                discount: '0'
-                              });
+                                // Reset form
+                                setSelectedRowProduct(null);
+                                setProductRowFilters({
+                                  category: 0,
+                                  categoryName: '',
+                                  subcategory: 0,
+                                  subcategoryName: '',
+                                  carModels: [],
+                                  company: 0,
+                                  companyName: '',
+                                  partNo: ''
+                                });
+                                setTemplateRow({
+                                  qty: '1',
+                                  rate: '0',
+                                  gst: '0',
+                                  discount: '0'
+                                });
+                              }
                             }
-                          }
-                        }}
-                        disabled={!selectedRowProduct}
-                        className={`px-3 py-1 mr-2 text-xs rounded font-medium transition-colors ${selectedRowProduct
-                          ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                          : 'bg-slate-600 text-slate-400 cursor-not-allowed'
-                          }`}
-                      >
-                        Add
-                      </button>
-                      <div className="flex items-center justify-center space-x-1">
-                        {selectedRowProduct && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Clear selected product and reset template row
-                              setSelectedRowProduct(null);
-                              setProductRowFilters({
-                                category: 0,
-                                categoryName: '',
-                                subcategory: 0,
-                                subcategoryName: '',
-                                carModels: [],
-                                company: 0,
-                                companyName: '',
-                                partNo: ''
-                              });
-                              setFilteredCarModels([]);
-                              setFilteredSubcategories([]);
-                              setTemplateRow({
-                                qty: '1',
-                                rate: '',
-                                gst: '0',
-                                discount: '0'
-                              });
-                            }}
-                            className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                            title="Clear selected product"
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    </td>
+                          }}
+                          disabled={!selectedRowProduct}
+                          className={`px-3 py-1 mr-2 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-slate-600 text-slate-400 cursor-not-allowed'
+                            }`}
+                        >
+                          Add
+                        </button>
+                        <div className="flex items-center justify-center space-x-1">
+                          {selectedRowProduct && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                // Clear selected product and reset template row
+                                setSelectedRowProduct(null);
+                                setProductRowFilters({
+                                  category: 0,
+                                  categoryName: '',
+                                  subcategory: 0,
+                                  subcategoryName: '',
+                                  carModels: [],
+                                  company: 0,
+                                  companyName: '',
+                                  partNo: ''
+                                });
+                                setFilteredCarModels([]);
+                                setFilteredSubcategories([]);
+                                setTemplateRow({
+                                  qty: '1',
+                                  rate: '',
+                                  gst: '0',
+                                  discount: '0'
+                                });
+                              }}
+                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
+                              title="Clear selected product"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
 
                     {/* Added Products Rows */}
@@ -2731,7 +2731,7 @@ export default function InvoiceCreate() {
                 {/* Payment Details */}
                 <div className="border-t border-slate-600 pt-4">
                   {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
                       <select
@@ -2756,21 +2756,23 @@ export default function InvoiceCreate() {
                         <option value={1}>Bank</option>
                       </select>
                     </div>
-                  </div>
-                </div>
-
-                {/* Grand Total */}
-                <div className="bg-slate-700 rounded p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-300 font-medium">GRAND TOTAL</span>
-                    <div className="flex items-center space-x-2">
-                      <Calculator className="w-4 h-4 text-slate-400" />
-                      <span className="text-white font-semibold text-lg">
-                        ₹{grandTotal.toFixed(2)}
-                      </span>
+                    {/* Grand Total */}
+                    <div className="bg-slate-700 rounded p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">GRAND TOTAL</span>
+                        <div className="flex items-center space-x-2">
+                          <Calculator className="w-4 h-4 text-slate-400" />
+                          <span className="text-white font-semibold text-lg">
+                            ₹{grandTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
                 </div>
+
+
               </div>
             </div>
 

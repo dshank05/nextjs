@@ -1550,7 +1550,7 @@ export default function InvoiceCCreate() {
 
             {/* Discount Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-row-reverse mb-3">
                 {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
@@ -2276,7 +2276,7 @@ export default function InvoiceCCreate() {
                 {/* Payment Details */}
                 <div className="border-t border-slate-600 pt-4">
                   {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
                       <select
@@ -2301,21 +2301,22 @@ export default function InvoiceCCreate() {
                         <option value="1">Bank</option>
                       </select>
                     </div>
-                  </div>
-                </div>
-
-                {/* Grand Total */}
-                <div className="bg-slate-700 rounded p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-300 font-medium">GRAND TOTAL</span>
-                    <div className="flex items-center space-x-2">
-                      <Calculator className="w-4 h-4 text-slate-400" />
-                      <span className="text-white font-semibold text-lg">
-                        ₹{grandTotal.toFixed(2)}
-                      </span>
+                    {/* Grand Total */}
+                    <div className="bg-slate-700 rounded p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">GRAND TOTAL</span>
+                        <div className="flex items-center space-x-2">
+                          <Calculator className="w-4 h-4 text-slate-400" />
+                          <span className="text-white font-semibold text-lg">
+                            ₹{grandTotal.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+
               </div>
             </div>
 
