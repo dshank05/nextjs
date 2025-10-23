@@ -2255,7 +2255,7 @@ export default function InvoiceCreate() {
                             }
                           }}
                           disabled={!selectedRowProduct}
-                          className={`px-3 py-1 mr-2 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                          className={`px-3 py-1 text-xs mr-2 rounded font-medium transition-colors ${selectedRowProduct
                             ? 'bg-blue-600 hover:bg-blue-700 text-white'
                             : 'bg-slate-600 text-slate-400 cursor-not-allowed'
                             }`}
