@@ -201,14 +201,10 @@ export default function InvoiceCCreate() {
 
   // Function to generate dynamic product name based on car model selection
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
-    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || 'CATEGORY';
-    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || 'SUBCATEGORY';
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === (product.company_id || product.company)?.toString())?.name || product.company || 'COMPANY';
+    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || '';
+    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || '';
+    const companyName = filterOptions.companies.find(comp => comp.id.toString() === (product.company_id || product.company)?.toString())?.name || product.company || '';
 
-    // If no specific car model is selected, show base product name
-    if (selectedCarModelIds.length === 0) {
-      return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
-    }
 
     // Use the first selected car model for the product name
     const firstCarModelId = selectedCarModelIds[0];
@@ -243,7 +239,7 @@ export default function InvoiceCCreate() {
       ...prev,
       category: product.product_category_id ? product.product_category_id.toString() : '',
       subcategory: product.product_subcategory_id ? product.product_subcategory_id.toString() : '',
-      carModels: [], // Initially unselected
+      carModels: [product.car_model_ids.split(",")[0]],
       company: product.company_id ? product.company_id.toString() : '',
       partNo: product.part_no || ''
     }));
@@ -254,7 +250,7 @@ export default function InvoiceCCreate() {
       initialFilters: {
         category: product.product_category_id,
         subcategory: product.product_subcategory_id,
-        carModels: [], // unselected
+        carModels: [product.car_model_ids.split(",")[0]], // unselected
         company: product.company_id
       }
     });
@@ -584,7 +580,7 @@ export default function InvoiceCCreate() {
           car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
           category_id: item.category_id || 0,
           category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
-          subcategory_id: item.subcategory_id || 0,
+          subcategory_id: item.subcategory_id || null,
           subcategory_name: (() => {
             // First try database subcategory_id
             if (item.subcategory_id && item.subcategory_id !== 0) {
@@ -1021,7 +1017,7 @@ export default function InvoiceCCreate() {
       car_model_names: [],
       category_id: product.product_category_id || 0,
       category_name: product.category_name || '',
-      subcategory_id: product.product_subcategory_id || 0,
+      subcategory_id: product.product_subcategory_id || null,
       subcategory_name: product.subcategory_name || '',
       company_id: companyId,
       company_name: companyName,
@@ -1314,7 +1310,7 @@ export default function InvoiceCCreate() {
 
             {/* Invoice Information */}
             <div className="mb-3">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice C Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice C Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE C NUMBER *</label>
@@ -1375,9 +1371,8 @@ export default function InvoiceCCreate() {
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
 
-              <h3 className="text-lg font-medium text-slate-200 mb-3">
-                Customer Information
-                <div className="float-right mt-1">
+              <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                <div className="flex flex-row-reverse mt-1">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1388,7 +1383,7 @@ export default function InvoiceCCreate() {
                     <span className="text-sm text-slate-300">Use shipping address</span>
                   </label>
                 </div>
-              </h3>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1504,7 +1499,7 @@ export default function InvoiceCCreate() {
 
             {/* Customer Service Details */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Service Details</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Service Details</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
@@ -1556,7 +1551,7 @@ export default function InvoiceCCreate() {
             {/* Discount Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-medium text-slate-200">Discount</h3>
+                {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1571,7 +1566,7 @@ export default function InvoiceCCreate() {
 
             {/* Product Selection */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
               {/* Product Selection & Display Table */}
               <div className="border border-slate-600 rounded mb-3">
@@ -1838,7 +1833,7 @@ export default function InvoiceCCreate() {
                                   car_model_names: carModelNames ? carModelNames.split(', ') : [],
                                   category_id: selectedProduct.product_category_id || 0,
                                   category_name: filterOptions.categories.find(c => c.id.toString() === productRowFilters.category)?.name || '',
-                                  subcategory_id: selectedProduct.product_subcategory_id || 0,
+                                  subcategory_id: selectedProduct.product_subcategory_id || null,
                                   subcategory_name: productRowFilters.subcategory ? filterOptions.subcategories.find(s => s.id.toString() === productRowFilters.subcategory)?.name || '' : '',
                                   company_id: companyId, // Use helper function result instead of product.company
                                   company_name: companyName, // Use helper function result instead of filter lookup
@@ -2170,7 +2165,7 @@ export default function InvoiceCCreate() {
 
             {/* Additional Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -2197,7 +2192,7 @@ export default function InvoiceCCreate() {
 
             {/* Summary & Payment */}
             <div className="border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
               <div className="space-y-6">
 
                 {/* Calculations */}
@@ -2239,7 +2234,7 @@ export default function InvoiceCCreate() {
 
                 {/* Packing & Forwarding */}
                 <div>
-                  <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
@@ -2280,7 +2275,7 @@ export default function InvoiceCCreate() {
 
                 {/* Payment Details */}
                 <div className="border-t border-slate-600 pt-4">
-                  <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
@@ -2367,7 +2362,7 @@ export default function InvoiceCCreate() {
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
-            rate: product.latest_selling_price?.toString() || product.selling_price?.toString() || product.rate?.toString() || '0',
+            rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
             gst: '0',
             discount: '0'
           });

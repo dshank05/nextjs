@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
+import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -265,7 +265,7 @@ export default function InvoiceCreate() {
       ...prev,
       category: product.product_category_id || 0,
       subcategory: product.product_subcategory_id || 0,
-      carModels: [], // Initially unselected
+      carModels: [product.car_model_ids.split(",")[0]], 
       company: product.company_id || 0,
       partNo: product.part_no || ''
     }));
@@ -276,7 +276,7 @@ export default function InvoiceCreate() {
       initialFilters: {
         category: product.product_category_id,
         subcategory: product.product_subcategory_id,
-        carModels: [], // unselected
+        carModels: [product.car_model_ids.split(",")[0]],
         company: product.company_id
       }
     });
@@ -424,7 +424,7 @@ export default function InvoiceCreate() {
           car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
           category_id: item.category_id || 0,
           category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
-          subcategory_id: item.subcategory_id || 0,
+          subcategory_id: item.subcategory_id || null,
           subcategory_name: (() => {
             // First try database subcategory_id
             if (item.subcategory_id && item.subcategory_id !== 0) {
@@ -1058,7 +1058,7 @@ export default function InvoiceCreate() {
     const { companyId, companyName } = getCompanyInfo(product);
 
     const qty = 1;
-    const rate = product.latest_selling_price || product.selling_price || product.rate || 0;
+    const rate = product.latest_selling_price || product.rate || 0;
     const gstPercent = product.gst_rate_percentage || product.gst_rate || 0;
     const subtotal = qty * rate;
 
@@ -1076,7 +1076,7 @@ export default function InvoiceCreate() {
       car_model_names: [],
       category_id: product.product_category_id || 0,
       category_name: product.category_name || '',
-      subcategory_id: product.product_subcategory_id || 0,
+      subcategory_id: product.product_subcategory_id || null,
       subcategory_name: product.subcategory_name || '',
       company_id: companyId,
       company_name: companyName,
@@ -1632,7 +1632,7 @@ export default function InvoiceCreate() {
 
             {/* Invoice Information */}
             <div className="mb-3">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
@@ -1696,9 +1696,8 @@ export default function InvoiceCreate() {
 
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">
-                Customer Information
-                <div className="float-right mt-1">
+              <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+                <div className="flex flex-row-reverse mt-1">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1709,7 +1708,7 @@ export default function InvoiceCreate() {
                     <span className="text-sm text-slate-300">Use shipping address</span>
                   </label>
                 </div>
-              </h3>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
@@ -1834,7 +1833,7 @@ export default function InvoiceCreate() {
 
             {/* Customer Service Details */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Service Details</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Service Details</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
@@ -1890,7 +1889,7 @@ export default function InvoiceCreate() {
             {/* Discount Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-medium text-slate-200">Discount</h3>
+                {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1906,7 +1905,7 @@ export default function InvoiceCreate() {
 
             {/* Product Selection */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
               {/* Product Selection & Display Table */}
               <div className="border border-slate-600 rounded mb-3">
@@ -2209,7 +2208,7 @@ export default function InvoiceCreate() {
                                 car_model_names: carModelNames ? carModelNames.split(', ') : [],
                                 category_id: selectedProduct.product_category_id || 0,
                                 category_name: selectedProduct.category_name || filterOptions.categories.find(c => c.id.toString() === selectedProduct.product_category_id?.toString())?.name || '',
-                                subcategory_id: selectedProduct.product_subcategory_id || 0,
+                                subcategory_id: selectedProduct.product_subcategory_id || null,
                                 subcategory_name: selectedProduct.subcategory_name || filterOptions.subcategories.find(s => s.id.toString() === selectedProduct.product_subcategory_id?.toString() && s.category_id === selectedProduct.product_category_id)?.name || '',
                                 company_id: companyId,
                                 company_name: companyName,
@@ -2573,7 +2572,7 @@ export default function InvoiceCreate() {
 
             {/* Additional Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -2600,12 +2599,12 @@ export default function InvoiceCreate() {
 
             {/* Summary & Payment */}
             <div className="border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
               <div className="space-y-6">
 
                 {/* Tax Breakdown */}
                 <div>
-                  <h4 className="text-sm font-medium text-slate-300 mb-3">Tax Breakdown</h4>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Tax Breakdown</h4> */}
                   <div className="grid grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
@@ -2687,7 +2686,7 @@ export default function InvoiceCreate() {
 
                 {/* Packing & Forwarding */}
                 <div>
-                  <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
@@ -2731,7 +2730,7 @@ export default function InvoiceCreate() {
 
                 {/* Payment Details */}
                 <div className="border-t border-slate-600 pt-4">
-                  <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
@@ -2825,7 +2824,7 @@ export default function InvoiceCreate() {
           setTemplateRow({
             qty: '1',
             rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
-            gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '18',
+            gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '0',
             discount: '0'
           });
           setIsProductPanelOpen(false);

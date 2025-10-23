@@ -612,7 +612,7 @@ export default function ProductCreate() {
           </div>
 
           {/* Selling Price Display */}
-          <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
+          {/* <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-blue-300 font-medium">SELLING PRICE</span>
@@ -629,7 +629,7 @@ export default function ProductCreate() {
                 </div>
               </div>
             </div>
-          </div>
+          </div> */}
         </div>
 
         {/* Row 5: Location & Tax */}

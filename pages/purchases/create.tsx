@@ -297,13 +297,13 @@ export default function PurchaseCreate() {
     if (productRowFilters.category > 0) {
       const filtered = filterOptions.subcategories.filter(sub => sub.category_id === productRowFilters.category);
       setFilteredSubcategories(filtered);
-      
+
       // Only clear subcategory if it's not valid for the new category
       const isCurrentSubcategoryValid = filtered.some(sub => sub.id === productRowFilters.subcategory);
       if (!isCurrentSubcategoryValid && productRowFilters.subcategory > 0) {
         setProductRowFilters(prev => ({
           ...prev,
-          subcategory: 0,
+          subcategory: null,
           subcategoryName: ''
         }));
       }
@@ -341,9 +341,9 @@ export default function PurchaseCreate() {
       ...prev,
       category: product.product_category_id || 0,
       categoryName: categoryName,
-      subcategory: product.product_subcategory_id || 0,
+      subcategory: product.product_subcategory_id || null,
       subcategoryName: subcategoryName,
-      carModels: [], // Initially unselected
+      carModels: [product.car_model_ids.split(",")[0]],
       company: companyId,
       companyName: companyName,
       partNo: product.part_no || ''
@@ -357,7 +357,7 @@ export default function PurchaseCreate() {
         categoryName: categoryName,
         subcategory: product.product_subcategory_id,
         subcategoryName: subcategoryName,
-        carModels: [], // unselected
+        carModels: [product.car_model_ids.split(",")[0]],
         company: companyId,
         companyName: companyName
       }
@@ -589,39 +589,39 @@ export default function PurchaseCreate() {
       return new Date(dateValue * 1000).toISOString().split('T')[0];
     };
 
-        // Prefill form data - preserve tax values from database
-        setFormData({
-          invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
-          bill_reference: purchase.bill_reference || '',
-          staff_id: purchase.staff_id || null,
-          date: formatDateForInput(purchase.date || purchase.invoice_date),
-          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
-          contact_number: purchase.vendor?.contact_no || '',
-          email_id: purchase.vendor?.email || '',
-          address: purchase.vendor?.address || '',
-          address_2: purchase.vendor?.address_2 || '',
-          city: purchase.vendor?.city || '',
-          state: purchase.vendor?.state || '',
-          gst_number: purchase.vendor?.tax_id || '',
-          transport_name: purchase.transport_name || purchase.transport || '',
-          vehicle_number: purchase.vehicle_number || '',
-          transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
-          bill: '',
-          tax: purchase.total_tax?.toString() || '0',
-          descriptions: purchase.descriptions || '',
-          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
-          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
-          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
-          tax_rate: purchase.taxrate?.toString() || '0',
-          basic_value: purchase.total_taxable_value?.toString() || '0',
-          total_cgst: purchase.total_cgst?.toString() || '0',
-          total_sgst: purchase.total_sgst?.toString() || '0',
-          total_igst: purchase.total_igst?.toString() || '0',
-          notes: purchase.notes || '',
-          total_tax: purchase.total_tax?.toString() || '0',
-          payment_status: purchase.payment_status || purchase.status,
-          payment_mode: purchase.payment_mode,
-        });
+    // Prefill form data - preserve tax values from database
+    setFormData({
+      invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
+      bill_reference: purchase.bill_reference || '',
+      staff_id: purchase.staff_id || null,
+      date: formatDateForInput(purchase.date || purchase.invoice_date),
+      vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
+      contact_number: purchase.vendor?.contact_no || '',
+      email_id: purchase.vendor?.email || '',
+      address: purchase.vendor?.address || '',
+      address_2: purchase.vendor?.address_2 || '',
+      city: purchase.vendor?.city || '',
+      state: purchase.vendor?.state || '',
+      gst_number: purchase.vendor?.tax_id || '',
+      transport_name: purchase.transport_name || purchase.transport || '',
+      vehicle_number: purchase.vehicle_number || '',
+      transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
+      bill: '',
+      tax: purchase.total_tax?.toString() || '0',
+      descriptions: purchase.descriptions || '',
+      packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
+      packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
+      packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
+      tax_rate: purchase.taxrate?.toString() || '0',
+      basic_value: purchase.total_taxable_value?.toString() || '0',
+      total_cgst: purchase.total_cgst?.toString() || '0',
+      total_sgst: purchase.total_sgst?.toString() || '0',
+      total_igst: purchase.total_igst?.toString() || '0',
+      notes: purchase.notes || '',
+      total_tax: purchase.total_tax?.toString() || '0',
+      payment_status: purchase.payment_status || purchase.status,
+      payment_mode: purchase.payment_mode,
+    });
 
     // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
     if (purchase.vendor_id) {
@@ -752,10 +752,10 @@ export default function PurchaseCreate() {
                 id: (index + 1).toString(),
                 product_id: item.product_id || item.category_id || 1,
                 product_name: item.product_name || item.name_of_product || '',
-                car_model: item.car_model || (item.model_id ? `Model ${item.model_id}` : ''),
-                category: item.category || `Category ${item.category_id || 'N/A'}`,
-                sub_category: item.sub_category || `Subcategory ${item.subcategory_id || 'N/A'}`,
-                company: item.company || `Company ${item.company_id || 'N/A'}`,
+                car_model: item.car_model || '',
+                category: item.category || '',
+                sub_category: item.sub_category || '',
+                company: item.company || '',
                 part_number: item.part_number || item.part || '',
                 qty: qty,
                 rate: rate,
@@ -795,7 +795,7 @@ export default function PurchaseCreate() {
               product_name: item.product_name || item.name_of_product || '',
               car_model: item.car_model || '', // Keep as string - mapping to IDs would need complex logic
               category: item.category_id?.toString() || item.category || '', // Store category_id as string for dropdown
-              sub_category: item.subcategory_id?.toString() || item.sub_category || '', // Store subcategory_id as string for dropdown
+              sub_category: item.subcategory_id?.toString() || null, // Store subcategory_id as string for dropdown
               company: item.company_id?.toString() || item.company || '', // Store company_id as string for dropdown
               part_number: item.part_number || item.part || '',
               qty: qty,
@@ -981,7 +981,7 @@ export default function PurchaseCreate() {
     setProductRowFilters({
       category: 0,
       categoryName: '',
-      subcategory: 0,
+      subcategory: null,
       subcategoryName: '',
       carModels: [],
       company: 0,
@@ -1238,7 +1238,7 @@ export default function PurchaseCreate() {
 
             {/* Invoice Information */}
             <div className="mb-5">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
@@ -1298,7 +1298,7 @@ export default function PurchaseCreate() {
 
             {/* Vendor Information */}
             <div className="mb-5 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Vendor Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Vendor Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
@@ -1403,7 +1403,7 @@ export default function PurchaseCreate() {
 
             {/* Transport Information */}
             <div className="mb-5 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Transport Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Transport Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT NAME</label>
@@ -1440,50 +1440,11 @@ export default function PurchaseCreate() {
               </div>
             </div>
 
-            {/* Packing & Forwarding */}
-            <div className="mb-5 border-t border-slate-600 pt-4">
-              <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4>
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.packing_forwarding_qty}
-                    onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
-                    className="input w-full"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.packing_forwarding_rate}
-                    onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
-                    className="input w-full"
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.packing_forwarding_total}
-                    readOnly
-                    disabled
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-            </div>
+
 
             {/* Product Selection */}
             <div className="mb-5 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
               {/* Product Selection & Display Table */}
               <div className="border border-slate-600 rounded mb-3">
@@ -1583,7 +1544,7 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3">
                         <select
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.subcategory.toString()}
+                          value={productRowFilters.subcategory?.toString()}
                           onChange={(e) => {
                             const value = parseInt(e.target.value);
                             const selectedOption = filteredSubcategories.find(sub => sub.id === value);
@@ -1758,17 +1719,11 @@ export default function PurchaseCreate() {
                               if (productRowFilters.category <= 0) {
                                 validationErrors.push('Category is required');
                               }
-                              if (productRowFilters.subcategory <= 0) {
-                                validationErrors.push('Subcategory is required');
-                              }
                               if (productRowFilters.carModels.length === 0) {
                                 validationErrors.push('At least one car model is required');
                               }
                               if (productRowFilters.company <= 0) {
                                 validationErrors.push('Company is required');
-                              }
-                              if (!productRowFilters.partNo.trim()) {
-                                validationErrors.push('Part number is required');
                               }
                               if (!templateRow.rate || parseFloat(templateRow.rate) <= 0) {
                                 validationErrors.push('Valid rate is required');
@@ -1813,8 +1768,8 @@ export default function PurchaseCreate() {
                                     product_id: selectedProduct.id,
                                     product_name: selectedProduct.product_name,
                                     car_model: carModelNames || '',
-                                    category: productRowFilters.category.toString(),
-                                    sub_category: productRowFilters.subcategory.toString(),
+                                    category: productRowFilters.category?.toString(),
+                                    sub_category: productRowFilters.subcategory?.toString(),
                                     company: productRowFilters.company.toString(),
                                     part_number: productRowFilters.partNo,
                                     qty: qty,
@@ -1877,7 +1832,7 @@ export default function PurchaseCreate() {
                                 setProductRowFilters({
                                   category: 0,
                                   categoryName: '',
-                                  subcategory: 0,
+                                  subcategory: null,
                                   subcategoryName: '',
                                   carModels: [],
                                   company: 0,
@@ -2051,7 +2006,7 @@ export default function PurchaseCreate() {
                             </td>
                             <td className="px-4 py-3 text-center text-xs text-slate-200">
                               ₹{product.tax.toFixed(2)}
-                            </td> 
+                            </td>
                             <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
                               ₹{product.total.toFixed(2)}
                             </td>
@@ -2114,7 +2069,7 @@ export default function PurchaseCreate() {
 
             {/* Additional Information */}
             <div className="mb-5 border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3>
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -2138,25 +2093,66 @@ export default function PurchaseCreate() {
                 </div>
               </div>
             </div>
-
-            {/* Tax & Payment Information */}
-            <div className="border-t border-slate-600 pt-4">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Tax & Payment Information</h3>
-              <div className="space-y-4">
+            {/* Packing & Forwarding */}
+            <div className="mb-5 border-t border-slate-600 pt-4">
+              {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
+                    value={formData.packing_forwarding_qty}
+                    onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                    className="input w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.packing_forwarding_rate}
+                    onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                    className="input w-full"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={formData.packing_forwarding_total}
                     readOnly
                     disabled
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-calculated tax"
+                    placeholder="0.00"
                   />
                 </div>
+              </div>
+            </div>
 
-                <div className="grid grid-cols-3 gap-4">
+            {/* Tax & Payment Information */}
+            <div className="border-t border-slate-600 pt-4">
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Tax & Payment Information</h3> */}
+              <div className="space-y-4">
+
+
+                <div className="grid grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      placeholder="Auto-calculated tax"
+                    />
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                     <input
@@ -2195,11 +2191,11 @@ export default function PurchaseCreate() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
                     <select
-                      value={formData.payment_status.toString()}
+                      value={formData.payment_status?.toString()}
                       onChange={(e) => handleInputChange('payment_status', e.target.value)}
                       className="select w-full"
                       required
@@ -2220,19 +2216,20 @@ export default function PurchaseCreate() {
                       <option value="1">Bank</option>
                     </select>
                   </div>
-                </div>
-
-                <div className="bg-slate-700 rounded p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-300 font-medium">GRAND TOTAL</span>
-                    <div className="flex items-center space-x-2">
-                      <Calculator className="w-4 h-4 text-slate-400" />
-                      <span className="text-white font-semibold text-lg">
-                        ₹{grandTotal.toFixed(2)}
-                      </span>
+                  <div className="bg-slate-700 rounded p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300 font-medium">GRAND TOTAL</span>
+                      <div className="flex items-center space-x-2">
+                        <Calculator className="w-4 h-4 text-slate-400" />
+                        <span className="text-white font-semibold text-lg">
+                          ₹{grandTotal.toFixed(2)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
+
+
               </div>
             </div>
           </div>
@@ -2283,7 +2280,7 @@ export default function PurchaseCreate() {
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
-            rate: product.selling_price?.toString() || '',
+            rate: product.latest_selling_price?.toString() || '',
             gst: product.gst_rate_percentage?.toString() || '0'
           });
           setIsProductPanelOpen(false);

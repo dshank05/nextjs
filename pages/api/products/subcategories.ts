@@ -87,8 +87,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy
-        // Removed unnecessary include: { category: true } - frontend only uses subcategory fields
+        orderBy,
+        include: { category: true }
       });
 
       const startIndex = (pageNum - 1) * limitNum;
