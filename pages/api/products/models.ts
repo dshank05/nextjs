@@ -6,11 +6,16 @@ const prisma = new PrismaClient();
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { page = 1, limit = 50, search = '' } = req.query;
+      const { page = 1, limit = 50, search = '', sortBy = 'model_name', sortOrder = 'asc' } = req.query;
 
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
+
+      // Validate sortBy to prevent SQL injection
+      const validSortFields = ['id', 'model_name'];
+      const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'model_name';
+      const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc';
 
       const where = searchTerm
         ? { model_name: { contains: searchTerm } }
@@ -23,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where,
         skip: (pageNum - 1) * limitNum,
         take: limitNum,
-        orderBy: { model_name: 'asc' },
+        orderBy: { [sortField]: sortDirection },
       });
 
       const startIndex = (pageNum - 1) * limitNum;

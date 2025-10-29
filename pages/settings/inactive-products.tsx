@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Product {
   id: number;
@@ -41,6 +42,8 @@ export default function InactiveProducts() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [sortBy, setSortBy] = useState('product_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -52,7 +55,25 @@ export default function InactiveProducts() {
 
   useEffect(() => {
     fetchInactiveProducts();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
 
   const fetchInactiveProducts = async () => {
     setLoading(true);
@@ -61,7 +82,9 @@ export default function InactiveProducts() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
-        includeInactive: 'true'
+        includeInactive: 'true',
+        sortBy: sortBy,
+        sortOrder: sortOrder
       });
 
       const response = await fetch(`/api/products?${params}`);
@@ -205,11 +228,21 @@ export default function InactiveProducts() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>Product Name</th>
-                    <th>Part Number</th>
-                    <th>Category</th>
-                    <th>Company</th>
-                    <th>Stock</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
+                      Product Name {getSortIcon('product_name')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
+                      Part Number {getSortIcon('part_no')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('category_id')}>
+                      Category {getSortIcon('category_id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('company_id')}>
+                      Company {getSortIcon('company_id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
+                      Stock {getSortIcon('stock')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

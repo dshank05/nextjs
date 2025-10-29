@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface User {
   id: number;
@@ -27,6 +28,8 @@ export default function Users() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({ id: 0, username: '', email: '', password: '', status: '' });
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -38,49 +41,50 @@ export default function Users() {
 
   useEffect(() => {
     fetchUsers();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData: UserResponse = {
-        users: [
-          {
-            id: 1,
-            username: 'admin',
-            auth_key: 'abc123',
-            password_hash: 'hashed_password',
-            password_reset_token: null,
-            email: 'admin@baijnathsons.com',
-            status: 10, // Active
-            created_at: 1609459200,
-            updated_at: 1640995200,
-            index: 1
-          },
-          {
-            id: 2,
-            username: 'manager',
-            auth_key: 'def456',
-            password_hash: 'hashed_password',
-            password_reset_token: null,
-            email: 'manager@baijnathsons.com',
-            status: 10,
-            created_at: 1612137600,
-            updated_at: 1643673600,
-            index: 2
-          },
-        ],
-        pagination: { page: 1, limit: 50, total: 2, totalPages: 1, hasMore: false }
-      };
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm,
+        sortBy: sortBy,
+        sortOrder: sortOrder
+      });
 
-      setUsers(mockData.users);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/users?${params}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setUsers(data.users);
+      setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handlePageChange = (newPage: number) => {
@@ -195,12 +199,24 @@ export default function Users() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Username</th>
-                    <th>Email</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Last Updated</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('username')}>
+                      Username {getSortIcon('username')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('email')}>
+                      Email {getSortIcon('email')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('created_at')}>
+                      Created {getSortIcon('created_at')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('updated_at')}>
+                      Last Updated {getSortIcon('updated_at')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

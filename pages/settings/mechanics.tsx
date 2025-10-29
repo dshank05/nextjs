@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Mechanic {
   id: number;
@@ -24,6 +25,8 @@ export default function MechanicDetails() {
     status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
@@ -39,12 +42,12 @@ export default function MechanicDetails() {
 
   useEffect(() => {
     fetchMechanics();
-  }, []);
+  }, [sortBy, sortOrder]);
 
   const fetchMechanics = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/mechanics?includeInactive=true');
+      const response = await fetch(`/api/mechanics?includeInactive=true&sortBy=${sortBy}&sortOrder=${sortOrder}`);
       if (response.ok) {
         const data = await response.json();
         const mechanicsWithIndex = data.mechanics.map((mechanic: Mechanic, index: number) => ({
@@ -61,6 +64,24 @@ export default function MechanicDetails() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handleAdd = () => {
@@ -211,9 +232,15 @@ export default function MechanicDetails() {
               <thead>
                 <tr>
                   <th>S.N</th>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Status</th>
+                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
+                    Name {getSortIcon('name')}
+                  </th>
+                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
+                    Phone {getSortIcon('phone')}
+                  </th>
+                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                    Status {getSortIcon('status')}
+                  </th>
                   <th className="text-right">Actions</th>
                 </tr>
               </thead>

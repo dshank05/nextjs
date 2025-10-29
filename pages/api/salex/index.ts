@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -134,6 +135,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_date: invoice.invoice_date,
         payment_status: invoice.payment_status || 0,
         payment_mode: invoice.payment_mode || 0,
+        return_status: invoice.return_status || 0,
         fy: invoice.fy,
         mode: invoice.mode || 0,
         type: invoice.type || 'salex',
@@ -167,8 +169,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
+    // ===== INVOICE NUMBERING =====
+    // Get next invoice number based on current financial year
+    const { nextInvoiceNo, currentFy } = await getNextInvoiceNumber('invoicex');
+
     const {
-      invoice_no,
+      // invoice_no is now auto-generated based on FY
       invoice_date,
       select_customer,
       invoiceItems,
@@ -200,15 +206,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validate required fields
-    if (!invoice_no || !invoice_date || !select_customer || !invoiceItems || invoiceItems.length === 0) {
+    if (!invoice_date || !select_customer || !invoiceItems || invoiceItems.length === 0) {
       return res.status(400).json({ message: 'Missing required fields' })
     }
+
+    console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
 
     // Convert date to timestamp
     const invoiceDateTimestamp = typeof invoice_date === 'number' && invoice_date > 1000000000
       ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
       : Math.floor(new Date(invoice_date).getTime() / 1000); // Convert date string to timestamp
-    const fy = new Date().getFullYear()
 
     // Process operations sequentially to avoid transaction timeout
     // 1. Create main invoice record in invoicex table
@@ -217,7 +224,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     const invoice = await prisma.invoicex.create({
       data: {
-      invoice_no: parseInt(invoice_no),
+      invoice_no: nextInvoiceNo,
       select_customer: parseInt(select_customer),
       items_total: parseFloat(items_total) || 0,
       freight: parseFloat(freight) || 0,
@@ -236,7 +243,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
       payment_status: parseInt(payment_status),
       payment_mode: parseInt(payment_mode),
-      fy: fy,
+      fy: currentFy,
       staff_details,                             // Optional string field for backward compatibility
       staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
       mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
@@ -281,7 +288,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             subcategory_id: item.subcategory_id || null,
             model_id: item.model_id ? parseInt(item.model_id) : null,
             company_id: item.company_id || null,
-            fy: fy,
+            fy: currentFy,
             invoice_date: invoiceDateTimestamp
           }))
         })

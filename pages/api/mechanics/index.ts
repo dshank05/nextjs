@@ -18,16 +18,23 @@ export default async function handler(
 // GET /api/mechanics - List all active mechanics
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { includeInactive = 'false' } = req.query
+    const { includeInactive = 'false', sortBy = 'name', sortOrder = 'asc' } = req.query
 
     const where: any = {}
     if (includeInactive !== 'true') {
       where.status = 'Active'
     }
 
+    // Build orderBy based on sortBy and sortOrder
+    const orderBy: any = {}
+    const validSortFields = ['name', 'phone', 'status', 'created_at']
+    const field = validSortFields.includes(sortBy as string) ? sortBy as string : 'name'
+    const order = sortOrder === 'desc' ? 'desc' : 'asc'
+    orderBy[field] = order
+
     const mechanics = await prisma.mechanic.findMany({
       where,
-      orderBy: { name: 'asc' },
+      orderBy,
     })
 
     res.status(200).json({

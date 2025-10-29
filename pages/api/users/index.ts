@@ -17,11 +17,16 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'created_at', sortOrder = 'desc' } = req.query
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
     const searchTerm = search as string
+
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'username', 'email', 'status', 'created_at', 'updated_at']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'created_at'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // Build where clause for search
     const where = searchTerm ? {
@@ -45,7 +50,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         created_at: true,
         updated_at: true
       },
-      orderBy: { created_at: 'desc' }, // Most recent first
+      orderBy: { [sortField]: sortDirection },
       skip: (pageNum - 1) * limitNum,
       take: limitNum
     })

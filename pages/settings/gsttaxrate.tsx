@@ -60,7 +60,8 @@ export default function GSTTaxRate() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm
+        search: searchTerm,
+        includeInactive: 'true'
       });
 
       const response = await fetch(`/api/gst-rates?${params}`);
@@ -198,10 +199,10 @@ export default function GSTTaxRate() {
 
     try {
       const statusValue = changingRate.newStatus;
-      const response = await fetch(`/api/gst-rates/${changingRate.id}`, {
+      const response = await fetch('/api/gst-rates', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: statusValue }),
+        body: JSON.stringify({ id: changingRate.id, status: statusValue }),
         signal: controller.signal
       });
 

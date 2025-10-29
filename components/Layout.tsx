@@ -113,7 +113,7 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'WAREHOUSE RACKS', href: '/settings/warehouse-racks' },
         { name: 'STATES', href: '/settings/states' },
         { name: 'MECHANIC DETAILS', href: '/settings/mechanics' },
-        { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
+        
       ],
     },
     {
@@ -124,7 +124,8 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'SALE', href: '/reports/sale' },
         { name: 'SALE X', href: '/reports/salex' },
         { name: 'PURCHASE', href: '/purchases' },
-        { name: 'SALE RETURN', href: '/entry/salereturn' },
+        // { name: 'SALE RETURN', href: '/entry/salereturn' },
+        { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
         // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'OPENING / CLOSING STOCK', href: '/reports/openingclosing' },

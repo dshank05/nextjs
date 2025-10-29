@@ -242,10 +242,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       car_model_ids: car_model_ids || null, // Comma-separated car model IDs
       company_id: company_id ? parseInt(company_id) : null, // Foreign key to product_company
       part_no: part_no || null,
-      min_stock: min_stock ? parseInt(min_stock) : null,
-      stock: stock ? parseInt(stock) : null,
-      opening_stock: opening_stock ? parseInt(opening_stock) : null,
-      opening_rate: opening_rate ? parseFloat(opening_rate) : null,
+      min_stock: min_stock ? parseInt(min_stock) : 0, // ✅ Default to 0 instead of null
+      stock: stock ? parseInt(stock) : 0, // ✅ Default to 0 instead of null
+      opening_stock: opening_stock ? parseInt(opening_stock) : 0, // ✅ Default to 0 instead of null
+      opening_rate: opening_rate ? parseFloat(opening_rate) : 0, // ✅ Default to 0 instead of null
       hsn: hsn || null,
 
       // ===== PRODUCT DETAILS =====

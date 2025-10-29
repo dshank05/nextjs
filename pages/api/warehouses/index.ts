@@ -32,12 +32,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       limit = '50',
       search = '',
       status = 'Active',
-      includeInactive = 'false' // New parameter to include inactive warehouses
+      includeInactive = 'false', // New parameter to include inactive warehouses
+      sortBy = 'name',
+      sortOrder = 'asc'
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
     const skip = (pageNum - 1) * limitNum
+
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'name', 'location', 'status']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'name'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // Build where clause
     const where: any = {}
@@ -61,7 +68,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         where,
         skip,
         take: limitNum,
-        orderBy: { name: 'asc' }
+        orderBy: { [sortField]: sortDirection }
       }),
       prisma.warehouse.count({ where })
     ])

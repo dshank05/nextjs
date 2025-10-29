@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 
 export default async function handler(
   req: NextApiRequest,
@@ -19,9 +20,13 @@ export default async function handler(
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
+    // ===== INVOICE NUMBERING =====
+    // Get next invoice number based on current financial year
+    const { nextInvoiceNo, currentFy } = await getNextInvoiceNumber('invoice');
+
     const {
       // ===== MAIN SALE TABLE FIELDS (ALL STORED) =====
-      invoice_number,
+      // invoice_number is now auto-generated based on FY
       bill_reference,
       staff_id,
       mechanic_id,
@@ -54,9 +59,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     console.log('📝 API Received POST data for sale:', req.body);
 
     // ===== VALIDATION =====
-    if (!invoice_number || !customer_id || !items || items.length === 0) {
+    if (!customer_id || !items || items.length === 0) {
       return res.status(400).json({
-        message: 'Missing required fields: invoice_number, customer_id, or items'
+        message: 'Missing required fields: customer_id, or items'
       })
     }
 
@@ -96,11 +101,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     console.log('✅ Payment validation passed');
-
-    // Get current financial year
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+    console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
 
     // Convert date to Unix timestamp
     const invoiceDate = new Date(date).getTime() / 1000
@@ -111,7 +112,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Create sale record
     const saleData: any = {
-      invoice_no: parseInt(invoice_number),
+      invoice_no: nextInvoiceNo,
       bill_reference: bill_reference || '',
       commission: commission || 0,
       items_total: itemsTotal,
@@ -130,7 +131,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       invoice_date: Math.floor(invoiceDate),
       payment_status: parsedPaymentStatus,
       payment_mode: parsedPaymentMode,
-      fy: financialYear
+      fy: currentFy
     };
 
     // Add staff and mechanic relations if provided
@@ -190,7 +191,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           sgst: item.sgst || 0,
           igst: item.igst || 0,
           tax: item.tax || 0,
-          fy: financialYear,
+          fy: currentFy,
           invoice_date: invoiceDate
         }
       })
@@ -667,7 +668,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           payment_status: true,
           payment_mode: true,
           fy: true,
-          bill_reference: true // Add bill_reference field
+          bill_reference: true,
+          return_status: true
         }
       }),
       prisma.invoice.count({ where })
@@ -761,6 +763,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_date: invoice.invoice_date,
         payment_status: invoice.payment_status || 0,
         payment_mode: invoice.payment_mode || 0,
+        return_status: invoice.return_status || 0,
         fy: invoice.fy,
         type: invoice.type || 'sale',
         item_count: itemCountMap.get(invoice.id) || 0,

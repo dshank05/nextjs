@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useSnackbar } from '../../components/SnackbarProvider';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 interface FinancialYear {
   id: number;
   fy: string;
-  index: number;
+  start_date?: Date | string | null;
+  end_date?: Date | string | null;
 }
 
 interface FinancialYearResponse {
@@ -13,13 +16,19 @@ interface FinancialYearResponse {
 }
 
 export default function FinancialYear() {
+  const { showSnackbar } = useSnackbar();
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingYear, setEditingYear] = useState<FinancialYear | null>(null);
-  const [formData, setFormData] = useState({ id: 0, fy: '' });
+  const [formData, setFormData] = useState({ id: 0, fy: '', start_date: '', end_date: '' });
+  const [currentFyId, setCurrentFyId] = useState<number | null>(null);
+  const [settingCurrent, setSettingCurrent] = useState<number | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<any>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -36,22 +45,44 @@ export default function FinancialYear() {
   const fetchFinancialYears = async () => {
     setLoading(true);
     try {
-      // For now, we'll use mock data since we don't have the API endpoint yet
-      const mockData: FinancialYearResponse = {
-        financialYears: [
-          { id: 1, fy: '2023-2024', index: 1 },
-          { id: 2, fy: '2024-2025', index: 2 },
-          { id: 3, fy: '2025-2026', index: 3 },
-        ],
-        pagination: { page: 1, limit: 50, total: 3, totalPages: 1, hasMore: false }
-      };
-
-      setFinancialYears(mockData.financialYears);
-      setPagination(mockData.pagination);
+      const response = await fetch(`/api/financial-years?page=${pagination.page}&limit=${pagination.limit}&search=${debouncedSearchTerm}`);
+      if (response.ok) {
+        const data = await response.json();
+        setFinancialYears(data.financialYears || []);
+        setPagination(data.pagination);
+        // Set current FY ID from the API response
+        setCurrentFyId(data.currentFyId);
+      }
     } catch (error) {
       console.error('Error fetching financial years:', error);
+      showSnackbar('error', 'Failed to load financial years');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSetAsCurrent = async (fyId: number) => {
+    setSettingCurrent(fyId);
+    try {
+      const response = await fetch('/api/financial-years', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fyId })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCurrentFyId(fyId);
+        showSnackbar('success', data.message || 'Financial year set as current');
+      } else {
+        const error = await response.json();
+        showSnackbar('error', error.message || 'Failed to set current financial year');
+      }
+    } catch (error) {
+      console.error('Error setting current FY:', error);
+      showSnackbar('error', 'Failed to set current financial year');
+    } finally {
+      setSettingCurrent(null);
     }
   };
 
@@ -75,7 +106,7 @@ export default function FinancialYear() {
 
   const handleAdd = () => {
     setEditingYear(null);
-    setFormData({ id: 0, fy: '' });
+    setFormData({ id: 0, fy: '', start_date: '', end_date: '' });
     setShowModal(true);
   };
 
@@ -83,22 +114,135 @@ export default function FinancialYear() {
     setEditingYear(year);
     setFormData({
       id: year.id,
-      fy: year.fy
+      fy: year.fy,
+      start_date: year.start_date ? new Date(year.start_date).toISOString().split('T')[0] : '',
+      end_date: year.end_date ? new Date(year.end_date).toISOString().split('T')[0] : ''
     });
     setShowModal(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate dates
+    if (!formData.start_date || !formData.end_date) {
+      showSnackbar('error', 'Please select both start and end dates');
+      return;
+    }
+
+    const startDate = new Date(formData.start_date);
+    const endDate = new Date(formData.end_date);
+
+    // Validate Indian FY format: April 1 to March 31
+    const startMonth = startDate.getMonth(); // 0-indexed (0 = Jan, 3 = April)
+    const startDay = startDate.getDate();
+    const endMonth = endDate.getMonth(); // 0-indexed (2 = March)
+    const endDay = endDate.getDate();
+
+    if (startMonth !== 3 || startDay !== 1) {
+      showSnackbar('error', 'Financial year must start on April 1');
+      return;
+    }
+
+    if (endMonth !== 2 || endDay !== 31) {
+      showSnackbar('error', 'Financial year must end on March 31');
+      return;
+    }
+
+    // Validate year span
+    const startYear = startDate.getFullYear();
+    const endYear = endDate.getFullYear();
+    
+    if (endYear !== startYear + 1) {
+      showSnackbar('error', 'Financial year must span exactly one year (e.g., April 1, 2024 → March 31, 2025)');
+      return;
+    }
+
+    // Check for overlaps with existing FYs
+    const hasOverlap = financialYears.some(fy => {
+      if (!fy.start_date || !fy.end_date) return false;
+      
+      const existingStart = new Date(fy.start_date);
+      const existingEnd = new Date(fy.end_date);
+      
+      // Check if new FY overlaps with existing FY
+      return (
+        (startDate >= existingStart && startDate <= existingEnd) ||
+        (endDate >= existingStart && endDate <= existingEnd) ||
+        (startDate <= existingStart && endDate >= existingEnd)
+      );
+    });
+
+    if (hasOverlap) {
+      showSnackbar('error', 'This financial year overlaps with an existing financial year');
+      return;
+    }
+
+    // Check if trying to create future FY while current FY is still active
+    const currentDate = new Date();
+    const activeFy = financialYears.find(fy => {
+      if (!fy.start_date || !fy.end_date) return false;
+      const fyStart = new Date(fy.start_date);
+      const fyEnd = new Date(fy.end_date);
+      return currentDate >= fyStart && currentDate <= fyEnd;
+    });
+
+    if (activeFy && startDate < new Date(activeFy.end_date!)) {
+      const activeFyEnd = new Date(activeFy.end_date!).toLocaleDateString();
+      showSnackbar('error', `Cannot create future financial year. Current FY ${activeFy.fy} is active until ${activeFyEnd}`);
+      return;
+    }
+
+    // Show confirmation modal before saving
+    setPendingData({
+      start_date: formData.start_date,
+      end_date: formData.end_date
+    });
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!pendingData) return;
+
+    setIsSaving(true);  // Start loading state while modal is still open
+
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving financial year:', formData);
-      setShowModal(false);
-      fetchFinancialYears(); // Refresh the list
+      const response = await fetch('/api/financial-years', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pendingData)
+      });
+
+      if (response.ok) {
+        // Success - close modals and refresh
+        setShowConfirmModal(false);
+        setShowModal(false);
+        setFormData({ id: 0, fy: '', start_date: '', end_date: '' });
+        setPendingData(null);
+        fetchFinancialYears();
+        showSnackbar('success', 'Financial year created successfully!');
+      } else {
+        // Error - keep modals open and show error
+        const error = await response.json();
+        console.error('Error creating financial year:', error);
+        showSnackbar('error', error.message || 'Failed to create financial year');
+        setShowConfirmModal(false); // Close confirmation modal, keep form modal open
+      }
     } catch (error) {
-      console.error('Error saving financial year:', error);
+      console.error('Error creating financial year:', error);
+      showSnackbar('error', `Failed to create financial year: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setShowConfirmModal(false); // Close confirmation modal on network error
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  const handleCancelSubmit = () => {
+    setShowConfirmModal(false);
+    setPendingData(null);
+  };
+
+  const currentFy = financialYears.find(fy => fy.id === currentFyId);
 
   return (
     <div className="space-y-6">
@@ -139,6 +283,17 @@ export default function FinancialYear() {
         </div>
       </div>
 
+      {currentFy && (
+        <div className="card">
+          <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-lg">
+            <h3 className="text-lg font-semibold text-white mb-2">Current Financial Year: {currentFy.fy}</h3>
+            <p className="text-slate-400 text-sm">
+              This financial year is currently active for all new transactions. Invoice numbers restart at 1 for each financial year.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
@@ -158,20 +313,53 @@ export default function FinancialYear() {
                     <th>S.N</th>
                     <th>ID</th>
                     <th>Financial Year</th>
+                    <th>Status</th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {financialYears.map((year, index) => (
-                    <tr key={year.id}>
-                      <td>{index + 1}</td>
-                      <td>{year.id}</td>
-                      <td className="font-medium text-white">{year.fy}</td>
-                      <td className="text-right">
-                        <button className="btn-secondary mr-2" onClick={() => handleEdit(year)}>Edit</button>
+                  {financialYears.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12">
+                        <div className="flex flex-col items-center justify-center text-slate-400">
+                          <svg className="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                          <p className="text-lg font-medium mb-2">No Financial Years Found</p>
+                          <p className="text-sm mb-4">Get started by adding your first financial year</p>
+                          {/* <button onClick={handleAdd} className="btn-primary">
+                            Add Financial Year
+                          </button> */}
+                        </div>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    financialYears.map((year, index) => (
+                      <tr key={year.id}>
+                        <td>{index + 1}</td>
+                        <td>{year.id}</td>
+                        <td className="font-medium text-white">{year.fy}</td>
+                        <td>
+                          {year.id === currentFyId ? (
+                            <span className="px-2 py-1 bg-green-600 text-white text-xs rounded">Current</span>
+                          ) : (
+                            <span className="px-2 py-1 bg-slate-700 text-slate-400 text-xs rounded">Inactive</span>
+                          )}
+                        </td>
+                        <td className="text-right">
+                          {year.id !== currentFyId && (
+                            <button 
+                              className="btn-primary mr-2 text-sm" 
+                              onClick={() => handleSetAsCurrent(year.id)}
+                              disabled={settingCurrent === year.id}
+                            >
+                              {settingCurrent === year.id ? 'Setting...' : 'Set as Current'}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -191,16 +379,6 @@ export default function FinancialYear() {
         )}
       </div>
 
-      <div className="card">
-        <div className="p-4 bg-slate-700/30 rounded-lg">
-          <h3 className="text-lg font-semibold text-white mb-2">Current Financial Year: 2024-2025</h3>
-          <p className="text-slate-400 text-sm">
-            The current financial year runs from April 1, 2024, to March 31, 2025.
-            This period is used for all financial reports, tax calculations, and accounting purposes.
-          </p>
-        </div>
-      </div>
-
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
@@ -218,16 +396,32 @@ export default function FinancialYear() {
                 </div>
               )}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Financial Year</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Start Date</label>
                 <input
-                  type="text"
-                  value={formData.fy}
-                  onChange={(e) => setFormData(prev => ({ ...prev, fy: e.target.value }))}
+                  type="date"
+                  value={formData.start_date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
                   className="input w-full"
-                  placeholder="e.g. 2024-2025"
                   required
                 />
               </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">End Date</label>
+                <input
+                  type="date"
+                  value={formData.end_date}
+                  onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                  className="input w-full"
+                  required
+                />
+              </div>
+              {formData.start_date && formData.end_date && (
+                <div className="mb-6 p-3 bg-blue-900/30 border border-blue-700 rounded">
+                  <p className="text-sm text-slate-300">
+                    <span className="font-medium">Financial Year:</span> {new Date(formData.start_date).getFullYear()}-{new Date(formData.end_date).getFullYear()}
+                  </p>
+                </div>
+              )}
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>
@@ -236,6 +430,19 @@ export default function FinancialYear() {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Create Financial Year?"
+        message={`Are you sure you want to create financial year ${formData.start_date && formData.end_date ? `${new Date(formData.start_date).getFullYear()}-${new Date(formData.end_date).getFullYear()}` : ''}?`}
+        confirmText="Create Financial Year"
+        cancelText="Cancel"
+        showLoading={isSaving}
+        loadingText="Creating Financial Year..."
+        onConfirm={handleConfirmSubmit}
+        onCancel={handleCancelSubmit}
+      />
     </div>
   );
 }

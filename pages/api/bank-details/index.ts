@@ -10,6 +10,8 @@ export default async function handler(
       return handleGet(req, res)
     case 'POST':
       return handlePost(req, res)
+    case 'PUT':
+      return handlePut(req, res)
     default:
       return res.status(405).json({ message: 'Method not allowed' })
   }
@@ -132,6 +134,91 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     console.error('Bank account creation error:', error)
     res.status(500).json({
       message: 'Failed to create bank account',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+async function handlePut(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const { id, bank_name, account_number, bank_address, ifsc } = req.body
+
+    // Validation
+    if (!id) {
+      return res.status(400).json({
+        message: 'ID is required'
+      })
+    }
+
+    if (!bank_name || typeof bank_name !== 'string' || !bank_name.trim()) {
+      return res.status(400).json({
+        message: 'Bank name is required and must be a non-empty string'
+      })
+    }
+
+    if (!account_number || typeof account_number !== 'string' || !account_number.trim()) {
+      return res.status(400).json({
+        message: 'Account number is required and must be a non-empty string'
+      })
+    }
+
+    // Check if bank account exists
+    const existingAccount = await prisma.bank_details.findUnique({
+      where: { id: parseInt(id) }
+    })
+
+    if (!existingAccount) {
+      return res.status(404).json({
+        message: 'Bank account not found'
+      })
+    }
+
+    // Check for duplicates (excluding current record)
+    const trimmedName = bank_name.trim()
+    const trimmedAccount = account_number.trim()
+    const duplicate = await prisma.bank_details.findFirst({
+      where: {
+        AND: [
+          { id: { not: parseInt(id) } },
+          {
+            OR: [
+              { bank_name: trimmedName },
+              { bank_name: trimmedName.toLowerCase() },
+              { account_number: trimmedAccount }
+            ]
+          }
+        ]
+      }
+    })
+
+    if (duplicate) {
+      return res.status(409).json({
+        message: duplicate.account_number === trimmedAccount
+          ? 'Account number already exists'
+          : 'Bank with this name already exists'
+      })
+    }
+
+    // Update bank account
+    const updatedAccount = await prisma.bank_details.update({
+      where: { id: parseInt(id) },
+      data: {
+        bank_name: trimmedName,
+        account_number: trimmedAccount,
+        bank_address: bank_address?.trim() || null,
+        ifsc: ifsc?.trim() || null
+      }
+    })
+
+    res.status(200).json({
+      status: "success",
+      message: "Bank account updated successfully",
+      data: updatedAccount
+    })
+  } catch (error) {
+    console.error('Bank account update error:', error)
+    res.status(500).json({
+      message: 'Failed to update bank account',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }

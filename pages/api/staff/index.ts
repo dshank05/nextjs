@@ -18,21 +18,62 @@ export default async function handler(
 // GET /api/staff - List all active staff
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { includeInactive = 'false' } = req.query
+    const { 
+      includeInactive = 'false',
+      page = '1',
+      limit = '50',
+      search = '',
+      sortBy = 'name',
+      sortOrder = 'asc'
+    } = req.query
+
+    const pageNum = parseInt(page as string)
+    const limitNum = parseInt(limit as string)
+    const skip = (pageNum - 1) * limitNum
+
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'name', 'email', 'phone', 'status']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'name'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     const where: any = {}
+    
+    // Search filter
+    if (search) {
+      const searchTerm = search as string
+      where.OR = [
+        { name: { contains: searchTerm } },
+        { phone: { contains: searchTerm } },
+        { email: { contains: searchTerm } }
+      ]
+    }
+
+    // Status filter
     if (includeInactive !== 'true') {
       where.status = 'Active'
     }
 
-    const staff = await prisma.staff.findMany({
-      where,
-      orderBy: { name: 'asc' },
-    })
+    const [staff, total] = await Promise.all([
+      prisma.staff.findMany({
+        where,
+        orderBy: { [sortField]: sortDirection },
+        skip,
+        take: limitNum
+      }),
+      prisma.staff.count({ where })
+    ])
+
+    const totalPages = Math.ceil(total / limitNum)
 
     res.status(200).json({
       staff,
-      count: staff.length
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasMore: pageNum < totalPages
+      }
     })
   } catch (error) {
     console.error('Get staff error:', error)

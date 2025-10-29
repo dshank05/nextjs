@@ -1,8 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
-import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
-import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
+import { Loader } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
@@ -174,24 +172,16 @@ export default function SaleReturnCreatePage() {
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<ReturnItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
-  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Edit mode state - we're using edit mode to load original transaction
-  const [isEditMode, setIsEditMode] = useState(true);
   const [editInvoiceId, setEditInvoiceId] = useState<number>(0);
-
-  // Shipping address selection state
-  const [useShippingAddress, setUseShippingAddress] = useState(false);
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -201,66 +191,6 @@ export default function SaleReturnCreatePage() {
   const [returnNotes, setReturnNotes] = useState<string>('');
   const [returnStatus, setReturnStatus] = useState<string>('Pending');
   const [returnDate, setReturnDate] = useState<string>(new Date().toISOString().split('T')[0]);
-
-  // State for product selection panel
-  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
-
-  // Filter car models for filtering the product selection panel
-  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
-
-  // Function to generate dynamic product name based on car model selection
-  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
-    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name;
-    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name;
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company;
-
-    // If no specific car model is selected, show base product name
-    if (selectedCarModelIds.length === 0) {
-      return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
-    }
-
-    // Use the first selected car model for the product name
-    const firstCarModelId = selectedCarModelIds[0];
-    const selectedCarModel = filterOptions.models.find(model => model.id.toString() === firstCarModelId);
-    const carModelName = selectedCarModel?.name || firstCarModelId;
-
-    return `${categoryName}-${subcategoryName}-${carModelName}-${companyName}`;
-  };
-
-  // Function to filter car models based on product compatibility
-  const getFilteredCarModelsForProduct = (product: Product): any[] => {
-    if (!product.car_model_ids || !product.car_model_ids.trim()) {
-      return filterOptions.models; // If no specific models, allow all
-    }
-
-    const compatibleModelIds = product.car_model_ids.split(',').map(id => id.trim());
-    return filterOptions.models.filter(model =>
-      compatibleModelIds.includes(model.id.toString())
-    );
-  };
-
-  // Function to calculate GST breakdown based on state comparison
-  const calculateGSTBreakdown = (taxAmount: number, customerStateCode: number | null) => {
-    const isIntraState = customerStateCode === BUSINESS_STATE_CODE;
-
-    if (isIntraState) {
-      // Intra-state: CGST + SGST (50-50 split)
-      return {
-        cgst: taxAmount / 2,
-        sgst: taxAmount / 2,
-        igst: 0
-      };
-    } else {
-      // Inter-state: IGST only
-      return {
-        cgst: 0,
-        sgst: 0,
-        igst: taxAmount
-      };
-    }
-  };
 
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -308,17 +238,6 @@ export default function SaleReturnCreatePage() {
 
   // State for customer state code (like vendor state in purchase create)
   const [customerStateForTax, setCustomerStateForTax] = useState<number>(BUSINESS_STATE_CODE); // Track customer's state for tax calculations (default to business state)
-
-  // State for inline row editing
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
-
-  const handleInputChange = (field: keyof InvoiceFormData, value: string | number) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
 
   // Load original invoice data - Always load from API first for reliability
   useEffect(() => {
@@ -368,49 +287,6 @@ export default function SaleReturnCreatePage() {
     fetchProducts();
     fetchFilterOptions();
   }, []);
-
-  // Clear validation errors when side panel closes
-  useEffect(() => {
-    if (!isProductPanelOpen) {
-      setErrors({});
-    }
-  }, [isProductPanelOpen]);
-
-  // Filter products based on car model selection and search term
-  useEffect(() => {
-    let filtered = products;
-
-    // Apply car model filter if any selected
-    if (selectedPanelCarModels.length > 0) {
-      filtered = filtered.filter(product => {
-        if (!product.car_model_ids) return false;
-        const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
-        return selectedPanelCarModels.some(selectedModel =>
-          productModelIds.includes(selectedModel)
-        );
-      });
-    }
-
-    // Apply text search filter
-    if (productSearchTerm.trim()) {
-      const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-      filtered = filtered.filter(product => {
-        const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
-        const productIdString = product.id.toString();
-        const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const partNoNormalized = product.part_no?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        // Also search by product UID (ID)
-        return productNameNormalized.includes(searchTermNormalized) ||
-          productIdString.includes(searchTermNormalized) ||
-          displayNameNormalized.includes(searchTermNormalized) ||
-          partNoNormalized.includes(searchTermNormalized) ||
-          companyNameNormalized.includes(searchTermNormalized);
-      });
-    }
-
-    setSearchedProducts(filtered);
-  }, [productSearchTerm, products, selectedPanelCarModels]);
 
   // Convert raw invoice items when filterOptions are loaded - More reliable conversion
   useEffect(() => {
@@ -613,7 +489,7 @@ export default function SaleReturnCreatePage() {
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state_code); // Set customer's state for tax calculations
+      setCustomerStateForTax(customer.billing_state_code);
 
       // Clear tax calculations when customer changes
       setSelectedProducts([]);
@@ -625,14 +501,7 @@ export default function SaleReturnCreatePage() {
       }));
     } else {
       setSelectedCustomer(null);
-
     }
-  };
-
-  // Function to handle product selection and update filters
-  const handleProductSelection = (product: Product) => {
-    // For return creation, we don't add products - we modify existing ones
-    return;
   };
 
   // Calculate and update GST totals whenever selectedProducts change
@@ -744,7 +613,6 @@ export default function SaleReturnCreatePage() {
         // Set customer data - find customer in loaded customers list for proper state codes
         if (invoice.select_customer) {  // API field is select_customer, not customer_id
           setSelectedCustomerId(invoice.select_customer.toString());
-          setVendorIdToSave(invoice.select_customer); // For consistency with purchase create
 
           // Find customer in loaded customers list for proper state codes and data
           const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString());

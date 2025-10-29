@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface State {
   id: number;
@@ -29,6 +30,8 @@ export default function States() {
   const [editingState, setEditingState] = useState<{id: number, state_name: string} | null>(null);
   const [formData, setFormData] = useState({ id: 0, state_name: '' });
   const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string } | null>(null);
+  const [sortBy, setSortBy] = useState('state_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -40,7 +43,7 @@ export default function States() {
 
   useEffect(() => {
     fetchStates();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchStates = async () => {
     setLoading(true);
@@ -48,7 +51,9 @@ export default function States() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm
+        search: searchTerm,
+        sortBy: sortBy,
+        sortOrder: sortOrder
       });
 
       const response = await fetch(`/api/states?${params}`);
@@ -64,6 +69,24 @@ export default function States() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handlePageChange = (newPage: number) => {
@@ -201,8 +224,12 @@ export default function States() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>Code</th>
-                    <th>State Name</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('code')}>
+                      Code {getSortIcon('code')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('state_name')}>
+                      State Name {getSortIcon('state_name')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

@@ -17,7 +17,7 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'state_name', sortOrder = 'asc' } = req.query
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
@@ -30,6 +30,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     } : {}
 
+    // Build orderBy based on sortBy and sortOrder
+    const orderBy: any = {}
+    const validSortFields = ['state_name', 'code']
+    const field = validSortFields.includes(sortBy as string) ? sortBy as string : 'state_name'
+    const order = sortOrder === 'desc' ? 'desc' : 'asc'
+    orderBy[field] = order
+
     // Get total count for pagination
     const total = await prisma.states.count({ where })
 
@@ -41,7 +48,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         state_name: true,
         code: true
       },
-      orderBy: { state_name: 'asc' },
+      orderBy,
       skip: (pageNum - 1) * limitNum,
       take: limitNum
     })

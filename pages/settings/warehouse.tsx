@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Warehouse {
   id: number;
@@ -31,6 +32,8 @@ export default function Warehouse() {
   const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
   const [toggleConfirmLoading, setToggleConfirmLoading] = useState(false);
   const [selectedWarehouse, setSelectedWarehouse] = useState<Warehouse | null>(null);
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -42,7 +45,7 @@ export default function Warehouse() {
 
   useEffect(() => {
     fetchWarehouses();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchWarehouses = async () => {
     setLoading(true);
@@ -51,7 +54,9 @@ export default function Warehouse() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
-        includeInactive: 'true'
+        includeInactive: 'true',
+        sortBy: sortBy,
+        sortOrder: sortOrder
       });
 
       const response = await fetch(`/api/warehouses?${params}`);
@@ -83,6 +88,24 @@ export default function Warehouse() {
 
   const handleLimitChange = (newLimit: number) => {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const getPageNumbers = () => {
@@ -263,10 +286,18 @@ export default function Warehouse() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Location</th>
-                    <th>Status</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
+                      Name {getSortIcon('name')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('location')}>
+                      Location {getSortIcon('location')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

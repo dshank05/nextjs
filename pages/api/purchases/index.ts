@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 
 async function handler(
   req: NextApiRequest,
@@ -260,9 +261,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // ✓ Maintains rate history through automatic product updates
     // ✓ Supports transaction safety for stock and rate updates together
 
+    // ===== INVOICE NUMBERING =====
+    // Get next invoice number based on current financial year
+    const { nextInvoiceNo, currentFy } = await getNextInvoiceNumber('purchase');
+
     const {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
-      invoice_number,           // ✓ Purchase.invoice_no
+      // invoice_number is now auto-generated based on FY
       bill_reference,           // ✓ Purchase.bill_reference
       staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
@@ -312,9 +317,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // - internal_notes: String? (separate from customer-facing notes)
 
     // ===== VALIDATION =====
-    if (!invoice_number || !vendor_id || !items || items.length === 0) {
+    if (!vendor_id || !items || items.length === 0) {
       return res.status(400).json({
-        message: 'Missing required fields: invoice_number, vendor_id, or items'
+        message: 'Missing required fields: vendor_id, or items'
       })
     }
 
@@ -364,11 +369,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     console.log('🏗️ Purchase Table Data: All main fields are stored');
     console.log('🏗️ Vendor Relationship: Using existing vendor ID:', vendor_id);
-
-    // Get current financial year
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+    console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
 
     // Convert date to Unix timestamp
     const invoiceDate = new Date(date).getTime() / 1000
@@ -380,7 +381,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Create purchase record
     const purchase = await prisma.purchase.create({
       data: {
-        invoice_no: parseInt(invoice_number),
+        invoice_no: nextInvoiceNo,
         bill_reference: bill_reference, // Keep bill reference separate from vendor name
         staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
         vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
@@ -407,7 +408,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         updated_at: new Date().toISOString().split('T')[0], // Current date
         payment_status: payment_status,
         payment_mode: payment_mode,
-        fy: financialYear,
+        fy: currentFy, // Use FY from invoice counter
         transport: transport_name || '',
         transport_name: transport_name,
         vehicle_number: vehicle_number,
@@ -466,7 +467,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           sgst: item.sgst || 0,
           igst: item.igst || 0,
           tax: item.tax || 0,
-          fy: financialYear,
+          fy: currentFy, // Use FY from invoice counter
           invoice_date: invoiceDate
         }
       })

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface WarehouseRack {
   id: number;
@@ -42,6 +43,8 @@ export default function WarehouseRacks() {
   const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
   const [toggleConfirmLoading, setToggleConfirmLoading] = useState(false);
   const [selectedRack, setSelectedRack] = useState<WarehouseRack | null>(null);
+  const [sortBy, setSortBy] = useState('rack_number');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -61,7 +64,25 @@ export default function WarehouseRacks() {
     } else {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, warehouses]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, warehouses, sortBy, sortOrder]);
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
 
   const fetchWarehouses = async () => {
     try {
@@ -105,6 +126,26 @@ export default function WarehouseRacks() {
           console.error(`Error fetching racks for warehouse ${warehouse.id}:`, error);
         }
       }
+
+      // Apply client-side sorting
+      allRacks.sort((a: any, b: any) => {
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+        
+        if (sortBy === 'id' || sortBy === 'warehouse_id') {
+          aVal = Number(aVal);
+          bVal = Number(bVal);
+        } else {
+          aVal = String(aVal || '').toLowerCase();
+          bVal = String(bVal || '').toLowerCase();
+        }
+        
+        if (sortOrder === 'asc') {
+          return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+        } else {
+          return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+        }
+      });
 
       // Apply client-side pagination
       const startIndex = (pagination.page - 1) * pagination.limit;
@@ -333,11 +374,21 @@ export default function WarehouseRacks() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Warehouse</th>
-                    <th>Rack Number</th>
-                    <th>Description</th>
-                    <th>Status</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('warehouse_id')}>
+                      Warehouse {getSortIcon('warehouse_id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rack_number')}>
+                      Rack Number {getSortIcon('rack_number')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('description')}>
+                      Description {getSortIcon('description')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

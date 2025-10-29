@@ -124,6 +124,7 @@ model Invoice {
   packing_forwarding_total Float?
   discount_percentage      Float?
   payment_status           Int?
+  return_status            Int?           @default(0)
   mechanic                 mechanic?      @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
   staff                    staff?         @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
   sale_returns             sale_returns[]
@@ -133,6 +134,7 @@ model Invoice {
   @@index([invoice_date], map: "idx_invoice_invoice_date")
   @@index([payment_status], map: "idx_invoice_status")
   @@index([fy, invoice_date], map: "idx_invoice_fy_date")
+  @@index([return_status], map: "idx_invoice_return_status")
   @@map("invoice")
 }
 
@@ -305,6 +307,7 @@ model business_details {
   tagline        String? @db.VarChar(255)
   address_line_1 String  @db.VarChar(255)
   address_line_2 String? @db.VarChar(255)
+  pin_code       String? @db.VarChar(20)
   phone          String? @db.VarChar(100)
   email          String? @db.VarChar(255)
   fax            String? @db.VarChar(30)
@@ -336,8 +339,10 @@ model customer_details {
 }
 
 model financial_year {
-  id Int    @id @default(autoincrement())
-  fy String @db.VarChar(30)
+  id         Int       @id @default(autoincrement())
+  fy         String    @db.VarChar(30)
+  start_date DateTime? @db.Date
+  end_date   DateTime? @db.Date
 
   @@index([fy], map: "idx_financial_year_fy")
 }
@@ -417,6 +422,7 @@ model invoicex {
   bill_reference           String?         @db.VarChar(255)
   discount                 Float?
   payment_status           Int?
+  return_status            Int?            @default(0)
   mechanic                 mechanic?       @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
   staff                    staff?          @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
   salex_returns            salex_returns[]
@@ -425,6 +431,7 @@ model invoicex {
   @@index([staff_id], map: "invoicex_staff_fkey")
   @@index([invoice_date], map: "idx_invoicex_invoice_date")
   @@index([payment_status], map: "idx_invoicex_status")
+  @@index([return_status], map: "idx_invoicex_return_status")
 }
 
 model migration {

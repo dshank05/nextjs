@@ -18,12 +18,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query;
+    const { page = 1, limit = 50, search = '', sortBy = 'category_name', sortOrder = 'asc' } = req.query;
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);
     const searchTerm = search as string;
     const skip = (pageNum - 1) * limitNum;
+
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'category_name'];
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'category_name';
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc';
 
     const where = searchTerm
       ? { category_name: { contains: searchTerm } }
@@ -32,7 +37,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const [categories, total] = await Promise.all([
       prisma.product_category.findMany({
         where,
-        orderBy: { category_name: 'asc' },
+        orderBy: { [sortField]: sortDirection },
         skip,
         take: limitNum,
       }),

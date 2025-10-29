@@ -1,8 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Calculator, Loader, Trash2, Edit2 } from 'lucide-react';
-import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
-import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
@@ -127,19 +124,12 @@ export default function PurchaseReturnCreatePage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<ReturnItem[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
-  const [selectedVendorId, setSelectedVendorId] = useState<string>('');
-  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
-  const [vendorStateForTax, setVendorStateForTax] = useState<string>('');
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Edit mode state - we're using edit mode to load original transaction
-  const [isEditMode, setIsEditMode] = useState(true);
   const [editPurchaseId, setEditPurchaseId] = useState<number>(0);
 
   // Raw invoice data for re-conversion when filters load
@@ -150,66 +140,6 @@ export default function PurchaseReturnCreatePage() {
   const [returnNotes, setReturnNotes] = useState<string>('');
   const [returnStatus, setReturnStatus] = useState<string>('Pending');
   const [returnDate, setReturnDate] = useState<string>(new Date().toISOString().split('T')[0]);
-
-  // State for product selection panel
-  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
-
-  // Filter car models for filtering the product selection panel
-  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
-
-  // Function to generate dynamic product name based on car model selection
-  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
-    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name;
-    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name;
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === product.company)?.name || product.company;
-
-    // If no specific car model is selected, show base product name
-    if (selectedCarModelIds.length === 0) {
-      return `${categoryName}-${subcategoryName}-ALL-${companyName}`;
-    }
-
-    // Use the first selected car model for the product name
-    const firstCarModelId = selectedCarModelIds[0];
-    const selectedCarModel = filterOptions.models.find(model => model.id.toString() === firstCarModelId);
-    const carModelName = selectedCarModel?.name || firstCarModelId;
-
-    return `${categoryName}-${subcategoryName}-${carModelName}-${companyName}`;
-  };
-
-  // Function to filter car models based on product compatibility
-  const getFilteredCarModelsForProduct = (product: Product): any[] => {
-    if (!product.car_model_ids || !product.car_model_ids.trim()) {
-      return filterOptions.models; // If no specific models, allow all
-    }
-
-    const compatibleModelIds = product.car_model_ids.split(',').map(id => id.trim());
-    return filterOptions.models.filter(model =>
-      compatibleModelIds.includes(model.id.toString())
-    );
-  };
-
-  // Function to calculate GST breakdown based on state comparison
-  const calculateGSTBreakdown = (taxAmount: number, vendorStateCode: number | null) => {
-    const isIntraState = vendorStateCode === BUSINESS_STATE_CODE;
-
-    if (isIntraState) {
-      // Intra-state: CGST + SGST (50-50 split)
-      return {
-        cgst: taxAmount / 2,
-        sgst: taxAmount / 2,
-        igst: 0
-      };
-    } else {
-      // Inter-state: IGST only
-      return {
-        cgst: 0,
-        sgst: 0,
-        igst: taxAmount
-      };
-    }
-  };
 
   // State declarations moved above useEffect hooks
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -249,13 +179,6 @@ export default function PurchaseReturnCreatePage() {
 
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
-
-  const handleInputChange = (field: keyof PurchaseFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: '' }));
-    }
-  };
 
   // Load original purchase data - Always load from API first for reliability
   useEffect(() => {
@@ -304,13 +227,6 @@ export default function PurchaseReturnCreatePage() {
     fetchProducts();
     fetchFilterOptions();
   }, []);
-
-  // Clear validation errors when side panel closes
-  useEffect(() => {
-    if (!isProductPanelOpen) {
-      setErrors({});
-    }
-  }, [isProductPanelOpen]);
 
   // Convert raw purchase items when filterOptions are loaded - More reliable conversion
   useEffect(() => {
@@ -393,9 +309,6 @@ export default function PurchaseReturnCreatePage() {
 
     // Set vendor data from purchase
     if (purchase.vendor_id) {
-      setSelectedVendorId(purchase.vendor_id.toString());
-      setVendorIdToSave(purchase.vendor_id);
-
       // Find vendor in loaded vendors list, or create from cached data
       let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
 
@@ -417,7 +330,6 @@ export default function PurchaseReturnCreatePage() {
 
       if (vendor) {
         setSelectedVendor(vendor);
-        setVendorStateForTax(vendor.state || '');
       }
     }
 
@@ -430,8 +342,6 @@ export default function PurchaseReturnCreatePage() {
     // Set loading to false
     setInvoiceNumberLoading(false);
   }
-
-  const [selectedStaffId, setSelectedStaffId] = useState<string>('');
 
   // Load return reasons
   const loadReturnReasons = () => {
@@ -497,26 +407,6 @@ export default function PurchaseReturnCreatePage() {
   };
 
 
-
-  const handleVendorSelect = (vendorId: string) => {
-    const vendor = vendors.find(v => v.id === vendorId);
-    if (vendor) {
-      setVendorIdToSave(parseInt(vendor.id));
-      setSelectedVendor(vendor);
-      setSelectedProducts([]);
-      setFormData(prev => ({
-        ...prev,
-        total_cgst: '',
-        total_sgst: '',
-        total_igst: ''
-      }));
-      setVendorStateForTax(vendor.state || '');
-    } else {
-      setVendorIdToSave(null);
-      setSelectedVendor(null);
-      setVendorStateForTax('');
-    }
-  };
 
   const fetchPurchaseForEdit = async (purchaseId: number) => {
     try {
@@ -607,9 +497,6 @@ export default function PurchaseReturnCreatePage() {
         });
 
         if (purchase.vendor_id) {
-          setSelectedVendorId(purchase.vendor_id.toString());
-          setVendorIdToSave(purchase.vendor_id);
-
           let vendor = vendors.find(v => parseInt(v.id) === purchase.vendor_id);
 
           if (!vendor && purchase.vendor_name) {
@@ -629,7 +516,6 @@ export default function PurchaseReturnCreatePage() {
 
           if (vendor) {
             setSelectedVendor(vendor);
-            setVendorStateForTax(vendor.state || '');
           }
         }
 
@@ -823,7 +709,7 @@ export default function PurchaseReturnCreatePage() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
                   <input
                     type="text"
-                    value={selectedStaffId ? staffList.find(s => s.id === selectedStaffId)?.staff_name || '' : ''}
+                    value={formData.staff_id ? staffList.find(s => s.id === formData.staff_id.toString())?.staff_name || '' : ''}
                     className="input w-full bg-slate-700"
                     disabled
                   />
@@ -1029,24 +915,6 @@ export default function PurchaseReturnCreatePage() {
           </div>
         </div>
       </form>
-
-      {/* Product Selection Side Panel */}
-      <ProductSelectionPanel
-        isOpen={isProductPanelOpen}
-        onClose={() => setIsProductPanelOpen(false)}
-        title="Select Product"
-        showCarModelFilter={true}
-        filterOptions={filterOptions}
-        selectedCarModels={selectedPanelCarModels}
-        onCarModelSelection={setSelectedPanelCarModels}
-        searchedProducts={searchedProducts}
-        productSearchTerm={productSearchTerm}
-        onSearchTermChange={setProductSearchTerm}
-        onProductSelect={(product) => {
-          // For return creation, we don't add products - we modify existing ones
-          return;
-        }}
-      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal
