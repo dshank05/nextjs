@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { broadcast } from '../../lib/broadcast';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface State {
   id: number;
@@ -12,6 +13,7 @@ interface State {
 export default function CreateVendor() {
   const router = useRouter();
   const { id } = router.query;
+  const { showSnackbar } = useSnackbar();
 
   const [formData, setFormData] = useState({
     vendor_name: '',
@@ -20,6 +22,8 @@ export default function CreateVendor() {
     city: '',
     pin_code: '',
     contact_no: '',
+    contact_no_2: '',
+    contact_no_3: '',
     email: '',
     tax_id: '',
     state: '', // This will store the state name
@@ -60,6 +64,8 @@ export default function CreateVendor() {
           city: vendorData.city || '',
           pin_code: vendorData.pin_code || '',
           contact_no: vendorData.contact_no || '',
+          contact_no_2: vendorData.contact_no_2 || '',
+          contact_no_3: vendorData.contact_no_3 || '',
           email: vendorData.email || '',
           tax_id: vendorData.tax_id || '',
           state: vendorData.state || '',
@@ -95,46 +101,66 @@ export default function CreateVendor() {
     }
   };
 
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    // ===== REQUIRED FIELD VALIDATION =====
+    if (!formData.vendor_name.trim()) {
+      newErrors.vendor_name = 'Vendor name is required';
+    }
+    if (!formData.contact_no.trim()) {
+      newErrors.contact_no = 'Contact number is required';
+    }
+
+    // ===== EMAIL VALIDATION =====
+    if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    // ===== GSTIN VALIDATION =====
+    if (formData.tax_id && formData.tax_id.length !== 15) {
+      newErrors.tax_id = 'GSTIN must be exactly 15 characters';
+    }
+
+    // ===== PHONE NUMBER VALIDATION =====
+    const phoneRegex = /^[6-9]\d{9}$/; // Indian mobile number format - start with 6-9, exactly 10 digits
+    if (formData.contact_no && !phoneRegex.test(formData.contact_no)) {
+      newErrors.contact_no = 'Phone number must be 10 digits and start with 6-9';
+    }
+    if (formData.contact_no_2 && formData.contact_no_2.trim() && !phoneRegex.test(formData.contact_no_2.trim())) {
+      newErrors.contact_no_2 = 'Phone 2 must be 10 digits and start with 6-9';
+    }
+    if (formData.contact_no_3 && formData.contact_no_3.trim() && !phoneRegex.test(formData.contact_no_3.trim())) {
+      newErrors.contact_no_3 = 'Phone 3 must be 10 digits and start with 6-9';
+    }
+
+    // ===== PIN CODE VALIDATION =====
+    const pinCodeRegex = /^\d{6}$/; // 6-digit pin code
+    if (formData.pin_code && !pinCodeRegex.test(formData.pin_code)) {
+      newErrors.pin_code = 'Pin code must be exactly 6 digits';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setErrors({});
 
-    try {
-      // Validate required fields
-      const requiredFields = ['vendor_name', 'contact_no'];
-      const missingFields = requiredFields.filter(field => !formData[field as keyof typeof formData]);
-
-      if (missingFields.length > 0) {
-        setErrors({ submit: 'Please fill in all required fields.' });
-        setLoading(false);
-        return;
+    if (!validateForm()) {
+      // Show snackbar with validation errors
+      const errorMessages = Object.values(errors).filter(msg => msg && msg !== '');
+      if (errorMessages.length > 0) {
+        showSnackbar('error', `Please fix the following errors: ${errorMessages.join(', ')}`);
       }
-
-      // Validate GSTIN format (15 characters only)
-      if (formData.tax_id && formData.tax_id.length !== 15) {
-        setErrors({ tax_id: 'GSTIN must be exactly 15 characters.' });
-        setLoading(false);
-        return;
-      }
-
-      // Validate email format
-      if (formData.email && !/\S+@\S+\.\S+/.test(formData.email)) {
-        setErrors({ email: 'Please enter a valid email address.' });
-        setLoading(false);
-        return;
-      }
-
-      // Show confirmation modal before submitting
-      setConfirmData({
-        vendor_name: formData.vendor_name
-      });
-      setShowConfirmModal(true);
-      setLoading(false);
-    } catch (error) {
-      setErrors({ submit: 'An error occurred while processing the form.' });
-      setLoading(false);
+      return;
     }
+
+    // Show confirmation modal before submitting
+    setConfirmData({
+      vendor_name: formData.vendor_name
+    });
+    setShowConfirmModal(true);
   };
 
   const handleConfirmSubmit = async () => {
@@ -299,6 +325,7 @@ export default function CreateVendor() {
                 placeholder="6-digit pin code"
                 maxLength={6}
               />
+              {errors.pin_code && <span className="text-red-400 text-sm">{errors.pin_code}</span>}
             </div>
 
             <div>
@@ -315,6 +342,39 @@ export default function CreateVendor() {
                 placeholder="+91-XXXXXXXXXX"
                 required
               />
+              {errors.contact_no && <span className="text-red-400 text-sm">{errors.contact_no}</span>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Phone 2
+              </label>
+              <input
+                type="tel"
+                name="contact_no_2"
+                value={formData.contact_no_2}
+                onChange={handleChange}
+                className="input w-full"
+                maxLength={10}
+                placeholder="Additional phone number"
+              />
+              {errors.contact_no_2 && <span className="text-red-400 text-sm">{errors.contact_no_2}</span>}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Phone 3
+              </label>
+              <input
+                type="tel"
+                name="contact_no_3"
+                value={formData.contact_no_3}
+                onChange={handleChange}
+                className="input w-full"
+                maxLength={10}
+                placeholder="Additional phone number"
+              />
+              {errors.contact_no_3 && <span className="text-red-400 text-sm">{errors.contact_no_3}</span>}
             </div>
 
             <div>

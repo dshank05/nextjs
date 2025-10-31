@@ -647,14 +647,14 @@ export default function InvoiceCCreate() {
 
   const fetchCustomers = async () => {
     try {
-      const response = await fetch('/api/customers');
+      const response = await fetch('/api/customers?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setCustomers(data.customers || []);
         setCustomersLoaded(true);
       } else {
-        setCustomers([]);
-        setCustomersLoaded(true);
+        setCustomers([]); // Set empty array on error
+        setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
       }
     } catch (error) {
       console.error('Error fetching customers:', error);

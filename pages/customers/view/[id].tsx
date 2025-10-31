@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { ConfirmationModal } from '../../../components/ConfirmationModal';
 
 interface Customer {
   id: string;
@@ -13,7 +14,10 @@ interface Customer {
   billing_state_code: number | null;
   billing_gstin: string | null;
   contact_no: string | null;
+  contact_no_2: string | null;
+  contact_no_3: string | null;
   email: string | null;
+  status: string;
   shipping_name: string | null;
   shipping_address: string | null;
   shipping_address_2: string | null;
@@ -29,6 +33,13 @@ export default function CustomerView() {
   const { id } = router.query;
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusModalData, setStatusModalData] = useState<{
+    newStatus: string;
+    customerId: string;
+    customerName: string;
+  } | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -50,6 +61,53 @@ export default function CustomerView() {
     }
   };
 
+  const handleStatusToggle = (customerId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    setStatusModalData({
+      newStatus,
+      customerId,
+      customerName: customer?.billing_name || ''
+    });
+    setShowStatusModal(true);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!statusModalData) return;
+
+    setStatusUpdating(true);
+    try {
+      const response = await fetch(`/api/customers/${statusModalData.customerId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: statusModalData.newStatus,
+          confirmed: true
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        if (customer) {
+          setCustomer({
+            ...customer,
+            status: statusModalData.newStatus
+          });
+        }
+        setShowStatusModal(false);
+        setStatusModalData(null);
+      } else {
+        const error = await response.json();
+        console.error('Status update failed:', error);
+      }
+    } catch (error) {
+      console.error('Status update error:', error);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="card h-96 flex items-center justify-center">
@@ -67,236 +125,172 @@ export default function CustomerView() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Main Customer Overview Card */}
-      <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
+    <div className="space-y-4">
+      <div className="card p-4">
+        {/* Customer Overview Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           {/* Left: Customer Info */}
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-48 h-32 bg-blue-600/20 rounded-xl flex items-center justify-center mb-4">
-              <div className="text-4xl">👤</div>
+            <div className="w-40 h-24 bg-blue-600/20 rounded-xl flex items-center justify-center mb-3">
+              <div className="text-3xl">👤</div>
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">{customer.billing_name}</h3>
-            <p className="text-slate-400 text-sm mb-2">{customer.contact_no || 'No phone'}</p>
-            {customer.email && (
-              <a href={`mailto:${customer.email}`} className="text-blue-400 hover:text-blue-300 text-sm">
-                {customer.email}
-              </a>
-            )}
+            <h3 className="text-lg font-semibold text-white mb-1">{customer.billing_name}</h3>
+            <p className="text-slate-400 mb-1">{customer.contact_no || 'No phone'}</p>
           </div>
 
           {/* Right: Basic Information + Actions */}
-          <div className="space-y-4">
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+          <div className="space-y-3">
+            <div className="flex justify-between border-b border-slate-700 pb-1">
               <span className="text-slate-400">GSTIN:</span>
               <span className="text-white font-medium">{customer.billing_gstin || 'Not provided'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between border-b border-slate-700 pb-1">
               <span className="text-slate-400">State:</span>
               <span className="text-white font-medium">{customer.billing_state || 'Not provided'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Status:</span>
+              <span className={`px-2 py-1 rounded-full text-xs ${
+                customer.status === 'Active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+              }`}>
+                {customer.status}
+              </span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
               <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{customer.contact_no || 'Not provided'}</span>
+              <span className="text-white font-medium">
+                {customer.contact_no}
+                {customer.contact_no_2 && `, ${customer.contact_no_2}`}
+                {customer.contact_no_3 && `, ${customer.contact_no_3}`}
+              </span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Email:</span>
+              <span className="text-white font-medium">
+                {customer.email ? (
+                  <a href={`mailto:${customer.email}`} className="text-blue-400 hover:text-blue-300">
+                    {customer.email}
+                  </a>
+                ) : 'Not provided'}
+              </span>
             </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            <div className="flex justify-end pt-3">
+              <button
+                className={`px-4 py-2 rounded text-white font-medium ${
+                  customer.status === 'Active'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
+                onClick={() => handleStatusToggle(customer.id, customer.status)}
+              >
+                {customer.status === 'Active' ? 'Deactivate' : 'Activate'} Customer
+              </button>
               <Link
                 href={`/customers/create?id=${customer.id}`}
-                className="btn-primary"
+                className="btn-primary px-4 py-2 ml-2"
               >
                 ✏️ Edit Customer
               </Link>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Billing Information Card */}
-      <div className="card">
-        <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">📄 Billing Information</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-0">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🏢 Billing Details</h3>
-            <div className="space-y-3">
+        {/* Billing Information Section */}
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-white mb-4">📄 Billing Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Name:</span>
+              <span className="text-white font-medium">{customer.billing_name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">GSTIN:</span>
+              <span className="text-white font-medium font-mono">{customer.billing_gstin || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Phone:</span>
+              <span className="text-white font-medium">{customer.contact_no || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">City:</span>
+              <span className="text-white font-medium">{customer.billing_city || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Address:</span>
+              <span className="text-white font-medium">{customer.billing_address}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Address 2:</span>
+              <span className="text-white font-medium">{customer.billing_address_2 || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Pin Code:</span>
+              <span className="text-white font-medium">{customer.billing_pin_code || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">State:</span>
+              <span className="text-white font-medium">{customer.billing_state}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Shipping Information Section (if different) */}
+        {(customer.shipping_name || customer.shipping_address) && (
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-4 mt-6 pt-4 border-t border-slate-700">🚚 Shipping Information</h2>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="flex justify-between">
                 <span className="text-slate-400">Name:</span>
-                <span className="text-white font-medium">{customer.billing_name}</span>
+                <span className="text-white font-medium">{customer.shipping_name || customer.billing_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">GSTIN:</span>
-                <span className="text-white font-medium font-mono">{customer.billing_gstin || 'N/A'}</span>
-              </div>
-              <div className="space-y-2">
-                <span className="text-slate-400">Address:</span>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  <div>{customer.billing_address}</div>
-                  {customer.billing_address_2 && <div>{customer.billing_address_2}</div>}
-                </div>
+                <span className="text-white font-medium font-mono">{customer.shipping_gstin || customer.billing_gstin || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">City:</span>
-                <span className="text-white font-medium">{customer.billing_city || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Pin Code:</span>
-                <span className="text-white font-medium">{customer.billing_pin_code || 'N/A'}</span>
+                <span className="text-white font-medium">{customer.shipping_city || customer.billing_city || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>
-                <span className="text-white font-medium">{customer.billing_state}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📞 Contact Information</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Phone:</span>
-                <span className="text-white font-medium">{customer.contact_no || 'N/A'}</span>
+                <span className="text-white font-medium">{customer.shipping_state || customer.billing_state}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">
-                  {customer.email ? (
-                    <a href={`mailto:${customer.email}`} className="text-blue-400 hover:text-blue-300">
-                      {customer.email}
-                    </a>
-                  ) : 'N/A'}
-                </span>
+                <span className="text-slate-400">Address:</span>
+                <span className="text-white font-medium">{customer.shipping_address || customer.billing_address}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Address 2:</span>
+                <span className="text-white font-medium">{customer.shipping_address_2 || customer.billing_address_2 || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Pin Code:</span>
+                <span className="text-white font-medium">{customer.shipping_pin_code || customer.billing_pin_code || 'N/A'}</span>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
-      {/* Shipping Information Card (if different) */}
-      {(customer.shipping_name || customer.shipping_address) && (
-        <div className="card">
-          <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">🚚 Shipping Information</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-0">
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🏢 Shipping Details</h3>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Name:</span>
-                  <span className="text-white font-medium">{customer.shipping_name || customer.billing_name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">GSTIN:</span>
-                  <span className="text-white font-medium font-mono">{customer.shipping_gstin || customer.billing_gstin || 'N/A'}</span>
-                </div>
-                <div className="space-y-2">
-                  <span className="text-slate-400">Address:</span>
-                  <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                    <div>{customer.shipping_address || customer.billing_address}</div>
-                    {(customer.shipping_address_2 || customer.billing_address_2) && <div>{customer.shipping_address_2 || customer.billing_address_2}</div>}
-                  </div>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">City:</span>
-                  <span className="text-white font-medium">{customer.shipping_city || customer.billing_city || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Pin Code:</span>
-                  <span className="text-white font-medium">{customer.shipping_pin_code || customer.billing_pin_code || 'N/A'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">State:</span>
-                  <span className="text-white font-medium">{customer.shipping_state || customer.billing_state}</span>
-                </div>
-              </div>
-            </div>
+      {/* Commented out tables that were removed during layout consolidation */}
+      {/*
+      // RECENT SALES, RECENT PAYMENTS, ACCOUNT SUMMARY tables would go here
+      // These were removed to simplify the customer view interface
+      */}
 
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📝 Notes</h3>
-              <div className="bg-slate-700 rounded p-3 text-white text-sm min-h-24">
-                {customer.shipping_name && customer.shipping_address ? 'Separate shipping address provided' : 'Same as billing address'}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Transaction History Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Sales */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">RECENT SALES</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>Invoice</th>
-                  <th>Amount</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {/* Placeholder rows */}
-                {Array.from({ length: 3 }, (_, i) => (
-                  <tr key={i}>
-                    <td>{i + 1}</td>
-                    <td className="text-slate-400">-</td>
-                    <td className="text-slate-400">-</td>
-                    <td className="text-slate-400">-</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Recent Payments */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">RECENT PAYMENTS</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>Invoice</th>
-                  <th>Amount</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: 3 }, (_, i) => (
-                  <tr key={i}>
-                    <td>{i + 1}</td>
-                    <td className="text-slate-400">-</td>
-                    <td className="text-slate-400">-</td>
-                    <td className="text-slate-400">-</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Outstanding Balance */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">ACCOUNT SUMMARY</h3>
-          <div className="p-6">
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Total Outstanding:</span>
-                <span className="text-orange-400 font-semibold">₹0.00</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Last Transaction:</span>
-                <span className="text-white font-medium">No transactions</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-400">Credit Limit:</span>
-                <span className="text-white font-medium">Not set</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Status Change Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showStatusModal}
+        title={`${statusModalData?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Customer`}
+        message={`Are you sure you want to ${statusModalData?.newStatus === 'Active' ? 'activate' : 'deactivate'} customer "${statusModalData?.customerName}"? This will affect their availability in transaction selections.`}
+        showLoading={statusUpdating}
+        onConfirm={confirmStatusChange}
+        onCancel={() => {
+          setShowStatusModal(false);
+          setStatusModalData(null);
+        }}
+      />
     </div>
   );
 }

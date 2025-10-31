@@ -21,8 +21,6 @@ export default async function handler(
         return res.status(404).json({ message: 'Customer not found' })
       }
 
-
-
       const formattedCustomer = {
         id: customer.id.toString(),
         billing_name: customer.billing_name,
@@ -35,7 +33,10 @@ export default async function handler(
         billing_state_code: customer.billing_state_code, // State code from DB
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
+        contact_no_2: customer.contact_no_2 || null,
+        contact_no_3: customer.contact_no_3 || null,
         email: customer.email,
+        status: customer.status,
         shipping_name: customer.shipping_name,
         // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
         shipping_address: customer.shipping_address,
@@ -70,16 +71,19 @@ export default async function handler(
         billing_pin_code: req.body.billing_pin_code || null,
         billing_state: req.body.billing_state,           // State name as string
         billing_state_code: parseInt(req.body.billing_state_code) || 0, // State code as number
-        billing_gstin: req.body.billing_gstin,
+        billing_gstin: req.body.billing_gstin || null,
         contact_no: req.body.contact_no,
-        email: req.body.email,
+        contact_no_2: req.body.contact_no_2 || null,
+        contact_no_3: req.body.contact_no_3 || null,
+        email: req.body.email || null,
+        status: req.body.status || 'Active',
         shipping_name: req.body.shipping_name || null,
-        shipping_address: req.body.shipping_address || null,
+        shipping_address: req.body.shipping_address || req.body.billing_address, // Fallback to billing if shipping not provided
         shipping_address_2: req.body.shipping_address_2 || null,
         shipping_city: req.body.shipping_city || null,
         shipping_pin_code: req.body.shipping_pin_code || null,
-        shipping_state: req.body.shipping_state,         // State name as string
-        shipping_state_code: parseInt(req.body.shipping_state_code) || 0, // State code as number
+        shipping_state: req.body.shipping_state || req.body.billing_state, // Fallback to billing if shipping not provided
+        shipping_state_code: parseInt(req.body.shipping_state_code) || parseInt(req.body.billing_state_code) || 0, // Fallback to billing if shipping not provided
         shipping_gstin: req.body.shipping_gstin || null,
       };
 
@@ -99,7 +103,10 @@ export default async function handler(
         billing_state_code: customer.billing_state_code, // State code from DB
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
+        contact_no_2: customer.contact_no_2 || null,
+        contact_no_3: customer.contact_no_3 || null,
         email: customer.email,
+        status: customer.status,
         shipping_name: customer.shipping_name,
         shipping_address: customer.shipping_address,
         shipping_address_2: customer.shipping_address_2 || null,

@@ -493,7 +493,7 @@ export default function PurchaseCreate() {
 
   const fetchVendors = async () => {
     try {
-      const response = await fetch('/api/vendors');
+      const response = await fetch('/api/vendors?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setVendors(data.vendors || []);

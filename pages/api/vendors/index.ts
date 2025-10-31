@@ -10,15 +10,22 @@ export default async function handler(
       const {
         page = '1',
         limit = '25',
-        search = ''
+        search = '',
+        dropdown = 'false'
       } = req.query;
 
       const pageNum = parseInt(page as string);
       const limitNum = parseInt(limit as string);
       const skip = (pageNum - 1) * limitNum;
 
-      // Build where clause for search
+      // Build where clause for search and filtering
       const where: any = {};
+
+      // Filter out inactive vendors for dropdowns
+      if (dropdown === 'true') {
+        where.status = 'Active';
+      }
+
       if (search) {
         where.OR = [
           { vendor_name: { contains: search } },
@@ -36,6 +43,7 @@ export default async function handler(
           select: {
             id: true,
             vendor_name: true,
+            status: true,
             address: true,
             address_2: true,
             city: true,
@@ -44,6 +52,8 @@ export default async function handler(
             state_code: true,
             tax_id: true,
             contact_no: true,
+            contact_no_2: true,
+            contact_no_3: true,
             email: true
           },
           skip,
@@ -56,6 +66,7 @@ export default async function handler(
       const formattedVendors = vendorsData.map(vendor => ({
         id: vendor.id.toString(),
         vendor_name: vendor.vendor_name,
+        status: vendor.status || 'Active',
         address: vendor.address || '',
         address_2: vendor.address_2 || '',
         city: vendor.city || '',
@@ -64,6 +75,8 @@ export default async function handler(
         state_code: vendor.state_code || null,
         tax_id: vendor.tax_id || '',
         contact_no: vendor.contact_no || '',
+        contact_no_2: vendor.contact_no_2 || '',
+        contact_no_3: vendor.contact_no_3 || '',
         email: vendor.email || ''
       }));
 
@@ -101,6 +114,8 @@ export default async function handler(
         state: req.body.state || null,
         state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
         contact_no: req.body.contact_no,
+        contact_no_2: req.body.contact_no_2 || null,
+        contact_no_3: req.body.contact_no_3 || null,
         email: req.body.email,
         tax_id: req.body.tax_id,
       };

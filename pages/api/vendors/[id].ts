@@ -31,7 +31,10 @@ export default async function handler(
         state: vendor.state, // State name is now directly stored
         state_code: vendor.state_code, // State ID is now directly stored
         contact_no: vendor.contact_no,
+        contact_no_2: vendor.contact_no_2 || null,
+        contact_no_3: vendor.contact_no_3 || null,
         email: vendor.email,
+        status: vendor.status,
         tax_id: vendor.tax_id
       }
 
@@ -59,7 +62,10 @@ export default async function handler(
         state: req.body.state || null,
         state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
         contact_no: req.body.contact_no || null,
+        contact_no_2: req.body.contact_no_2 || null,
+        contact_no_3: req.body.contact_no_3 || null,
         email: req.body.email || null,
+        status: req.body.status || 'Active',
         tax_id: req.body.tax_id || null,
       };
 
@@ -77,7 +83,10 @@ export default async function handler(
         state: vendor.state, // State name is now directly stored
         state_code: vendor.state_code, // State ID is now directly stored
         contact_no: vendor.contact_no,
+        contact_no_2: vendor.contact_no_2 || null,
+        contact_no_3: vendor.contact_no_3 || null,
         email: vendor.email,
+        status: vendor.status,
         tax_id: vendor.tax_id
       }
 

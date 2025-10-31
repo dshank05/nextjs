@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { broadcast } from '../../lib/broadcast';
+import { useSnackbar } from '../../components/SnackbarProvider';
 // Import useForm or similar validation later if needed
 
 interface CustomerFormData {
@@ -26,6 +27,9 @@ interface CustomerFormData {
   shipping_state_code: string;    // Auto-filled, not shown in UI
   shipping_gstin: string;
   email: string;
+  contact_no_2: string;           // Additional phone numbers
+  contact_no_3: string;
+  status: 'Active' | 'Inactive';  // Status field
 
   // ===== FORM CONTROLS =====
   copyFromBilling: boolean;       // Checkbox for copying billing to shipping
@@ -40,6 +44,7 @@ interface Option {
 export default function CustomerCreate() {
   const router = useRouter();
   const { id } = router.query;
+  const { showSnackbar } = useSnackbar();
   const [states, setStates] = useState<Option[]>([]);
   const [loading, setLoading] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -67,7 +72,10 @@ export default function CustomerCreate() {
     shipping_state_code: '',
     shipping_gstin: '',
     contact_no: '',
+    contact_no_2: '',
+    contact_no_3: '',
     email: '',
+    status: 'Active',
     copyFromBilling: false
   });
 
@@ -119,7 +127,10 @@ export default function CustomerCreate() {
           shipping_state_code: customerData.shipping_state_code ? customerData.shipping_state_code.toString() : (customerData.billing_state_code ? customerData.billing_state_code.toString() : ''),
           shipping_gstin: customerData.shipping_gstin || customerData.billing_gstin || '',
           contact_no: customerData.contact_no || '',
+          contact_no_2: customerData.contact_no_2 || '',
+          contact_no_3: customerData.contact_no_3 || '',
           email: customerData.email || '',
+          status: customerData.status || 'Active',
           copyFromBilling: !customerData.shipping_name || customerData.shipping_name === customerData.billing_name
         });
       }
@@ -227,10 +238,17 @@ export default function CustomerCreate() {
       if (!formData.shipping_address.trim()) {
         newErrors.shipping_address = 'Shipping address is required';
       }
+      if (!formData.shipping_state) {
+        newErrors.shipping_state = 'Shipping state is required';
+      }
     }
 
     if (!formData.contact_no.trim()) {
       newErrors.contact_no = 'Contact number is required';
+    }
+
+    if (!formData.billing_state) {
+      newErrors.billing_state = 'Billing state is required';
     }
 
     // ===== EMAIL VALIDATION =====
@@ -246,7 +264,29 @@ export default function CustomerCreate() {
       newErrors.shipping_gstin = 'GSTIN must be 15 characters';
     }
 
+    // ===== PHONE NUMBER VALIDATION =====
+    const phoneRegex = /^[6-9]\d{9}$/; // Indian mobile number format - start with 6-9, exactly 10 digits
+    if (formData.contact_no && !phoneRegex.test(formData.contact_no)) {
+      newErrors.contact_no = 'Phone number must be 10 digits and start with 6-9';
+    }
+    if (formData.contact_no_2 && formData.contact_no_2.trim() && !phoneRegex.test(formData.contact_no_2.trim())) {
+      newErrors.contact_no_2 = 'Phone 2 must be 10 digits and start with 6-9';
+    }
+    if (formData.contact_no_3 && formData.contact_no_3.trim() && !phoneRegex.test(formData.contact_no_3.trim())) {
+      newErrors.contact_no_3 = 'Phone 3 must be 10 digits and start with 6-9';
+    }
+
+    // ===== PIN CODE VALIDATION =====
+    const pinCodeRegex = /^\d{6}$/; // 6-digit pin code
+    if (formData.billing_pin_code && !pinCodeRegex.test(formData.billing_pin_code)) {
+      newErrors.billing_pin_code = 'Pin code must be exactly 6 digits';
+    }
+    if (formData.shipping_pin_code && !pinCodeRegex.test(formData.shipping_pin_code) && !formData.copyFromBilling) {
+      newErrors.shipping_pin_code = 'Pin code must be exactly 6 digits';
+    }
+
     setErrors(newErrors);
+    console.log(newErrors)
     return Object.keys(newErrors).length === 0;
   };
 
@@ -254,6 +294,11 @@ export default function CustomerCreate() {
     e.preventDefault();
 
     if (!validateForm()) {
+      // Show snackbar with validation errors
+      const errorMessages = Object.values(errors).filter(msg => msg && msg !== '');
+      if (errorMessages.length > 0) {
+        showSnackbar('error', `Please fix the following errors: ${errorMessages.join(', ')}`);
+      }
       return;
     }
 
@@ -273,6 +318,7 @@ export default function CustomerCreate() {
 
     try {
       const submitData = {
+        ...formData,
         billing_name: formData.billing_name.trim(),
         // ===== BILLING ADDRESS FIELDS =====
         billing_address: formData.billing_address.trim(),
@@ -283,19 +329,25 @@ export default function CustomerCreate() {
         billing_state_code: parseInt(formData.billing_state_code) || 0,  // Send state code as number
         billing_gstin: formData.billing_gstin.trim(),
 
-        shipping_name: formData.shipping_name.trim(),
+        shipping_name: formData.shipping_name?.trim() || '',
         // ===== SHIPPING ADDRESS FIELDS =====
-        shipping_address: formData.shipping_address.trim(),
-        shipping_address_2: formData.shipping_address_2.trim(),
-        shipping_city: formData.shipping_city.trim(),
-        shipping_pin_code: formData.shipping_pin_code.trim(),
-        shipping_state: formData.shipping_state,  // Send state name as string
+        shipping_address: formData.shipping_address?.trim() || '',
+        shipping_address_2: formData.shipping_address_2?.trim() || '',
+        shipping_city: formData.shipping_city?.trim() || '',
+        shipping_pin_code: formData.shipping_pin_code?.trim() || '',
+        shipping_state: formData.shipping_state?.trim() || '',  // Send state name as string
         shipping_state_code: parseInt(formData.shipping_state_code) || 0,  // Send state code as number
-        shipping_gstin: formData.shipping_gstin.trim(),
+        shipping_gstin: formData.shipping_gstin?.trim() || '',
 
         contact_no: formData.contact_no.trim(),
-        email: formData.email.trim()
+        contact_no_2: formData.contact_no_2.trim() || null,
+        contact_no_3: formData.contact_no_3.trim() || null,
+        email: formData.email.trim(),
+        status: formData.status || 'Active'
       };
+
+      // Remove unwanted fields that shouldn't be sent to API
+      delete (submitData as any).copyFromBilling;
 
       console.log(`${isEditing ? 'Updating' : 'Creating'} customer with data:`, submitData);
 
@@ -432,11 +484,12 @@ export default function CustomerCreate() {
                   placeholder="6-digit pin code"
                   maxLength={6}
                 />
+                {errors.billing_pin_code && <p className="text-red-400 text-xs mt-1">{errors.billing_pin_code}</p>}
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  BILLING STATE
+                  BILLING STATE *
                 </label>
                 <select
                   value={formData.billing_state}
@@ -450,6 +503,7 @@ export default function CustomerCreate() {
                     </option>
                   ))}
                 </select>
+                {errors.billing_state && <p className="text-red-400 text-xs mt-1">{errors.billing_state}</p>}
               </div>
 
 
@@ -566,7 +620,7 @@ export default function CustomerCreate() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  SHIPPING STATE
+                  SHIPPING STATE *
                 </label>
                 <select
                   value={formData.shipping_state}
@@ -581,6 +635,7 @@ export default function CustomerCreate() {
                     </option>
                   ))}
                 </select>
+                {errors.shipping_state && <p className="text-red-400 text-xs mt-1">{errors.shipping_state}</p>}
               </div>
 
 
@@ -607,7 +662,7 @@ export default function CustomerCreate() {
           {/* ===== CONTACT INFORMATION ===== */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white border-b border-slate-600 pb-2">📞 Contact Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   CONTACT NUMBER *
@@ -625,6 +680,36 @@ export default function CustomerCreate() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
+                  PHONE 2
+                </label>
+                <input
+                  type="tel"
+                  value={formData.contact_no_2}
+                  onChange={(e) => handleInputChange('contact_no_2', e.target.value)}
+                  className="input w-full"
+                  placeholder="Additional phone"
+                  maxLength={10}
+                />
+                {errors.contact_no_2 && <p className="text-red-400 text-xs mt-1">{errors.contact_no_2}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  PHONE 3
+                </label>
+                <input
+                  type="tel"
+                  value={formData.contact_no_3}
+                  onChange={(e) => handleInputChange('contact_no_3', e.target.value)}
+                  className="input w-full"
+                  placeholder="Additional phone"
+                  maxLength={10}
+                />
+                {errors.contact_no_3 && <p className="text-red-400 text-xs mt-1">{errors.contact_no_3}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
                   EMAIL ADDRESS
                 </label>
                 <input
@@ -638,6 +723,28 @@ export default function CustomerCreate() {
               </div>
             </div>
           </div>
+
+          {/* ===== ADDITIONAL INFO (Only shown when editing) =====
+          {isEditing && (
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-white border-b border-slate-600 pb-2">📋 Additional Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    STATUS
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => handleInputChange('status', e.target.value)}
+                    className="select w-full"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )} */}
 
           {/* Error Display */}
           {errors.submit && (

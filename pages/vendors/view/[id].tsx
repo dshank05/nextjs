@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { ConfirmationModal } from '../../../components/ConfirmationModal';
 
 interface Vendor {
   id: string;
@@ -12,7 +13,10 @@ interface Vendor {
   state: string | null;
   state_code: number | null;
   contact_no: string | null;
+  contact_no_2: string | null;
+  contact_no_3: string | null;
   email: string | null;
+  status: string;
   tax_id: string | null;
 }
 
@@ -50,6 +54,13 @@ export default function VendorView() {
   const { id } = router.query;
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusModalData, setStatusModalData] = useState<{
+    newStatus: string;
+    vendorId: string;
+    vendorName: string;
+  } | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
   const [recentPurchases, setRecentPurchases] = useState<Transaction[]>([]);
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [accountSummary, setAccountSummary] = useState({
@@ -95,6 +106,53 @@ export default function VendorView() {
     }
   };
 
+  const handleStatusToggle = (vendorId: string, currentStatus: string) => {
+    const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    setStatusModalData({
+      newStatus,
+      vendorId,
+      vendorName: vendor?.vendor_name || ''
+    });
+    setShowStatusModal(true);
+  };
+
+  const confirmStatusChange = async () => {
+    if (!statusModalData) return;
+
+    setStatusUpdating(true);
+    try {
+      const response = await fetch(`/api/vendors/${statusModalData.vendorId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          status: statusModalData.newStatus,
+          confirmed: true
+        }),
+      });
+
+      if (response.ok) {
+        // Update local state
+        if (vendor) {
+          setVendor({
+            ...vendor,
+            status: statusModalData.newStatus
+          });
+        }
+        setShowStatusModal(false);
+        setStatusModalData(null);
+      } else {
+        const error = await response.json();
+        console.error('Status update failed:', error);
+      }
+    } catch (error) {
+      console.error('Status update error:', error);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="card h-96 flex items-center justify-center">
@@ -124,121 +182,133 @@ export default function VendorView() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Main Vendor Overview Card */}
-      <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
+    <div className="space-y-4">
+      {/* Merged Vendor Overview & Information Card */}
+      <div className="card p-4">
+        {/* Vendor Overview Section */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           {/* Left: Vendor Info */}
           <div className="flex flex-col items-center justify-center text-center">
-            <div className="w-48 h-32 bg-green-600/20 rounded-xl flex items-center justify-center mb-4">
-              <div className="text-4xl">🏭</div>
+            <div className="w-40 h-24 bg-green-600/20 rounded-xl flex items-center justify-center mb-3">
+              <div className="text-3xl">🏭</div>
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">{vendor.vendor_name}</h3>
-            <p className="text-slate-400 text-sm mb-1">{vendor.contact_no || 'No phone'}</p>
-            {vendor.email && (
-              <a href={`mailto:${vendor.email}`} className="text-blue-400 hover:text-blue-300 text-sm">
-                {vendor.email}
-              </a>
-            )}
+            <h3 className="text-lg font-semibold text-white mb-1">{vendor.vendor_name}</h3>
+            <p className="text-slate-400 mb-1">{vendor.contact_no || 'No phone'}</p>
           </div>
 
           {/* Right: Basic Information + Actions */}
-          <div className="space-y-4">
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+          <div className="space-y-3">
+            <div className="flex justify-between border-b border-slate-700 pb-1">
               <span className="text-slate-400">GST ID:</span>
               <span className="text-white font-medium">{vendor.tax_id || 'Not provided'}</span>
             </div>
-              <div className="flex justify-between border-b border-slate-700 pb-2">
-                <span className="text-slate-400">City:</span>
-                <span className="text-white font-medium">{vendor.city || 'Not provided'}</span>
-              </div>
-              <div className="flex justify-between border-b border-slate-700 pb-2">
-                <span className="text-slate-400">Pin Code:</span>
-                <span className="text-white font-medium">{vendor.pin_code || 'Not provided'}</span>
-              </div>
-              <div className="flex justify-between border-b border-slate-700 pb-2">
-                <span className="text-slate-400">State:</span>
-                <span className="text-white font-medium">{vendor.state || 'Not provided'}</span>
-              </div>
-              <div className="flex justify-between border-b border-slate-700 pb-2">
-                <span className="text-slate-400">Contact:</span>
-                <span className="text-white font-medium">{vendor.contact_no || 'Not provided'}</span>
-              </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">City:</span>
+              <span className="text-white font-medium">{vendor.city || 'Not provided'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Pin Code:</span>
+              <span className="text-white font-medium">{vendor.pin_code || 'Not provided'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">State:</span>
+              <span className="text-white font-medium">{vendor.state || 'Not provided'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Status:</span>
+              <span className={`px-2 py-1 rounded-full text-xs ${
+                vendor.status === 'Active' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+              }`}>
+                {vendor.status}
+              </span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Contact:</span>
+              <span className="text-white font-medium">
+                {vendor.contact_no}
+                {vendor.contact_no_2 && `, ${vendor.contact_no_2}`}
+                {vendor.contact_no_3 && `, ${vendor.contact_no_3}`}
+              </span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-1">
+              <span className="text-slate-400">Email:</span>
+              <span className="text-white font-medium">
+                {vendor.email ? (
+                  <a href={`mailto:${vendor.email}`} className="text-blue-400 hover:text-blue-300">
+                    {vendor.email}
+                  </a>
+                ) : 'Not provided'}
+              </span>
+            </div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            <div className="flex justify-end pt-3">
+              <button
+                className={`px-4 py-2 rounded text-white font-medium ${
+                  vendor.status === 'Active'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : 'bg-green-600 hover:bg-green-700'
+                }`}
+                onClick={() => handleStatusToggle(vendor.id, vendor.status)}
+              >
+                {vendor.status === 'Active' ? 'Deactivate' : 'Activate'} Vendor
+              </button>
               <Link
                 href={`/vendors/create?id=${vendor.id}`}
-                className="btn-primary"
+                className="btn-primary px-4 py-2 ml-2"
               >
                 ✏️ Edit Vendor
               </Link>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Vendor Information Card */}
-      <div className="card">
-        <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">🏢 Vendor Information</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-0">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📍 Address Details</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Vendor Name:</span>
-                <span className="text-white font-medium">{vendor.vendor_name}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">GST ID:</span>
-                <span className="text-white font-medium font-mono">{vendor.tax_id || 'N/A'}</span>
-              </div>
-              <div className="space-y-2">
-                <span className="text-slate-400">Address:</span>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  <div>{vendor.address}</div>
-                  {vendor.address_2 && <div>{vendor.address_2}</div>}
-                </div>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">City:</span>
-                <span className="text-white font-medium">{vendor.city || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Pin Code:</span>
-                <span className="text-white font-medium">{vendor.pin_code || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">State:</span>
-                <span className="text-white font-medium">{vendor.state}</span>
-              </div>
+        {/* Vendor Information Section - 4 Column Layout */}
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-white mb-4">🏢 Vendor Information</h2>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Name:</span>
+              <span className="text-white font-medium">{vendor.vendor_name}</span>
             </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📞 Contact Information</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Phone:</span>
-                <span className="text-white font-medium">{vendor.contact_no || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">
-                  {vendor.email ? (
-                    <a href={`mailto:${vendor.email}`} className="text-blue-400 hover:text-blue-300">
-                      {vendor.email}
-                    </a>
-                  ) : 'N/A'}
-                </span>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">GST ID:</span>
+              <span className="text-white font-medium font-mono">{vendor.tax_id || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Phone:</span>
+              <span className="text-white font-medium">{vendor.contact_no || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">City:</span>
+              <span className="text-white font-medium">{vendor.city || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Address:</span>
+              <span className="text-white font-medium">{vendor.address}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Address 2:</span>
+              <span className="text-white font-medium">{vendor.address_2 || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Pin Code:</span>
+              <span className="text-white font-medium">{vendor.pin_code || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">State:</span>
+              <span className="text-white font-medium">{vendor.state}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Transaction History Section - Using Purchase Table Style */}
+      {/*
+      // Commented out: RECENT PURCHASES, RECENT PAYMENTS, ACCOUNT SUMMARY, PURCHASE RETURNS, PURCHASE RETURN PAYMENTS tables
+      // These sections were removed during layout consolidation to simplify the vendor view interface
+
+      // Transaction History Section - Using Purchase Table Style
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Purchases */}
+        // Recent Purchases
         <div className="card">
           <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">RECENT PURCHASES</h3>
           <div className="p-6">
@@ -279,7 +349,7 @@ export default function VendorView() {
           </div>
         </div>
 
-        {/* Recent Payments */}
+        // Recent Payments
         <div className="card">
           <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">RECENT PAYMENTS</h3>
           <div className="p-6">
@@ -302,8 +372,8 @@ export default function VendorView() {
                         <td className="text-slate-300 font-semibold">₹{payment.amount?.toLocaleString('en-IN')}</td>
                         <td>{getStatusBadge(payment.status)}</td>
                       </tr>
-                    ))
-                  ) : (
+                    )))
+                  : (
                     // Placeholder rows
                     Array.from({ length: 3 }, (_, i) => (
                       <tr key={i}>
@@ -320,7 +390,7 @@ export default function VendorView() {
           </div>
         </div>
 
-        {/* Account Summary */}
+        // Account Summary
         <div className="card">
           <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">ACCOUNT SUMMARY</h3>
           <div className="p-6">
@@ -346,9 +416,9 @@ export default function VendorView() {
         </div>
       </div>
 
-      {/* Purchase Returns Section */}
+      // Purchase Returns Section
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Purchase Returns */}
+        // Purchase Returns
         <div className="card">
           <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">PURCHASE RETURNS</h3>
           <div className="p-6">
@@ -363,7 +433,7 @@ export default function VendorView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Placeholder rows */}
+                  // Placeholder rows
                   {Array.from({ length: 3 }, (_, i) => (
                     <tr key={i}>
                       <td>{i + 1}</td>
@@ -378,7 +448,7 @@ export default function VendorView() {
           </div>
         </div>
 
-        {/* Purchase Return Payments */}
+        // Purchase Return Payments
         <div className="card">
           <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">PURCHASE RETURN PAYMENTS</h3>
           <div className="p-6">
@@ -393,7 +463,7 @@ export default function VendorView() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Placeholder rows */}
+                  // Placeholder rows
                   {Array.from({ length: 3 }, (_, i) => (
                     <tr key={i}>
                       <td>{i + 1}</td>
@@ -408,6 +478,20 @@ export default function VendorView() {
           </div>
         </div>
       </div>
+      */}
+
+      {/* Status Change Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showStatusModal}
+        title={`${statusModalData?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Vendor`}
+        message={`Are you sure you want to ${statusModalData?.newStatus === 'Active' ? 'activate' : 'deactivate'} vendor "${statusModalData?.vendorName}"? This will affect their availability in transaction selections.`}
+        showLoading={statusUpdating}
+        onConfirm={confirmStatusChange}
+        onCancel={() => {
+          setShowStatusModal(false);
+          setStatusModalData(null);
+        }}
+      />
     </div>
   );
 }

@@ -58,15 +58,22 @@ export default async function handler(
       const {
         page = '1',
         limit = '25',
-        search = ''
+        search = '',
+        dropdown = 'false'
       } = req.query;
 
       const pageNum = parseInt(page as string);
       const limitNum = parseInt(limit as string);
       const skip = (pageNum - 1) * limitNum;
 
-      // Build where clause for search
+      // Build where clause for search and filtering
       const where: any = {};
+
+      // Filter out inactive customers for dropdowns
+      if (dropdown === 'true') {
+        where.status = 'Active';
+      }
+
       if (search) {
         where.OR = [
           { billing_name: { contains: search } },
@@ -84,6 +91,7 @@ export default async function handler(
           select: {
             id: true,
             billing_name: true,
+            status: true,
             // ===== BILLING ADDRESS FIELDS (Matching vendor pattern) =====
             billing_address: true,
             billing_address_2: true,
@@ -93,6 +101,8 @@ export default async function handler(
             billing_state_code: true,
             billing_gstin: true,
             contact_no: true,
+            contact_no_2: true,
+            contact_no_3: true,
             email: true,
             shipping_name: true,
             // ===== SHIPPING ADDRESS FIELDS (Matching vendor pattern) =====
@@ -114,6 +124,7 @@ export default async function handler(
       const formattedCustomers = customersData.map((customer: any) => ({
         id: customer.id.toString(),
         billing_name: customer.billing_name,
+        status: customer.status || 'Active',
         // ===== BILLING ADDRESS (Consistent with vendors) =====
         billing_address: customer.billing_address || '',
         billing_address_2: customer.billing_address_2 || '',
@@ -123,6 +134,8 @@ export default async function handler(
         billing_state_code: customer.billing_state_code,
         billing_gstin: customer.billing_gstin || '',
         contact_no: customer.contact_no || '',
+        contact_no_2: customer.contact_no_2 || '',
+        contact_no_3: customer.contact_no_3 || '',
         email: customer.email || '',
         shipping_name: customer.shipping_name || '',
         // ===== SHIPPING ADDRESS (Consistent with vendors) =====
