@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { broadcast } from '../../lib/broadcast';
 
 interface State {
   id: number;
@@ -17,6 +18,7 @@ export default function CreateVendor() {
     address: '',
     address_2: '',
     city: '',
+    pin_code: '',
     contact_no: '',
     email: '',
     tax_id: '',
@@ -56,6 +58,7 @@ export default function CreateVendor() {
           address: vendorData.address || '',
           address_2: vendorData.address_2 || '',
           city: vendorData.city || '',
+          pin_code: vendorData.pin_code || '',
           contact_no: vendorData.contact_no || '',
           email: vendorData.email || '',
           tax_id: vendorData.tax_id || '',
@@ -152,7 +155,29 @@ export default function CreateVendor() {
       });
 
       if (response.ok) {
-        router.push(isEditing ? `/vendors/view/${id}` : '/entry/vendordetails');
+        // Broadcast the change to refresh other tabs
+        if (isEditing) {
+          broadcast({
+            type: 'updated',
+            resource: 'vendors',
+            id: parseInt(id as string)
+          });
+        } else {
+          broadcast({
+            type: 'created',
+            resource: 'vendors',
+            data: { name: formData.vendor_name }
+          });
+        }
+
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditing && window.opener) {
+          router.push('/entry/vendordetails');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push(isEditing ? `/vendors/view/${id}` : '/entry/vendordetails');
+        }
       } else {
         const errorData = await response.json();
         console.error('API Error:', errorData);
@@ -200,7 +225,7 @@ export default function CreateVendor() {
         <div className="card">
           {/* Vendor Information */}
           <h2 className="text-xl font-semibold text-white mb-4">{isEditing ? 'Edit Vendor' : 'Vendor Information'}</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Vendor Name *
@@ -255,6 +280,24 @@ export default function CreateVendor() {
                 onChange={handleChange}
                 className="input w-full"
                 placeholder="City name"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Pin Code
+              </label>
+              <input
+                type="text"
+                name="pin_code"
+                value={formData.pin_code}
+                onChange={(e) => handleChange({
+                  ...e,
+                  target: { ...e.target, name: 'pin_code', value: e.target.value.replace(/\D/g, '').slice(0, 6) }
+                })}
+                className="input w-full"
+                placeholder="6-digit pin code"
+                maxLength={6}
               />
             </div>
 

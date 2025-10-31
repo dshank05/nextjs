@@ -8,6 +8,7 @@ interface Customer {
   billing_address: string;
   billing_address_2: string | null;
   billing_city: string | null;
+  billing_pin_code: string | null;
   billing_state: string | null;
   billing_state_code: number | null;
   billing_gstin: string | null;
@@ -17,6 +18,7 @@ interface Customer {
   shipping_address: string | null;
   shipping_address_2: string | null;
   shipping_city: string | null;
+  shipping_pin_code: string | null;
   shipping_state: string | null;
   shipping_state_code: number | null;
   shipping_gstin: string | null;
@@ -137,6 +139,10 @@ export default function CustomerView() {
                 <span className="text-white font-medium">{customer.billing_city || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-slate-400">Pin Code:</span>
+                <span className="text-white font-medium">{customer.billing_pin_code || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>
                 <span className="text-white font-medium">{customer.billing_state}</span>
               </div>
@@ -191,6 +197,10 @@ export default function CustomerView() {
                 <div className="flex justify-between">
                   <span className="text-slate-400">City:</span>
                   <span className="text-white font-medium">{customer.shipping_city || customer.billing_city || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Pin Code:</span>
+                  <span className="text-white font-medium">{customer.shipping_pin_code || customer.billing_pin_code || 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">State:</span>

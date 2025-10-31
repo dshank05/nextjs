@@ -8,6 +8,7 @@ interface Vendor {
   address: string;
   address_2: string | null;
   city: string | null;
+  pin_code: string | null;
   state: string | null;
   state_code: number | null;
   contact_no: string | null;
@@ -144,12 +145,16 @@ export default function VendorView() {
           {/* Right: Basic Information + Actions */}
           <div className="space-y-4">
             <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">TAX ID:</span>
+              <span className="text-slate-400">GST ID:</span>
               <span className="text-white font-medium">{vendor.tax_id || 'Not provided'}</span>
             </div>
               <div className="flex justify-between border-b border-slate-700 pb-2">
                 <span className="text-slate-400">City:</span>
                 <span className="text-white font-medium">{vendor.city || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-700 pb-2">
+                <span className="text-slate-400">Pin Code:</span>
+                <span className="text-white font-medium">{vendor.pin_code || 'Not provided'}</span>
               </div>
               <div className="flex justify-between border-b border-slate-700 pb-2">
                 <span className="text-slate-400">State:</span>
@@ -184,7 +189,7 @@ export default function VendorView() {
                 <span className="text-white font-medium">{vendor.vendor_name}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-400">TAX ID:</span>
+                <span className="text-slate-400">GST ID:</span>
                 <span className="text-white font-medium font-mono">{vendor.tax_id || 'N/A'}</span>
               </div>
               <div className="space-y-2">
@@ -197,6 +202,10 @@ export default function VendorView() {
               <div className="flex justify-between">
                 <span className="text-slate-400">City:</span>
                 <span className="text-white font-medium">{vendor.city || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Pin Code:</span>
+                <span className="text-white font-medium">{vendor.pin_code || 'N/A'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">State:</span>

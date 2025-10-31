@@ -14,6 +14,7 @@ export default async function handler(
         billing_address: req.body.billing_address,        // Main billing address line (REQUIRED)
         billing_address_2: req.body.billing_address_2 || null, // Additional billing address line (OPTIONAL)
         billing_city: req.body.billing_city || null,     // Billing city
+        billing_pin_code: req.body.billing_pin_code || null, // Billing pin code
 
         billing_state: req.body.billing_state,           // State name as string
         billing_state_code: parseInt(req.body.billing_state_code) || 0, // State code as number
@@ -27,6 +28,7 @@ export default async function handler(
         shipping_address: req.body.shipping_address || null,          // Main shipping address line
         shipping_address_2: req.body.shipping_address_2 || null,       // Additional shipping address line
         shipping_city: req.body.shipping_city || null,               // Shipping city
+        shipping_pin_code: req.body.shipping_pin_code || null,       // Shipping pin code
 
         shipping_state: req.body.shipping_state,                      // State name as string
         shipping_state_code: parseInt(req.body.shipping_state_code) || 0, // State code as number
@@ -84,6 +86,7 @@ export default async function handler(
             billing_address: true,
             billing_address_2: true,
             billing_city: true,
+            billing_pin_code: true,
             billing_state: true,
             billing_state_code: true,
             billing_gstin: true,
@@ -94,6 +97,7 @@ export default async function handler(
             shipping_address: true,
             shipping_address_2: true,
             shipping_city: true,
+            shipping_pin_code: true,
             shipping_state: true,
             shipping_state_code: true,
             shipping_gstin: true
@@ -105,13 +109,14 @@ export default async function handler(
         prisma.customer_details.count({ where })
       ]);
 
-      const formattedCustomers = customersData.map(customer => ({
+      const formattedCustomers = customersData.map((customer: any) => ({
         id: customer.id.toString(),
         billing_name: customer.billing_name,
         // ===== BILLING ADDRESS (Consistent with vendors) =====
         billing_address: customer.billing_address || '',
         billing_address_2: customer.billing_address_2 || '',
         billing_city: customer.billing_city || '',
+        billing_pin_code: customer.billing_pin_code || '',
         billing_state: customer.billing_state,
         billing_state_code: customer.billing_state_code,
         billing_gstin: customer.billing_gstin || '',
@@ -122,6 +127,7 @@ export default async function handler(
         shipping_address: customer.shipping_address || '',
         shipping_address_2: customer.shipping_address_2 || '',
         shipping_city: customer.shipping_city || '',
+        shipping_pin_code: customer.shipping_pin_code || '',
         shipping_state: customer.shipping_state,
         shipping_state_code: customer.shipping_state_code,
         shipping_gstin: customer.shipping_gstin || ''

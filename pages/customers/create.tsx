@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { broadcast } from '../../lib/broadcast';
 // Import useForm or similar validation later if needed
 
 interface CustomerFormData {
@@ -14,8 +15,10 @@ interface CustomerFormData {
   // ===== OPTIONAL FIELDS =====
   billing_address_2: string;      // Additional billing address line
   billing_city: string;           // Billing city
+  billing_pin_code: string;       // Billing pin code (6 digits)
   shipping_address_2: string;     // Additional shipping address line
   shipping_city: string;          // Shipping city
+  shipping_pin_code: string;      // Shipping pin code (6 digits)
   billing_state: string;
   billing_state_code: string;     // Auto-filled, not shown in UI
   billing_gstin: string;
@@ -51,10 +54,12 @@ export default function CustomerCreate() {
     billing_address: '',
     billing_address_2: '',
     billing_city: '',
+    billing_pin_code: '',
     shipping_name: '',
     shipping_address: '',
     shipping_address_2: '',
     shipping_city: '',
+    shipping_pin_code: '',
     billing_state: '',
     billing_state_code: '',
     billing_gstin: '',
@@ -101,10 +106,12 @@ export default function CustomerCreate() {
           billing_address: customerData.billing_address || '',
           billing_address_2: customerData.billing_address_2 || '',
           billing_city: customerData.billing_city || '',
+          billing_pin_code: customerData.billing_pin_code || '',
           shipping_name: customerData.shipping_name || customerData.billing_name || '',
           shipping_address: customerData.shipping_address || customerData.billing_address || '',
           shipping_address_2: customerData.shipping_address_2 || customerData.billing_address_2 || '',
           shipping_city: customerData.shipping_city || customerData.billing_city || '',
+          shipping_pin_code: customerData.shipping_pin_code || customerData.billing_pin_code || '',
           billing_state: customerData.billing_state || '',
           billing_state_code: customerData.billing_state_code ? customerData.billing_state_code.toString() : '',
           billing_gstin: customerData.billing_gstin || '',
@@ -136,6 +143,7 @@ export default function CustomerCreate() {
           shipping_address: prev.billing_address,
           shipping_address_2: prev.billing_address_2,
           shipping_city: prev.billing_city,
+          shipping_pin_code: prev.billing_pin_code,
           shipping_state: prev.billing_state,
           shipping_state_code: prev.billing_state_code,
           shipping_gstin: prev.billing_gstin
@@ -149,6 +157,7 @@ export default function CustomerCreate() {
           shipping_address: '',
           shipping_address_2: '',
           shipping_city: '',
+          shipping_pin_code: '',
           shipping_state: '',
           shipping_state_code: '',
           shipping_gstin: ''
@@ -166,12 +175,13 @@ export default function CustomerCreate() {
         shipping_address: prev.billing_address,
         shipping_address_2: prev.billing_address_2,
         shipping_city: prev.billing_city,
+        shipping_pin_code: prev.billing_pin_code,
         shipping_state: prev.billing_state,
         shipping_state_code: prev.billing_state_code,
         shipping_gstin: prev.billing_gstin
       }));
     }
-  }, [formData.copyFromBilling, formData.billing_name, formData.billing_address, formData.billing_address_2, formData.billing_city, formData.billing_state, formData.billing_state_code, formData.billing_gstin]);
+  }, [formData.copyFromBilling, formData.billing_name, formData.billing_address, formData.billing_address_2, formData.billing_city, formData.billing_pin_code, formData.billing_state, formData.billing_state_code, formData.billing_gstin]);
 
   const handleInputChange = (field: keyof CustomerFormData, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -268,6 +278,7 @@ export default function CustomerCreate() {
         billing_address: formData.billing_address.trim(),
         billing_address_2: formData.billing_address_2.trim(),
         billing_city: formData.billing_city.trim(),
+        billing_pin_code: formData.billing_pin_code.trim(),
         billing_state: formData.billing_state,  // Send state name as string
         billing_state_code: parseInt(formData.billing_state_code) || 0,  // Send state code as number
         billing_gstin: formData.billing_gstin.trim(),
@@ -277,6 +288,7 @@ export default function CustomerCreate() {
         shipping_address: formData.shipping_address.trim(),
         shipping_address_2: formData.shipping_address_2.trim(),
         shipping_city: formData.shipping_city.trim(),
+        shipping_pin_code: formData.shipping_pin_code.trim(),
         shipping_state: formData.shipping_state,  // Send state name as string
         shipping_state_code: parseInt(formData.shipping_state_code) || 0,  // Send state code as number
         shipping_gstin: formData.shipping_gstin.trim(),
@@ -300,7 +312,31 @@ export default function CustomerCreate() {
 
       if (response.ok) {
         console.log(`Customer ${isEditing ? 'updated' : 'created'} successfully`);
-        router.push(isEditing ? `/customers/view/${id}` : '/entry/customerdetails');
+
+        // Broadcast the change to refresh other tabs
+        if (isEditing) {
+          broadcast({
+            type: 'updated',
+            resource: 'customers',
+            id: parseInt(id as string)
+          });
+        } else {
+          // Get the created customer ID from response if available, otherwise don't include ID
+          broadcast({
+            type: 'created',
+            resource: 'customers',
+            data: { name: formData.billing_name }
+          });
+        }
+
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditing && window.opener) {
+          router.push('/entry/customerdetails');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push(isEditing ? `/customers/view/${id}` : '/entry/customerdetails');
+        }
       } else {
         const errorData = await response.json();
         console.error('API Error:', errorData);
@@ -329,7 +365,7 @@ export default function CustomerCreate() {
           {/* ===== BILLING INFORMATION ===== */}
           <div className="space-y-4">
             <h3 className="text-lg font-medium text-white border-b border-slate-600 pb-2">🏢 Billing Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING NAME *
@@ -386,6 +422,20 @@ export default function CustomerCreate() {
 
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
+                  BILLING PIN CODE
+                </label>
+                <input
+                  type="text"
+                  value={formData.billing_pin_code}
+                  onChange={(e) => handleInputChange('billing_pin_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="input w-full"
+                  placeholder="6-digit pin code"
+                  maxLength={6}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING STATE
                 </label>
                 <select
@@ -435,7 +485,7 @@ export default function CustomerCreate() {
                 Copy from Billing
               </label>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING NAME *
@@ -493,6 +543,22 @@ export default function CustomerCreate() {
                   onChange={(e) => handleInputChange('shipping_city', e.target.value)}
                   className="input w-full"
                   placeholder="Enter city name"
+                  disabled={formData.copyFromBilling}
+                  readOnly={formData.copyFromBilling}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  SHIPPING PIN CODE
+                </label>
+                <input
+                  type="text"
+                  value={formData.shipping_pin_code}
+                  onChange={(e) => handleInputChange('shipping_pin_code', e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  className="input w-full"
+                  placeholder="6-digit pin code"
+                  maxLength={6}
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
                 />

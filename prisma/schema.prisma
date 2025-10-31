@@ -320,6 +320,8 @@ model customer_details {
   billing_name        String          @db.VarChar(200)
   billing_address     String          @db.VarChar(255)
   billing_address_2   String?         @db.VarChar(255)
+  billing_city        String?         @db.VarChar(100)
+  billing_pin_code    String?         @db.VarChar(20)
   billing_state       String?         @db.VarChar(100)
   billing_state_code  Int?
   billing_gstin       String?         @db.VarChar(30)
@@ -328,11 +330,11 @@ model customer_details {
   shipping_name       String?         @db.VarChar(200)
   shipping_address    String          @db.VarChar(255)
   shipping_address_2  String?         @db.VarChar(255)
+  shipping_city       String?         @db.VarChar(100)
+  shipping_pin_code   String?         @db.VarChar(20)
   shipping_state      String?         @db.VarChar(100)
   shipping_state_code Int?
   shipping_gstin      String?         @db.VarChar(30)
-  billing_city        String?         @db.VarChar(100)
-  shipping_city       String?         @db.VarChar(100)
   bill_tosales        bill_tosales[]
   bill_tosalesx       bill_tosalesx[]
   shiptos             shipto[]
@@ -535,12 +537,13 @@ model vendor_details {
   vendor_name   String          @db.VarChar(255)
   address       String?         @db.VarChar(255)
   address_2     String?         @db.VarChar(255)
+  city          String?         @db.VarChar(100)
+  pin_code      String?         @db.VarChar(20)
   state         String?
   state_code    Int?
   contact_no    String?         @db.VarChar(20)
   email         String?         @db.VarChar(100)
   tax_id        String?         @db.VarChar(50)
-  city          String?         @db.VarChar(100)
   purchases     Purchase[]
   purchaseItems Purchaseitems[]
 

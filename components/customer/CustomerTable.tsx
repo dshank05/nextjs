@@ -8,6 +8,9 @@ interface Customer {
   // ===== BILLING ADDRESS FIELDS =====
   billing_address?: string;
   billing_address_2?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_state_code?: number;
   billing_gstin?: string;
   contact_no?: string;
   email?: string;
@@ -15,6 +18,10 @@ interface Customer {
   // ===== SHIPPING ADDRESS FIELDS =====
   shipping_address?: string;
   shipping_address_2?: string;
+  shipping_city?: string;
+  shipping_state?: string;
+  shipping_state_code?: number;
+  shipping_gstin?: string;
 }
 
 interface Pagination {
@@ -29,9 +36,13 @@ interface CustomerTableProps {
   pagination?: Pagination;
   loading?: boolean;
   onPageChange?: (newPage: number) => void;
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  itemsPerPage: number;
+  onItemsPerPageChange: (value: number) => void;
 }
 
-export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange }) => {
+export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -76,6 +87,34 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
 
   return (
     <div className="card">
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
+            <input
+              type="text"
+              placeholder="Search by name, phone, email..."
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="input w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => onItemsPerPageChange(parseInt(e.target.value))}
+              className="select w-full min-w-24"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {pagination && (
         <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
           <div>Showing {customers.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} customers</div>
@@ -94,8 +133,8 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
               <th>Contact Number</th>
               <th>Email Address</th>
               <th>GSTIN</th>
-              <th>Billing Address</th>
-              <th>Shipping Address</th>
+              <th>City</th>
+              <th>State</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -103,7 +142,7 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
             {sortedCustomers.map((customer, idx) => (
               <tr key={customer.id} className="hover:bg-slate-800/30">
                 <td className="text-center font-semibold text-slate-400">{idx + 1}</td>
-                <td className="text-slate-500 text-sm font-mono">{customer.id}</td>
+                <td className=" text-sm">{customer.id}</td>
                 <td className="font-medium text-white">
                   <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-blue-600/20 rounded-full flex items-center justify-center">
@@ -128,18 +167,20 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
                     </a>
                   ) : '-'}
                 </td>
-                <td className="text-slate-300 font-mono text-sm">
+                <td className="text-slate-300 text-sm">
                   {customer.billing_gstin || '-'}
                 </td>
-                <td className="text-slate-300 max-w-48 truncate" title={customer.billing_address}>
-                  {customer.billing_address || '-'}
+                <td className="text-slate-300">
+                  {customer.billing_city || '-'}
                 </td>
-                <td className="text-slate-300 max-w-48 truncate" title={customer.shipping_address}>
-                  {customer.shipping_address || '-'}
+                <td className="text-slate-300">
+                  {customer.billing_state ?
+                    `${customer.billing_state}${customer.billing_state_code ? ` (${customer.billing_state_code})` : ''}` :
+                    '-'}
                 </td>
                 <td>
                   <div className="flex gap-1">
-                    <Link href={`/customers/view/${customer.id}`} className="text-slate-300 hover:text-blue-400 transition-colors text-xs py-1 px-3 border border-slate-600 rounded hover:border-blue-400" title="View Details">
+                    <Link href={`/customers/view/${customer.id}`} className="text-slate-300 outline-none hover:text-blue-400 transition-colors text-xs py-1 px-3 border border-slate-600 rounded hover:border-blue-400" title="View Details">
                       <Eye className="w-4 h-4" />
                     </Link>
                   </div>

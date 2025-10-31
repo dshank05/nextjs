@@ -27,6 +27,7 @@ export default async function handler(
         address: vendor.address,
         address_2: vendor.address_2,
         city: vendor.city,
+        pin_code: vendor.pin_code,
         state: vendor.state, // State name is now directly stored
         state_code: vendor.state_code, // State ID is now directly stored
         contact_no: vendor.contact_no,
@@ -54,6 +55,7 @@ export default async function handler(
         address: req.body.address,
         address_2: req.body.address_2 || null,
         city: req.body.city || null,
+        pin_code: req.body.pin_code || null,
         state: req.body.state || null,
         state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
         contact_no: req.body.contact_no || null,

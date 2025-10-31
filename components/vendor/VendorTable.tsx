@@ -7,6 +7,9 @@ interface Vendor {
   vendor_name: string;
   address?: string;
   address_2?: string;
+  city?: string;
+  pin_code?: string;
+  state?: string;
   contact_no?: string;
   email?: string;
   tax_id?: string;
@@ -24,9 +27,13 @@ interface VendorTableProps {
   pagination?: Pagination;
   loading?: boolean;
   onPageChange?: (newPage: number) => void;
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  itemsPerPage: number;
+  onItemsPerPageChange: (value: number) => void;
 }
 
-export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange }) => {
+export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -71,6 +78,34 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
 
   return (
     <div className="card">
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
+            <input
+              type="text"
+              placeholder="Search by name, phone, email..."
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="input w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
+            <select
+              value={itemsPerPage}
+              onChange={(e) => onItemsPerPageChange(parseInt(e.target.value))}
+              className="select w-full min-w-24"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       {pagination && (
         <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
           <div>Showing {vendors.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} vendors</div>
@@ -88,8 +123,8 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
               </th>
               <th>Contact Number</th>
               <th>Email Address</th>
-              <th>Tax ID</th>
-              <th>Address</th>
+              <th>GST ID</th>
+              <th>City</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -125,8 +160,8 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
                 <td className="text-slate-300 font-mono text-sm">
                   {vendor.tax_id || '-'}
                 </td>
-                <td className="text-slate-300 max-w-48 truncate" title={`${vendor.address || ''} ${vendor.address_2 || ''}`.trim()}>
-                  {`${vendor.address || ''} ${vendor.address_2 || ''}`.trim() || '-'}
+                <td className="text-slate-300">
+                  {vendor.city || '-'}
                 </td>
                 <td>
                   <Link

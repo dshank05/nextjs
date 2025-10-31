@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDebounce } from '../../hooks/useDebounce';
 import { VendorTable } from '../../components/vendor/VendorTable';
+import { subscribeBroadcast } from '../../lib/broadcast';
 
 interface Vendor {
   id: number;
@@ -27,7 +28,7 @@ interface VendorResponse {
 export default function VendorDetailsPage() {
   const router = useRouter();
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1, hasMore: false });
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,6 +46,18 @@ export default function VendorDetailsPage() {
   useEffect(() => {
     fetchVendors();
   }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+
+  // Listen for broadcast messages to refresh data when vendors are created/updated/deleted in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'vendors' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
+        console.log(`🔄 Vendor ${msg.type} in another tab, refreshing data...`);
+        fetchVendors();
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const fetchVendors = async () => {
     try {
@@ -97,41 +110,14 @@ export default function VendorDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="card">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-              <input
-                type="text"
-                placeholder="Search by name, phone, email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.push('/vendors/create')}
-              className="btn-primary">
-              Add Vendor
-            </button>
-          </div>
-        </div>
+      <div className="flex flex-row-reverse gap-3">
+        <a
+          href="/vendors/create"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-primary">
+          Add Vendor
+        </a>
       </div>
 
       {error && (
@@ -159,6 +145,10 @@ export default function VendorDetailsPage() {
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        itemsPerPage={pagination.limit}
+        onItemsPerPageChange={handleLimitChange}
       />
 
       {/* {vendors.length > 0 && !loading && (

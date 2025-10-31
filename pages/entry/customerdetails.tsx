@@ -2,18 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { useDebounce } from '../../hooks/useDebounce';
 import { CustomerTable } from '../../components/customer/CustomerTable';
+import { subscribeBroadcast } from '../../lib/broadcast';
 
 interface Customer {
   id: number;
   billing_name: string;
   billing_address?: string;
   billing_address_2?: string;
+  billing_city?: string;
+  billing_pin_code?: string;
+  billing_state?: string;
+  billing_state_code?: number;
   billing_gstin?: string;
   contact_no?: string;
   email?: string;
   shipping_name?: string;
   shipping_address?: string;
   shipping_address_2?: string;
+  shipping_city?: string;
+  shipping_pin_code?: string;
+  shipping_state?: string;
+  shipping_state_code?: number;
+  shipping_gstin?: string;
 }
 
 interface CustomerResponse {
@@ -30,7 +40,7 @@ interface CustomerResponse {
 export default function CustomerDetailsPage() {
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 25, total: 0, totalPages: 1, hasMore: false });
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,6 +58,18 @@ export default function CustomerDetailsPage() {
   useEffect(() => {
     fetchCustomers();
   }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+
+  // Listen for broadcast messages to refresh data when customers are created/updated/deleted in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'customers' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
+        console.log(`🔄 Customer ${msg.type} in another tab, refreshing data...`);
+        fetchCustomers();
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const fetchCustomers = async () => {
     try {
@@ -73,12 +95,19 @@ export default function CustomerDetailsPage() {
         billing_name: customer.billing_name,
         billing_address: customer.billing_address,
         billing_address_2: customer.billing_address_2,
+        billing_city: customer.billing_city,
+        billing_state: customer.billing_state,
+        billing_state_code: customer.billing_state_code,
         billing_gstin: customer.billing_gstin,
         contact_no: customer.contact_no,
         email: customer.email,
         shipping_name: customer.shipping_name,
         shipping_address: customer.shipping_address,
-        shipping_address_2: customer.shipping_address_2
+        shipping_address_2: customer.shipping_address_2,
+        shipping_city: customer.shipping_city,
+        shipping_state: customer.shipping_state,
+        shipping_state_code: customer.shipping_state_code,
+        shipping_gstin: customer.shipping_gstin
       })) || [];
 
       setCustomers(transformedCustomers);
@@ -103,43 +132,17 @@ export default function CustomerDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="card">
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-              <input
-                type="text"
-                placeholder="Search by name, phone, email..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value={10}>10</option>
-                <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => router.push('/customers/create')}
-              className="btn-primary"
-            >
-              Add Customer
-            </button>
-          </div>
-        </div>
+      <div className="flex flex-row-reverse gap-3">
+        <a
+          href="/customers/create"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn-primary"
+        >
+          Add Customer
+        </a>
       </div>
+
 
       {error && (
         <div className="card border-red-500 bg-red-500/10 p-4">
@@ -166,8 +169,12 @@ export default function CustomerDetailsPage() {
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        itemsPerPage={pagination.limit}
+        onItemsPerPageChange={handleLimitChange}
       />
-{/* 
+      {/* 
       {customers.length > 0 && !loading && (
         <div className="text-center text-sm text-slate-400 py-2">
           Total customers: <span className="font-semibold text-white">{customers.length}</span>

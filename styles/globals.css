@@ -77,11 +77,11 @@ a {
   }
   
   .table thead th {
-    @apply bg-slate-700 px-6 py-3 text-xs font-medium text-slate-300 uppercase tracking-wider;
+    @apply bg-slate-700 px-2.5 py-2 text-xs font-medium text-slate-300 uppercase tracking-wider;
   }
   
   .table tbody td {
-    @apply px-6 py-4 whitespace-nowrap border-b border-slate-700;
+    @apply px-2 py-1 whitespace-nowrap border-b border-slate-700;
   }
   
   .table tbody tr:hover {

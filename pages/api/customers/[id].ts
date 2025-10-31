@@ -28,8 +28,9 @@ export default async function handler(
         billing_name: customer.billing_name,
         // ===== BILLING ADDRESS (Consistent with vendor pattern) =====
         billing_address: customer.billing_address,
-        billing_address_2: (customer as any).billing_address_2 || null, // NEW: Additional address field
-        billing_city: (customer as any).billing_city || null,
+        billing_address_2: customer.billing_address_2 || null,
+        billing_city: customer.billing_city || null,
+        billing_pin_code: customer.billing_pin_code || null,
         billing_state: customer.billing_state,          // State name from DB
         billing_state_code: customer.billing_state_code, // State code from DB
         billing_gstin: customer.billing_gstin,
@@ -38,8 +39,9 @@ export default async function handler(
         shipping_name: customer.shipping_name,
         // ===== SHIPPING ADDRESS (Consistent with vendor pattern) =====
         shipping_address: customer.shipping_address,
-        shipping_address_2: (customer as any).shipping_address_2 || null, // NEW: Additional address field
-        shipping_city: (customer as any).shipping_city || null,
+        shipping_address_2: customer.shipping_address_2 || null,
+        shipping_city: customer.shipping_city || null,
+        shipping_pin_code: customer.shipping_pin_code || null,
         shipping_state: customer.shipping_state,        // State name from DB
         shipping_state_code: customer.shipping_state_code, // State code from DB
         shipping_gstin: customer.shipping_gstin
@@ -65,6 +67,7 @@ export default async function handler(
         billing_address: req.body.billing_address,
         billing_address_2: req.body.billing_address_2 || null,
         billing_city: req.body.billing_city || null,
+        billing_pin_code: req.body.billing_pin_code || null,
         billing_state: req.body.billing_state,           // State name as string
         billing_state_code: parseInt(req.body.billing_state_code) || 0, // State code as number
         billing_gstin: req.body.billing_gstin,
@@ -74,6 +77,7 @@ export default async function handler(
         shipping_address: req.body.shipping_address || null,
         shipping_address_2: req.body.shipping_address_2 || null,
         shipping_city: req.body.shipping_city || null,
+        shipping_pin_code: req.body.shipping_pin_code || null,
         shipping_state: req.body.shipping_state,         // State name as string
         shipping_state_code: parseInt(req.body.shipping_state_code) || 0, // State code as number
         shipping_gstin: req.body.shipping_gstin || null,
@@ -88,8 +92,9 @@ export default async function handler(
         id: customer.id.toString(),
         billing_name: customer.billing_name,
         billing_address: customer.billing_address,
-        billing_address_2: (customer as any).billing_address_2 || null,
-        billing_city: (customer as any).billing_city || null,
+        billing_address_2: customer.billing_address_2 || null,
+        billing_city: customer.billing_city || null,
+        billing_pin_code: customer.billing_pin_code || null,
         billing_state: customer.billing_state,          // State name from DB
         billing_state_code: customer.billing_state_code, // State code from DB
         billing_gstin: customer.billing_gstin,
@@ -97,8 +102,9 @@ export default async function handler(
         email: customer.email,
         shipping_name: customer.shipping_name,
         shipping_address: customer.shipping_address,
-        shipping_address_2: (customer as any).shipping_address_2 || null,
-        shipping_city: (customer as any).shipping_city || null,
+        shipping_address_2: customer.shipping_address_2 || null,
+        shipping_city: customer.shipping_city || null,
+        shipping_pin_code: customer.shipping_pin_code || null,
         shipping_state: customer.shipping_state,        // State name from DB
         shipping_state_code: customer.shipping_state_code, // State code from DB
         shipping_gstin: customer.shipping_gstin
