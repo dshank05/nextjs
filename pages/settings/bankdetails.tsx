@@ -246,13 +246,13 @@ export default function BankDetails() {
                       ID {getSortIcon('id')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_name')}>
-                      Bank Name {getSortIcon('bank_name')}
+                      Account Name {getSortIcon('bank_name')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('account_number')}>
                       Account Number {getSortIcon('account_number')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_address')}>
-                      Bank Address {getSortIcon('bank_address')}
+                      Bank Name {getSortIcon('bank_address')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('ifsc')}>
                       IFSC {getSortIcon('ifsc')}
@@ -310,7 +310,7 @@ export default function BankDetails() {
                 </div>
               )}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Bank Name</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Account Name</label>
                 <input
                   type="text"
                   value={formData.bank_name}
@@ -330,7 +330,7 @@ export default function BankDetails() {
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Bank Address</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Bank Name</label>
                 <input
                   type="text"
                   value={formData.bank_address}

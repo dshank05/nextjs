@@ -281,10 +281,10 @@ export default function GSTTaxRate() {
         <div className="flex items-end justify-between">
           <div className="flex items-end space-x-4">
             <div className="w-80">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Search GST Rates</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
               <input
                 type="text"
-                placeholder="Search GST rates..."
+                placeholder="Search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="input w-full"

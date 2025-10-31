@@ -11,6 +11,7 @@ interface BusinessDetailsData {
   address_line_2: string;
   pin_code: string;
   phone: string;
+  phone2: string;
   email: string;
   fax: string;
   terms: string;
@@ -27,6 +28,7 @@ export default function BusinessDetails() {
     address_line_2: '',
     pin_code: '',
     phone: '',
+    phone2: '',
     email: '',
     fax: '',
     terms: ''
@@ -59,6 +61,7 @@ export default function BusinessDetails() {
           address_line_2: '',
           pin_code: '',
           phone: '',
+          phone2: '',
           email: '',
           fax: '',
           terms: ''
@@ -77,8 +80,36 @@ export default function BusinessDetails() {
     }
   };
 
+  const validatePhoneNumbers = () => {
+    // If phone is present, it must be exactly 10 digits
+    if (editedData.phone && editedData.phone.length !== 10) {
+      showSnackbar('error', 'Phone number must be exactly 10 digits');
+      return false;
+    }
+
+    // If phone2 is present, it must be exactly 10 digits
+    if (editedData.phone2 && editedData.phone2.length !== 10) {
+      showSnackbar('error', 'Phone 2 number must be exactly 10 digits');
+      return false;
+    }
+
+    // If landline is present, it must be exactly 10 digits
+    if (editedData.fax && editedData.fax.length !== 10) {
+      showSnackbar('error', 'Landline number must be exactly 10 digits');
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate phone numbers
+    if (!validatePhoneNumbers()) {
+      return;
+    }
+
     // Show confirmation modal before saving
     setPendingData(editedData);
     setShowConfirmModal(true);
@@ -302,12 +333,35 @@ export default function BusinessDetails() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="10 digits"
+                        placeholder="Exactly 10 digits"
                         maxLength={10}
                         pattern="[0-9]{10}"
                       />
                     ) : (
                       <p className="text-white py-2 px-3 bg-slate-700 rounded">{businessData.phone || '-'}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                      Phone 2
+                    </label>
+                    {isEditing ? (
+                      <input
+                        type="tel"
+                        value={editedData.phone2}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '');
+                          if (value.length <= 10) {
+                            setEditedData({ ...editedData, phone2: value });
+                          }
+                        }}
+                        className="input w-full"
+                        placeholder="Exactly 10 digits (optional)"
+                        maxLength={10}
+                      />
+                    ) : (
+                      <p className="text-white py-2 px-3 bg-slate-700 rounded">{businessData.phone2 || '-'}</p>
                     )}
                   </div>
 
@@ -343,7 +397,7 @@ export default function BusinessDetails() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="10 digits"
+                        placeholder="Exactly 10 digits"
                         maxLength={10}
                       />
                     ) : (

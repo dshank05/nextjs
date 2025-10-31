@@ -309,6 +309,7 @@ model business_details {
   address_line_2 String? @db.VarChar(255)
   pin_code       String? @db.VarChar(20)
   phone          String? @db.VarChar(100)
+  phone2         String? @db.VarChar(100)
   email          String? @db.VarChar(255)
   fax            String? @db.VarChar(30)
   terms          String? @db.Text

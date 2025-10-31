@@ -46,6 +46,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       address_line_2,
       pin_code,
       phone,
+      phone2,
       email,
       fax,
       terms
@@ -58,6 +59,27 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // Phone number validation: if present, must be exactly 10 digits
+    if (phone && phone.trim().length !== 10) {
+      return res.status(400).json({
+        message: 'Phone number must be exactly 10 digits'
+      })
+    }
+
+    // Phone2 number validation: if present, must be exactly 10 digits
+    if (phone2 && phone2.trim().length !== 10) {
+      return res.status(400).json({
+        message: 'Phone 2 number must be exactly 10 digits'
+      })
+    }
+
+    // Landline (fax) validation: if present, must be exactly 10 digits
+    if (fax && fax.trim().length !== 10) {
+      return res.status(400).json({
+        message: 'Landline number must be exactly 10 digits'
+      })
+    }
+
     const data = {
       gstin: gstin.trim(),
       name: name.trim(),
@@ -66,6 +88,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       address_line_2: address_line_2?.trim() || null,
       pin_code: pin_code?.trim() || null,
       phone: phone?.trim() || null,
+      phone2: phone2?.trim() || null,
       email: email?.trim() || null,
       fax: fax?.trim() || null,
       terms: terms?.trim() || null
