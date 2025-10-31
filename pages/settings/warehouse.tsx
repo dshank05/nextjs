@@ -53,7 +53,7 @@ export default function Warehouse() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
+        search: debouncedSearchTerm.trim(),
         includeInactive: 'true',
         sortBy: sortBy,
         sortOrder: sortOrder
@@ -97,6 +97,7 @@ export default function Warehouse() {
       setSortBy(field);
       setSortOrder('asc');
     }
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on sorting
   };
 
   const getSortIcon = (field: string) => {

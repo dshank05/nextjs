@@ -52,8 +52,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     if (search) {
       const searchTerm = search as string
       where.OR = [
-        { name: { contains: searchTerm, mode: 'insensitive' } },
-        { location: { contains: searchTerm, mode: 'insensitive' } }
+        { name: { contains: searchTerm } },
+        { location: { contains: searchTerm } }
       ]
     }
 
