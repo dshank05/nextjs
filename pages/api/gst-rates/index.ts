@@ -23,22 +23,35 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       page = '1',
       limit = '50',
       search = '',
-      includeInactive = 'false'
+      includeInactive = 'false',
+      sortBy = 'description',
+      sortOrder = 'asc'
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
     const skip = (pageNum - 1) * limitNum
+    const sortField = sortBy as string
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // Build where clause
     const where: any = {}
 
     if (search) {
-      where.OR = [
-        { description: { contains: search as string } },
-        { hsn_code: { contains: search as string } },
-        { applicable_for: { contains: search as string } }
+      const searchTerm = search as string
+      const searchConditions: any[] = [
+        { description: { contains: searchTerm } },
+        { hsn_code: { contains: searchTerm } },
+        { applicable_for: { contains: searchTerm } }
       ]
+
+      // If search term is numeric, also search by rate
+      const rateValue = parseFloat(searchTerm)
+      if (!isNaN(rateValue)) {
+        searchConditions.push({ rate: { equals: rateValue } })
+      }
+
+      where.OR = searchConditions
     }
 
     // Filter for active records by default, unless includeInactive is true
@@ -46,12 +59,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.status = 'Active'
     }
 
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'description', 'rate', 'hsn_code', 'applicable_for', 'status']
+    const field = validSortFields.includes(sortField) ? sortField : 'description'
+
     const [gstRates, total] = await Promise.all([
       prisma.gst_tax_rate.findMany({
         where,
         skip,
         take: limitNum,
-        orderBy: { description: 'asc' }
+        orderBy: { [field]: sortDirection }
       }),
       prisma.gst_tax_rate.count({ where })
     ])

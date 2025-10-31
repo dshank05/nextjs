@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface BankAccount {
   id: number;
@@ -23,6 +24,8 @@ export default function BankDetails() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('bank_name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [formData, setFormData] = useState({ id: 0, bank_name: '', account_number: '', bank_address: '', ifsc: '' });
@@ -32,15 +35,34 @@ export default function BankDetails() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
+
   useEffect(() => {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm]);
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchBankAccounts();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchBankAccounts = async () => {
     setLoading(true);
@@ -48,7 +70,9 @@ export default function BankDetails() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm
+        search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder
       });
 
       const response = await fetch(`/api/bank-details?${params}`);
@@ -218,11 +242,21 @@ export default function BankDetails() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Bank Name</th>
-                    <th>Account Number</th>
-                    <th>Bank Address</th>
-                    <th>IFSC</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_name')}>
+                      Bank Name {getSortIcon('bank_name')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('account_number')}>
+                      Account Number {getSortIcon('account_number')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_address')}>
+                      Bank Address {getSortIcon('bank_address')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('ifsc')}>
+                      IFSC {getSortIcon('ifsc')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

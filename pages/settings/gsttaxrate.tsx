@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface GSTTaxRate {
   id: number;
@@ -24,6 +25,8 @@ export default function GSTTaxRate() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('description');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<GSTTaxRate | null>(null);
   const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' as 'Active' | 'Inactive' });
@@ -50,9 +53,34 @@ export default function GSTTaxRate() {
     }
   }, [debouncedSearchTerm]);
 
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
+
   useEffect(() => {
     fetchGSTRates();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchGSTRates = async () => {
     setLoading(true);
@@ -60,8 +88,10 @@ export default function GSTTaxRate() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        includeInactive: 'true'
+        search: debouncedSearchTerm.trim(),
+        includeInactive: 'true',
+        sortBy: sortBy,
+        sortOrder: sortOrder
       });
 
       const response = await fetch(`/api/gst-rates?${params}`);
@@ -296,12 +326,24 @@ export default function GSTTaxRate() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>HSN Code</th>
-                    <th>Rate (%)</th>
-                    <th>Applicable For</th>
-                    <th>Description</th>
-                    <th>Status</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('hsn_code')}>
+                      HSN Code {getSortIcon('hsn_code')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
+                      Rate (%) {getSortIcon('rate')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('applicable_for')}>
+                      Applicable For {getSortIcon('applicable_for')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('description')}>
+                      Description {getSortIcon('description')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>

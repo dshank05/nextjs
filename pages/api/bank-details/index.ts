@@ -19,23 +19,32 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'bank_name', sortOrder = 'asc' } = req.query
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
     const searchTerm = search as string
+    const sortField = sortBy as string
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // Build where clause for search
     const where = searchTerm ? {
-      bank_name: {
-        contains: searchTerm
-      }
+      OR: [
+        { bank_name: { contains: searchTerm } },
+        { account_number: { contains: searchTerm } },
+        { bank_address: { contains: searchTerm } },
+        { ifsc: { contains: searchTerm } }
+      ]
     } : {}
+
+    // Validate sortBy to prevent SQL injection
+    const validSortFields = ['id', 'bank_name', 'account_number', 'bank_address', 'ifsc']
+    const field = validSortFields.includes(sortField) ? sortField : 'bank_name'
 
     // Get total count for pagination
     const total = await prisma.bank_details.count({ where })
 
-    // Get bank accounts with pagination
+    // Get bank accounts with pagination and sorting
     const bankDetails = await prisma.bank_details.findMany({
       where,
       select: {
@@ -45,7 +54,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         bank_address: true,
         ifsc: true
       },
-      orderBy: { bank_name: 'asc' },
+      orderBy: { [field]: sortDirection },
       skip: (pageNum - 1) * limitNum,
       take: limitNum
     })
