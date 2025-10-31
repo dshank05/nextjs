@@ -617,6 +617,7 @@ model mechanic {
   id         Int        @id @default(autoincrement())
   name       String     @db.VarChar(255)
   phone      String     @db.VarChar(20)
+  city      String?    @db.VarChar(50)
   status     String     @default("Active") @db.VarChar(20)
   created_at DateTime   @default(now())
   updated_at DateTime   @updatedAt
@@ -626,6 +627,7 @@ model mechanic {
   @@index([name], map: "idx_mechanic_name")
   @@index([phone], map: "idx_mechanic_phone")
   @@index([status], map: "idx_mechanic_status")
+  @@index([city], map: "idx_mechanic_city")
   @@map("mechanic")
 }
 

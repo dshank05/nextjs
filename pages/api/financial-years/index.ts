@@ -19,11 +19,13 @@ export default async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'fy', sortOrder = 'desc' } = req.query
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
     const searchTerm = search as string
+    const sortField = sortBy as string
+    const sortDir = sortOrder === 'asc' ? 'asc' : 'desc'
 
     // Build where clause for search
     const where = searchTerm ? {
@@ -32,29 +34,73 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     } : {}
 
+    // Get current FY ID for status sorting
+    const settings = await prisma.settings.findFirst()
+    const currentFyId = settings?.currentfy || null
+
+    // Handle status sorting specially since it's derived from currentFyId
+    let financialYears: any[]
+
+    if (sortField === 'status') {
+      // For status sorting, get all matching records first, then sort manually
+      const allMatchingData = await prisma.financial_year.findMany({
+        where,
+        select: {
+          id: true,
+          fy: true,
+          start_date: true,
+          end_date: true
+        }
+      })
+
+      // Sort by status: Current FY first (asc) or Current FY last (desc)
+      if (sortDir === 'asc') {
+        // Current FY first, then inactive FYS
+        const currentFirst = allMatchingData.sort((a, b) => {
+          if (a.id === currentFyId && b.id !== currentFyId) return -1
+          if (a.id !== currentFyId && b.id === currentFyId) return 1
+          // Sort by FY as secondary sort when both are current (unlikely) or both inactive
+          return a.fy.localeCompare(b.fy)
+        })
+        // Apply pagination after manual sorting
+        financialYears = currentFirst.slice((pageNum - 1) * limitNum, pageNum * limitNum)
+      } else {
+        // Current FY last, inactive FYS first
+        const currentLast = allMatchingData.sort((a, b) => {
+          if (a.id === currentFyId && b.id !== currentFyId) return 1
+          if (a.id !== currentFyId && b.id === currentFyId) return -1
+          // Sort by FY as secondary sort
+          return b.fy.localeCompare(a.fy)
+        })
+        // Apply pagination after manual sorting
+        financialYears = currentLast.slice((pageNum - 1) * limitNum, pageNum * limitNum)
+      }
+    } else {
+      // Normal database sorting for other fields
+      const orderBy: any = {}
+      const validSortFields = ['id', 'fy', 'start_date', 'end_date']
+      const field = validSortFields.includes(sortField) ? sortField : 'fy'
+      orderBy[field] = sortDir
+
+      financialYears = await prisma.financial_year.findMany({
+        where,
+        select: {
+          id: true,
+          fy: true,
+          start_date: true,
+          end_date: true
+        },
+        orderBy,
+        skip: (pageNum - 1) * limitNum,
+        take: limitNum
+      })
+    }
+
     // Get total count for pagination
     const total = await prisma.financial_year.count({ where })
 
-    // Get financial years with pagination
-    const financialYears = await prisma.financial_year.findMany({
-      where,
-      select: {
-        id: true,
-        fy: true,
-        start_date: true,
-        end_date: true
-      },
-      orderBy: { fy: 'desc' }, // Most recent first
-      skip: (pageNum - 1) * limitNum,
-      take: limitNum
-    })
-
     const totalPages = Math.ceil(total / limitNum)
     const hasMore = pageNum < totalPages
-
-    // Get current FY from settings
-    const settings = await prisma.settings.findFirst()
-    const currentFyId = settings?.currentfy || null
 
     res.status(200).json({
       financialYears,
@@ -87,9 +133,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Parse dates
-    const startDate = new Date(start_date)
-    const endDate = new Date(end_date)
+    // Parse dates manually to avoid timezone issues
+    const parseDate = (dateString: string): Date => {
+      const [year, month, day] = dateString.split('-').map(Number);
+      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+    };
+
+    const startDate = parseDate(start_date);
+    const endDate = parseDate(end_date);
 
     // Validate dates
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
@@ -251,10 +302,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // Parse dates manually to avoid timezone issues
+    const parseDate = (dateString: string): Date => {
+      const [year, month, day] = dateString.split('-').map(Number);
+      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+    };
+
     // Validate that the current date falls within the FY being set as current
     const currentDate = new Date()
-    const fyStart = new Date(financialYear.start_date)
-    const fyEnd = new Date(financialYear.end_date)
+    const fyStart = parseDate(financialYear.start_date.toISOString().split('T')[0]) // Convert DB date to YYYY-MM-DD then parse
+    const fyEnd = parseDate(financialYear.end_date.toISOString().split('T')[0])
 
     if (currentDate < fyStart) {
       return res.status(400).json({

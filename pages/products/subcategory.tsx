@@ -285,7 +285,9 @@ export default function Subcategories() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
                       ID {getSortIcon('id')}
                     </th>
-                    <th>Category</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('category_name')}>
+                      Category {getSortIcon('category_name')}
+                    </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
                       Subcategory Name {getSortIcon('subcategory_name')}
                     </th>

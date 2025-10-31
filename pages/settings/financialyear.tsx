@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface FinancialYear {
   id: number;
@@ -21,6 +22,8 @@ export default function FinancialYear() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<string>('fy');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [showModal, setShowModal] = useState(false);
   const [editingYear, setEditingYear] = useState<FinancialYear | null>(null);
   const [formData, setFormData] = useState({ id: 0, fy: '', start_date: '', end_date: '' });
@@ -38,14 +41,37 @@ export default function FinancialYear() {
     }
   }, [debouncedSearchTerm]);
 
+  const handleSort = (column: string) => {
+    if (sortBy === column) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(column);
+      setSortOrder('asc');
+    }
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on sorting
+  };
+
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
+
   useEffect(() => {
     fetchFinancialYears();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchFinancialYears = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/financial-years?page=${pagination.page}&limit=${pagination.limit}&search=${debouncedSearchTerm}`);
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
+      });
+      const response = await fetch(`/api/financial-years?${params}`);
       if (response.ok) {
         const data = await response.json();
         setFinancialYears(data.financialYears || []);
@@ -123,15 +149,21 @@ export default function FinancialYear() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     // Validate dates
     if (!formData.start_date || !formData.end_date) {
       showSnackbar('error', 'Please select both start and end dates');
       return;
     }
 
-    const startDate = new Date(formData.start_date);
-    const endDate = new Date(formData.end_date);
+    // Parse date components manually to avoid timezone issues
+    const parseDate = (dateString: string): Date => {
+      const [year, month, day] = dateString.split('-').map(Number);
+      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+    };
+
+    const startDate = parseDate(formData.start_date);
+    const endDate = parseDate(formData.end_date);
 
     // Validate Indian FY format: April 1 to March 31
     const startMonth = startDate.getMonth(); // 0-indexed (0 = Jan, 3 = April)
@@ -161,10 +193,10 @@ export default function FinancialYear() {
     // Check for overlaps with existing FYs
     const hasOverlap = financialYears.some(fy => {
       if (!fy.start_date || !fy.end_date) return false;
-      
-      const existingStart = new Date(fy.start_date);
-      const existingEnd = new Date(fy.end_date);
-      
+
+      const existingStart = parseDate(fy.start_date as string);
+      const existingEnd = parseDate(fy.end_date as string);
+
       // Check if new FY overlaps with existing FY
       return (
         (startDate >= existingStart && startDate <= existingEnd) ||
@@ -182,13 +214,13 @@ export default function FinancialYear() {
     const currentDate = new Date();
     const activeFy = financialYears.find(fy => {
       if (!fy.start_date || !fy.end_date) return false;
-      const fyStart = new Date(fy.start_date);
-      const fyEnd = new Date(fy.end_date);
+      const fyStart = parseDate(fy.start_date as string);
+      const fyEnd = parseDate(fy.end_date as string);
       return currentDate >= fyStart && currentDate <= fyEnd;
     });
 
-    if (activeFy && startDate < new Date(activeFy.end_date!)) {
-      const activeFyEnd = new Date(activeFy.end_date!).toLocaleDateString();
+    if (activeFy && startDate < parseDate(activeFy.end_date as string)) {
+      const activeFyEnd = parseDate(activeFy.end_date as string).toLocaleDateString();
       showSnackbar('error', `Cannot create future financial year. Current FY ${activeFy.fy} is active until ${activeFyEnd}`);
       return;
     }
@@ -242,6 +274,15 @@ export default function FinancialYear() {
     setPendingData(null);
   };
 
+  const getSortIcon = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+    }
+    return sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
+
   const currentFy = financialYears.find(fy => fy.id === currentFyId);
 
   return (
@@ -251,7 +292,7 @@ export default function FinancialYear() {
         <button className="btn-primary" onClick={handleAdd}>Add Financial Year</button>
       </div>
 
-      <div className="card">
+      {/* <div className="card">
         <div className="flex items-end justify-between">
           <div className="flex items-end space-x-4">
             <div className="w-80">
@@ -281,7 +322,7 @@ export default function FinancialYear() {
             <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {currentFy && (
         <div className="card">
@@ -311,9 +352,15 @@ export default function FinancialYear() {
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th>ID</th>
-                    <th>Financial Year</th>
-                    <th>Status</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
+                      ID {getSortIcon('id')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('fy')}>
+                      Financial Year {getSortIcon('fy')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
@@ -336,7 +383,7 @@ export default function FinancialYear() {
                   ) : (
                     financialYears.map((year, index) => (
                       <tr key={year.id}>
-                        <td>{index + 1}</td>
+                        <td>{(pagination.page - 1) * pagination.limit + index + 1}</td>
                         <td>{year.id}</td>
                         <td className="font-medium text-white">{year.fy}</td>
                         <td>
@@ -348,8 +395,8 @@ export default function FinancialYear() {
                         </td>
                         <td className="text-right">
                           {year.id !== currentFyId && (
-                            <button 
-                              className="btn-primary mr-2 text-sm" 
+                            <button
+                              className="btn-primary mr-2 text-sm"
                               onClick={() => handleSetAsCurrent(year.id)}
                               disabled={settingCurrent === year.id}
                             >

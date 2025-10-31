@@ -56,6 +56,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
     const {
       name,
       phone,
+      city,
       status
     } = req.body
 
@@ -87,6 +88,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
 
     if (name !== undefined) updateData.name = name.trim()
     if (phone !== undefined) updateData.phone = phone.trim()
+    if (city !== undefined) updateData.city = city ? city.trim() : null
     if (status !== undefined) updateData.status = status
 
     const updatedMechanic = await prisma.mechanic.update({

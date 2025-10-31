@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useDebounce } from '../../hooks/useDebounce';
 
 interface Mechanic {
   id: number;
   name: string;
   phone: string;
+  city?: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -14,7 +16,7 @@ interface Mechanic {
 }
 
 export default function MechanicDetails() {
-  const { showSnackbar } = useSnackbar?.() || { showSnackbar: () => {} };
+  const { showSnackbar } = useSnackbar?.() || { showSnackbar: () => { } };
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -22,11 +24,13 @@ export default function MechanicDetails() {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
+    city: '',
     status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [searchTerm, setSearchTerm] = useState("")
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
@@ -39,22 +43,31 @@ export default function MechanicDetails() {
   const [changingLoading, setChangingLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm]);
+
 
   useEffect(() => {
     fetchMechanics();
-  }, [sortBy, sortOrder]);
+  }, [sortBy, sortOrder, pagination.page, pagination.limit, debouncedSearchTerm]);
 
   const fetchMechanics = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/mechanics?includeInactive=true&sortBy=${sortBy}&sortOrder=${sortOrder}`);
+      const response = await fetch(`/api/mechanics?includeInactive=true&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${pagination.page}&limit=${pagination.limit}&search=${encodeURIComponent(debouncedSearchTerm)}`);
       if (response.ok) {
         const data = await response.json();
         const mechanicsWithIndex = data.mechanics.map((mechanic: Mechanic, index: number) => ({
           ...mechanic,
-          index: index + 1
+          index: (pagination.page - 1) * pagination.limit + index + 1
         }));
         setMechanics(mechanicsWithIndex);
+        setPagination(prev => ({ ...prev, ...data.pagination }));
       } else {
         showSnackbar('error', 'Failed to load mechanics');
       }
@@ -73,6 +86,7 @@ export default function MechanicDetails() {
       setSortBy(field);
       setSortOrder('asc');
     }
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   const getSortIcon = (field: string) => {
@@ -89,6 +103,7 @@ export default function MechanicDetails() {
     setFormData({
       name: '',
       phone: '',
+      city: '',
       status: 'Active'
     });
     setShowModal(true);
@@ -99,6 +114,7 @@ export default function MechanicDetails() {
     setFormData({
       name: mechanic.name,
       phone: mechanic.phone,
+      city: mechanic.city || '',
       status: mechanic.status as 'Active' | 'Inactive'
     });
     setShowModal(true);
@@ -150,6 +166,10 @@ export default function MechanicDetails() {
 
   const cancelSave = () => {
     setShowSaveModal(false);
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
   const handleStatusChange = (mechanicId: number, mechanicName: string, currentStatus: 'Active' | 'Inactive') => {
@@ -216,116 +236,188 @@ export default function MechanicDetails() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Mechanic</button>
-      </div>
 
+    <div>
+      
+
+
+      <div className="space-y-6">
+        <div className="flex justify-end">
+          <button className="btn-primary" onClick={handleAdd}>Add Mechanic</button>
+        </div>
       <div className="card">
-        {loading ? (
-          <div className="h-64 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+        <div className="flex items-end justify-between">
+          <div className="flex items-end space-x-4">
+            <div className="w-80">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Search Mechanics</label>
+              <input
+                type="text"
+                placeholder="Search mechanics..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input w-full"
+              />
+            </div>
+            <div className="w-40">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
+              <select
+                value={pagination.limit}
+                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                className="select w-full"
+              >
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>S.N</th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
-                    Name {getSortIcon('name')}
-                  </th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
-                    Phone {getSortIcon('phone')}
-                  </th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                    Status {getSortIcon('status')}
-                  </th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mechanics.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="text-center text-slate-400 py-8">
-                      No mechanics found. Click "Add Mechanic" to get started.
-                    </td>
-                  </tr>
-                ) : (
-                  mechanics.map((mechanic) => (
-                    <tr key={mechanic.id}>
-                      <td>{mechanic.index}</td>
-                      <td className="font-medium text-white">{mechanic.name}</td>
-                      <td className="text-slate-300">{mechanic.phone}</td>
-                      <td>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          mechanic.status === 'Active'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {mechanic.status}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        <button
-                          className="btn-secondary mr-2"
-                          onClick={() => handleEdit(mechanic)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
-                          onClick={() => handleStatusChange(mechanic.id, mechanic.name, mechanic.status as 'Active' | 'Inactive')}
-                        >
-                          {mechanic.status === 'Active' ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="w-24">
+            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
           </div>
-        )}
+        </div>
       </div>
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-slate-800 p-6 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold text-white mb-4 border-b border-slate-600 pb-4">
-              {editingMechanic ? 'Edit Mechanic' : 'Add Mechanic'}
-            </h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="input w-full"
-                  required
-                  placeholder="Enter mechanic's full name"
-                />
+        <div className="card">
+          {loading ? (
+            <div className="h-64 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+            </div>
+          ) : (
+            <>
+              <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+                <div>
+                  Showing {mechanics.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} mechanics
+                </div>
+                <div>Page {pagination.page} of {pagination.totalPages}</div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Phone Number *
-                </label>
-                <input
-                  type="text"
-                  value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="input w-full"
-                  required
-                  maxLength={10}
-                  placeholder="Enter phone number"
-                />
+              <div className="overflow-x-auto">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>S.N</th>
+                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
+                        Name {getSortIcon('name')}
+                      </th>
+                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
+                        Phone {getSortIcon('phone')}
+                      </th>
+                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('city')}>
+                        City {getSortIcon('city')}
+                      </th>
+                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                        Status {getSortIcon('status')}
+                      </th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mechanics.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center text-slate-400 py-8">
+                          No mechanics found. Click "Add Mechanic" to get started.
+                        </td>
+                      </tr>
+                    ) : (
+                      mechanics.map((mechanic) => (
+                        <tr key={mechanic.id}>
+                          <td>{mechanic.index}</td>
+                          <td className="font-medium text-white">{mechanic.name}</td>
+                          <td className="text-slate-300">{mechanic.phone}</td>
+                          <td className="text-slate-300">{mechanic.city || '-'}</td>
+                          <td>
+                            <span className={`px-2 py-1 rounded-full text-xs ${mechanic.status === 'Active'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                              }`}>
+                              {mechanic.status}
+                            </span>
+                          </td>
+                          <td className="text-right">
+                            <button
+                              className="btn-secondary mr-2"
+                              onClick={() => handleEdit(mechanic)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
+                              onClick={() => handleStatusChange(mechanic.id, mechanic.name, mechanic.status as 'Active' | 'Inactive')}
+                            >
+                              {mechanic.status === 'Active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+
+                {mechanics.length === 0 && !loading && (
+                  <div className="text-center py-8 text-slate-400">No mechanics found.</div>
+                )}
               </div>
 
-              {/* <div>
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+                  <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
+                  <span className="text-sm text-slate-400 px-4">Page {pagination.page} of {pagination.totalPages}</span>
+                  <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))} disabled={!pagination.hasMore} className="btn-secondary disabled:opacity-50">Next</button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {showModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-slate-800 p-6 rounded-lg w-96 shadow-lg">
+              <h2 className="text-xl font-bold text-white mb-4 border-b border-slate-600 pb-4">
+                {editingMechanic ? 'Edit Mechanic' : 'Add Mechanic'}
+              </h2>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    className="input w-full"
+                    required
+                    placeholder="Enter mechanic's full name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Phone Number *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                    className="input w-full"
+                    required
+                    maxLength={10}
+                    placeholder="Enter phone number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    City
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                    className="input w-full"
+                    placeholder="Enter city (optional)"
+                  />
+                </div>
+
+                {/* <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Status
                 </label>
@@ -339,55 +431,56 @@ export default function MechanicDetails() {
                 </select>
               </div> */}
 
-              <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="btn-secondary"
-                  disabled={saving}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={saving}
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </form>
+                <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="btn-secondary"
+                    disabled={saving}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <ConfirmationModal
-        isOpen={showStatusChangeModal}
-        title={`${changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Mechanic`}
-        message={`Are you sure you want to ${changingMechanic?.newStatus === 'Active' ? 'activate' : 'deactivate'} ${changingMechanic?.name}?`}
-        confirmText={changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'}
-        cancelText="Cancel"
-        showLoading={changingLoading}
-        loadingText={`${changingMechanic?.newStatus === 'Active' ? 'Activating' : 'Deactivating'}...`}
-        cancelLoadingText="Canceling..."
-        onConfirm={confirmStatusChange}
-        onCancel={cancelStatusChange}
-      />
+        <ConfirmationModal
+          isOpen={showStatusChangeModal}
+          title={`${changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Mechanic`}
+          message={`Are you sure you want to ${changingMechanic?.newStatus === 'Active' ? 'activate' : 'deactivate'} ${changingMechanic?.name}?`}
+          confirmText={changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'}
+          cancelText="Cancel"
+          showLoading={changingLoading}
+          loadingText={`${changingMechanic?.newStatus === 'Active' ? 'Activating' : 'Deactivating'}...`}
+          cancelLoadingText="Canceling..."
+          onConfirm={confirmStatusChange}
+          onCancel={cancelStatusChange}
+        />
 
-      <ConfirmationModal
-        isOpen={showSaveModal}
-        title={editingMechanic ? "Update Mechanic" : "Add Mechanic"}
-        message={editingMechanic ?
-          `Are you sure you want to update ${formData.name}'s information?` :
-          `Are you sure you want to add ${formData.name} as a new mechanic?`
-        }
-        confirmText={editingMechanic ? "Update" : "Add"}
-        cancelText="Cancel"
-        showLoading={saving}
-        loadingText="Saving..."
-        onConfirm={confirmSave}
-        onCancel={cancelSave}
-      />
+        <ConfirmationModal
+          isOpen={showSaveModal}
+          title={editingMechanic ? "Update Mechanic" : "Add Mechanic"}
+          message={editingMechanic ?
+            `Are you sure you want to update ${formData.name}'s information?` :
+            `Are you sure you want to add ${formData.name} as a new mechanic?`
+          }
+          confirmText={editingMechanic ? "Update" : "Add"}
+          cancelText="Cancel"
+          showLoading={saving}
+          loadingText="Saving..."
+          onConfirm={confirmSave}
+          onCancel={cancelSave}
+        />
+      </div>
     </div>
   );
 }
