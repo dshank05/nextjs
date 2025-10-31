@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useDebounce } from '../../hooks/useDebounce';
 
 interface Staff {
   id: number;
@@ -29,6 +30,9 @@ export default function StaffDetails() {
   const [saving, setSaving] = useState(false);
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [searchTerm, setSearchTerm] = useState('')
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
@@ -43,20 +47,40 @@ export default function StaffDetails() {
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm]);
+
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedSearchTerm, sortBy, sortOrder]);
+
+  useEffect(() => {
     fetchStaff();
-  }, [sortBy, sortOrder]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   const fetchStaff = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/staff?includeInactive=true&sortBy=${sortBy}&sortOrder=${sortOrder}`);
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: debouncedSearchTerm.trim(),
+        sortBy: sortBy,
+        sortOrder: sortOrder,
+      });
+      const response = await fetch(`/api/staff?includeInactive=true&${params}`);
       if (response.ok) {
         const data = await response.json();
         const staffWithIndex = data.staff.map((member: Staff, index: number) => ({
           ...member,
-          index: index + 1
+          index: (pagination.page - 1) * pagination.limit + index + 1
         }));
         setStaff(staffWithIndex);
+        setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load staff members');
       }
@@ -75,6 +99,11 @@ export default function StaffDetails() {
       setSortBy(field);
       setSortOrder('asc');
     }
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on sorting
+  };
+
+  const handleLimitChange = (newLimit: number) => {
+    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
   const getSortIcon = (field: string) => {
@@ -226,74 +255,127 @@ export default function StaffDetails() {
       </div>
 
       <div className="card">
+        <div className="flex items-end justify-between">
+          <div className="flex items-end space-x-4">
+            <div className="w-80">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Search Staff</label>
+              <input
+                type="text"
+                placeholder="Search staff..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="input w-full"
+              />
+            </div>
+            <div className="w-40">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
+              <select
+                value={pagination.limit}
+                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                className="select w-full"
+              >
+                <option value="10">10</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+          <div className="w-24">
+            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card">
         {loading ? (
           <div className="h-64 flex items-center justify-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>S.N</th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
-                    Name {getSortIcon('name')}
-                  </th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
-                    Phone {getSortIcon('phone')}
-                  </th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('email')}>
-                    Email {getSortIcon('email')}
-                  </th>
-                  <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                    Status {getSortIcon('status')}
-                  </th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {staff.length === 0 ? (
+          <>
+            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+              <div>
+                Showing {staff.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} staff members
+              </div>
+              <div>Page {pagination.page} of {pagination.totalPages}</div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={6} className="text-center text-slate-400 py-8">
-                      No staff members found. Click "Add Staff Member" to get started.
-                    </td>
+                    <th>S.N</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
+                      Name {getSortIcon('name')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
+                      Phone {getSortIcon('phone')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('email')}>
+                      Email {getSortIcon('email')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
+                    <th className="text-right">Actions</th>
                   </tr>
-                ) : (
-                  staff.map((member) => (
-                    <tr key={member.id}>
-                      <td>{member.index}</td>
-                      <td className="font-medium text-white">{member.name}</td>
-                      <td className="text-slate-300">{member.phone}</td>
-                      <td className="text-slate-300">{member.email || '-'}</td>
-                      <td>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          member.status === 'Active'
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {member.status}
-                        </span>
-                      </td>
-                      <td className="text-right">
-                        <button
-                          className="btn-secondary mr-2"
-                          onClick={() => handleEdit(member)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className={member.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
-                          onClick={() => handleStatusChange(member.id, member.name, member.status as 'Active' | 'Inactive')}
-                        >
-                          {member.status === 'Active' ? 'Deactivate' : 'Activate'}
-                        </button>
+                </thead>
+                <tbody>
+                  {staff.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="text-center text-slate-400 py-8">
+                        No staff members found. Click "Add Staff Member" to get started.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    staff.map((member) => (
+                      <tr key={member.id}>
+                        <td>{member.index}</td>
+                        <td className="font-medium text-white">{member.name}</td>
+                        <td className="text-slate-300">{member.phone}</td>
+                        <td className="text-slate-300">{member.email || '-'}</td>
+                        <td>
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            member.status === 'Active'
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}>
+                            {member.status}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <button
+                            className="btn-secondary mr-2"
+                            onClick={() => handleEdit(member)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={member.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
+                            onClick={() => handleStatusChange(member.id, member.name, member.status as 'Active' | 'Inactive')}
+                          >
+                            {member.status === 'Active' ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+
+              {staff.length === 0 && !loading && (
+                <div className="text-center py-8 text-slate-400">No staff members found.</div>
+              )}
+            </div>
+
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
+                <span className="text-sm text-slate-400 px-4">Page {pagination.page} of {pagination.totalPages}</span>
+                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))} disabled={!pagination.hasMore} className="btn-secondary disabled:opacity-50">Next</button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
