@@ -6,7 +6,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
       page = '1',
-      limit = '25',
+      limit = '50',
       search = '',
       startDate = '',
       endDate = '',

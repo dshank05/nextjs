@@ -57,7 +57,7 @@ export default async function handler(
     try {
       const {
         page = '1',
-        limit = '25',
+        limit = '50',
         search = '',
         dropdown = 'false'
       } = req.query;
