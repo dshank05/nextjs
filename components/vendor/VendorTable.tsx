@@ -31,9 +31,10 @@ interface VendorTableProps {
   onSearchChange: (value: string) => void;
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
+  actionButton?: React.ReactNode;
 }
 
-export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange }) => {
+export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -96,6 +97,11 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
             </select>
           </div>
         </div>
+        {actionButton && (
+          <div className="flex-shrink-0">
+            {actionButton}
+          </div>
+        )}
       </div>
 
       {pagination && (

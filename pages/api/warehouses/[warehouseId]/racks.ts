@@ -34,16 +34,52 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, warehouseId:
     const limitNum = parseInt(limit as string)
     const skip = (pageNum - 1) * limitNum
 
-    // Build where clause
-    const where: any = { warehouse_id: warehouseId }
+    const searchTerm = (search as string).trim()
 
-    if (search) {
-      where.rack_number = { contains: search as string }
+    let where: any = {}
+
+    // If search term exists, create a more comprehensive search
+    if (searchTerm) {
+      where = {
+        AND: [
+          { warehouse_id: warehouseId }, // Always filter by warehouse_id
+          {
+            OR: [
+              // Search in rack fields
+              { rack_number: { contains: searchTerm } },
+              { description: { contains: searchTerm } },
+              { status: { contains: searchTerm } },
+              // Search in warehouse name through relationship
+              {
+                warehouse: {
+                  name: { contains: searchTerm }
+                }
+              },
+              {
+                warehouse: {
+                  location: { contains: searchTerm }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    } else {
+      // No search term, just filter by warehouse_id
+      where = { warehouse_id: warehouseId }
     }
 
     const [racks, total] = await Promise.all([
       (prisma as any).warehouse_racks.findMany({
         where,
+        include: {
+          warehouse: {
+            select: {
+              name: true,
+              location: true
+            }
+          }
+        },
         skip,
         take: limitNum,
         orderBy: { rack_number: 'asc' }

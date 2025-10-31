@@ -3,6 +3,8 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface BankAccount {
   id: number;
@@ -32,8 +34,21 @@ export default function BankDetails() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'bank_name', label: 'Account Name', enabled: true },
+    { key: 'account_number', label: 'Account Number', enabled: true },
+    { key: 'bank_address', label: 'Bank Name', enabled: true },
+    { key: 'ifsc', label: 'IFSC Code', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -55,17 +70,22 @@ export default function BankDetails() {
   };
 
   useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
+    if (!isFetching) {
+      fetchBankAccounts();
     }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
-
-  useEffect(() => {
-    fetchBankAccounts();
   }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
+  useEffect(() => {
+    // Reset to page 1 when search term changes
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [debouncedSearchTerm]);
+
   const fetchBankAccounts = async () => {
+    if (isFetching) return; // Prevent multiple concurrent API calls
+
+    setIsFetching(true);
     setLoading(true);
+
     try {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
@@ -94,6 +114,7 @@ export default function BankDetails() {
       showSnackbar('error', 'Network error while loading bank accounts');
     } finally {
       setLoading(false);
+      setIsFetching(false); // Allow new API calls
     }
   };
 
@@ -186,17 +207,64 @@ export default function BankDetails() {
     setPendingData(null);
   };
 
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Bank Accounts Report',
+        fileName: `BankAccounts_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, bankAccounts, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = bankAccounts.map(account => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = account.id;
+            break;
+          case 'bank_name':
+            row['Account Name'] = account.bank_name;
+            break;
+          case 'account_number':
+            row['Account Number'] = account.account_number;
+            break;
+          case 'bank_address':
+            row['Bank Name'] = account.bank_address || '';
+            break;
+          case 'ifsc':
+            row['IFSC Code'] = account.ifsc || '';
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Bank Accounts Report',
+      fileName: `BankAccounts_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
   return (
     <div className="space-y-6">
-
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Bank Account</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Bank Accounts</label>
               <input
                 type="text"
@@ -206,12 +274,12 @@ export default function BankDetails() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -219,13 +287,17 @@ export default function BankDetails() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Bank Account</button>
           </div>
         </div>
-      </div>
-
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -369,6 +441,14 @@ export default function BankDetails() {
         loadingText={editingBank ? 'Updating Bank Account...' : 'Creating Bank Account...'}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={closeColumnSelector}
       />
     </div>
   );

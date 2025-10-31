@@ -3,6 +3,8 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Mechanic {
   id: number;
@@ -50,6 +52,70 @@ export default function MechanicDetails() {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
   }, [debouncedSearchTerm]);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'name', label: 'Name', enabled: true },
+    { key: 'phone', label: 'Phone', enabled: true },
+    { key: 'city', label: 'City', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Mechanics Report',
+        fileName: `Mechanics_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, mechanics, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = mechanics.map(mechanic => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'name':
+            row.Name = mechanic.name;
+            break;
+          case 'phone':
+            row.Phone = mechanic.phone;
+            break;
+          case 'city':
+            row.City = mechanic.city || '';
+            break;
+          case 'status':
+            row.Status = mechanic.status;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Mechanics Report',
+      fileName: `Mechanics_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
 
   useEffect(() => {
@@ -238,17 +304,13 @@ export default function MechanicDetails() {
   return (
 
     <div>
-      
 
 
-      <div className="space-y-6">
-        <div className="flex justify-end">
-          <button className="btn-primary" onClick={handleAdd}>Add Mechanic</button>
-        </div>
+
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Mechanics</label>
               <input
                 type="text"
@@ -258,12 +320,12 @@ export default function MechanicDetails() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -271,216 +333,229 @@ export default function MechanicDetails() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Mechanic</button>
           </div>
         </div>
-      </div>
-        <div className="card">
-          {loading ? (
-            <div className="h-64 flex items-center justify-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
-            </div>
-          ) : (
-            <>
-              <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-                <div>
-                  Showing {mechanics.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} mechanics
-                </div>
-                <div>Page {pagination.page} of {pagination.totalPages}</div>
-              </div>
 
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead>
+        {loading ? (
+          <div className="h-64 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+              <div>
+                Showing {mechanics.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} mechanics
+              </div>
+              <div>Page {pagination.page} of {pagination.totalPages}</div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>S.N</th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
+                      Name {getSortIcon('name')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
+                      Phone {getSortIcon('phone')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('city')}>
+                      City {getSortIcon('city')}
+                    </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                      Status {getSortIcon('status')}
+                    </th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mechanics.length === 0 ? (
                     <tr>
-                      <th>S.N</th>
-                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
-                        Name {getSortIcon('name')}
-                      </th>
-                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
-                        Phone {getSortIcon('phone')}
-                      </th>
-                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('city')}>
-                        City {getSortIcon('city')}
-                      </th>
-                      <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                        Status {getSortIcon('status')}
-                      </th>
-                      <th className="text-right">Actions</th>
+                      <td colSpan={6} className="text-center text-slate-400 py-8">
+                        No mechanics found. Click "Add Mechanic" to get started.
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {mechanics.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="text-center text-slate-400 py-8">
-                          No mechanics found. Click "Add Mechanic" to get started.
+                  ) : (
+                    mechanics.map((mechanic) => (
+                      <tr key={mechanic.id}>
+                        <td>{mechanic.index}</td>
+                        <td className="font-medium text-white">{mechanic.name}</td>
+                        <td className="text-slate-300">{mechanic.phone}</td>
+                        <td className="text-slate-300">{mechanic.city || '-'}</td>
+                        <td>
+                          <span className={`px-2 py-1 rounded-full text-xs ${mechanic.status === 'Active'
+                            ? 'bg-green-500/20 text-green-400'
+                            : 'bg-red-500/20 text-red-400'
+                            }`}>
+                            {mechanic.status}
+                          </span>
+                        </td>
+                        <td className="text-right">
+                          <button
+                            className="btn-secondary mr-2"
+                            onClick={() => handleEdit(mechanic)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
+                            onClick={() => handleStatusChange(mechanic.id, mechanic.name, mechanic.status as 'Active' | 'Inactive')}
+                          >
+                            {mechanic.status === 'Active' ? 'Deactivate' : 'Activate'}
+                          </button>
                         </td>
                       </tr>
-                    ) : (
-                      mechanics.map((mechanic) => (
-                        <tr key={mechanic.id}>
-                          <td>{mechanic.index}</td>
-                          <td className="font-medium text-white">{mechanic.name}</td>
-                          <td className="text-slate-300">{mechanic.phone}</td>
-                          <td className="text-slate-300">{mechanic.city || '-'}</td>
-                          <td>
-                            <span className={`px-2 py-1 rounded-full text-xs ${mechanic.status === 'Active'
-                              ? 'bg-green-500/20 text-green-400'
-                              : 'bg-red-500/20 text-red-400'
-                              }`}>
-                              {mechanic.status}
-                            </span>
-                          </td>
-                          <td className="text-right">
-                            <button
-                              className="btn-secondary mr-2"
-                              onClick={() => handleEdit(mechanic)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className={mechanic.status === 'Active' ? 'btn-danger' : 'btn-primary px-6'}
-                              onClick={() => handleStatusChange(mechanic.id, mechanic.name, mechanic.status as 'Active' | 'Inactive')}
-                            >
-                              {mechanic.status === 'Active' ? 'Deactivate' : 'Activate'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                    ))
+                  )}
+                </tbody>
+              </table>
 
-                {mechanics.length === 0 && !loading && (
-                  <div className="text-center py-8 text-slate-400">No mechanics found.</div>
-                )}
+              {mechanics.length === 0 && !loading && (
+                <div className="text-center py-8 text-slate-400">No mechanics found.</div>
+              )}
+            </div>
+
+            {pagination.totalPages > 1 && (
+              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
+                <span className="text-sm text-slate-400 px-4">Page {pagination.page} of {pagination.totalPages}</span>
+                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))} disabled={!pagination.hasMore} className="btn-secondary disabled:opacity-50">Next</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 p-6 rounded-lg w-96 shadow-lg">
+            <h2 className="text-xl font-bold text-white mb-4 border-b border-slate-600 pb-4">
+              {editingMechanic ? 'Edit Mechanic' : 'Add Mechanic'}
+            </h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Full Name *
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="input w-full"
+                  required
+                  placeholder="Enter mechanic's full name"
+                />
               </div>
 
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                  <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                  <span className="text-sm text-slate-400 px-4">Page {pagination.page} of {pagination.totalPages}</span>
-                  <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))} disabled={!pagination.hasMore} className="btn-secondary disabled:opacity-50">Next</button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 p-6 rounded-lg w-96 shadow-lg">
-              <h2 className="text-xl font-bold text-white mb-4 border-b border-slate-600 pb-4">
-                {editingMechanic ? 'Edit Mechanic' : 'Add Mechanic'}
-              </h2>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    className="input w-full"
-                    required
-                    placeholder="Enter mechanic's full name"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Phone Number *
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                    className="input w-full"
-                    required
-                    maxLength={10}
-                    placeholder="Enter phone number"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.city}
-                    onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                    className="input w-full"
-                    placeholder="Enter city (optional)"
-                  />
-                </div>
-
-                {/* <div>
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Status
+                  Phone Number *
                 </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'Active' | 'Inactive' }))}
-                  className="select w-full"
+                <input
+                  type="text"
+                  value={formData.phone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="input w-full"
+                  required
+                  maxLength={10}
+                  placeholder="Enter phone number"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  City
+                </label>
+                <input
+                  type="text"
+                  value={formData.city}
+                  onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
+                  className="input w-full"
+                  placeholder="Enter city (optional)"
+                />
+              </div>
+
+              {/* <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Status
+              </label>
+              <select
+                value={formData.status}
+                onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'Active' | 'Inactive' }))}
+                className="select w-full"
+              >
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div> */}
+
+              <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="btn-secondary"
+                  disabled={saving}
                 >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div> */}
-
-                <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="btn-secondary"
-                    disabled={saving}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                    disabled={saving}
-                  >
-                    {saving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </form>
-            </div>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={saving}
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
           </div>
-        )}
+        </div>
+      )}
 
-        <ConfirmationModal
-          isOpen={showStatusChangeModal}
-          title={`${changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Mechanic`}
-          message={`Are you sure you want to ${changingMechanic?.newStatus === 'Active' ? 'activate' : 'deactivate'} ${changingMechanic?.name}?`}
-          confirmText={changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'}
-          cancelText="Cancel"
-          showLoading={changingLoading}
-          loadingText={`${changingMechanic?.newStatus === 'Active' ? 'Activating' : 'Deactivating'}...`}
-          cancelLoadingText="Canceling..."
-          onConfirm={confirmStatusChange}
-          onCancel={cancelStatusChange}
-        />
+      <ConfirmationModal
+        isOpen={showStatusChangeModal}
+        title={`${changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Mechanic`}
+        message={`Are you sure you want to ${changingMechanic?.newStatus === 'Active' ? 'activate' : 'deactivate'} ${changingMechanic?.name}?`}
+        confirmText={changingMechanic?.newStatus === 'Active' ? 'Activate' : 'Deactivate'}
+        cancelText="Cancel"
+        showLoading={changingLoading}
+        loadingText={`${changingMechanic?.newStatus === 'Active' ? 'Activating' : 'Deactivating'}...`}
+        cancelLoadingText="Canceling..."
+        onConfirm={confirmStatusChange}
+        onCancel={cancelStatusChange}
+      />
 
-        <ConfirmationModal
-          isOpen={showSaveModal}
-          title={editingMechanic ? "Update Mechanic" : "Add Mechanic"}
-          message={editingMechanic ?
-            `Are you sure you want to update ${formData.name}'s information?` :
-            `Are you sure you want to add ${formData.name} as a new mechanic?`
-          }
-          confirmText={editingMechanic ? "Update" : "Add"}
-          cancelText="Cancel"
-          showLoading={saving}
-          loadingText="Saving..."
-          onConfirm={confirmSave}
-          onCancel={cancelSave}
-        />
-      </div>
+      <ConfirmationModal
+        isOpen={showSaveModal}
+        title={editingMechanic ? "Update Mechanic" : "Add Mechanic"}
+        message={editingMechanic ?
+          `Are you sure you want to update ${formData.name}'s information?` :
+          `Are you sure you want to add ${formData.name} as a new mechanic?`
+        }
+        confirmText={editingMechanic ? "Update" : "Add"}
+        cancelText="Cancel"
+        showLoading={saving}
+        loadingText="Saving..."
+        onConfirm={confirmSave}
+        onCancel={cancelSave}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
+      />
     </div>
   );
-}
+};

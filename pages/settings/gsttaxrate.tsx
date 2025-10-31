@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -270,17 +272,81 @@ export default function GSTTaxRate() {
     setAbortController(null);
   };
 
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'hsn_code', label: 'HSN Code', enabled: true },
+    { key: 'rate', label: 'Rate (%)', enabled: true },
+    { key: 'applicable_for', label: 'Applicable For', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'GST Rates Report',
+        fileName: `GST_Rates_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, gstRates, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = gstRates.map(rate => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = rate.id;
+            break;
+          case 'hsn_code':
+            row['HSN Code'] = rate.hsn_code;
+            break;
+          case 'rate':
+            row['Rate (%)'] = rate.rate;
+            break;
+          case 'applicable_for':
+            row['Applicable For'] = rate.applicable_for;
+            break;
+          case 'status':
+            row.Status = rate.status;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'GST Rates Report',
+      fileName: `GST_Rates_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
+
   return (
     <div className="space-y-6">
 
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add GST Rate</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
               <input
                 type="text"
@@ -290,12 +356,12 @@ export default function GSTTaxRate() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -303,13 +369,18 @@ export default function GSTTaxRate() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add GST Rate</button>
           </div>
         </div>
-      </div>
 
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -338,9 +409,6 @@ export default function GSTTaxRate() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('applicable_for')}>
                       Applicable For {getSortIcon('applicable_for')}
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('description')}>
-                      Description {getSortIcon('description')}
-                    </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
                       Status {getSortIcon('status')}
                     </th>
@@ -359,7 +427,6 @@ export default function GSTTaxRate() {
                         </span>
                       </td>
                       <td className="text-slate-300">{rate.applicable_for}</td>
-                      <td className="font-medium text-white">{rate.description}</td>
                       <td>
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           rate.status === 'Active'
@@ -507,6 +574,14 @@ export default function GSTTaxRate() {
         cancelLoadingText="Canceling..."
         onConfirm={confirmStatusChange}
         onCancel={cancelStatusChange}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
       />
     </div>
   );

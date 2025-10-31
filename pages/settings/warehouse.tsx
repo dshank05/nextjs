@@ -3,6 +3,8 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Warehouse {
   id: number;
@@ -36,6 +38,70 @@ export default function Warehouse() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'name', label: 'Name', enabled: true },
+    { key: 'location', label: 'Location', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Warehouses Report',
+        fileName: `Warehouses_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, warehouses, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = warehouses.map(warehouse => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = warehouse.id;
+            break;
+          case 'name':
+            row.Name = warehouse.name;
+            break;
+          case 'location':
+            row.Location = warehouse.location;
+            break;
+          case 'status':
+            row.Status = warehouse.status;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Warehouses Report',
+      fileName: `Warehouses_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -233,15 +299,10 @@ export default function Warehouse() {
 
   return (
     <div className="space-y-6">
-
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Warehouse</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Warehouses</label>
               <input
                 type="text"
@@ -251,12 +312,12 @@ export default function Warehouse() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -264,13 +325,17 @@ export default function Warehouse() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Warehouse</button>
           </div>
         </div>
-      </div>
-
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -417,6 +482,14 @@ export default function Warehouse() {
         showLoading={toggleConfirmLoading}
         onConfirm={handleConfirmToggle}
         onCancel={handleCancelToggle}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
       />
     </div>
   );

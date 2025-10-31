@@ -523,12 +523,14 @@ model user {
   password_hash        String  @db.VarChar(255)
   password_reset_token String? @unique(map: "password_reset_token") @db.VarChar(255)
   email                String  @unique(map: "email") @db.VarChar(255)
+  phone                String? @db.VarChar(10)
   status               Int     @default(10) @db.SmallInt
   created_at           Int
   updated_at           Int
 
   @@index([username], map: "idx_user_username")
   @@index([email], map: "idx_user_email")
+  @@index([phone], map: "idx_user_phone")
   @@index([status], map: "idx_user_status")
 }
 

@@ -103,17 +103,17 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'PRODUCT SUB CATEGORY', href: '/products/subcategory' },
         { name: 'CAR MODELS', href: '/products/models' },
         { name: 'PART COMPANY', href: '/products/company' },
+        { name: 'MECHANIC DETAILS', href: '/settings/mechanics' },
+        { name: 'FINANCIAL YEAR', href: '/settings/financialyear' },
         { name: 'USERS', href: '/settings/users' },
-        { name: 'WARE HOUSE', href: '/settings/warehouse' },
         { name: 'STAFF DETAILS', href: '/settings/staffdetails' },
+        { name: 'WAREHOUSE', href: '/settings/warehouse' },
+        { name: 'WAREHOUSE RACKS', href: '/settings/warehouse-racks' },
         { name: 'BUSINESS DETAILS', href: '/settings/businessdetails' },
         { name: 'BANK DETAILS', href: '/settings/bankdetails' },
-        { name: 'FINANCIAL YEAR', href: '/settings/financialyear' },
         { name: 'GST TAX RATE', href: '/settings/gsttaxrate' },
-        { name: 'WAREHOUSE RACKS', href: '/settings/warehouse-racks' },
         { name: 'STATES', href: '/settings/states' },
-        { name: 'MECHANIC DETAILS', href: '/settings/mechanics' },
-        
+
       ],
     },
     {

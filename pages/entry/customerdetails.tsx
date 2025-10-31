@@ -132,18 +132,6 @@ export default function CustomerDetailsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-row-reverse gap-3">
-        <a
-          href="/customers/create"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn-primary"
-        >
-          Add Customer
-        </a>
-      </div>
-
-
       {error && (
         <div className="card border-red-500 bg-red-500/10 p-4">
           <div className="flex items-center justify-between">
@@ -173,6 +161,16 @@ export default function CustomerDetailsPage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
+        actionButton={
+          <a
+            href="/customers/create"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+          >
+            Add Customer
+          </a>
+        }
       />
       {/* 
       {customers.length > 0 && !loading && (

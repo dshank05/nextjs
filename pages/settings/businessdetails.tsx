@@ -167,37 +167,6 @@ export default function BusinessDetails() {
 
   return (
     <div className="space-y-6">
-      {!loading && (
-        <div className="flex justify-end">
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="btn-primary flex items-center"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              Edit
-            </button>
-          ) : (
-            <div className="flex space-x-3">
-              <button
-                onClick={handleCancel}
-                className="btn-secondary"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="btn-primary"
-              >
-                Save Changes
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
@@ -205,8 +174,34 @@ export default function BusinessDetails() {
           </div>
         ) : (
           <>
-            <div className="mb-6">
+            <div className="mb-6 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-white">Company Information</h2>
+              {!isEditing ? (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="btn-primary flex items-center"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  Edit
+                </button>
+              ) : (
+                <div className="flex space-x-3">
+                  <button
+                    onClick={handleCancel}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    className="btn-primary"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              )}
             </div>
 
             <form onSubmit={handleSubmit}>

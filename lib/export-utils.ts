@@ -30,7 +30,7 @@ interface Transaction {
   select_customer?: number;
 }
 
-interface ExportConfig {
+export interface ExportConfig {
   title: string;
   fileName: string;
 }
@@ -188,7 +188,7 @@ export const exportToPDF = async (
   }
 };
 
-// Excel Export function
+// Excel Export function (legacy for transactions)
 export const exportToExcel = (
   transactions: Transaction[],
   config: ExportConfig
@@ -235,6 +235,45 @@ export const exportToExcel = (
       { 'Metric': 'Total Records', 'Value': transactions.length },
       { 'Metric': 'Export Date', 'Value': new Date().toLocaleString('en-IN') },
       { 'Metric': 'Total Amount', 'Value': transactions.reduce((sum, t) => sum + (t.total || 0), 0) },
+    ];
+    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+
+    // Download the Excel file
+    XLSX.writeFile(wb, `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  } catch (error) {
+    console.error('Error exporting to Excel:', error);
+    alert('Error exporting Excel file. Please try again.');
+  }
+};
+
+// Generic Excel Export function for dynamic data
+export const exportToExcelGeneric = (
+  data: any[],
+  config: ExportConfig,
+  selectedColumns?: string[]
+): void => {
+  try {
+    // Create worksheet from data
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    // Set column widths based on content
+    const colWidths = Object.keys(data[0] || {}).map(key => {
+      // Set reasonable width based on column name length
+      const minWidth = Math.max(10, key.length);
+      return { wch: minWidth };
+    });
+    ws['!cols'] = colWidths;
+
+    // Create workbook
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+
+    // Add summary sheet
+    const summaryData = [
+      { 'Metric': 'Total Records', 'Value': data.length },
+      { 'Metric': 'Export Date', 'Value': new Date().toLocaleString('en-IN') },
+      { 'Metric': 'Selected Columns', 'Value': selectedColumns ? selectedColumns.join(', ') : 'All' },
     ];
     const summaryWs = XLSX.utils.json_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');

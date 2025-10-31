@@ -3,6 +3,8 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface WarehouseRack {
   id: number;
@@ -45,26 +47,95 @@ export default function WarehouseRacks() {
   const [selectedRack, setSelectedRack] = useState<WarehouseRack | null>(null);
   const [sortBy, setSortBy] = useState('rack_number');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'warehouse', label: 'Warehouse', enabled: true },
+    { key: 'rack_number', label: 'Rack Number', enabled: true },
+    { key: 'description', label: 'Description', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Warehouse Racks Report',
+        fileName: `WarehouseRacks_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, racks, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
     }
-  }, [debouncedSearchTerm]);
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = racks.map(rack => {
+      const row: any = {};
+      const warehouse = warehouses.find(w => w.id === rack.warehouse_id);
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = rack.id;
+            break;
+          case 'warehouse':
+            row.Warehouse = warehouse ? `${warehouse.name} - ${warehouse.location}` : 'Unknown Warehouse';
+            break;
+          case 'rack_number':
+            row['Rack Number'] = rack.rack_number;
+            break;
+          case 'description':
+            row.Description = rack.description || '';
+            break;
+          case 'status':
+            row.Status = rack.status;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Warehouse Racks Report',
+      fileName: `WarehouseRacks_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   useEffect(() => {
     fetchWarehouses();
   }, []);
 
   useEffect(() => {
-    if (warehouses.length > 0) {
+    if (warehouses.length > 0 && !isFetching) {
       fetchRacks();
-    } else {
+    } else if (warehouses.length === 0) {
       setLoading(false);
     }
   }, [pagination.page, pagination.limit, debouncedSearchTerm, warehouses, sortBy, sortOrder]);
+
+  useEffect(() => {
+    // Reset to page 1 when search term changes
+    setPagination(prev => ({ ...prev, page: 1 }));
+  }, [debouncedSearchTerm]);
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -97,7 +168,11 @@ export default function WarehouseRacks() {
   };
 
   const fetchRacks = async () => {
+    if (isFetching) return; // Prevent multiple concurrent API calls
+
+    setIsFetching(true);
     setLoading(true);
+
     try {
       const allRacks: WarehouseRack[] = [];
       let totalRacks = 0;
@@ -131,7 +206,7 @@ export default function WarehouseRacks() {
       allRacks.sort((a: any, b: any) => {
         let aVal = a[sortBy];
         let bVal = b[sortBy];
-        
+
         if (sortBy === 'id' || sortBy === 'warehouse_id') {
           aVal = Number(aVal);
           bVal = Number(bVal);
@@ -139,7 +214,7 @@ export default function WarehouseRacks() {
           aVal = String(aVal || '').toLowerCase();
           bVal = String(bVal || '').toLowerCase();
         }
-        
+
         if (sortOrder === 'asc') {
           return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
         } else {
@@ -168,6 +243,7 @@ export default function WarehouseRacks() {
       console.error('Error fetching warehouse racks:', error);
     } finally {
       setLoading(false);
+      setIsFetching(false); // Allow new API calls
     }
   };
 
@@ -320,15 +396,10 @@ export default function WarehouseRacks() {
 
   return (
     <div className="space-y-6">
-
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Warehouse Rack</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Warehouse Racks</label>
               <input
                 type="text"
@@ -338,12 +409,12 @@ export default function WarehouseRacks() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -351,13 +422,17 @@ export default function WarehouseRacks() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Warehouse Rack</button>
           </div>
         </div>
-      </div>
-
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -531,6 +606,14 @@ export default function WarehouseRacks() {
         showLoading={toggleConfirmLoading}
         onConfirm={handleConfirmToggle}
         onCancel={handleCancelToggle}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
       />
     </div>
   );

@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Category {
   id: number;
@@ -39,6 +41,66 @@ export default function Subcategories() {
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'category_name', label: 'Category', enabled: true },
+    { key: 'subcategory_name', label: 'Subcategory Name', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Product Subcategories Report',
+        fileName: `Product_Subcategories_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, subcategories, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = subcategories.map(subcategory => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = subcategory.id;
+            break;
+          case 'category_name':
+            row.Category = subcategory.category?.category_name || 'N/A';
+            break;
+          case 'subcategory_name':
+            row['Subcategory Name'] = subcategory.subcategory_name;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Product Subcategories Report',
+      fileName: `Product_Subcategories_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   const handleSort = (column: string) => {
     if (sortBy === column) {
@@ -229,14 +291,10 @@ export default function Subcategories() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Subcategory</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
               <input
                 type="text"
@@ -246,12 +304,12 @@ export default function Subcategories() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -259,13 +317,18 @@ export default function Subcategories() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Subcategory</button>
           </div>
         </div>
-      </div>
 
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -422,6 +485,14 @@ export default function Subcategories() {
         showLoading={isSaving}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelConfirm}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
       />
     </div>
   );

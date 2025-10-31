@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface User {
@@ -9,6 +11,7 @@ interface User {
   password_hash: string;
   password_reset_token: string | null;
   email: string;
+  phone: string | null;
   status: number;
   created_at: number;
   updated_at: number;
@@ -27,11 +30,83 @@ export default function Users() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({ id: 0, username: '', email: '', password: '', status: '' });
+  const [formData, setFormData] = useState({ id: 0, username: '', email: '', phone: '', password: '', status: '' });
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'username', label: 'Username', enabled: true },
+    { key: 'email', label: 'Email', enabled: true },
+    { key: 'phone', label: 'Phone', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+    { key: 'created_at', label: 'Created Date', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector: showExportColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF, ExportConfig } = require('../../lib/export-utils');
+      const config = {
+        title: 'Users Report',
+        fileName: `Users_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, users, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = users.map(user => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = user.id;
+            break;
+          case 'username':
+            row.Username = user.username;
+            break;
+          case 'email':
+            row.Email = user.email;
+            break;
+          case 'phone':
+            row.Phone = user.phone || '';
+            break;
+          case 'status':
+            row.Status = getStatusText(user.status);
+            break;
+          case 'created_at':
+            row['Created Date'] = formatDate(user.created_at);
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric, ExportConfig } = require('../../lib/export-utils');
+    const config = {
+      title: 'Users Report',
+      fileName: `Users_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelExportSelection = () => {
+    closeColumnSelector();
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -107,7 +182,7 @@ export default function Users() {
 
   const handleAdd = () => {
     setEditingUser(null);
-    setFormData({ id: 0, username: '', email: '', password: '', status: '' });
+    setFormData({ id: 0, username: '', email: '', phone: '', password: '', status: '' });
     setShowModal(true);
   };
 
@@ -117,6 +192,7 @@ export default function Users() {
       id: user.id,
       username: user.username,
       email: user.email,
+      phone: user.phone || '',
       password: '',
       status: user.status.toString()
     });
@@ -126,12 +202,33 @@ export default function Users() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // This will be replaced with actual API call when the endpoint is ready
-      console.log('Saving user:', formData);
+      const requestData = {
+        username: formData.username,
+        email: formData.email,
+        phone: formData.phone || null,
+        password: formData.password,
+        status: formData.status,
+        ...(editingUser && { id: formData.id })
+      };
+
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to save user');
+      }
+
       setShowModal(false);
       fetchUsers(); // Refresh the list
     } catch (error) {
       console.error('Error saving user:', error);
+      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -146,14 +243,10 @@ export default function Users() {
   return (
     <div className="space-y-6">
 
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add User</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Users</label>
               <input
                 type="text"
@@ -163,12 +256,12 @@ export default function Users() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -176,13 +269,18 @@ export default function Users() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add User</button>
           </div>
         </div>
-      </div>
 
-      <div className="card">
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>
@@ -208,14 +306,12 @@ export default function Users() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('email')}>
                       Email {getSortIcon('email')}
                     </th>
+                    <th>Phone</th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
                       Status {getSortIcon('status')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('created_at')}>
                       Created {getSortIcon('created_at')}
-                    </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('updated_at')}>
-                      Last Updated {getSortIcon('updated_at')}
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -227,6 +323,7 @@ export default function Users() {
                       <td>{user.id}</td>
                       <td className="font-medium text-white">{user.username}</td>
                       <td className="text-slate-300">{user.email}</td>
+                      <td className="text-slate-300">{user.phone || '-'}</td>
                       <td>
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           user.status === 10
@@ -237,7 +334,6 @@ export default function Users() {
                         </span>
                       </td>
                       <td className="text-slate-300 text-sm">{formatDate(user.created_at)}</td>
-                      <td className="text-slate-300 text-sm">{formatDate(user.updated_at)}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(user)}>Edit</button>
                       </td>
@@ -299,6 +395,18 @@ export default function Users() {
                 />
               </div>
               <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Phone</label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="input w-full"
+                  placeholder="Enter 10-digit phone number"
+                  pattern="[0-9]{10}"
+                  title="Phone number must be exactly 10 digits"
+                />
+              </div>
+              <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
                 <select
                   value={formData.status}
@@ -331,6 +439,14 @@ export default function Users() {
           </div>
         </div>
       )}
+
+      <ExportColumnSelector
+        isOpen={showExportColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelExportSelection}
+      />
     </div>
   );
 }

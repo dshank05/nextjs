@@ -40,9 +40,10 @@ interface CustomerTableProps {
   onSearchChange: (value: string) => void;
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
+  actionButton?: React.ReactNode;
 }
 
-export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange }) => {
+export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -105,6 +106,11 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
             </select>
           </div>
         </div>
+        {actionButton && (
+          <div className="flex-shrink-0">
+            {actionButton}
+          </div>
+        )}
       </div>
 
       {pagination && (

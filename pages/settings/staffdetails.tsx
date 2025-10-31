@@ -3,6 +3,8 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Staff {
   id: number;
@@ -45,6 +47,70 @@ export default function StaffDetails() {
   const [changingLoading, setChangingLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'name', label: 'Name', enabled: true },
+    { key: 'phone', label: 'Phone', enabled: true },
+    { key: 'email', label: 'Email', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Staff Members Report',
+        fileName: `Staff_Members_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, staff, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = staff.map(member => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'name':
+            row.Name = member.name;
+            break;
+          case 'phone':
+            row.Phone = member.phone;
+            break;
+          case 'email':
+            row.Email = member.email || '';
+            break;
+          case 'status':
+            row.Status = member.status;
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Staff Members Report',
+      fileName: `Staff_Members_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   useEffect(() => {
     if (!loading) {
@@ -250,14 +316,10 @@ export default function StaffDetails() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={handleAdd}>Add Staff Member</button>
-      </div>
-
       <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+            <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Staff</label>
               <input
                 type="text"
@@ -267,12 +329,12 @@ export default function StaffDetails() {
                 className="input w-full"
               />
             </div>
-            <div className="w-40">
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
                 value={pagination.limit}
                 onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
+                className="select w-full min-w-24"
               >
                 <option value="10">10</option>
                 <option value="50">50</option>
@@ -280,13 +342,18 @@ export default function StaffDetails() {
               </select>
             </div>
           </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary" onClick={() => handleExport('excel')}>
+              📊 Export Excel
+            </button>
+            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
+              📄 Export PDF
+            </button>
+            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <button className="btn-primary" onClick={handleAdd}>Add Staff Member</button>
           </div>
         </div>
-      </div>
 
-      <div className="card">
         {loading ? (
           <div className="h-64 flex items-center justify-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
@@ -490,6 +557,14 @@ export default function StaffDetails() {
         loadingText="Saving..."
         onConfirm={confirmSave}
         onCancel={cancelSave}
+      />
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
       />
     </div>
   );

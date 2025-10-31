@@ -1,6 +1,104 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
+async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const { id, username, email, phone, status } = req.body
+
+    if (!id || !parseInt(id.toString())) {
+      return res.status(400).json({
+        message: 'Valid user ID is required'
+      })
+    }
+
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(400).json({
+        message: 'Username is required and must be a non-empty string'
+      })
+    }
+
+    if (!email || typeof email !== 'string' || !email.trim()) {
+      return res.status(400).json({
+        message: 'Email is required and must be a non-empty string'
+      })
+    }
+
+    if (phone && (typeof phone !== 'string' || !/^\d{10}$/.test(phone.trim()))) {
+      return res.status(400).json({
+        message: 'Phone number must be exactly 10 digits'
+      })
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        message: 'Please provide a valid email address'
+      })
+    }
+
+    const userId = parseInt(id.toString())
+    const trimmedUsername = username.trim()
+    const trimmedEmail = email.trim()
+
+    // Check if user exists
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId }
+    })
+
+    if (!existingUser) {
+      return res.status(404).json({
+        message: 'User not found'
+      })
+    }
+
+    // Check if username or email already exists (excluding current user)
+    const conflictingUser = await prisma.user.findFirst({
+      where: {
+        AND: [
+          { id: { not: userId } },
+          {
+            OR: [
+              { username: trimmedUsername },
+              { email: trimmedEmail }
+            ]
+          }
+        ]
+      }
+    })
+
+    if (conflictingUser) {
+      const conflictField = conflictingUser.username === trimmedUsername ? 'username' : 'email'
+      return res.status(409).json({
+        message: `${conflictField.charAt(0).toUpperCase() + conflictField.slice(1)} already exists`
+      })
+    }
+
+    // Update user
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        username: trimmedUsername,
+        email: trimmedEmail,
+        phone: phone ? phone.trim() : null,
+        status: parseInt(status.toString()) || 10,
+        updated_at: Math.floor(Date.now() / 1000)
+      }
+    })
+
+    res.status(200).json({
+      status: "success",
+      message: "User updated successfully"
+    })
+  } catch (error) {
+    console.error('User update error:', error)
+    res.status(500).json({
+      message: 'Failed to update user',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -46,6 +144,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         id: true,
         username: true,
         email: true,
+        phone: true,
         status: true,
         created_at: true,
         updated_at: true
@@ -79,7 +178,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { username, email, password, status = 10 } = req.body
+    const { id, username, email, phone, password, status = 10 } = req.body
+
+    // If ID is provided, this is an update operation
+    if (id) {
+      return handleUpdate(req, res)
+    }
 
     if (!username || typeof username !== 'string' || !username.trim()) {
       return res.status(400).json({
@@ -90,6 +194,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     if (!email || typeof email !== 'string' || !email.trim()) {
       return res.status(400).json({
         message: 'Email is required and must be a non-empty string'
+      })
+    }
+
+    if (phone && (typeof phone !== 'string' || !/^\d{10}$/.test(phone.trim()))) {
+      return res.status(400).json({
+        message: 'Phone number must be exactly 10 digits'
       })
     }
 
@@ -137,6 +247,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: {
         username: trimmedUsername,
         email: trimmedEmail,
+        phone: phone ? phone.trim() : null,
         auth_key: authKey,
         password_hash: simpleHash,
         password_reset_token: null,
@@ -148,6 +259,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         id: true,
         username: true,
         email: true,
+        phone: true,
         status: true,
         created_at: true,
         updated_at: true
