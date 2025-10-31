@@ -77,14 +77,6 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
     return 0;
   });
 
-  if (loading) {
-    return (
-      <div className="card h-[400px] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="card">
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
@@ -121,7 +113,12 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
           <div>Page {pagination.page} of {pagination.totalPages}</div>
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto relative">
+        {loading && (
+          <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-10 rounded-lg">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+          </div>
+        )}
         <table className="table">
           <thead>
             <tr>

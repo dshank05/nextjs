@@ -71,7 +71,9 @@ export default async function handler(
         where.OR = [
           { billing_name: { contains: search } },
           { contact_no: { contains: search } },
-          { email: { contains: search } }
+          { email: { contains: search } },
+          { billing_city: { contains: search } },
+          { billing_gstin: { contains: search } }
         ];
       }
 

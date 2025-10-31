@@ -23,7 +23,9 @@ export default async function handler(
         where.OR = [
           { vendor_name: { contains: search } },
           { contact_no: { contains: search } },
-          { email: { contains: search } }
+          { email: { contains: search } },
+          { city: { contains: search } },
+          { tax_id: { contains: search } }
         ];
       }
 
@@ -126,6 +128,7 @@ export default async function handler(
   }
 
   try {
+    // No search parameters for this legacy endpoint, kept for backward compatibility
     const vendors = await prisma.vendor_details.findMany({
       select: {
         id: true,
@@ -133,6 +136,7 @@ export default async function handler(
         address: true,
         address_2: true,
         city: true,
+        pin_code: true,
         state: true,
         state_code: true,
         tax_id: true,
@@ -148,6 +152,7 @@ export default async function handler(
       address: vendor.address || '',
       address_2: vendor.address_2 || '',
       city: vendor.city || '',
+      pin_code: vendor.pin_code || '',
       state: vendor.state || '',
       state_code: vendor.state_code || null,
       tax_id: vendor.tax_id || '',

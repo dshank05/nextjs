@@ -85,6 +85,7 @@ export default function VendorDetailsPage() {
         address_2: vendor.address_2,
         tax_id: vendor.tax_id,
         contact_no: vendor.contact_no,
+        city:vendor.city,
         email: vendor.email
       })) || [];
 
