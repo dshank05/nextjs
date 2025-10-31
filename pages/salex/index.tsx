@@ -85,7 +85,7 @@ export default function SalexPage() {
   const [salex, setSalex] = useState<Salex[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   })
@@ -131,7 +131,7 @@ export default function SalexPage() {
         setSalex(data.salex || [])
         setPagination(data.pagination || {
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -140,7 +140,7 @@ export default function SalexPage() {
         setSalex([])
         setPagination({
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -150,7 +150,7 @@ export default function SalexPage() {
       setSalex([])
       setPagination({
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       })

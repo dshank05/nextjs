@@ -71,7 +71,7 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   });

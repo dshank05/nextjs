@@ -79,6 +79,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const orderBy: any = {};
       if (sortField === 'id') {
         orderBy.id = sortDirection;
+      } else if (sortField === 'category_name') {
+        orderBy.category = { category_name: sortDirection };
       } else {
         orderBy.subcategory_name = sortDirection;
       }

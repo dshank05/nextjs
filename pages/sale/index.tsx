@@ -84,7 +84,7 @@ export default function SalePage() {
   const [sales, setSales] = useState<Sale[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   })
@@ -130,7 +130,7 @@ export default function SalePage() {
         setSales(data.sales || [])
         setPagination(data.pagination || {
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -139,7 +139,7 @@ export default function SalePage() {
         setSales([])
         setPagination({
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -149,7 +149,7 @@ export default function SalePage() {
       setSales([])
       setPagination({
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       })

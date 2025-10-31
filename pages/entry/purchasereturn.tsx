@@ -50,7 +50,7 @@ export default function PurchaseReturnPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   });
@@ -124,7 +124,7 @@ export default function PurchaseReturnPage() {
       setPurchases(purchasesWithType);
       setPagination(data.pagination || {
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       });
@@ -134,7 +134,7 @@ export default function PurchaseReturnPage() {
       setPurchases([]);
       setPagination({
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       });

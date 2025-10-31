@@ -86,7 +86,7 @@ export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   })
@@ -132,7 +132,7 @@ export default function PurchasesPage() {
         setPurchases(data.purchases || [])
         setPagination(data.pagination || {
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -141,7 +141,7 @@ export default function PurchasesPage() {
         setPurchases([])
         setPagination({
           page: 1,
-          limit: 25,
+          limit: 50,
           total: 0,
           totalPages: 0
         })
@@ -151,7 +151,7 @@ export default function PurchasesPage() {
       setPurchases([])
       setPagination({
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       })

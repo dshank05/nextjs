@@ -74,7 +74,7 @@ export default function SaleReturnPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 25,
+    limit: 50,
     total: 0,
     totalPages: 0
   });
@@ -187,7 +187,7 @@ export default function SaleReturnPage() {
       setSales([]);
       setPagination({
         page: 1,
-        limit: 25,
+        limit: 50,
         total: 0,
         totalPages: 0
       });
