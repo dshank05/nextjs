@@ -12,6 +12,7 @@ interface SearchableSelectProps {
   onSelectionChange: (value: string | null) => void;
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
 }
 
 export function SearchableSelect({
@@ -19,7 +20,8 @@ export function SearchableSelect({
   selectedValue,
   onSelectionChange,
   placeholder = "Select option...",
-  className = ""
+  className = "",
+  disabled = false
 }: SearchableSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,17 +76,23 @@ export function SearchableSelect({
     <div className={`relative ${className}`} ref={dropdownRef}>
       {/* Selected value display */}
       <div
-        className="select w-full min-h-8 cursor-pointer flex items-center justify-between px-3 py-2"
-        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        className={`select w-full min-h-8 flex items-center justify-between px-3 py-2 ${
+          disabled
+            ? 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'
+            : 'cursor-pointer'
+        }`}
+        onClick={() => !disabled && setIsDropdownOpen(!isDropdownOpen)}
       >
         <div className="flex-1">
           {selectedOptionName ? (
-            <span className="text-white text-sm">{selectedOptionName}</span>
+            <span className={`text-sm ${disabled ? 'text-slate-400' : 'text-white'}`}>{selectedOptionName}</span>
           ) : (
             <span className="text-slate-400 text-sm">{placeholder}</span>
           )}
         </div>
-        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ml-2 flex-shrink-0`} />
+        <ChevronDown className={`w-5 h-5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ml-2 flex-shrink-0 ${
+          disabled ? 'text-slate-500' : 'text-slate-400'
+        }`} />
       </div>
 
       {/* Dropdown menu */}

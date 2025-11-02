@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2 } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -831,11 +832,13 @@ export default function PurchaseCreate() {
   };
 
   const handleInputChange = (field: keyof PurchaseFormData, value: string) => {
-    let processedValue: string | number = value;
+    let processedValue: string | number | null = value;
 
     // Convert numeric fields to numbers
     if (field === 'payment_status' || field === 'payment_mode') {
       processedValue = parseInt(value) || 0;
+    } else if (field === 'staff_id') {
+      processedValue = value ? parseInt(value) : null;
     }
 
     setFormData(prev => ({ ...prev, [field]: processedValue }));
@@ -1279,18 +1282,18 @@ export default function PurchaseCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
-                  <select
-                    value={formData.staff_id || ''}
-                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
-                    className="select w-full"
-                  >
-                    <option value="">Select Staff</option>
-                    {staff.map((member) => (
-                      <option key={member.id} value={member.id.toString()}>
-                        {member.name} - {member.phone}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Staff' },
+                      ...staff.map((member) => ({
+                        id: member.id.toString(),
+                        name: `${member.name} - ${member.phone}`
+                      }))
+                    ]}
+                    selectedValue={formData.staff_id?.toString() || ''}
+                    onSelectionChange={(value) => handleInputChange('staff_id', value || '')}
+                    placeholder="Select Staff"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>
@@ -1310,20 +1313,22 @@ export default function PurchaseCreate() {
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
-                  <select
-                    value={selectedVendorId}
-                    onChange={(e) => {
-                      const vendorId = e.target.value;
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Vendor' },
+                      ...vendors.map((vendor) => ({
+                        id: vendor.id.toString(),
+                        name: vendor.vendor_name
+                      }))
+                    ]}
+                    selectedValue={selectedVendorId}
+                    onSelectionChange={(value) => {
+                      const vendorId = value || '';
                       setSelectedVendorId(vendorId);
                       handleVendorSelect(vendorId);
                     }}
-                    className="select w-full"
-                  >
-                    <option value="">Select Vendor</option>
-                    {vendors.map((vendor) => (
-                      <option key={vendor.id} value={vendor.id.toString()}>{vendor.vendor_name}</option>
-                    ))}
-                  </select>
+                    placeholder="Select Vendor"
+                  />
                   {errors.vendor_name && <p className="text-red-400 text-xs mt-1">{errors.vendor_name}</p>}
                 </div>
                 <div>
@@ -1455,7 +1460,7 @@ export default function PurchaseCreate() {
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
               {/* Product Selection & Display Table */}
-              <div className="border border-slate-600 rounded mb-3">
+              <div className={`border border-slate-600 rounded mb-3`}>
                 <table className="w-full">
                   <thead className="bg-slate-700">
                     <tr>
@@ -1525,49 +1530,51 @@ export default function PurchaseCreate() {
                             <span className="text-slate-400">Select Product</span>
                           )}
                         </button>
-                        {!selectedVendorId && (
-                          <p className="text-xs text-amber-400 mt-1">Select a vendor first</p>
-                        )}
+
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.category.toString()}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value);
-                            const selectedOption = filterOptions.categories.find(cat => cat.id === value);
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: 'Select Category' },
+                            ...filterOptions.categories.map((cat) => ({
+                              id: cat.id.toString(),
+                              name: cat.name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.category.toString()}
+                          onSelectionChange={(value) => {
+                            const numValue = value ? parseInt(value) : 0;
+                            const selectedOption = filterOptions.categories.find(cat => cat.id === numValue);
                             setProductRowFilters(prev => ({
                               ...prev,
-                              category: value,
+                              category: numValue,
                               categoryName: selectedOption?.name || ''
                             }));
                           }}
-                        >
-                          <option value="">Select Category</option>
-                          {filterOptions.categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                          ))}
-                        </select>
+                          placeholder="Select Category"
+                        />
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.subcategory?.toString()}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value);
-                            const selectedOption = filteredSubcategories.find(sub => sub.id === value);
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: 'Select Sub Category' },
+                            ...filteredSubcategories.map((sub) => ({
+                              id: sub.id.toString(),
+                              name: sub.name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.subcategory?.toString() || ''}
+                          onSelectionChange={(value) => {
+                            const numValue = value ? parseInt(value) : null;
+                            const selectedOption = filteredSubcategories.find(sub => sub.id === numValue);
                             setProductRowFilters(prev => ({
                               ...prev,
-                              subcategory: value,
+                              subcategory: numValue,
                               subcategoryName: selectedOption?.name || ''
                             }));
                           }}
-                        >
-                          <option value="">Select Sub Category</option>
-                          {filteredSubcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.name}</option>
-                          ))}
-                        </select>
+                          placeholder="Select Sub Category"
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
@@ -1611,24 +1618,26 @@ export default function PurchaseCreate() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.company.toString()}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value);
-                            const selectedOption = filterOptions.companies.find(comp => comp.id === value);
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: 'Select Company' },
+                            ...filterOptions.companies.map((comp) => ({
+                              id: comp.id.toString(),
+                              name: comp.name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.company.toString()}
+                          onSelectionChange={(value) => {
+                            const numValue = value ? parseInt(value) : 0;
+                            const selectedOption = filterOptions.companies.find(comp => comp.id === numValue);
                             setProductRowFilters(prev => ({
                               ...prev,
-                              company: value,
+                              company: numValue,
                               companyName: selectedOption?.name || ''
                             }));
                           }}
-                        >
-                          <option value="">Select Company</option>
-                          {filterOptions.companies.map((comp) => (
-                            <option key={comp.id} value={comp.id}>{comp.name}</option>
-                          ))}
-                        </select>
+                          placeholder="Select Company"
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -2059,6 +2068,9 @@ export default function PurchaseCreate() {
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
               {errors.addProduct && <p className="text-red-400 text-xs mt-1">{errors.addProduct}</p>}
               {errors.inlineEdit && <p className="text-red-400 text-xs mt-1">{errors.inlineEdit}</p>}
+              {!selectedVendorId && (
+                <p className="text-xs text-amber-400 mt-1">Select a vendor first</p>
+              )}
             </div>
 
             {/* Additional Information */}
@@ -2188,27 +2200,27 @@ export default function PurchaseCreate() {
                 <div className="grid grid-cols-3 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
-                    <select
-                      value={formData.payment_status?.toString()}
-                      onChange={(e) => handleInputChange('payment_status', e.target.value)}
-                      className="select w-full"
-                      required
-                    >
-                      <option value="0">Unpaid</option>
-                      <option value="1">Paid</option>
-                    </select>
+                    <SearchableSelect
+                      options={[
+                        { id: '0', name: 'Unpaid' },
+                        { id: '1', name: 'Paid' }
+                      ]}
+                      selectedValue={formData.payment_status?.toString() || '0'}
+                      onSelectionChange={(value) => handleInputChange('payment_status', value || '0')}
+                      placeholder="Select Payment Status"
+                    />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
-                    <select
-                      value={formData.payment_mode.toString()}
-                      onChange={(e) => handleInputChange('payment_mode', e.target.value)}
-                      className="select w-full"
-                      required
-                    >
-                      <option value="0">Cash</option>
-                      <option value="1">Bank</option>
-                    </select>
+                    <SearchableSelect
+                      options={[
+                        { id: '0', name: 'Cash' },
+                        { id: '1', name: 'Bank' }
+                      ]}
+                      selectedValue={formData.payment_mode.toString()}
+                      onSelectionChange={(value) => handleInputChange('payment_mode', value || '1')}
+                      placeholder="Select Payment Mode"
+                    />
                   </div>
                   <div className="bg-slate-700 rounded p-4">
                     <div className="flex items-center justify-between">

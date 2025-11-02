@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -910,7 +911,16 @@ export default function InvoiceCCreate() {
   };
 
   const handleInputChange = (field: keyof InvoiceFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    let processedValue: string | number | null = value;
+
+    // Convert numeric fields to numbers
+    if (field === 'payment_status' || field === 'payment_mode') {
+      processedValue = parseInt(value) || 0;
+    } else if (field === 'staff_id') {
+      processedValue = value ? parseInt(value) : null;
+    }
+
+    setFormData(prev => ({ ...prev, [field]: processedValue }));
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -1353,19 +1363,23 @@ export default function InvoiceCCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
-                  <select
-                    value={formData.staff_id || ''}
-                    onChange={(e) => handleInputChange('staff_id', e.target.value || null)}
-                    className="select w-full"
-                  >
-                    <option value="">Select Staff</option>
-                    {staffList.map((staff) => (
-                      <option key={staff.id} value={staff.id.toString()}>
-                        {staff.staff_name}
-                      </option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Staff' },
+                      ...staffList.map((staff) => ({
+                        id: staff.id.toString(),
+                        name: staff.staff_name
+                      }))
+                    ]}
+                    selectedValue={selectedStaffId || ''}
+                    onSelectionChange={(value) => {
+                      setSelectedStaffId(value || '');
+                      handleInputChange('staff_id', value || '');
+                    }}
+                    placeholder="Select Staff"
+                  />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">DATE</label>
                   <input
@@ -1406,24 +1420,23 @@ export default function InvoiceCCreate() {
                       + Add New Customer
                     </button>
                   </div>
-                  <select
-                    key={`customer-dropdown-${customers.length}-${selectedCustomerId}`}
-                    value={selectedCustomerId || ''}
-                    onChange={(e) => {
-                      const customerId = e.target.value;
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Customer' },
+                      ...customers.map((customer) => ({
+                        id: customer.id,
+                        name: customer.billing_name
+                      }))
+                    ]}
+                    selectedValue={selectedCustomerId || ''}
+                    onSelectionChange={(value) => {
+                      const customerId = value || '';
                       console.log('Customer dropdown manual change:', customerId);
                       setSelectedCustomerId(customerId);
                       handleCustomerSelect(customerId);
                     }}
-                    className="select w-full"
-                  >
-                    <option value="" disabled>Select Customer</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id} selected={customer.id === selectedCustomerId}>
-                        {customer.billing_name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select Customer"
+                  />
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
@@ -1533,16 +1546,20 @@ export default function InvoiceCCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">MECHANIC NAME</label>
-                  <select
-                    value={selectedMechanicId}
-                    onChange={(e) => setSelectedMechanicId(e.target.value)}
-                    className="select w-full"
-                  >
-                    <option value="">Select Mechanic</option>
-                    {mechanics.map((mechanic) => (
-                      <option key={mechanic.id} value={mechanic.id}>{mechanic.mechanic_name}</option>
-                    ))}
-                  </select>
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Mechanic' },
+                      ...mechanics.map((mechanic) => ({
+                        id: mechanic.id.toString(),
+                        name: mechanic.mechanic_name
+                      }))
+                    ]}
+                    selectedValue={selectedMechanicId || ''}
+                    onSelectionChange={(value) => {
+                      setSelectedMechanicId(value || '');
+                    }}
+                    placeholder="Select Mechanic"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">COMMISSION</label>
@@ -1656,49 +1673,46 @@ export default function InvoiceCCreate() {
                             <span className="text-slate-400">Select Product</span>
                           )}
                         </button>
-                        {!selectedCustomerId && (
-                          <p className="text-xs text-amber-400 mt-1">Select a customer first</p>
-                        )}
+
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.category}
-                          onChange={(e) => {
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: 'Select Category' },
+                            ...filterOptions.categories.map((cat) => ({
+                              id: cat.id.toString(),
+                              name: cat.name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.category}
+                          onSelectionChange={(value) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              category: e.target.value
+                              category: value || ''
                             }));
                           }}
-                        >
-                          <option value="">Select Category</option>
-                          {filterOptions.categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>{cat.name}</option>
-                          ))}
-                        </select>
+                          placeholder="Select Category"
+                        />
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-                          value={productRowFilters.subcategory}
-                          onChange={(e) => {
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: !productRowFilters.category ? "Please select a category first" : "Select Sub Category" },
+                            ...filteredSubcategories.map((sub) => ({
+                              id: sub.id.toString(),
+                              name: sub.subcategory_name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.subcategory}
+                          onSelectionChange={(value) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              subcategory: e.target.value
+                              subcategory: value || ''
                             }));
                           }}
+                          placeholder={!productRowFilters.category ? "Please select a category first" : "Select Sub Category"}
                           disabled={!productRowFilters.category}
-                        >
-                          <option value="">
-                            {!productRowFilters.category
-                              ? "Please select a category first"
-                              : "Select Sub Category"
-                            }
-                          </option>
-                          {filteredSubcategories.map((sub) => (
-                            <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
-                          ))}
-                        </select>
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
@@ -1714,21 +1728,23 @@ export default function InvoiceCCreate() {
                         />
                       </td>
                       <td className="px-4 py-3">
-                        <select
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white"
-                          value={productRowFilters.company}
-                          onChange={(e) => {
+                        <SearchableSelect
+                          options={[
+                            { id: '', name: 'Select Company' },
+                            ...filterOptions.companies.map((comp) => ({
+                              id: comp.id.toString(),
+                              name: comp.name
+                            }))
+                          ]}
+                          selectedValue={productRowFilters.company}
+                          onSelectionChange={(value) => {
                             setProductRowFilters(prev => ({
                               ...prev,
-                              company: e.target.value
+                              company: value || ''
                             }));
                           }}
-                        >
-                          <option value="">Select Company</option>
-                          {filterOptions.companies.map((comp) => (
-                            <option key={comp.id} value={comp.id}>{comp.name}</option>
-                          ))}
-                        </select>
+                          placeholder="Select Company"
+                        />
                       </td>
                       <td className="px-4 py-3">
                         <input
@@ -2171,6 +2187,9 @@ export default function InvoiceCCreate() {
                 </table>
               </div>
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
+              {!selectedCustomerId && (
+                <p className="text-xs text-amber-400 mt-1">Select a customer first</p>
+              )}
             </div>
 
             {/* Additional Information */}
@@ -2289,27 +2308,27 @@ export default function InvoiceCCreate() {
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
-                      <select
-                        value={formData.payment_status.toString()}
-                        onChange={(e) => handleInputChange('payment_status', e.target.value)}
-                        className="select w-full"
-                        required
-                      >
-                        <option value="0">Unpaid</option>
-                        <option value="1">Paid</option>
-                      </select>
+                      <SearchableSelect
+                        options={[
+                          { id: '0', name: 'Unpaid' },
+                          { id: '1', name: 'Paid' }
+                        ]}
+                        selectedValue={formData.payment_status.toString()}
+                        onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '1')).toString())}
+                        placeholder="Select Payment Status"
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
-                      <select
-                        value={formData.payment_mode.toString()}
-                        onChange={(e) => handleInputChange('payment_mode', e.target.value)}
-                        className="select w-full"
-                        required
-                      >
-                        <option value="0">Cash</option>
-                        <option value="1">Bank</option>
-                      </select>
+                      <SearchableSelect
+                        options={[
+                          { id: '0', name: 'Cash' },
+                          { id: '1', name: 'Bank' }
+                        ]}
+                        selectedValue={formData.payment_mode.toString()}
+                        onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '1')).toString())}
+                        placeholder="Select Payment Mode"
+                      />
                     </div>
                     {/* Grand Total */}
                     <div className="bg-slate-700 rounded p-4">
