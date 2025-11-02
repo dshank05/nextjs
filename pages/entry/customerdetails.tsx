@@ -5,6 +5,7 @@ import { CustomerTable } from '../../components/customer/CustomerTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Customer {
   id: number;

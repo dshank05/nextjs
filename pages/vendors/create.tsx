@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { broadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { SearchableSelect, ClearableInput, ClearableTextarea } from '../../components/common';
 
 interface State {
   id: number;
@@ -90,7 +91,17 @@ export default function CreateVendor() {
     }
   };
 
-  const handleStateChange = (stateName: string) => {
+  const handleStateChange = (stateName: string | null) => {
+    if (!stateName || stateName === '') {
+      // Clear selection
+      setFormData(prev => ({
+        ...prev,
+        state: '',
+        state_code: ''
+      }));
+      return;
+    }
+
     const selectedState = states.find(s => s.state_name === stateName);
     if (selectedState) {
       setFormData(prev => ({
@@ -138,6 +149,11 @@ export default function CreateVendor() {
     const pinCodeRegex = /^\d{6}$/; // 6-digit pin code
     if (formData.pin_code && !pinCodeRegex.test(formData.pin_code)) {
       newErrors.pin_code = 'Pin code must be exactly 6 digits';
+    }
+
+    // ===== STATE VALIDATION =====
+    if (!formData.state.trim()) {
+      newErrors.state = 'State is required';
     }
 
     setErrors(newErrors);
@@ -256,12 +272,12 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Vendor Name *
               </label>
-              <input
+              <ClearableInput
                 type="text"
                 name="vendor_name"
                 value={formData.vendor_name}
                 onChange={handleChange}
-                className="input w-full"
+                placeholder="Enter vendor name"
                 required
               />
               {errors.vendor_name && <span className="text-red-400 text-sm">{errors.vendor_name}</span>}
@@ -271,12 +287,11 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Address
               </label>
-              <input
+              <ClearableInput
                 type="text"
                 name="address"
                 value={formData.address}
                 onChange={handleChange}
-                className="input w-full"
                 placeholder="Primary address"
               />
             </div>
@@ -285,12 +300,11 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Address 2
               </label>
-              <input
+              <ClearableInput
                 type="text"
                 name="address_2"
                 value={formData.address_2}
                 onChange={handleChange}
-                className="input w-full"
                 placeholder="Additional address information"
               />
             </div>
@@ -299,12 +313,11 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 City
               </label>
-              <input
+              <ClearableInput
                 type="text"
                 name="city"
                 value={formData.city}
                 onChange={handleChange}
-                className="input w-full"
                 placeholder="City name"
               />
             </div>
@@ -332,14 +345,13 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Contact No *
               </label>
-              <input
+              <ClearableInput
                 type="tel"
                 name="contact_no"
                 value={formData.contact_no}
                 onChange={handleChange}
-                className="input w-full"
-                maxLength={10}
                 placeholder="+91-XXXXXXXXXX"
+                maxLength={10}
                 required
               />
               {errors.contact_no && <span className="text-red-400 text-sm">{errors.contact_no}</span>}
@@ -349,14 +361,13 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Phone 2
               </label>
-              <input
+              <ClearableInput
                 type="tel"
                 name="contact_no_2"
                 value={formData.contact_no_2}
                 onChange={handleChange}
-                className="input w-full"
-                maxLength={10}
                 placeholder="Additional phone number"
+                maxLength={10}
               />
               {errors.contact_no_2 && <span className="text-red-400 text-sm">{errors.contact_no_2}</span>}
             </div>
@@ -365,14 +376,13 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Phone 3
               </label>
-              <input
+              <ClearableInput
                 type="tel"
                 name="contact_no_3"
                 value={formData.contact_no_3}
                 onChange={handleChange}
-                className="input w-full"
-                maxLength={10}
                 placeholder="Additional phone number"
+                maxLength={10}
               />
               {errors.contact_no_3 && <span className="text-red-400 text-sm">{errors.contact_no_3}</span>}
             </div>
@@ -381,12 +391,11 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 Email
               </label>
-              <input
+              <ClearableInput
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="input w-full"
                 placeholder="vendor@example.com"
               />
               {errors.email && <span className="text-red-400 text-sm">{errors.email}</span>}
@@ -396,12 +405,11 @@ export default function CreateVendor() {
               <label className="block text-sm font-medium text-slate-300 mb-2">
                 GST No
               </label>
-              <input
+              <ClearableInput
                 type="text"
                 name="tax_id"
                 value={formData.tax_id}
                 onChange={handleChange}
-                className="input w-full"
                 placeholder="22AAAAA0000A1Z5"
                 maxLength={15}
               />
@@ -410,19 +418,21 @@ export default function CreateVendor() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                State
+                State *
               </label>
-              <select
-                name="state"
-                value={formData.state}
-                onChange={(e) => handleStateChange(e.target.value)}
-                className="select w-full"
-              >
-                <option value="">Select State</option>
-                {states.map(state => (
-                  <option key={state.id} value={state.state_name}>{state.state_name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={[
+                  { id: '', name: 'Select State' },
+                  ...states.map(state => ({
+                    id: state.state_name,
+                    name: state.state_name
+                  }))
+                ]}
+                selectedValue={formData.state}
+                onSelectionChange={(value) => handleStateChange(value)}
+                placeholder="Select State"
+              />
+              {errors.state && <span className="text-red-400 text-sm">{errors.state}</span>}
             </div>
 
 

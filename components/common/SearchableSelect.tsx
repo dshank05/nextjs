@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, X } from 'lucide-react';
 
 interface Option {
   id: string;
@@ -55,13 +55,15 @@ export function SearchableSelect({
   );
 
   const handleOptionSelect = (optionId: string) => {
-    const newValue = selectedValue === optionId ? null : optionId;
+    // If selecting the placeholder option (empty id), treat as clearing
+    const newValue = optionId === '' ? null : (selectedValue === optionId ? null : optionId);
     onSelectionChange(newValue);
     setIsDropdownOpen(false);
   };
 
   const handleClearSelection = () => {
     onSelectionChange(null);
+    setIsDropdownOpen(false);
   };
 
   const getSelectedOptionName = () => {
@@ -90,9 +92,24 @@ export function SearchableSelect({
             <span className="text-slate-400 text-sm">{placeholder}</span>
           )}
         </div>
-        <ChevronDown className={`w-5 h-5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ml-2 flex-shrink-0 ${
-          disabled ? 'text-slate-500' : 'text-slate-400'
-        }`} />
+        <div className="flex items-center space-x-2 flex-shrink-0">
+          {selectedValue && !disabled && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClearSelection();
+              }}
+              className="text-slate-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-slate-700"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <ChevronDown className={`w-5 h-5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ${
+            disabled ? 'text-slate-500' : 'text-slate-400'
+          }`} />
+        </div>
       </div>
 
       {/* Dropdown menu */}

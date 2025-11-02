@@ -9,6 +9,43 @@ async function handler(
   if (req.method === 'POST') {
     // Handle customer creation
     try {
+      // ===== VALIDATION =====
+      const errors: string[] = [];
+
+      if (!req.body.billing_name || !req.body.billing_name.trim()) {
+        errors.push('Billing name is required');
+      }
+      if (!req.body.billing_address || !req.body.billing_address.trim()) {
+        errors.push('Billing address is required');
+      }
+      if (!req.body.contact_no || !req.body.contact_no.trim()) {
+        errors.push('Contact number is required');
+      }
+      if (!req.body.billing_state || !req.body.billing_state.trim()) {
+        errors.push('Billing state is required');
+      }
+
+      // Only validate shipping fields if NOT copying from billing
+      const copyFromBilling = req.body.copyFromBilling === true || req.body.copyFromBilling === 'true';
+      if (!copyFromBilling) {
+        if (!req.body.shipping_name || !req.body.shipping_name.trim()) {
+          errors.push('Shipping name is required');
+        }
+        if (!req.body.shipping_address || !req.body.shipping_address.trim()) {
+          errors.push('Shipping address is required');
+        }
+        if (!req.body.shipping_state || !req.body.shipping_state.trim()) {
+          errors.push('Shipping state is required');
+        }
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({
+          message: 'Validation failed',
+          errors
+        });
+      }
+
       const customerData = {
         billing_name: req.body.billing_name,
         // ===== BILLING ADDRESS (Consistent with vendor pattern) =====

@@ -106,13 +106,33 @@ async function handler(
   if (req.method === 'POST') {
     // Handle vendor creation
     try {
+      // ===== VALIDATION =====
+      const errors: string[] = [];
+
+      if (!req.body.vendor_name || !req.body.vendor_name.trim()) {
+        errors.push('Vendor name is required');
+      }
+      if (!req.body.contact_no || !req.body.contact_no.trim()) {
+        errors.push('Contact number is required');
+      }
+      if (!req.body.state || !req.body.state.trim()) {
+        errors.push('State is required');
+      }
+
+      if (errors.length > 0) {
+        return res.status(400).json({
+          message: 'Validation failed',
+          errors
+        });
+      }
+
       const vendorData = {
         vendor_name: req.body.vendor_name,
         address: req.body.address || null,
         address_2: req.body.address_2 || null,
         city: req.body.city || null,
         pin_code: req.body.pin_code || null,
-        state: req.body.state || null,
+        state: req.body.state,
         state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
         contact_no: req.body.contact_no,
         contact_no_2: req.body.contact_no_2 || null,

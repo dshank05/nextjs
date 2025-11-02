@@ -7,6 +7,7 @@ import { ProductSelectionPanel } from '../../components/common/ProductSelectionP
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
+import { subscribeBroadcast } from '../../lib/broadcast';
 
 
 interface Vendor {
@@ -273,6 +274,18 @@ export default function PurchaseCreate() {
       fetchLastInvoiceNumber();
     }
   }, [isEditMode]);
+
+  // Broadcast listener for vendor creation
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((message) => {
+      if (message.type === 'created' && message.resource === 'vendors') {
+        console.log('📡 Received broadcast: New vendor created, refetching vendors...');
+        fetchVendors();
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -1312,7 +1325,17 @@ export default function PurchaseCreate() {
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Vendor Information</h3> */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">VENDOR NAME *</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-300">VENDOR NAME *</label>
+                    <a
+                      href="/vendors/create?from=purchase"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
+                    >
+                      + Add New Vendor
+                    </a>
+                  </div>
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Vendor' },

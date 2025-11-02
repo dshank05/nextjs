@@ -92,3 +92,5 @@ async function handler(
     })
   }
 }
+
+export default withObservability(handler)

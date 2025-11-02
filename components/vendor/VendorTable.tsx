@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
+import { ClearableInput } from '../common';
 
 interface Vendor {
   id: number;
@@ -77,12 +78,11 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
         <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
           <div className="flex-1">
             <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-            <input
+            <ClearableInput
               type="text"
               placeholder="Search by name, phone, email..."
               value={searchTerm}
               onChange={(e) => onSearchChange(e.target.value)}
-              className="input w-full"
             />
           </div>
           <div>

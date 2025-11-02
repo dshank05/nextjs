@@ -168,7 +168,7 @@ export default function Warehouse() {
 
   const getSortIcon = (field: string) => {
     if (sortBy !== field) {
-      return <ArrowUpDown className="inline w-4 h-4 ml-1" />;
+      return null;
     }
     return sortOrder === 'asc' ?
       <ArrowUp className="inline w-4 h-4 ml-1" /> :

@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { broadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { SearchableSelect, ClearableInput } from '../../components/common';
 // Import useForm or similar validation later if needed
 
 interface CustomerFormData {
@@ -206,7 +207,19 @@ export default function CustomerCreate() {
 
 
   // Auto-fill state code when state is selected
-  const handleStateChange = (type: 'billing' | 'shipping', stateName: string) => {
+  const handleStateChange = (type: 'billing' | 'shipping', stateName: string | null) => {
+    if (!stateName || stateName === '') {
+      // Clear selection
+      if (type === 'billing') {
+        handleInputChange('billing_state', '');
+        handleInputChange('billing_state_code', '');
+      } else {
+        handleInputChange('shipping_state', '');
+        handleInputChange('shipping_state_code', '');
+      }
+      return;
+    }
+
     const selectedState = states.find(state => state.state_name === stateName);
     const stateCode = selectedState ? selectedState.code?.toString() || '' : '';
 
@@ -422,11 +435,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING NAME *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.billing_name}
                   onChange={(e) => handleInputChange('billing_name', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter billing name"
                 />
                 {errors.billing_name && <p className="text-red-400 text-xs mt-1">{errors.billing_name}</p>}
@@ -436,11 +448,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING ADDRESS LINE 1 *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.billing_address}
                   onChange={(e) => handleInputChange('billing_address', e.target.value)}
-                  className="input w-full"
                   placeholder="Street address, building, etc."
                 />
                 {errors.billing_address && <p className="text-red-400 text-xs mt-1">{errors.billing_address}</p>}
@@ -450,11 +461,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING ADDRESS LINE 2
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.billing_address_2}
                   onChange={(e) => handleInputChange('billing_address_2', e.target.value)}
-                  className="input w-full"
                   placeholder="Area, locality, landmark (optional)"
                 />
               </div>
@@ -463,11 +473,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING CITY
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.billing_city}
                   onChange={(e) => handleInputChange('billing_city', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter city name"
                 />
               </div>
@@ -491,18 +500,18 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   BILLING STATE *
                 </label>
-                <select
-                  value={formData.billing_state}
-                  onChange={(e) => handleStateChange('billing', e.target.value)}
-                  className="select w-full"
-                >
-                  <option value="">Select State</option>
-                  {states.map((state) => (
-                    <option key={state.id} value={state.state_name}>
-                      {state.state_name}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={[
+                    { id: '', name: 'Select State' },
+                    ...states.map(state => ({
+                      id: state.state_name,
+                      name: state.state_name
+                    }))
+                  ]}
+                  selectedValue={formData.billing_state}
+                  onSelectionChange={(value) => handleStateChange('billing', value)}
+                  placeholder="Select State"
+                />
                 {errors.billing_state && <p className="text-red-400 text-xs mt-1">{errors.billing_state}</p>}
               </div>
 
@@ -544,11 +553,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING NAME *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.shipping_name}
                   onChange={(e) => handleInputChange('shipping_name', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter shipping name"
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
@@ -560,11 +568,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING ADDRESS LINE 1 *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.shipping_address}
                   onChange={(e) => handleInputChange('shipping_address', e.target.value)}
-                  className="input w-full"
                   placeholder="Street address, building, etc."
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
@@ -576,11 +583,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING ADDRESS LINE 2
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.shipping_address_2}
                   onChange={(e) => handleInputChange('shipping_address_2', e.target.value)}
-                  className="input w-full"
                   placeholder="Area, locality, landmark (optional)"
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
@@ -591,11 +597,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING CITY
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.shipping_city}
                   onChange={(e) => handleInputChange('shipping_city', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter city name"
                   disabled={formData.copyFromBilling}
                   readOnly={formData.copyFromBilling}
@@ -622,19 +627,19 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   SHIPPING STATE *
                 </label>
-                <select
-                  value={formData.shipping_state}
-                  onChange={(e) => handleStateChange('shipping', e.target.value)}
-                  className="select w-full"
+                <SearchableSelect
+                  options={[
+                    { id: '', name: 'Select State' },
+                    ...states.map(state => ({
+                      id: state.state_name,
+                      name: state.state_name
+                    }))
+                  ]}
+                  selectedValue={formData.shipping_state}
+                  onSelectionChange={(value) => handleStateChange('shipping', value)}
+                  placeholder="Select State"
                   disabled={formData.copyFromBilling}
-                >
-                  <option value="">Select State</option>
-                  {states.map((state) => (
-                    <option key={state.id} value={state.state_name}>
-                      {state.state_name}
-                    </option>
-                  ))}
-                </select>
+                />
                 {errors.shipping_state && <p className="text-red-400 text-xs mt-1">{errors.shipping_state}</p>}
               </div>
 
@@ -667,11 +672,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   CONTACT NUMBER *
                 </label>
-                <input
+                <ClearableInput
                   type="tel"
                   value={formData.contact_no}
                   onChange={(e) => handleInputChange('contact_no', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter phone number"
                   maxLength={10}
                 />
@@ -682,11 +686,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   PHONE 2
                 </label>
-                <input
+                <ClearableInput
                   type="tel"
                   value={formData.contact_no_2}
                   onChange={(e) => handleInputChange('contact_no_2', e.target.value)}
-                  className="input w-full"
                   placeholder="Additional phone"
                   maxLength={10}
                 />
@@ -697,11 +700,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   PHONE 3
                 </label>
-                <input
+                <ClearableInput
                   type="tel"
                   value={formData.contact_no_3}
                   onChange={(e) => handleInputChange('contact_no_3', e.target.value)}
-                  className="input w-full"
                   placeholder="Additional phone"
                   maxLength={10}
                 />
@@ -712,11 +714,10 @@ export default function CustomerCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   EMAIL ADDRESS
                 </label>
-                <input
+                <ClearableInput
                   type="email"
                   value={formData.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
-                  className="input w-full"
                   placeholder="Enter email address"
                 />
                 {errors.email && <p className="text-red-400 text-xs mt-1">{errors.email}</p>}

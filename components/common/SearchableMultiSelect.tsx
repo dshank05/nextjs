@@ -160,7 +160,22 @@ export function SearchableMultiSelect(props: SearchableMultiSelectProps) {
             <span className="text-slate-400 text-sm">{placeholder}</span>
           )}
         </div>
-        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''} ml-2 flex-shrink-0`} />
+        <div className="flex items-center space-x-2 flex-shrink-0">
+          {selectedValues.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleClearAll();
+              }}
+              className="text-slate-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-slate-700"
+              title="Clear selection"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+        </div>
       </div>
 
       {/* Dropdown menu */}

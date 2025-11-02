@@ -269,7 +269,7 @@ export default function ProductCreate() {
           opening_stock: product.opening_stock?.toString() || '',
           opening_rate: product.opening_rate?.toString() || '',
           hsn: product.hsn || '',
-          gst_rate: product.gst_rate || '',
+          gst_rate: product.gst_rate_id?.toString() || '',
           warehouse: product.warehouse_id?.toString() || '', // Use original FK ID directly
           rack_id: product.rack_id?.toString() || '', // Use original FK ID directly
           rack_number: product.rack_number || '', // Direct text value
@@ -787,7 +787,7 @@ export default function ProductCreate() {
     <ConfirmationModal
       isOpen={showConfirmModal}
       title={isEditing ? "Update Product?" : "Create Product?"}
-      message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? 'This will update the existing product.' : 'This action cannot be undone.'}`}
+      message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? `This will update the existing product with UID: ${editingProductId}.` : 'This action cannot be undone.'}`}
       confirmText={isEditing ? "Update Product" : "Create Product"}
       cancelText="Cancel"
       showLoading={isSaving}

@@ -7,6 +7,7 @@ import { ProductSelectionPanel } from '../../components/common/ProductSelectionP
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
+import { subscribeBroadcast } from '../../lib/broadcast';
 
 interface Customer {
   id: string;
@@ -366,6 +367,18 @@ export default function InvoiceCCreate() {
     };
 
     initializeData();
+  }, []);
+
+  // Broadcast listener for customer creation
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((message) => {
+      if (message.type === 'created' && message.resource === 'customers') {
+        console.log('📡 Received broadcast: New customer created, refetching customers...');
+        fetchCustomers();
+      }
+    });
+
+    return unsubscribe;
   }, []);
 
   // Fetch invoice data when edit mode is detected and customers are loaded
@@ -1412,13 +1425,14 @@ export default function InvoiceCCreate() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
-                    <button
-                      type="button"
-                      onClick={() => router.push('/customers/create?from=salex')}
+                    <a
+                      href="/customers/create?from=salex"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
                     >
                       + Add New Customer
-                    </button>
+                    </a>
                   </div>
                   <SearchableSelect
                     options={[
