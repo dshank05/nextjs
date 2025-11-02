@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -385,3 +386,5 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, invoiceId
     })
   }
 }
+
+export default withObservability(handler)

@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -232,3 +233,5 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
+
+export default withObservability(handler)

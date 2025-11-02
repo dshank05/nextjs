@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { format } from 'date-fns'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
 // Simple in-memory cache for lookup data (resets on server restart)
 const lookupCache = new Map<string, { data: any; timestamp: number }>()
@@ -45,7 +46,7 @@ function createSearchableText(productName: string, partNo: string): string {
   return `${normalizedProductName} ${normalizedPartNo}`.trim()
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -491,3 +492,5 @@ async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<stri
     return ratesMap
   }
 }
+
+export default withObservability(handler)

@@ -480,12 +480,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
+      // Validate and convert quantity to number to prevent null/undefined/0 issues
+      const validatedQty = Number(item.qty) || 0;
+
       // Increase product stock and update latest purchase rate when purchase is created
       await prisma.product.update({
         where: { id: parseInt(item.product_id) },
         data: {
           stock: {
-            increment: item.qty
+            increment: validatedQty
           },
           // ===== RATE MANAGEMENT =====
           // Update latest purchase rate and timestamp when purchase is created
@@ -691,12 +694,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
           if (!newItemsMap.has(productId)) {
             // Item was removed - decrease stock (remove purchased items)
-            if (existingData.qty > 0) {
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            if (validatedExistingQty > 0) {
               await tx.product.update({
                 where: { id: productId },
                 data: {
                   stock: {
-                    decrement: existingData.qty
+                    decrement: validatedExistingQty
                   }
                 }
               })
@@ -752,12 +756,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               }
             })
 
+            // Validate and convert quantity to number to prevent null/undefined/0 issues
+            const validatedNewQty = Number(newData.qty) || 0;
+
             // Increase stock and update rate for new purchase
             await tx.product.update({
               where: { id: productId },
               data: {
                 stock: {
-                  increment: newData.qty
+                  increment: validatedNewQty
                 },
                 // ===== RATE MANAGEMENT =====
                 // Update latest purchase rate and timestamp when purchase item is added/updated
@@ -767,7 +774,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             })
           } else {
             // Existing item - check if quantity changed
-            const qtyDifference = newData.qty - existingData.qty
+            const validatedNewQty = Number(newData.qty) || 0;
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            const qtyDifference = validatedNewQty - validatedExistingQty;
 
             if (Math.abs(qtyDifference) > 0.001) { // Allow for small floating point differences
               // Update quantity and adjust stock

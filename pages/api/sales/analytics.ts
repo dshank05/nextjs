@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -131,9 +132,11 @@ export default async function handler(
     res.status(200).json(analytics)
   } catch (error) {
     console.error('Sales analytics error:', error)
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to fetch sales analytics',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 }
+
+export default withObservability(handler)

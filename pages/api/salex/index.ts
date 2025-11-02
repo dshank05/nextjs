@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
+import { withObservability } from '../../../lib/withObservability'
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -278,28 +279,66 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 2. Create invoice items in invoice_itemsx table
+      // 2. Create invoice items in invoice_itemsx table and update stock
       if (invoiceItems && invoiceItems.length > 0) {
-        await prisma.invoice_itemsx.createMany({
-          data: invoiceItems.map((item: any) => ({
-            product_id: item.product_id, // Required foreign key to Product table
-            invoice_no: invoice.id, // Use the created invoice ID
-            name_of_product: item.name_of_product,
-            qty: parseFloat(item.qty),
-            rate: parseFloat(item.rate),
-            subtotal: parseFloat(item.subtotal),
-            discount: parseFloat(item.discount) || 0,         // Item-level discount amount
-            discountrate: parseFloat(item.discountrate) || 0, // Item-level discount percentage
-            hsn: item.hsn || '',
-            part: item.part || '',
-            category_id: item.category_id || null,
-            subcategory_id: item.subcategory_id || null,
-            model_id: item.model_id ? parseInt(item.model_id) : null,
-            company_id: item.company_id || null,
-            fy: currentFy,
-            invoice_date: invoiceDateTimestamp
-          }))
-        })
+        for (const item of invoiceItems) {
+          // Fetch product details from database
+          const product = await prisma.product.findUnique({
+            where: { id: parseInt(item.product_id) },
+            select: {
+              product_name: true,
+              hsn: true,
+              product_category_id: true,
+              product_subcategory_id: true,
+              company_id: true,
+              stock: true
+            }
+          })
+
+          if (!product) {
+            throw new Error(`Product with ID ${item.product_id} not found`)
+          }
+
+          // Check stock availability
+          if (product.stock < item.qty) {
+            throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${item.qty}`)
+          }
+
+          // Create invoice item
+          await prisma.invoice_itemsx.create({
+            data: {
+              product_id: item.product_id, // Required foreign key to Product table
+              invoice_no: invoice.id, // Use the created invoice ID
+              name_of_product: item.name_of_product,
+              qty: parseFloat(item.qty),
+              rate: parseFloat(item.rate),
+              subtotal: parseFloat(item.subtotal),
+              discount: parseFloat(item.discount) || 0,         // Item-level discount amount
+              discountrate: parseFloat(item.discountrate) || 0, // Item-level discount percentage
+              hsn: item.hsn || '',
+              part: item.part || '',
+              category_id: item.category_id || null,
+              subcategory_id: item.subcategory_id || null,
+              model_id: item.model_id ? parseInt(item.model_id) : null,
+              company_id: item.company_id || null,
+              fy: currentFy,
+              invoice_date: invoiceDateTimestamp
+            }
+          })
+
+          // Validate and convert quantity to number to prevent null/undefined/0 issues
+          const validatedQty = Number(item.qty) || 0;
+
+          // Decrease product stock for salex sales
+          await prisma.product.update({
+            where: { id: parseInt(item.product_id) },
+            data: {
+              stock: {
+                decrement: validatedQty
+              }
+            }
+          })
+        }
       }
 
       // 3. Create customer reference in bill_tosalesx table
@@ -531,7 +570,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         // Process deletions: items that exist in DB but not in new list
         for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
           if (!newItemsMap.has(productId)) {
-            // Item was removed - salex doesn't affect stock
+            // Item was removed - return stock (increase stock since salex sale is cancelled)
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            if (validatedExistingQty > 0) {
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: {
+                    increment: validatedExistingQty
+                  }
+                }
+              })
+            }
+            // Delete the item
             await tx.invoice_itemsx.delete({
               where: { id: existingData.id }
             })
@@ -543,7 +594,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           const existingData = existingItemsMap.get(productId)
 
           if (!existingData) {
-            // New item - create it (salex doesn't affect stock)
+            // New item - create it and decrease stock
             const product = await tx.product.findUnique({
               where: { id: productId },
               select: {
@@ -551,12 +602,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 hsn: true,
                 product_category_id: true,
                 product_subcategory_id: true,
-                company_id: true
+                company_id: true,
+                stock: true
               }
             })
 
             if (!product) {
               throw new Error(`Product with ID ${productId} not found`)
+            }
+
+            // Check stock availability for new items
+            if (product.stock < newData.qty) {
+              throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${newData.qty}`)
             }
 
             const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null;
@@ -584,11 +641,38 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 invoice_date: invoiceDate
               }
             })
+
+            // Validate and convert quantity to number to prevent null/undefined/0 issues
+            const validatedNewQty = Number(newData.qty) || 0;
+
+            // Decrease stock for new salex sales
+            await tx.product.update({
+              where: { id: productId },
+              data: {
+                stock: {
+                  decrement: validatedNewQty
+                }
+              }
+            })
           } else {
             // Existing item - check if quantity changed
-            const qtyDifference = newData.qty - existingData.qty
+            const validatedNewQty = Number(newData.qty) || 0;
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            const qtyDifference = validatedNewQty - validatedExistingQty;
 
             if (Math.abs(qtyDifference) > 0.001) {
+              // Check stock availability for increased quantity
+              if (qtyDifference > 0) {
+                const product = await tx.product.findUnique({
+                  where: { id: productId },
+                  select: { stock: true, product_name: true }
+                })
+
+                if (product && product.stock < qtyDifference) {
+                  throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested additional ${qtyDifference}`)
+                }
+              }
+
               // Update quantity and subtotal
               await tx.invoice_itemsx.update({
                 where: { id: existingData.id },
@@ -596,6 +680,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                   qty: newData.qty,
                   rate: newData.rate,
                   subtotal: newData.qty * newData.rate
+                }
+              })
+
+              // Adjust stock based on quantity difference
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: {
+                    increment: -qtyDifference // Negative because salex sales decrease stock
+                  }
                 }
               })
             }
@@ -635,7 +729,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -650,3 +744,5 @@ export default async function handler(
       return res.status(405).json({ message: 'Method not allowed' })
   }
 }
+
+export default withObservability(handler)

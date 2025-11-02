@@ -69,34 +69,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.product.count({ where }),
     ])
 
-    // ===== RATE MANAGEMENT =====
-    // Get latest purchase rates for all products using individual queries (simple and reliable)
+    // ===== OPTIMIZED RATE MANAGEMENT =====
+    // Get latest purchase rates for all products using efficient batch query
     const productIds = products.map(p => p.id)
-    let latestRateMap = new Map<number, { rate: number, date: number }>()
-
-    if (productIds.length > 0) {
-      // Get latest purchase rate for each product individually
-      for (const productId of productIds) {
-        const latestPurchase = await prisma.purchaseitems.findFirst({
-          where: {
-            product_id: productId,
-            rate: { gt: 0 } // Only consider valid rates > 0
-          },
-          select: {
-            rate: true,
-            invoice_date: true
-          },
-          orderBy: { invoice_date: 'desc' }
-        })
-
-        if (latestPurchase) {
-          latestRateMap.set(productId, {
-            rate: latestPurchase.rate || 0,
-            date: latestPurchase.invoice_date || 0
-          })
-        }
-      }
-    }
+    const latestRateMap = await getPurchaseRatesOptimized(productIds)
 
     // Process products to calculate selling price, GST rate, and display rates
     const processedProducts = products.map(product => {
@@ -280,6 +256,71 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       status: "failure",
       message: 'Failed to create product'
     })
+  }
+}
+
+// OPTIMIZED: Get all purchase rates efficiently using Prisma groupBy and batch queries
+async function getPurchaseRatesOptimized(productIds: number[]): Promise<Map<number, { rate: number; date: number }>> {
+  if (productIds.length === 0) return new Map()
+
+  try {
+    // Get latest purchase for each product using a more efficient approach
+    // This uses a single query with proper ordering and grouping
+    const latestPurchases = await prisma.$queryRaw`
+      SELECT DISTINCT
+        pi.product_id,
+        pi.rate,
+        pi.invoice_date
+      FROM purchase_items pi
+      INNER JOIN (
+        SELECT
+          product_id,
+          MAX(invoice_date) as max_date
+        FROM purchase_items
+        WHERE product_id IN (${productIds.map(id => `${id}`).join(',')})
+        GROUP BY product_id
+      ) latest ON pi.product_id = latest.product_id
+                 AND pi.invoice_date = latest.max_date
+      ORDER BY pi.product_id
+    ` as any[]
+
+    return new Map(latestPurchases.map((r: any) => [r.product_id, { rate: r.rate, date: r.invoice_date }]))
+  } catch (error) {
+    console.error('Raw SQL query failed, using safer Prisma approach:', error)
+
+    // Fallback: Use batch Prisma queries (still efficient, just not raw SQL)
+    const ratesMap = new Map<number, { rate: number; date: number }>()
+
+    // Process in smaller batches to avoid overwhelming the database
+    const batchSize = 20
+    for (let i = 0; i < productIds.length; i += batchSize) {
+      const batch = productIds.slice(i, i + batchSize)
+
+      // Get latest purchase for each product in this batch
+      const latestRates = await Promise.all(
+        batch.map(async (productId) => {
+          try {
+            const latest = await prisma.purchaseitems.findFirst({
+              where: { product_id: productId },
+              orderBy: { invoice_date: 'desc' },
+              select: { rate: true, invoice_date: true }
+            })
+            return [productId, latest ? { rate: latest.rate || 0, date: latest.invoice_date || 0 } : null]
+          } catch (e) {
+            return [productId, null]
+          }
+        })
+      )
+
+      // Add to map (only if rate exists)
+      latestRates.forEach(([productId, data]) => {
+        if (data !== null) {
+          ratesMap.set(productId as number, data as { rate: number; date: number })
+        }
+      })
+    }
+
+    return ratesMap
   }
 }
 

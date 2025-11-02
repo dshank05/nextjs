@@ -1,9 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
+import { withObservability } from '../../../lib/withObservability'
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   switch (req.method) {
     case 'GET':
       try {
@@ -390,3 +391,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
   }
 }
+
+
+export default withObservability(handler)

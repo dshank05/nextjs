@@ -1,7 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { withObservability } from '../../../lib/withObservability';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
       const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id, category_search = '' } = req.query;
@@ -223,3 +224,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await prisma.$disconnect();
   }
 }
+
+export default withObservability(handler)

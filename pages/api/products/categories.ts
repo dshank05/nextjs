@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { withObservability } from '../../../lib/withObservability';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   switch (req.method) {
     case 'GET':
       return handleGet(req, res);
@@ -156,3 +157,5 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
     res.status(500).json({ message: 'Failed to delete category' });
   }
 }
+
+export default withObservability(handler)

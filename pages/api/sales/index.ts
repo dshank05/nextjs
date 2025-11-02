@@ -1,8 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
+import { withObservability } from '../../../lib/withObservability'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -196,12 +197,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
+      // Validate and convert quantity to number to prevent null/undefined/0 issues
+      const validatedQty = Number(item.qty) || 0;
+
       // Decrease product stock
       await prisma.product.update({
         where: { id: parseInt(item.product_id) },
         data: {
           stock: {
-            decrement: item.qty
+            decrement: validatedQty
           }
         }
       })
@@ -431,12 +435,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
           if (!newItemsMap.has(productId)) {
             // Item was removed - increase stock (return sold items)
-            if (existingData.qty > 0) {
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            if (validatedExistingQty > 0) {
               await tx.product.update({
                 where: { id: productId },
                 data: {
                   stock: {
-                    increment: existingData.qty
+                    increment: validatedExistingQty
                   }
                 }
               })
@@ -502,18 +507,23 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               }
             })
 
+            // Validate and convert quantity to number to prevent null/undefined/0 issues
+            const validatedNewQty = Number(newData.qty) || 0;
+
             // Decrease stock for new sales
             await tx.product.update({
               where: { id: productId },
               data: {
                 stock: {
-                  decrement: newData.qty
+                  decrement: validatedNewQty
                 }
               }
             })
           } else {
             // Existing item - check if quantity changed
-            const qtyDifference = newData.qty - existingData.qty
+            const validatedNewQty = Number(newData.qty) || 0;
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            const qtyDifference = validatedNewQty - validatedExistingQty;
 
             if (Math.abs(qtyDifference) > 0.001) { // Allow for small floating point differences
               // Check stock availability for increased quantity
@@ -801,3 +811,5 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     })
   }
 }
+
+export default withObservability(handler)
