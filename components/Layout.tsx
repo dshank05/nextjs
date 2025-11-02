@@ -50,39 +50,23 @@ const Layout = ({ children }: LayoutProps) => {
     },
     {
       name: 'PRODUCTS',
+      href: '/products',
       icon: '📦',
-      subpages: [
-        { name: 'PRODUCT PAGE', href: '/products' },
-        { name: 'PRODUCT CREATION', href: '/products/create' },
-        // { name: 'PRODUCT VIEW PAGE', href: '/products/view' },
-      ],
     },
     {
       name: 'PURCHASE',
+      href: '/purchases',
       icon: '🛒',
-      subpages: [
-        { name: 'PURCHASE PAGE', href: '/purchases' },
-        { name: 'PURCHASE CREATION', href: '/purchases/create' },
-        // { name: 'PURCHASE VIEW PAGE', href: '/purchases/view' },
-      ],
     },
     {
       name: 'INVOICE',
+      href: '/sale',
       icon: '📄',
-      subpages: [
-        { name: 'INVOICE PAGE', href: '/sale' },
-        { name: 'INVOICE CREATION PAGE', href: '/sale/create' },
-        // { name: 'INVOICE VIEW PAGE', href: '/invoice/view' },
-      ],
     },
     {
       name: 'INVOICE C',
+      href: '/salex',
       icon: '📄',
-      subpages: [
-        { name: 'INVOICE C PAGE', href: '/salex' },
-        { name: 'INVOICE C CREATION PAGE', href: '/salex/create' },
-        // { name: 'INVOICE C VIEW PAGE', href: '/invoicec/view' },
-      ],
     },
     {
       name: 'ENTRY',
@@ -123,7 +107,7 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'MINIMUM STOCK', href: '/reports/minimumstock' },
         { name: 'SALE', href: '/reports/sale' },
         { name: 'SALE X', href: '/reports/salex' },
-        { name: 'PURCHASE', href: '/purchases' },
+        { name: 'PURCHASE', href: '/reports/purchase' },
         // { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
         // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead

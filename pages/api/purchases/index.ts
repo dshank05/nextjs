@@ -32,7 +32,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       status = '',
       amountMin = '',
       amountMax = '',
-      vendor = ''
+      vendor = '',
+      uid = '' // NEW: Filter by purchase ID
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -42,11 +43,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Build where clause
     const where: any = {}
 
+    // Handle UID filtering
+    if (uid && uid !== '') {
+      where.id = parseInt(uid as string)
+    }
+
     if (search) {
+      const searchStr = Array.isArray(search) ? search[0] : search;
+      const searchNum = parseInt(searchStr);
       where.OR = [
-        { invoice_no: { contains: search as string } },
-        { notes: { contains: search as string } },
-      ]
+        !isNaN(searchNum) ? { invoice_no: searchNum } : undefined,
+        { notes: { contains: searchStr } },
+      ].filter(Boolean) // Remove undefined values
     }
 
     if (fy && fy !== '') {

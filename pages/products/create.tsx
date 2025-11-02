@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { Upload, Calculator, ChevronDown, X, Check } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 
@@ -79,30 +80,9 @@ export default function ProductCreate() {
   const [isEditing, setIsEditing] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
 
-  // Multi-select state for car models
-  const [isModelsDropdownOpen, setIsModelsDropdownOpen] = useState(false);
-  const [modelSearchQuery, setModelSearchQuery] = useState('');
-  const modelsDropdownRef = useRef<HTMLDivElement>(null);
-
   // State for dynamic subcategories
   const [subcategories, setSubcategories] = useState<any[]>([]);
   const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
-
-  // Confirmation modal state for car models
-  const [showCarModelsConfirmModal, setShowCarModelsConfirmModal] = useState(false);
-  const [pendingCarModelsData, setPendingCarModelsData] = useState<string[] | null>(null);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (modelsDropdownRef.current && !modelsDropdownRef.current.contains(event.target as Node)) {
-        setIsModelsDropdownOpen(false);
-        setModelSearchQuery('');
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
 
 
@@ -416,9 +396,15 @@ export default function ProductCreate() {
         const action = isEditing ? 'updated' : 'created';
         showSnackbar('success', `Product ${action} successfully!`);
         setShowConfirmModal(false);
-        setShowCarModelsConfirmModal(false);
-        setPendingCarModelsData(null);
-        router.push('/products'); // Redirect to products page after success
+
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditing && window.opener) {
+          router.push('/products');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push(isEditing ? `/products/view/${editingProductId}` : '/products');
+        }
       } else {
         console.error('API Error:', responseData);
         const action = isEditing ? 'update' : 'create';
@@ -492,61 +478,35 @@ export default function ProductCreate() {
         {/* Row 2: Basic Product Information */}
         <div className="mb-3 space-y-2">
           <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Product Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
-              <select
-                value={formData.product_category}
-                onChange={(e) => handleInputChange('product_category', e.target.value)}
-                className="select w-full"
-              >
-                <option value="">Select Category</option>
-                {filterOptions.categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={filterOptions.categories.map(cat => ({ id: cat.id.toString(), name: cat.name }))}
+                selectedValue={formData.product_category}
+                onSelectionChange={(value) => handleInputChange('product_category', value || '')}
+                placeholder="Select Category"
+              />
               {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
-              <select
-                value={formData.product_subcategory}
-                onChange={(e) => handleInputChange('product_subcategory', e.target.value)}
-                disabled={!formData.product_category || subcategoriesLoading}
-                className="select w-full disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {!formData.product_category
+              <SearchableSelect
+                options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
+                selectedValue={formData.product_subcategory}
+                onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
+                placeholder={
+                  !formData.product_category
                     ? "Please select a category first"
                     : subcategoriesLoading
                       ? "Loading subcategories..."
                       : "Select Sub Category"
-                  }
-                </option>
-                {subcategories.map((sub) => (
-                  <option key={sub.id} value={sub.id}>{sub.subcategory_name}</option>
-                ))}
-              </select>
+                }
+                className={!formData.product_category || subcategoriesLoading ? "opacity-50 cursor-not-allowed" : ""}
+              />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
-              <select
-                value={formData.company_id}
-                onChange={(e) => handleInputChange('company_id', e.target.value)}
-                className="select w-full"
-              >
-                <option value="">Select Company</option>
-                {filterOptions.companies.map((comp) => (
-                  <option key={comp.id} value={comp.id}>{comp.name}</option>
-                ))}
-              </select>
-              {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
               <SearchableMultiSelect
@@ -554,7 +514,19 @@ export default function ProductCreate() {
                 selectedValues={formData.car_models}
                 onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
                 placeholder="Select car models..."
+                closeOnSelect={false}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
+              <SearchableSelect
+                options={filterOptions.companies.map(comp => ({ id: comp.id.toString(), name: comp.name }))}
+                selectedValue={formData.company_id}
+                onSelectionChange={(value) => handleInputChange('company_id', value || '')}
+                placeholder="Select Company"
+              />
+              {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
             </div>
 
             <div>
@@ -638,18 +610,12 @@ export default function ProductCreate() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
-              <select
-                value={formData.hsn}
-                onChange={(e) => handleInputChange('hsn', e.target.value)}
-                className="select w-full"
-              >
-                <option value="">Select HSN Code</option>
-                {gstRates.map((rate) => (
-                  <option key={rate.id} value={rate.hsn_code}>
-                    {rate.hsn_code}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={gstRates.map(rate => ({ id: rate.hsn_code, name: rate.hsn_code }))}
+                selectedValue={formData.hsn}
+                onSelectionChange={(value) => handleInputChange('hsn', value || '')}
+                placeholder="Select HSN Code"
+              />
             </div>
 
             <div>
@@ -669,43 +635,36 @@ export default function ProductCreate() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE *</label>
-              <select
-                value={formData.warehouse}
-                onChange={(e) => handleInputChange('warehouse', e.target.value)}
-                className="select w-full"
-              >
-                <option value="">Select Warehouse</option>
-                {warehouses.map((warehouse) => (
-                  <option key={warehouse.id} value={warehouse.id}>
-                    {warehouse.name} - {warehouse.location}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                options={warehouses.map(warehouse => ({
+                  id: warehouse.id.toString(),
+                  name: `${warehouse.name} - ${warehouse.location}`
+                }))}
+                selectedValue={formData.warehouse}
+                onSelectionChange={(value) => handleInputChange('warehouse', value || '')}
+                placeholder="Select Warehouse"
+              />
               {errors.warehouse && <p className="text-red-400 text-xs mt-1">{errors.warehouse}</p>}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">RACK</label>
-              <select
-                value={formData.rack_id}
-                onChange={(e) => handleInputChange('rack_id', e.target.value)}
-                disabled={!formData.warehouse || racksLoading}
-                className="select w-full disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed"
-              >
-                <option value="">
-                  {!formData.warehouse
+              <SearchableSelect
+                options={racks.filter(rack => rack.status === 'Active').map(rack => ({
+                  id: rack.id.toString(),
+                  name: `${rack.rack_number} ${rack.description ? `(${rack.description})` : ''}`
+                }))}
+                selectedValue={formData.rack_id}
+                onSelectionChange={(value) => handleInputChange('rack_id', value || '')}
+                placeholder={
+                  !formData.warehouse
                     ? "Please select a warehouse first"
                     : racksLoading
                       ? "Loading racks..."
                       : "Select Rack"
-                  }
-                </option>
-                {racks.filter(rack => rack.status === 'Active').map((rack) => (
-                  <option key={rack.id} value={rack.id}>
-                    {rack.rack_number} {rack.description ? `(${rack.description})` : ''}
-                  </option>
-                ))}
-              </select>
+                }
+                className={!formData.warehouse || racksLoading ? "opacity-50 cursor-not-allowed" : ""}
+              />
             </div>
           </div>
         </div>
@@ -823,21 +782,6 @@ export default function ProductCreate() {
         </div>
       </form>
     </div>
-
-    {/* Car Models Confirmation Modal */}
-    <ConfirmationModal
-      isOpen={showCarModelsConfirmModal}
-      title="Confirm Car Models Selection"
-      message={`You have selected ${pendingCarModelsData?.length} car model${pendingCarModelsData && pendingCarModelsData.length > 1 ? 's' : ''}. Do you want to save this product?`}
-      showLoading={isSaving}
-      onConfirm={async () => {
-        await handleConfirmSubmit();
-      }}
-      onCancel={() => {
-        setShowCarModelsConfirmModal(false);
-        setPendingCarModelsData(null);
-      }}
-    />
 
     {/* Main Confirmation Modal */}
     <ConfirmationModal

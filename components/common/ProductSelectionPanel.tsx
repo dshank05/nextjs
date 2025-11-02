@@ -126,10 +126,10 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                                     onClick={() => onProductSelect(product)}
                                 >
                                     <div className="flex flex-col">
-                                        {/* First row: UID-Product Name | Stock */}
+                                        {/* First row: UID-Product Name-Part No | Stock */}
                                         <div className="flex justify-between items-center mb-2">
                                             <h4 className="text-slate-200 font-bold text-sm flex-1">
-                                                {product.id} - {product.product_name}
+                                                {product.id} - {product.product_name}  { '-  ' + product.part_no || ''}
                                             </h4>
                                             <div className="flex items-center ml-2 flex-shrink-0">
                                                 <span className="text-green-400 font-semibold text-sm mr-1">Stock:</span>

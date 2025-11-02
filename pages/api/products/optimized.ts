@@ -64,7 +64,9 @@ export default async function handler(
       company_id = '',
       lowStock = 'false',
       startDate = '',
-      endDate = ''
+      endDate = '',
+      uid = '', // NEW: Filter by product ID
+      part_no = '' // NEW: Filter by part number
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -97,6 +99,11 @@ export default async function handler(
     if (needsPostFiltering) {
       // For complex filters, get all matching products first
       const where: any = {}
+
+      // Handle UID filtering
+      if (uid && uid !== '') {
+        where.id = parseInt(uid as string)
+      }
 
       if (search) {
         const normalizedSearch = normalizeSearchText(search as string)
@@ -132,6 +139,11 @@ export default async function handler(
       // Handle company filtering with ID directly
       if (company_id && company_id !== '') {
         where.company_id = parseInt(company_id as string)
+      }
+
+      // Handle part_no filtering
+      if (part_no && part_no !== '') {
+        where.part_no = { contains: part_no as string }
       }
 
       // Get all products that match database filters (only active products)
@@ -222,6 +234,11 @@ export default async function handler(
       const skip = (pageNum - 1) * limitNum
       const where: any = {}
 
+      // Handle UID filtering
+      if (uid && uid !== '') {
+        where.id = parseInt(uid as string)
+      }
+
       if (search) {
         const normalizedSearch = normalizeSearchText(search as string)
         where.OR = [
@@ -256,6 +273,11 @@ export default async function handler(
       // Handle company filtering with ID directly
       if (company_id && company_id !== '') {
         where.company_id = parseInt(company_id as string)
+      }
+
+      // Handle part_no filtering
+      if (part_no && part_no !== '') {
+        where.part_no = { contains: part_no as string }
       }
 
       // Handle date filtering

@@ -1,280 +1,309 @@
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/router'
-import { TransactionTable } from '../../components/transactions/TransactionTable'
-import { TransactionFilters } from '../../components/transactions/TransactionFilters'
-import { ConfirmationModal } from '../../components/ConfirmationModal'
-import { FileText, Download, Printer, Undo2, FileMinus } from 'lucide-react'
-import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils'
-import { useSnackbar } from '../../components/SnackbarProvider'
-
-// Define types for sales data (matching the Invoice and Invoiceitems tables)
-interface SaleItem {
-  id: number
-  invoice_no: number
-  name_of_product: string
-  category_id?: number
-  model_id?: number
-  company_id?: number
-  hsn?: string
-  part?: string
-  qty: number
-  rate: number
-  subtotal: number
-  fy: number
-  invoice_date: number | string
-}
+import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
+import { SaleTable } from '../../components/transactions/SaleTable';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { subscribeBroadcast } from '../../lib/broadcast';
+import { useSnackbar } from '../../components/SnackbarProvider';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Sale {
-  id: number
-  invoice_no: number
-  select_customer?: number
-  customer_name?: string
-  customer_address?: string
-  customer_gstin?: string
-  items_total: number
-  freight?: number
-  total_taxable_value: number
-  taxrate?: number
-  total_cgst?: number
-  total_sgst?: number
-  total_igst?: number
-  total_tax?: number
-  total: number
-  notes?: string
-  invoice_date: number | string
-  status?: number
-  payment_status?: number  // Payment status from API (0=Unpaid, 1=Paid)
-  payment_mode?: number    // Payment mode from API (0=Cash, 1=Bank)
-  fy: number
-  mode?: number
-  type?: number
-  items?: SaleItem[]
-  item_count?: number
-  return_status?: number // 0=none, 1=partial, 2=full
+  id: number;
+  invoice_no: number;
+  select_customer?: number;
+  customer_name?: string;
+  customer_address?: string;
+  customer_gstin?: string;
+  items_total: number;
+  freight?: number;
+  total_taxable_value: number;
+  taxrate?: number;
+  total_cgst?: number;
+  total_sgst?: number;
+  total_igst?: number;
+  total_tax?: number;
+  total: number;
+  notes?: string;
+  invoice_date: number | string;
+  status?: number;
+  payment_status?: number;
+  payment_mode?: number;
+  fy: number;
+  transport?: string;
+  item_count?: number;
+  formattedDate?: string;
+  bill_reference?: string;
+  return_status?: number;
+  type?: 'sale';
+  customer_vendor_name?: string;
+  customer_vendor_address?: string;
+  customer_vendor_gstin?: string;
 }
 
 interface Pagination {
-  page: number
-  limit: number
-  total: number
-  totalPages: number
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
 
 export default function SalePage() {
-  // Router for navigation
-  const router = useRouter()
-  const { showSnackbar } = useSnackbar()
+  const router = useRouter();
+  const { showSnackbar } = useSnackbar();
+
+  // AbortController ref for cancelling pending requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'invoice_no', label: 'Invoice No', enabled: true },
+    { key: 'customer_name', label: 'Customer Name', enabled: true },
+    { key: 'total', label: 'Total Amount', enabled: true },
+    { key: 'invoice_date', label: 'Invoice Date', enabled: true },
+    { key: 'payment_status', label: 'Payment Status', enabled: true },
+    { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+  ];
 
   // Modal states for return confirmation
-  const [showReturnModal, setShowReturnModal] = useState(false)
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null)
-  const [processingReturn, setProcessingReturn] = useState(false)
-
-  // Filter states
-  const [searchTerm, setSearchTerm] = useState('')
-  const [customerVendorFilter, setCustomerVendorFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [amountMin, setAmountMin] = useState('')
-  const [amountMax, setAmountMax] = useState('')
-  const [limit, setLimit] = useState(25)
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [processingReturn, setProcessingReturn] = useState(false);
 
   // Data states
-  const [sales, setSales] = useState<Sale[]>([])
+  const [sales, setSales] = useState<Sale[]>([]);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 50,
     total: 0,
     totalPages: 0
-  })
-  const [loading, setLoading] = useState(false)
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentFilters, setCurrentFilters] = useState<{
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+  }>({
+    customerFilter: '',
+    statusFilter: 'all',
+    dateFrom: '',
+    dateTo: '',
+    amountMin: '',
+    amountMax: '',
+    uidFilter: ''
+  });
 
-  // Fetch sales data from API
-  const fetchSales = async (page: number = 1) => {
-    setLoading(true)
-
-    try {
-      // Build query parameters
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        search: searchTerm,
-        startDate: dateFrom,
-        endDate: dateTo,
-        fy: '' // Add financial year if needed
-      })
-
-      // Add status filter if provided
-      if (statusFilter && statusFilter !== 'all') {
-        params.append('status', getApiStatusFilter())
-      }
-
-      // Add amount filters if provided (send even if empty for consistency)
-      if (amountMin !== undefined && amountMin !== null && amountMin !== '') {
-        params.append('amountMin', amountMin)
-      }
-      if (amountMax !== undefined && amountMax !== null && amountMax !== '') {
-        params.append('amountMax', amountMax)
-      }
-
-      // Add customer/vendor filter (for client-side filtering but send to API anyway)
-      if (customerVendorFilter && customerVendorFilter !== '') {
-        params.append('vendor', customerVendorFilter)
-      }
-
-      const response = await fetch(`/api/sales?${params}`)
-      const data = await response.json()
-
-      if (response.ok) {
-        setSales(data.sales || [])
-        setPagination(data.pagination || {
-          page: 1,
-          limit: 50,
-          total: 0,
-          totalPages: 0
-        })
-      } else {
-        console.error('Failed to fetch sales:', data.message)
-        setSales([])
-        setPagination({
-          page: 1,
-          limit: 50,
-          total: 0,
-          totalPages: 0
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching sales:', error)
-      setSales([])
-      setPagination({
-        page: 1,
-        limit: 50,
-        total: 0,
-        totalPages: 0
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Handle page changes
-  const handlePageChange = (newPage: number) => {
-    setPagination(prev => ({ ...prev, page: newPage }))
-    fetchSales(newPage)
-  }
-
-  // Handle limit changes
-  const handleLimitChange = (newLimit: number) => {
-    setLimit(newLimit)
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }))
-  }
-
-  // Clear all filters
-  const clearFilters = () => {
-    setSearchTerm('')
-    setCustomerVendorFilter('')
-    setStatusFilter('all')
-    setDateFrom('')
-    setDateTo('')
-    setAmountMin('')
-    setAmountMax('')
-    setPagination(prev => ({ ...prev, page: 1 }))
-  }
-
-  // Get API status values based on UI filter values
-  const getApiStatusFilter = () => {
-    switch (statusFilter) {
-      case 'paid': return '1'
-      case 'unpaid': return '0'
-      case 'unknown': return 'unknown'
-      default: return ''
-    }
-  }
-
-  // Handle view details
-  const handleViewDetails = (transaction: any) => {
-    console.log('View details for sale:', transaction)
-    router.push(`/sale/view/${transaction.id}`)
-  }
-
-  // Initial load and when filters change
+  // Fetch sales when pagination, search, or filters change
   useEffect(() => {
-    fetchSales(1)
-  }, [searchTerm, customerVendorFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit])
+    fetchSales();
+  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
 
-  // Convert sales data to transaction format for the table component
-  const allTransactions = sales.map(sale => ({
-    ...sale,
-    type: 'sale' as const,
-    customer_vendor_name: sale.customer_name,
-    customer_vendor_address: sale.customer_address,
-    customer_vendor_gstin: sale.customer_gstin,
-    invoice_date: sale.invoice_date,
-    status: sale.payment_status,  // Map payment_status to status for TransactionTable compatibility
-    payment_status: sale.payment_status,
-    payment_mode: sale.payment_mode,
-    return_status: sale.return_status || 0 // Add return_status for enable/disable logic
-  }))
+  // Listen for broadcast messages to refresh data when sales are created/updated/deleted in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'sales' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
+        console.log(`🔄 Sale ${msg.type} in another tab, refreshing data...`);
+        fetchSales();
+      }
+    });
 
-  // Customer filtering: For now, disable filtering since we're properly storing IDs
-  // In proper implementation, API would filter by customer ID or client would have ID mapping
-  const salesAsTransactions = allTransactions
+    return unsubscribe;
+  }, []);
 
-  // Export functions
-  const handleExportPDF = async () => {
-    console.log('Exporting sales to PDF...')
-    const tableElement = getTableForExport()
-    if (tableElement && salesAsTransactions.length > 0) {
-      await exportToPDF(tableElement, salesAsTransactions, {
-        title: 'Invoice Report',
-        fileName: 'invoice_report'
-      })
-    } else {
-      alert('No data to export. Please ensure there are records visible.')
+  // Cleanup: Cancel any pending requests when component unmounts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const fetchSales = async () => {
+    try {
+      // Cancel any pending request
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+
+      // Create new AbortController for this request
+      abortControllerRef.current = new AbortController();
+
+      setLoading(true);
+      setError(null);
+
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm,
+        // Add filter parameters
+        customer: currentFilters.customerFilter,
+        status: currentFilters.statusFilter,
+        dateFrom: currentFilters.dateFrom,
+        dateTo: currentFilters.dateTo,
+        amountMin: currentFilters.amountMin,
+        amountMax: currentFilters.amountMax,
+        uid: currentFilters.uidFilter
+      });
+
+      const response = await fetch(`/api/sales?${params}`, {
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch sales');
+      }
+
+      const data = await response.json();
+
+      // Transform API data to match our interface
+      const transformedSales: Sale[] = (data.sales || []).map((sale: any) => ({
+        id: sale.id,
+        invoice_no: sale.invoice_no,
+        select_customer: sale.select_customer,
+        customer_name: sale.customer_name,
+        customer_address: sale.customer_address,
+        customer_gstin: sale.customer_gstin,
+        items_total: sale.items_total,
+        freight: sale.freight,
+        total_taxable_value: sale.total_taxable_value,
+        taxrate: sale.taxrate,
+        total_cgst: sale.total_cgst,
+        total_sgst: sale.total_sgst,
+        total_igst: sale.total_igst,
+        total_tax: sale.total_tax,
+        total: sale.total,
+        notes: sale.notes,
+        invoice_date: sale.invoice_date,
+        status: sale.status,
+        payment_status: sale.payment_status,
+        payment_mode: sale.payment_mode,
+        fy: sale.fy,
+        mode: sale.mode,
+        type: sale.type,
+        item_count: sale.item_count,
+        formattedDate: sale.formattedDate,
+        bill_reference: sale.bill_reference,
+        return_status: sale.return_status,
+        customer_vendor_name: sale.customer_name,
+        customer_vendor_address: sale.customer_address,
+        customer_vendor_gstin: sale.customer_gstin
+      }));
+
+      setSales(transformedSales);
+      setPagination(data.pagination);
+    } catch (err) {
+      // Don't show error if request was cancelled
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Sale fetch request was cancelled');
+        return;
+      }
+
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to fetch sales:', err);
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  const handleExportExcel = () => {
-    console.log('Exporting sales to Excel...')
-    if (salesAsTransactions.length > 0) {
-      exportToExcel(salesAsTransactions, {
-        title: 'Invoice Report',
-        fileName: 'invoice_report'
-      })
-    } else {
-      alert('No data to export. Please ensure there are records visible.')
+  const handlePageChange = (newPage: number) => {
+    if (newPage > 0 && newPage <= pagination.totalPages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
     }
-  }
+  };
 
-  // Print individual sale
-  const handlePrintSale = (transaction: any) => {
-    console.log('Printing sale:', transaction.id)
-    // TODO: Implement print functionality (will print view page)
-    alert(`Print functionality for sale ${transaction.invoice_no} will be implemented`)
-  }
+  const handleLimitChange = (newLimit: number) => {
+    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+  };
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Sale Report',
+        fileName: `Sale_Report_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, sales, config);
+    } else {
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    const exportData = sales.map(sale => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = sale.id;
+            break;
+          case 'invoice_no':
+            row['Invoice No'] = sale.invoice_no;
+            break;
+          case 'customer_name':
+            row['Customer Name'] = sale.customer_name || '';
+            break;
+          case 'total':
+            row['Total Amount'] = sale.total;
+            break;
+          case 'invoice_date':
+            row['Invoice Date'] = sale.formattedDate || sale.invoice_date || '';
+            break;
+          case 'payment_status':
+            row['Payment Status'] = sale.payment_status === 1 ? 'Paid' : 'Unpaid';
+            break;
+          case 'bill_reference':
+            row['Bill Reference'] = sale.bill_reference || '';
+            break;
+        }
+      });
+      return row;
+    });
+
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Sale Report',
+      fileName: `Sale_Report_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   // Handle return actions
-  const handlePartialReturn = (transaction: any) => {
-    const returnStatus = transaction.return_status || 0
+  const handlePartialReturn = (transaction: Sale) => {
+    const returnStatus = transaction.return_status || 0;
     if (returnStatus === 0 || returnStatus === 1) {
-      console.log('Starting partial return for sale:', transaction.id)
-      router.push(`/entry/salereturn-create?invoice=${transaction.id}&type=partial`)
+      console.log('Starting partial return for sale:', transaction.id);
+      router.push(`/entry/salereturn-create?invoice=${transaction.id}&type=partial`);
     } else {
-      alert('Full returns cannot be modified with partial returns.')
+      alert('Full returns cannot be modified with partial returns.');
     }
-  }
+  };
 
-  const handleReturnWholeOrder = (transaction: any) => {
-    console.log('Return whole order for sale:', transaction)
-    setSelectedTransaction(transaction)
-    setShowReturnModal(true)
-  }
+  const handleReturnWholeOrder = (transaction: Sale) => {
+    console.log('Return whole order for sale:', transaction);
+    setSelectedTransaction(transaction);
+    setShowReturnModal(true);
+  };
 
   const confirmReturnWholeOrder = async () => {
-    if (!selectedTransaction) return
+    if (!selectedTransaction) return;
 
-    setProcessingReturn(true)
+    setProcessingReturn(true);
     try {
       const response = await fetch('/api/sale-returns', {
         method: 'POST',
@@ -288,130 +317,108 @@ export default function SalePage() {
           return_date: Math.floor(Date.now() / 1000),
           notes: 'Full order return processed automatically'
         })
-      })
+      });
 
       if (response.ok) {
-        showSnackbar('success', `Successfully processed full return for invoice #${selectedTransaction.invoice_no}`)
-        fetchSales(pagination.page)
+        showSnackbar('success', `Successfully processed full return for invoice #${selectedTransaction.invoice_no}`);
+        fetchSales();
       } else {
-        const error = await response.json()
-        showSnackbar('error', `Failed to process return: ${error.message || 'Unknown error'}`)
+        const error = await response.json();
+        showSnackbar('error', `Failed to process return: ${error.message || 'Unknown error'}`);
       }
     } catch (error) {
-      console.error('Error processing return:', error)
-      showSnackbar('error', 'Network error occurred while processing return')
+      console.error('Error processing return:', error);
+      showSnackbar('error', 'Network error occurred while processing return');
     } finally {
-      setProcessingReturn(false)
-      setShowReturnModal(false)
-      setSelectedTransaction(null)
+      setProcessingReturn(false);
+      setShowReturnModal(false);
+      setSelectedTransaction(null);
     }
-  }
+  };
 
   const cancelReturnWholeOrder = () => {
-    setShowReturnModal(false)
-    setSelectedTransaction(null)
-  }
+    setShowReturnModal(false);
+    setSelectedTransaction(null);
+  };
 
-  const handleFullReturn = (transaction: any) => {
-    const returnStatus = transaction.return_status || 0
+  const handleFullReturn = (transaction: Sale) => {
+    const returnStatus = transaction.return_status || 0;
     if (returnStatus === 0) {
-      handleReturnWholeOrder(transaction)
+      handleReturnWholeOrder(transaction);
     } else {
-      alert('Full returns are only available for sales with no previous returns.')
+      alert('Full returns are only available for sales with no previous returns.');
     }
-  }
+  };
 
-  // Define custom actions for returns with enable/disable logic
-  const customActions = [
-    {
-      label: 'Partial Return',
-      icon: <FileMinus className="w-4 h-4" />,
-      onClick: handlePartialReturn,
-      className: 'text-blue-400 hover:text-blue-300',
-      title: 'Create Partial Return',
-      enabled: (transaction: any) => {
-        const returnStatus = transaction.return_status || 0
-        return returnStatus === 0 || returnStatus === 1
-      }
-    },
-    {
-      label: 'Full Return',
-      icon: <Undo2 className="w-4 h-4" />,
-      onClick: handleFullReturn,
-      className: 'text-green-400 hover:text-green-300',
-      title: 'Create Full Return',
-      enabled: (transaction: any) => {
-        const returnStatus = transaction.return_status || 0
-        return returnStatus === 0
-      }
-    }
-  ]
+  // Handle filter application
+  const handleApplyFilters = (filters: {
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+  }) => {
+    setCurrentFilters(filters);
+    // Reset to first page when applying filters
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  // Print individual sale
+  const handlePrintSale = (transaction: Sale) => {
+    console.log('Printing sale:', transaction.id);
+    // TODO: Implement print functionality (will print view page)
+    alert(`Print functionality for sale ${transaction.invoice_no} will be implemented`);
+  };
 
   return (
-    <div className="space-y-2">
-      {/* Header with Export Buttons */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleExportPDF}
-            className="btn-secondary flex items-center space-x-2"
-          >
-            <FileText className="w-4 h-4" />
-            <span>Export as PDF</span>
-          </button>
-          <button
-            onClick={handleExportExcel}
-            className="btn-secondary flex items-center space-x-2"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export as Excel</span>
-          </button>
+    <div className="space-y-6">
+      {error && (
+        <div className="card border-red-500 bg-red-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-red-400 text-lg">⚠️</span>
+              <div>
+                <div className="text-red-400 font-medium">Error loading sales</div>
+                <div className="text-red-300 text-sm">{error}</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="btn-secondary text-red-400 text-sm py-1 px-3"
+            >
+              ×
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* <button
-          onClick={() => router.push('/sale/create')}
-          className="btn-primary"
-        >
-          New Sales Invoice
-        </button> */}
-      </div>
-
-      {/* Filters */}
-      <div>
-        <TransactionFilters
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          transactionType="sale"
-          setTransactionType={() => {}} // Not used for sales page
-          customerVendorFilter={customerVendorFilter}
-          setCustomerVendorFilter={setCustomerVendorFilter}
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          dateFrom={dateFrom}
-          setDateFrom={setDateFrom}
-          dateTo={dateTo}
-          setDateTo={setDateTo}
-          amountMin={amountMin}
-          setAmountMin={setAmountMin}
-          amountMax={amountMax}
-          setAmountMax={setAmountMax}
-          limit={limit}
-          handleLimitChange={handleLimitChange}
-          clearFilters={clearFilters}
-          hideTransactionType={true}
-        />
-      </div>
-
-      {/* Sales Table */}
-      <TransactionTable
-        transactions={salesAsTransactions}
+      <SaleTable
+        sales={sales}
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}
-        onViewDetails={handleViewDetails}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        itemsPerPage={pagination.limit}
+        onItemsPerPageChange={handleLimitChange}
+        onExport={handleExport}
+        onApplyFilters={handleApplyFilters}
+        onViewDetails={() => {}} // Handled by Link in component
         onPrintDetails={handlePrintSale}
-        hideTypeColumn={true}
-        customActions={customActions}
+        onPartialReturn={handlePartialReturn}
+        onFullReturn={handleFullReturn}
+        actionButton={
+          <a
+            href="/sale/create"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+          >
+            Add New Invoice
+          </a>
+        }
       />
 
       {/* Confirmation Modal for Full Order Return */}
@@ -429,6 +436,13 @@ This will return all items in the sale order and cannot be undone.`}
         onCancel={cancelReturnWholeOrder}
       />
 
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
+      />
     </div>
-  )
+  );
 }

@@ -1,14 +1,11 @@
-// In pages/products/index.tsx
-
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useDebounce } from '../../hooks/useDebounce'; // CREATE and adjust path if needed
-import { ProductFilters } from '../../components/products/ProductFilters'; // Adjust path if needed
-import { ProductTable } from '../../components/products/ProductTable'; // Adjust path if needed
+import { ProductTable } from '../../components/products/ProductTable';
+import { subscribeBroadcast } from '../../lib/broadcast';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
-// Interfaces remain here, as they define the data shape for this page
 interface Product {
-  [x: string]: ReactNode;
   id: number;
   product_name: string;
   stock?: number;
@@ -19,104 +16,125 @@ interface Product {
   companyName?: string;
   subcategoryNames?: string;
   latestPurchaseRate?: number;
+  lastPurchaseDate?: string;
+  carModelsDisplay?: string;
+  subcategoryName?: string;
 }
+
 interface ProductResponse {
   products: Product[];
   pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean; };
 }
 
 export default function Products() {
-  // All state is managed in the parent "controller" component
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'product_name', label: 'Product Name', enabled: true },
+    { key: 'part_no', label: 'Part No', enabled: true },
+    { key: 'stock', label: 'Stock', enabled: true },
+    { key: 'rate', label: 'Rate', enabled: true },
+    { key: 'categoryName', label: 'Category', enabled: true },
+    { key: 'companyName', label: 'Company', enabled: true },
+  ];
+
   const [products, setProducts] = useState<Product[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-
-  // Filter states
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [subcategoryFilter, setSubcategoryFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState<string[]>([]); // NEW: car models filter array
-  const [companyFilter, setCompanyFilter] = useState('');
-  const [stockFilter, setStockFilter] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [filterOptions, setFilterOptions] = useState<{ categories: any[], subcategories: any[], companies: any[], models: any[] }>({ categories: [], subcategories: [], companies: [], models: [] }); // UPDATED: added models
+  const [currentFilters, setCurrentFilters] = useState<{
+    categoryFilter: string;
+    subcategoryFilter: string;
+    modelFilter: string[];
+    companyFilter: string;
+    stockFilter: string;
+    startDate: string;
+    endDate: string;
+    uidFilter: string;
+    partNoFilter: string;
+  }>({
+    categoryFilter: '',
+    subcategoryFilter: '',
+    modelFilter: [],
+    companyFilter: '',
+    stockFilter: 'all',
+    startDate: '',
+    endDate: '',
+    uidFilter: '',
+    partNoFilter: ''
+  });
 
-
-
-  // Apply the debounce hook to the search term
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-// Effect to fetch static filter options once on component mount
-  useEffect(() => {
-    fetchFilterOptions();
-  }, []);
-
-  const refreshFilterOptions = () => {
-    fetchFilterOptions();
-  };
-
-  // This effect handles resetting to page 1 ONLY when filters change
-  useEffect(() => {
-    // Don't run on initial mount
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm, categoryFilter, subcategoryFilter, modelFilter, companyFilter, stockFilter, startDate, endDate]) // ADDED: startDate, endDate
-
-
-  // This effect handles the actual data fetching whenever a dependency changes
+  // Fetch products when pagination, search, or filters change
   useEffect(() => {
     fetchProducts();
-  }, [
-    // Page & limit changes will trigger a refetch directly
-    pagination.page,
-    pagination.limit,
-    // Filter changes will trigger a refetch via the effect above which changes the page to 1
-    // and this effect will catch that page change.
-    // We keep them here as dependencies to ensure fetches happen correctly if the page is already 1.
-    debouncedSearchTerm,
-    categoryFilter,
-    subcategoryFilter,
-    modelFilter, // ADDED: car models filter
-    companyFilter,
-    stockFilter,
-    startDate,
-    endDate,
-  ]);
+  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
 
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) { console.error('Error fetching filter options:', error); }
-  };
+  // Listen for broadcast messages to refresh data when products are created/updated/deleted in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'products' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
+        console.log(`🔄 Product ${msg.type} in another tab, refreshing data...`);
+        fetchProducts();
+      }
+    });
+
+    return unsubscribe;
+  }, []);
 
   const fetchProducts = async () => {
-    setLoading(true);
     try {
+      setLoading(true);
+      setError(null);
+
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: debouncedSearchTerm, // Use the debounced value for the API call
-        category: categoryFilter,
-        subcategory: subcategoryFilter,
-        model: modelFilter.length > 0 ? modelFilter.join(',') : '', // FIXED: convert array to comma-separated string
-        company: companyFilter,
-        lowStock: stockFilter === 'low-stock' ? 'true' : 'false',
-        ...(startDate && { startDate }),
-        ...(endDate && { endDate }),
+        search: searchTerm,
+        // Add filter parameters
+        category: currentFilters.categoryFilter,
+        subcategory: currentFilters.subcategoryFilter,
+        model: currentFilters.modelFilter.join(','),
+        company_id: currentFilters.companyFilter,
+        lowStock: currentFilters.stockFilter === 'low' ? 'true' : 'false',
+        startDate: currentFilters.startDate,
+        endDate: currentFilters.endDate,
+        uid: currentFilters.uidFilter,
+        part_no: currentFilters.partNoFilter
       });
+
       const response = await fetch(`/api/products/optimized?${params}`);
-      if (response.ok) {
-        const data: ProductResponse = await response.json();
-        const startIndex = (data.pagination.page - 1) * data.pagination.limit;
-        const productsWithIndex = (data.products || []).map((p, idx) => ({ ...p, index: startIndex + idx + 1 }));
-        setProducts(productsWithIndex);
-        setPagination(data.pagination);
+      if (!response.ok) {
+        throw new Error('Failed to fetch products');
       }
-    } catch (error) {
-      console.error('Error fetching products:', error);
+
+      const data: ProductResponse = await response.json();
+
+      // Transform API data to match our interface
+      const transformedProducts: Product[] = (data.products || []).map((product: any) => ({
+        id: product.id,
+        product_name: product.product_name,
+        stock: product.stock,
+        min_stock: product.min_stock,
+        rate: product.rate,
+        part_no: product.part_no,
+        categoryName: product.categoryName,
+        companyName: product.companyName,
+        subcategoryNames: product.subcategoryNames,
+        latestPurchaseRate: product.latestPurchaseRate,
+        lastPurchaseDate: product.lastPurchaseDate,
+        carModelsDisplay: product.carModelsDisplay,
+        subcategoryName: product.subcategoryName
+      }));
+
+      setProducts(transformedProducts);
+      setPagination(data.pagination);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to fetch products:', err);
     } finally {
       setLoading(false);
     }
@@ -132,52 +150,133 @@ export default function Products() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setCategoryFilter('');
-    setSubcategoryFilter('');
-    setModelFilter([]); // FIXED: clear car models filter with empty array
-    setCompanyFilter('');
-    setStockFilter('all');
-    setStartDate('');
-    setEndDate('');
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Product Report',
+        fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, products, config);
+    } else {
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    const exportData = products.map(product => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = product.id;
+            break;
+          case 'product_name':
+            row['Product Name'] = product.product_name || '';
+            break;
+          case 'part_no':
+            row['Part No'] = product.part_no || '';
+            break;
+          case 'stock':
+            row.Stock = product.stock || 0;
+            break;
+          case 'rate':
+            row.Rate = product.rate || 0;
+            break;
+          case 'categoryName':
+            row.Category = product.categoryName || '';
+            break;
+          case 'companyName':
+            row.Company = product.companyName || '';
+            break;
+        }
+      });
+      return row;
+    });
+
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Product Report',
+      fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
+
+  // Handle filter application
+  const handleApplyFilters = (filters: {
+    categoryFilter: string;
+    subcategoryFilter: string;
+    modelFilter: string[];
+    companyFilter: string;
+    stockFilter: string;
+    startDate: string;
+    endDate: string;
+    uidFilter: string;
+    partNoFilter: string;
+  }) => {
+    setCurrentFilters(filters);
+    // Reset to first page when applying filters
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   return (
-    <div className="space-y-2">
-
-      <ProductFilters
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        categoryFilter={categoryFilter}
-        setCategoryFilter={setCategoryFilter}
-        subcategoryFilter={subcategoryFilter}
-        setSubcategoryFilter={setSubcategoryFilter}
-        modelFilter={modelFilter} // ADDED: car models filter
-        setModelFilter={setModelFilter} // ADDED: car models setter
-        companyFilter={companyFilter}
-        setCompanyFilter={setCompanyFilter}
-        stockFilter={stockFilter}
-        setStockFilter={setStockFilter}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-        limit={pagination.limit}
-        handleLimitChange={handleLimitChange}
-        clearFilters={clearFilters}
-        filterOptions={filterOptions}
-        refreshFilterOptions={refreshFilterOptions}
-      />
+    <div className="space-y-6">
+      {error && (
+        <div className="card border-red-500 bg-red-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-red-400 text-lg">⚠️</span>
+              <div>
+                <div className="text-red-400 font-medium">Error loading products</div>
+                <div className="text-red-300 text-sm">{error}</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="btn-secondary text-red-400 text-sm py-1 px-3"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       <ProductTable
         products={products}
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        itemsPerPage={pagination.limit}
+        onItemsPerPageChange={handleLimitChange}
+        onExport={handleExport}
+        onApplyFilters={handleApplyFilters}
+        actionButton={
+          <a
+            href="/products/create"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary"
+          >
+            Add Product
+          </a>
+        }
       />
 
-
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
+      />
     </div>
   );
 }

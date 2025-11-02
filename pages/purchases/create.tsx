@@ -1208,9 +1208,17 @@ export default function PurchaseCreate() {
           SessionStorageService.remove('purchases', editPurchaseId.toString());
         }
 
-        // Show success snackbar after modal closes and navigate
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditMode && window.opener) {
+          router.push('/purchases');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push('/purchases');
+        }
+
+        // Show success snackbar after navigation
         showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);
-        router.push('/purchases');
       } else {
         const error = await response.json();
         showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase`);
@@ -1563,21 +1571,11 @@ export default function PurchaseCreate() {
                       </td>
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
+                          mode="single"
                           options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
-                          selectedValues={productRowFilters.carModels}
-                          onSelectionChange={(values) => {
-                            // For purchase, only allow single car model selection
-                            let newSelection: string[];
-
-                            if (values.length === 0) {
-                              // Clear selection
-                              newSelection = [];
-                            } else {
-                              // Single selection - take only the first item (most recently selected)
-                              // Since SearchableMultiSelect calls onChange after each selection,
-                              // we get the array with all selected items, but we only want one
-                              newSelection = [values[values.length - 1]]; // Take the last selected item
-                            }
+                          selectedValue={productRowFilters.carModels.length > 0 ? productRowFilters.carModels[0] : null}
+                          onSelectionChange={(value) => {
+                            const newSelection = value ? [value] : [];
 
                             // Update car models in filters
                             setProductRowFilters(prev => ({
@@ -1587,9 +1585,8 @@ export default function PurchaseCreate() {
 
                             // Update the product name directly when car models change
                             if (selectedRowProduct) {
-                              if (newSelection.length > 0) {
-                                const selectedCarModelId = newSelection[0]; // Use the single selected model
-                                const selectedCarModel = filterOptions.models.find(model => model.id.toString() === selectedCarModelId);
+                              if (value) {
+                                const selectedCarModel = filterOptions.models.find(model => model.id.toString() === value);
 
                                 if (selectedCarModel) {
                                   // Parse product name format: category-subcategory-carModel-company
@@ -1607,9 +1604,6 @@ export default function PurchaseCreate() {
                                     } : null);
                                   }
                                 }
-                              } else {
-                                // No car model selected - could reset to original name, but let's keep the current behavior
-                                // for now as the original name is still accessible
                               }
                             }
                           }}

@@ -1598,11 +1598,18 @@ export default function InvoiceCreate() {
           SessionStorageService.remove('sales', editInvoiceId.toString());
         }
         setShowConfirmationModal(false);
-        // Navigate first
-        router.push('/sale').then(() => {
-          // Show snackbar *after* navigation succeeds
-          showSnackbar('success', `Invoice ${isEditMode ? 'updated' : 'created'} successfully!`);
-        });
+
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditMode && window.opener) {
+          router.push('/sale');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push('/sale');
+        }
+
+        // Show snackbar after navigation
+        showSnackbar('success', `Invoice ${isEditMode ? 'updated' : 'created'} successfully!`);
       } else {
         const error = await response.json();
         console.error('❌ API Error:', error);

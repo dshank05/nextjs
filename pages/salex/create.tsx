@@ -1281,7 +1281,17 @@ export default function InvoiceCCreate() {
           SessionStorageService.remove('salex', editInvoiceId.toString());
         }
         setShowConfirmationModal(false);
-        router.push('/salex');
+
+        // Close the current tab only if we opened it as a new tab for creation
+        // Don't close if we were navigated to editing from within the app
+        if (typeof window !== 'undefined' && !isEditMode && window.opener) {
+          router.push('/salex');
+          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        } else {
+          router.push('/salex');
+        }
+
+        // Show success snackbar after navigation
         showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
       } else {
         const error = await response.json();
