@@ -33,9 +33,10 @@ interface VendorTableProps {
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
+  onExport?: (exportType: 'excel' | 'pdf') => void;
 }
 
-export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
+export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton, onExport }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -98,11 +99,23 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
             </select>
           </div>
         </div>
-        {actionButton && (
-          <div className="flex-shrink-0">
-            {actionButton}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {onExport && (
+            <>
+              <button className="btn-secondary" onClick={() => onExport('excel')}>
+                📊 Export Excel
+              </button>
+              <button className="btn-secondary" onClick={() => onExport('pdf')}>
+                📄 Export PDF
+              </button>
+            </>
+          )}
+          {actionButton && (
+            <div className="flex-shrink-0">
+              {actionButton}
+            </div>
+          )}
+        </div>
       </div>
 
       {pagination && (
@@ -137,16 +150,9 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
             {sortedVendors.map((vendor, idx) => (
               <tr key={vendor.id} className="hover:bg-slate-800/30">
                 <td className="text-center font-semibold text-slate-400">{idx + 1}</td>
-                <td className="text-slate-500 text-sm font-mono">{vendor.id}</td>
+                <td className=" text-sm">{vendor.id}</td>
                 <td className="font-medium text-white">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-emerald-600/20 rounded-full flex items-center justify-center">
-                      <span className="text-emerald-300 text-sm font-semibold">
-                        {vendor.vendor_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <span>{vendor.vendor_name}</span>
-                  </div>
+                  {vendor.vendor_name}
                 </td>
                 <td className="text-slate-300">
                   {vendor.contact_no ? (
@@ -174,17 +180,15 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
                       ? 'bg-green-500/20 text-green-400'
                       : 'bg-red-500/20 text-red-400'
                   }`}>
-                    {vendor.status || 'Active'}
+                    {vendor?.status || ''}
                   </span>
                 </td>
                 <td>
-                  <Link
-                    href={`/vendors/view/${vendor.id}`}
-                    className="text-slate-400 hover:text-blue-400 transition-colors p-2 rounded hover:bg-slate-700/50"
-                    title="View Details"
-                  >
-                    <Eye className="w-4 h-4" />
-                  </Link>
+                  <div className="flex gap-1">
+                    <Link href={`/vendors/view/${vendor.id}`} className="text-slate-300 outline-none hover:text-blue-400 transition-colors text-xs py-1 px-3" title="View Details">
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}

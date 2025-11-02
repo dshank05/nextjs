@@ -42,9 +42,10 @@ interface CustomerTableProps {
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
+  onExport?: (exportType: 'excel' | 'pdf') => void;
 }
 
-export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
+export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton, onExport }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -107,11 +108,23 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
             </select>
           </div>
         </div>
-        {actionButton && (
-          <div className="flex-shrink-0">
-            {actionButton}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {onExport && (
+            <>
+              <button className="btn-secondary" onClick={() => onExport('excel')}>
+                📊 Export Excel
+              </button>
+              <button className="btn-secondary" onClick={() => onExport('pdf')}>
+                📄 Export PDF
+              </button>
+            </>
+          )}
+          {actionButton && (
+            <div className="flex-shrink-0">
+              {actionButton}
+            </div>
+          )}
+        </div>
       </div>
 
       {pagination && (
@@ -149,14 +162,7 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
                 <td className="text-center font-semibold text-slate-400">{idx + 1}</td>
                 <td className=" text-sm">{customer.id}</td>
                 <td className="font-medium text-white">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-600/20 rounded-full flex items-center justify-center">
-                      <span className="text-blue-300 text-sm font-semibold">
-                        {customer.billing_name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <span>{customer.billing_name}</span>
-                  </div>
+                  {customer.billing_name}
                 </td>
                 <td className="text-slate-300">
                   {customer.contact_no ? (
@@ -189,12 +195,12 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
                       ? 'bg-green-500/20 text-green-400'
                       : 'bg-red-500/20 text-red-400'
                   }`}>
-                    {customer.status || 'Active'}
+                    {customer?.status || ''}
                   </span>
                 </td>
                 <td>
                   <div className="flex gap-1">
-                    <Link href={`/customers/view/${customer.id}`} className="text-slate-300 outline-none hover:text-blue-400 transition-colors text-xs py-1 px-3 border border-slate-600 rounded hover:border-blue-400" title="View Details">
+                    <Link href={`/customers/view/${customer.id}`} className="text-slate-300 outline-none hover:text-blue-400 transition-colors text-xs py-1 px-3" title="View Details">
                       <Eye className="w-4 h-4" />
                     </Link>
                   </div>

@@ -3,6 +3,8 @@ import { useRouter } from 'next/router';
 import { useDebounce } from '../../hooks/useDebounce';
 import { CustomerTable } from '../../components/customer/CustomerTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
+import { useExport } from '../../hooks/useExport';
+import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Customer {
   id: number;
@@ -47,6 +49,86 @@ export default function CustomerDetailsPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Column definitions for export
+  const exportColumns = [
+    { key: 'id', label: 'ID', enabled: true },
+    { key: 'billing_name', label: 'Customer Name', enabled: true },
+    { key: 'contact_no', label: 'Contact Number', enabled: true },
+    { key: 'email', label: 'Email', enabled: true },
+    { key: 'billing_gstin', label: 'GSTIN', enabled: true },
+    { key: 'billing_city', label: 'City', enabled: true },
+    { key: 'billing_state', label: 'State', enabled: true },
+    { key: 'status', label: 'Status', enabled: true },
+  ];
+
+  // Export functionality
+  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
+
+  const handleExport = (exportType: 'excel' | 'pdf') => {
+    if (exportType === 'pdf') {
+      // For PDF, export current table view
+      const { exportToPDF } = require('../../lib/export-utils');
+      const config = {
+        title: 'Customer Details Report',
+        fileName: `Customer_Details_${new Date().toISOString().split('T')[0]}`
+      };
+      exportToPDF(document.querySelector('.table') as HTMLElement, customers, config);
+    } else {
+      // For Excel, show column selector
+      openColumnSelector();
+    }
+  };
+
+  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+    closeColumnSelector();
+
+    // Prepare data with selected columns
+    const exportData = customers.map(customer => {
+      const row: any = {};
+      selectedColumnKeys.forEach(key => {
+        switch (key) {
+          case 'id':
+            row.ID = customer.id;
+            break;
+          case 'billing_name':
+            row['Customer Name'] = customer.billing_name;
+            break;
+          case 'contact_no':
+            row['Contact Number'] = customer.contact_no || '';
+            break;
+          case 'email':
+            row.Email = customer.email || '';
+            break;
+          case 'billing_gstin':
+            row.GSTIN = customer.billing_gstin || '';
+            break;
+          case 'billing_city':
+            row.City = customer.billing_city || '';
+            break;
+          case 'billing_state':
+            row.State = customer.billing_state || '';
+            break;
+          case 'status':
+            row.Status = customer.status || '';
+            break;
+        }
+      });
+      return row;
+    });
+
+    // Export to Excel
+    const { exportToExcelGeneric } = require('../../lib/export-utils');
+    const config = {
+      title: 'Customer Details Report',
+      fileName: `Customer_Details_${new Date().toISOString().split('T')[0]}`
+    };
+    exportToExcelGeneric(exportData, config);
+  };
+
+  const cancelColumnSelection = () => {
+    closeColumnSelector();
+  };
 
   // Reset to page 1 when search changes
   useEffect(() => {
@@ -163,6 +245,7 @@ export default function CustomerDetailsPage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
+        onExport={handleExport}
         actionButton={
           <a
             href="/customers/create"
@@ -174,7 +257,16 @@ export default function CustomerDetailsPage() {
           </a>
         }
       />
-      {/* 
+
+      <ExportColumnSelector
+        isOpen={showColumnSelector}
+        title="Select Columns for Excel Export"
+        columns={exportColumns}
+        onConfirm={handleColumnSelection}
+        onCancel={cancelColumnSelection}
+      />
+
+      {/*
       {customers.length > 0 && !loading && (
         <div className="text-center text-sm text-slate-400 py-2">
           Total customers: <span className="font-semibold text-white">{customers.length}</span>
