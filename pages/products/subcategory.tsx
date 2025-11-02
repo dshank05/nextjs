@@ -29,6 +29,7 @@ export default function Subcategories() {
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [mainCategorySearchTerm, setMainCategorySearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<string>('subcategory_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
@@ -41,6 +42,7 @@ export default function Subcategories() {
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  const debouncedMainCategorySearchTerm = useDebounce(mainCategorySearchTerm, 300);
 
   // Column definitions for export
   const exportColumns = [
@@ -117,12 +119,12 @@ export default function Subcategories() {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
+  }, [debouncedSearchTerm, debouncedMainCategorySearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchCategories();
     fetchSubcategories();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, debouncedMainCategorySearchTerm, sortBy, sortOrder]);
 
   // Close category dropdown on outside click
   useEffect(() => {
@@ -182,6 +184,7 @@ export default function Subcategories() {
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: debouncedSearchTerm.trim(),
+        category_search: debouncedMainCategorySearchTerm.trim(),
         sortBy: sortBy,
         sortOrder: sortOrder,
       });
@@ -293,7 +296,17 @@ export default function Subcategories() {
     <div className="space-y-6">
       <div className="card">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
-          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
+          <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-2xl">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={mainCategorySearchTerm}
+                onChange={(e) => setMainCategorySearchTerm(e.target.value)}
+                className="input w-full"
+              />
+            </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
               <input

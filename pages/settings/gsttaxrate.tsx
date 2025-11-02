@@ -277,7 +277,7 @@ export default function GSTTaxRate() {
     { key: 'id', label: 'ID', enabled: true },
     { key: 'hsn_code', label: 'HSN Code', enabled: true },
     { key: 'rate', label: 'Rate (%)', enabled: true },
-    { key: 'applicable_for', label: 'Applicable For', enabled: true },
+    { key: 'applicable_for', label: 'Description', enabled: true },
     { key: 'status', label: 'Status', enabled: true },
   ];
 
@@ -317,7 +317,7 @@ export default function GSTTaxRate() {
             row['Rate (%)'] = rate.rate;
             break;
           case 'applicable_for':
-            row['Applicable For'] = rate.applicable_for;
+            row['Description'] = rate.applicable_for;
             break;
           case 'status':
             row.Status = rate.status;
@@ -407,7 +407,7 @@ export default function GSTTaxRate() {
                       Rate (%) {getSortIcon('rate')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('applicable_for')}>
-                      Applicable For {getSortIcon('applicable_for')}
+                      Description {getSortIcon('applicable_for')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
                       Status {getSortIcon('status')}
@@ -483,18 +483,17 @@ export default function GSTTaxRate() {
                 </div>
               )}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Applicable</label>
                 <input
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                   className="input w-full"
-                  placeholder="Enter rate description"
-                  required
+                  placeholder="Enter applicable information"
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Rate (%)</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Rate (%) *</label>
                 <input
                   type="number"
                   min="0"
@@ -508,7 +507,7 @@ export default function GSTTaxRate() {
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code *</label>
                 <input
                   type="text"
                   value={formData.hsn_code}
@@ -519,14 +518,13 @@ export default function GSTTaxRate() {
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Applicable For</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
                 <textarea
                   value={formData.applicable_for}
                   onChange={(e) => setFormData(prev => ({ ...prev, applicable_for: e.target.value }))}
                   className="input w-full"
                   rows={3}
-                  placeholder="Describe what this rate applies to"
-                  required
+                  placeholder="Enter rate description"
                 />
               </div>
 

@@ -4,7 +4,7 @@ import { prisma } from '../../../lib/db';
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id } = req.query;
+      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id, category_search = '' } = req.query;
 
       // Handle getting categories from product/category
       if (type === 'categories') {
@@ -71,6 +71,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Add category filter if provided
       if (category_id && category_id !== '') {
         where.category_id = parseInt(category_id as string);
+      }
+
+      // Add category search filter if provided
+      if (category_search && category_search !== '') {
+        where.category = {
+          category_name: { contains: category_search as string }
+        };
       }
 
       const total = await prisma.product_subcategory.count({ where });
