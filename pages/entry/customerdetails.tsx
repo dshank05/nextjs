@@ -7,6 +7,7 @@ import { subscribeBroadcast } from '../../lib/broadcast';
 interface Customer {
   id: number;
   billing_name: string;
+  status?: string;
   billing_address?: string;
   billing_address_2?: string;
   billing_city?: string;
@@ -93,6 +94,7 @@ export default function CustomerDetailsPage() {
       const transformedCustomers: Customer[] = data.customers?.map((customer: any) => ({
         id: parseInt(customer.id),
         billing_name: customer.billing_name,
+        status: customer.status,
         billing_address: customer.billing_address,
         billing_address_2: customer.billing_address_2,
         billing_city: customer.billing_city,

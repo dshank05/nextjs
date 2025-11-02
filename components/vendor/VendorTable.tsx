@@ -5,6 +5,7 @@ import { Eye } from 'lucide-react';
 interface Vendor {
   id: number;
   vendor_name: string;
+  status?: string;
   address?: string;
   address_2?: string;
   city?: string;
@@ -128,6 +129,7 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
               <th>Email Address</th>
               <th>GST ID</th>
               <th>City</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -165,6 +167,15 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
                 </td>
                 <td className="text-slate-300">
                   {vendor.city || '-'}
+                </td>
+                <td>
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    vendor.status === 'Active'
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {vendor.status || 'Active'}
+                  </span>
                 </td>
                 <td>
                   <Link

@@ -7,6 +7,7 @@ import { subscribeBroadcast } from '../../lib/broadcast';
 interface Vendor {
   id: number;
   vendor_name: string;
+  status?: string;
   address?: string;
   address_2?: string;
   contact_no?: string;
@@ -81,6 +82,7 @@ export default function VendorDetailsPage() {
       const transformedVendors: Vendor[] = data.vendors?.map((vendor: any) => ({
         id: parseInt(vendor.id),
         vendor_name: vendor.vendor_name,
+        status: vendor.status,
         address: vendor.address,
         address_2: vendor.address_2,
         tax_id: vendor.tax_id,

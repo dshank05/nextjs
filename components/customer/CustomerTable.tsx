@@ -5,6 +5,7 @@ import { Eye, Edit, Trash2 } from 'lucide-react';
 interface Customer {
   id: number;
   billing_name: string;
+  status?: string;
   // ===== BILLING ADDRESS FIELDS =====
   billing_address?: string;
   billing_address_2?: string;
@@ -138,6 +139,7 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
               <th>GSTIN</th>
               <th>City</th>
               <th>State</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -180,6 +182,15 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
                   {customer.billing_state ?
                     `${customer.billing_state}${customer.billing_state_code ? ` (${customer.billing_state_code})` : ''}` :
                     '-'}
+                </td>
+                <td>
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    customer.status === 'Active'
+                      ? 'bg-green-500/20 text-green-400'
+                      : 'bg-red-500/20 text-red-400'
+                  }`}>
+                    {customer.status || 'Active'}
+                  </span>
                 </td>
                 <td>
                   <div className="flex gap-1">
