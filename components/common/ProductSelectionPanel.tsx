@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Search, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from './SearchableMultiSelect';
 
@@ -62,6 +62,14 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     onSearchTermChange,
     onProductSelect,
 }) => {
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+        if (isOpen && inputRef.current) {
+            inputRef.current.focus();
+        }
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
     return (
@@ -92,6 +100,7 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
             <div className="flex flex-shrink-0 w-36items-center bg-slate-800 border border-slate-600 rounded">
               {/* <Search className="w-4 h-4 text-slate-400 ml-3" /> */}
               <input
+                ref={inputRef}
                 type="text"
                 placeholder="Search products..."
                 value={productSearchTerm}
@@ -129,7 +138,7 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                                         {/* First row: UID-Product Name-Part No | Stock */}
                                         <div className="flex justify-between items-center mb-2">
                                             <h4 className="text-slate-200 font-bold text-sm flex-1">
-                                                {product.id} - {product.product_name}  { '-  ' + product.part_no || ''}
+                                                {product.id} - {product.product_name}  { product?.part_no ? ' - [ ' +  product?.part_no + ' ] ' :''  }
                                             </h4>
                                             <div className="flex items-center ml-2 flex-shrink-0">
                                                 <span className="text-green-400 font-semibold text-sm mr-1">Stock:</span>
