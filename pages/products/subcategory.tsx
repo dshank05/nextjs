@@ -4,6 +4,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Category {
   id: number;
@@ -312,22 +313,20 @@ export default function Subcategories() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-2xl">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search categories..."
                 value={mainCategorySearchTerm}
                 onChange={(e) => setMainCategorySearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search subcategories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -486,11 +485,10 @@ export default function Subcategories() {
 
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory Name *</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.subcategory_name}
                   onChange={(e) => setFormData(prev => ({ ...prev, subcategory_name: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>

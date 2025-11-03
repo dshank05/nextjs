@@ -5,6 +5,7 @@ import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ClearableInput, ClearableTextarea } from '../../components/common';
 
 interface GSTTaxRate {
   id: number;
@@ -348,12 +349,11 @@ export default function GSTTaxRate() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -484,45 +484,41 @@ export default function GSTTaxRate() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Applicable</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter applicable information"
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Rate (%) *</label>
-                <input
+                <ClearableInput
                   type="number"
                   min="0"
                   max="100"
                   step="0.1"
                   value={formData.rate}
                   onChange={(e) => setFormData(prev => ({ ...prev, rate: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter GST rate"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code *</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.hsn_code}
                   onChange={(e) => setFormData(prev => ({ ...prev, hsn_code: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter HSN code"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
-                <textarea
+                <ClearableTextarea
                   value={formData.applicable_for}
                   onChange={(e) => setFormData(prev => ({ ...prev, applicable_for: e.target.value }))}
-                  className="input w-full"
                   rows={3}
                   placeholder="Enter rate description"
                 />

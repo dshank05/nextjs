@@ -5,6 +5,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface WarehouseRack {
   id: number;
@@ -401,12 +402,11 @@ export default function WarehouseRacks() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Warehouse Racks</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search racks..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -555,22 +555,20 @@ export default function WarehouseRacks() {
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Rack Number *</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.rack_number}
                   onChange={(e) => setFormData(prev => ({ ...prev, rack_number: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter rack number"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  className="input w-full"
                   placeholder="Optional description"
                 />
               </div>

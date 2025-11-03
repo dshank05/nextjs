@@ -5,6 +5,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Warehouse {
   id: number;
@@ -304,12 +305,11 @@ export default function Warehouse() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Warehouses</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search warehouses..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -432,21 +432,19 @@ export default function Warehouse() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Warehouse Name</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Location</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.location}
                   onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>

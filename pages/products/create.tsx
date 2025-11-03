@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
-import { Upload, Calculator, ChevronDown, X, Check } from 'lucide-react';
+import { Calculator } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { ClearableInput, ClearableTextarea } from '../../components/common';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { broadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
 
 interface ProductFormData {
@@ -13,6 +15,7 @@ interface ProductFormData {
   car_models: string[]; // Changed to array for multi-select
   company_id: string;
   part_no: string;
+  barcode: string; // Optional barcode field
   min_stock: string;
   opening_stock: string;
   opening_rate: string;
@@ -56,6 +59,7 @@ export default function ProductCreate() {
     car_models: [],
     company_id: '',
     part_no: '',
+    barcode: '',
     min_stock: '',
     opening_stock: '',
     opening_rate: '',
@@ -72,7 +76,9 @@ export default function ProductCreate() {
   });
 
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
+  const [barcodePreview, setBarcodePreview] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -99,9 +105,12 @@ export default function ProductCreate() {
     if (editId && typeof editId === 'string') {
       setIsEditing(true);
       setEditingProductId(parseInt(editId));
-      loadProductForEdit(parseInt(editId));
+      // Only load product data after GST rates are fetched
+      if (gstRates.length > 0) {
+        loadProductForEdit(parseInt(editId));
+      }
     }
-  }, [router.query.edit, filterOptions]);
+  }, [router.query.edit, filterOptions, gstRates]);
 
   // Fetch subcategories when category changes
   useEffect(() => {
@@ -143,7 +152,8 @@ export default function ProductCreate() {
       }
     } catch (error) { console.error('Error fetching warehouses:', error); }
   };
-
+  
+  
   const fetchGstRates = async () => {
     try {
       const response = await fetch('/api/gst-rates');
@@ -153,7 +163,6 @@ export default function ProductCreate() {
       }
     } catch (error) { console.error('Error fetching GST rates:', error); }
   };
-
   // Fetch subcategories based on selected category
   const fetchSubcategories = async (categoryId: string) => {
     if (!categoryId) {
@@ -226,17 +235,7 @@ export default function ProductCreate() {
     setFormData(prev => ({ ...prev, [field]: values }));
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setImageFile(file);
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImagePreview(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
+
 
   const calculateTotalAmount = () => {
     const stock = parseFloat(formData.opening_stock) || 0;
@@ -257,19 +256,37 @@ export default function ProductCreate() {
       if (response.ok) {
         const product = await response.json();
 
-        // Populate form with product data
+        // Find GST rate ID based on HSN code for proper form population
+        let gstRateId = '';
+        if (product.hsn && gstRates.length > 0) {
+          const matchingGstRate = gstRates.find(rate => rate.hsn_code === product.hsn);
+          if (matchingGstRate) {
+            gstRateId = matchingGstRate.id.toString();
+          } else {
+            // If no matching GST rate found, try to find one with the same rate percentage
+            const rateMatchingGstRate = gstRates.find(rate => rate.rate === product.gst_rate);
+            if (rateMatchingGstRate) {
+              gstRateId = rateMatchingGstRate.id.toString();
+              console.log(`Found GST rate by percentage: HSN "${product.hsn}" -> ${product.gst_rate}%`);
+            } else {
+              console.warn(`No GST rate found for HSN "${product.hsn}" or rate ${product.gst_rate}`);
+            }
+          }
+        }
 
+        // Populate form with product data
         setFormData({
           product_category: product.product_category_id?.toString() || '',
           product_subcategory: product.product_subcategory_id?.toString() || '',
           car_models: product.car_model_ids ? product.car_model_ids.split(',').map((id: string) => id.trim()) : [],
           company_id: product.company_id?.toString() || '',
           part_no: product.part_no || '',
+          barcode: product.barcode || '',
           min_stock: product.min_stock?.toString() || '',
           opening_stock: product.opening_stock?.toString() || '',
           opening_rate: product.opening_rate?.toString() || '',
           hsn: product.hsn || '',
-          gst_rate: product.gst_rate_id?.toString() || '',
+          gst_rate: gstRateId, // Use found GST rate ID
           warehouse: product.warehouse_id?.toString() || '', // Use original FK ID directly
           rack_id: product.rack_id?.toString() || '', // Use original FK ID directly
           rack_number: product.rack_number || '', // Direct text value
@@ -279,6 +296,14 @@ export default function ProductCreate() {
           discount: product.discount?.toString() || '',
           margin: product.margin?.toString() || '',
         });
+
+        // Set existing images for editing
+        if (product.pic) {
+          setImagePreview(product.pic); // Show existing image
+        }
+        if (product.barcode) {
+          setBarcodePreview(product.barcode); // Show existing barcode image
+        }
 
         // Load racks for the selected warehouse
         if (product.warehouse_id) {
@@ -350,9 +375,11 @@ export default function ProductCreate() {
       // Generate display name first
       const displayName = generateProductDisplay();
 
+      // Create FormData payload (reverted from JSON)
+      const formDataToSend = new FormData();
 
-      // Use foreign key IDs instead of names
-      const submitData = {
+      // Add product data as JSON string (same as before)
+      const productData = {
         product_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
@@ -378,16 +405,15 @@ export default function ProductCreate() {
         margin: formData.margin ? parseFloat(formData.margin) : null,
       };
 
+      formDataToSend.append('productData', JSON.stringify(productData));
 
       const url = isEditing && editingProductId ? `/api/products/${editingProductId}` : '/api/products';
       const method = isEditing && editingProductId ? 'PUT' : 'POST';
 
+      // Send FormData (no Content-Type header needed - browser sets it automatically)
       const response = await fetch(url, {
         method: method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submitData),
+        body: formDataToSend,
       });
 
       const responseData = await response.json();
@@ -395,13 +421,31 @@ export default function ProductCreate() {
       if (response.ok) {
         const action = isEditing ? 'updated' : 'created';
         showSnackbar('success', `Product ${action} successfully!`);
+
+        // Broadcast the change to refresh other tabs
+        if (isEditing && editingProductId) {
+          broadcast({
+            type: 'updated',
+            resource: 'products',
+            id: editingProductId
+          });
+        } else {
+          // Get the created product ID from response if available, otherwise don't include ID
+          const createdProductId = responseData.product?.id;
+          broadcast({
+            type: 'created',
+            resource: 'products',
+            id: createdProductId,
+            data: { name: displayName }
+          });
+        }
+
         setShowConfirmModal(false);
 
         // Close the current tab only if we opened it as a new tab for creation
         // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditing && window.opener) {
-          router.push('/products');
-          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        if (typeof window !== 'undefined' && !isEditing) {
+          window.close(); // Just close the window for new tabs
         } else {
           router.push(isEditing ? `/products/view/${editingProductId}` : '/products');
         }
@@ -424,120 +468,139 @@ export default function ProductCreate() {
     <div className="space-y-3">
       <div className="card">
         <form onSubmit={handleSubmit} className="p-3 space-y-3">
-        {/* Row 1: Image and Product Name */}
+        {/* Row 1: Image and Barcode Upload */}
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">IMAGE</label>
-              <div className="border-2 border-dashed border-slate-600 rounded-lg p-4 text-center">
-                {imagePreview ? (
-                  <div className="space-y-2">
-                    <img src={imagePreview} alt="Preview" className="w-32 h-32 object-cover rounded mx-auto" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImagePreview('');
-                      }}
-                      className="text-red-400 text-sm hover:text-red-300"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <Upload className="w-8 h-8 text-slate-400 mx-auto" />
-                    <div className="text-slate-400 text-sm">Click to upload image</div>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageChange}
-                      className="hidden"
-                      id="image-upload"
-                    />
-                    <label
-                      htmlFor="image-upload"
-                      className="text-blue-400 hover:text-blue-300 cursor-pointer text-sm"
-                    >
-                      Browse files
-                    </label>
-                  </div>
-                )}
-              </div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">PRODUCT IMAGE</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setImageFile(file);
+                    const reader = new FileReader();
+                    reader.onload = () => setImagePreview(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                className="input w-full"
+              />
+              {imagePreview && (
+                <img src={imagePreview} alt="Product Preview" className="w-20 h-20 object-cover mt-2 rounded border" />
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY OF PRODUCT NAME</label>
-              <div className="bg-slate-700 rounded p-3 text-sm text-slate-300 min-h-20">
-                {generateProductDisplay() || 'Complete product details to see display name'}
-              </div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">BARCODE IMAGE</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setBarcodeFile(file);
+                    const reader = new FileReader();
+                    reader.onload = () => setBarcodePreview(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                className="input w-full"
+              />
+              {barcodePreview && (
+                <img src={barcodePreview} alt="Barcode Preview" className="w-20 h-20 object-cover mt-2 rounded border bg-white" />
+              )}
             </div>
           </div>
         </div>
 
-        {/* Row 2: Basic Product Information */}
+        {/* Hidden Barcode Field - Auto-populated from image scanning */}
+        <input
+          type="hidden"
+          name="barcode"
+          value={formData.barcode}
+        />
+
+        {/* Product Information - 3 Columns Per Row */}
         <div className="mb-3 space-y-2">
           <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Product Information</h3>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
-              <SearchableSelect
-                options={filterOptions.categories.map(cat => ({ id: cat.id.toString(), name: cat.name }))}
-                selectedValue={formData.product_category}
-                onSelectionChange={(value) => handleInputChange('product_category', value || '')}
-                placeholder="Select Category"
-              />
-              {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
+          <div className="space-y-4">
+            {/* Row 1: Category | Sub Category | Car Models */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
+                <SearchableSelect
+                  options={filterOptions.categories.map(cat => ({ id: cat.id.toString(), name: cat.name }))}
+                  selectedValue={formData.product_category}
+                  onSelectionChange={(value) => handleInputChange('product_category', value || '')}
+                  placeholder="Select Category"
+                />
+                {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
+                <SearchableSelect
+                  options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
+                  selectedValue={formData.product_subcategory}
+                  onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
+                  placeholder={
+                    !formData.product_category
+                      ? "Please select a category first"
+                      : subcategoriesLoading
+                        ? "Loading subcategories..."
+                        : "Select Sub Category"
+                  }
+                  className={!formData.product_category || subcategoriesLoading ? "opacity-50 cursor-not-allowed" : ""}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
+                <SearchableMultiSelect
+                  options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
+                  selectedValues={formData.car_models}
+                  onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
+                  placeholder="Select car models..."
+                  closeOnSelect={false}
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
-              <SearchableSelect
-                options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
-                selectedValue={formData.product_subcategory}
-                onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
-                placeholder={
-                  !formData.product_category
-                    ? "Please select a category first"
-                    : subcategoriesLoading
-                      ? "Loading subcategories..."
-                      : "Select Sub Category"
-                }
-                className={!formData.product_category || subcategoriesLoading ? "opacity-50 cursor-not-allowed" : ""}
-              />
-            </div>
+            {/* Row 2: Company | Part Number | Display Name */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
+                <SearchableSelect
+                  options={filterOptions.companies.map(comp => ({ id: comp.id.toString(), name: comp.name }))}
+                  selectedValue={formData.company_id}
+                  onSelectionChange={(value) => handleInputChange('company_id', value || '')}
+                  placeholder="Select Company"
+                />
+                {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
-              <SearchableMultiSelect
-                options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
-                selectedValues={formData.car_models}
-                onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
-                placeholder="Select car models..."
-                closeOnSelect={false}
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
+                <ClearableInput
+                  type="text"
+                  value={formData.part_no}
+                  onChange={(e) => handleInputChange('part_no', e.target.value)}
+                  placeholder="Enter part number"
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
-              <SearchableSelect
-                options={filterOptions.companies.map(comp => ({ id: comp.id.toString(), name: comp.name }))}
-                selectedValue={formData.company_id}
-                onSelectionChange={(value) => handleInputChange('company_id', value || '')}
-                placeholder="Select Company"
-              />
-              {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
-              <input
-                type="text"
-                value={formData.part_no}
-                onChange={(e) => handleInputChange('part_no', e.target.value)}
-                className="input w-full"
-                placeholder="Enter part number"
-              />
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY NAME</label>
+                <input
+                  type="text"
+                  value={generateProductDisplay() || 'Complete product details to see display name'}
+                  className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                  readOnly
+                  disabled
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -548,36 +611,33 @@ export default function ProductCreate() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
-              <input
+              <ClearableInput
                 type="number"
                 step="0.01"
                 value={formData.mrp}
                 onChange={(e) => handleInputChange('mrp', e.target.value)}
-                className="input w-full"
                 placeholder="0.00"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
-              <input
+              <ClearableInput
                 type="number"
                 step="0.01"
                 value={formData.discount}
                 onChange={(e) => handleInputChange('discount', e.target.value)}
-                className="input w-full"
                 placeholder="0.00"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MARGIN</label>
-              <input
+              <ClearableInput
                 type="number"
                 step="0.01"
                 value={formData.margin}
                 onChange={(e) => handleInputChange('margin', e.target.value)}
-                className="input w-full"
                 placeholder="Profit margin in ₹"
               />
             </div>
@@ -675,22 +735,20 @@ export default function ProductCreate() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
-              <textarea
+              <ClearableTextarea
                 value={formData.descriptions}
                 onChange={(e) => handleInputChange('descriptions', e.target.value)}
                 rows={3}
-                className="input w-full"
                 placeholder="Enter product description"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
-              <textarea
+              <ClearableTextarea
                 value={formData.notes}
                 onChange={(e) => handleInputChange('notes', e.target.value)}
                 rows={3}
-                className="input w-full"
                 placeholder="Enter additional notes"
               />
             </div>
@@ -703,34 +761,31 @@ export default function ProductCreate() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
-              <input
+              <ClearableInput
                 type="number"
                 value={formData.min_stock}
                 onChange={(e) => handleInputChange('min_stock', e.target.value)}
-                className="input w-full"
                 placeholder="0"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
-              <input
+              <ClearableInput
                 type="number"
                 value={formData.opening_stock}
                 onChange={(e) => handleInputChange('opening_stock', e.target.value)}
-                className="input w-full"
                 placeholder="0"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">OPENING RATE</label>
-              <input
+              <ClearableInput
                 type="number"
                 step="0.01"
                 value={formData.opening_rate}
                 onChange={(e) => handleInputChange('opening_rate', e.target.value)}
-                className="input w-full"
                 placeholder="0.00"
               />
             </div>
@@ -795,7 +850,6 @@ export default function ProductCreate() {
       onConfirm={handleConfirmSubmit}
       onCancel={() => setShowConfirmModal(false)}
     />
-
-    </div>
+  </div>
   );
 }

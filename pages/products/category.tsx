@@ -4,6 +4,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Category {
   id: number;
@@ -243,12 +244,11 @@ export default function Categories() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Categories</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search categories..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -355,11 +355,10 @@ export default function Categories() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Category Name</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.category_name}
                   onChange={(e) => setFormData(prev => ({ ...prev, category_name: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>

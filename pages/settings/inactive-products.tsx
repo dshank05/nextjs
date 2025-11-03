@@ -3,6 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ClearableInput } from '../../components/common';
 
 interface Product {
   id: number;
@@ -184,12 +185,11 @@ export default function InactiveProducts() {
           <div className="flex items-end space-x-4">
             <div className="w-80">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Inactive Products</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search products..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div className="w-40">
@@ -204,9 +204,6 @@ export default function InactiveProducts() {
                 <option value="100">100</option>
               </select>
             </div>
-          </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
           </div>
         </div>
       </div>

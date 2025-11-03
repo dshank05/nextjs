@@ -6,8 +6,8 @@ import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
-import { subscribeBroadcast } from '../../lib/broadcast';
 
 
 interface Vendor {
@@ -226,7 +226,7 @@ export default function PurchaseCreate() {
     notes: '',
     total_tax: '',
     payment_status: 0,
-    payment_mode: 1
+    payment_mode: 0
     // grand_total: '' // @deprecated - calculated field, removed from payload
   });
 
@@ -633,8 +633,8 @@ export default function PurchaseCreate() {
       total_igst: purchase.total_igst?.toString() || '0',
       notes: purchase.notes || '',
       total_tax: purchase.total_tax?.toString() || '0',
-      payment_status: purchase.payment_status || purchase.status,
-      payment_mode: purchase.payment_mode,
+      payment_status: purchase.payment_status || purchase.status || 0,
+      payment_mode: purchase.payment_mode || 0,
     });
 
     // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
@@ -1123,19 +1123,17 @@ export default function PurchaseCreate() {
     setLoading(true);
 
     try {
-      const submitData = {
-        invoice_number: formData.invoice_number, // Always send invoice_number (required by API)
+      // ===== PAYLOAD CONSTRUCTION =====
+      // For PUT requests, exclude invoice_number since API identifies by ID, not invoice number
+      // For POST requests, include invoice_number as it's required for creation
+      const baseSubmitData = {
         bill_reference: formData.bill_reference,
         staff_id: formData.staff_id,
         date: formData.date,
         vendor_id: vendorIdToSave, // Only send vendor relationship ID
-        // Removed all vendor detail fields - they're only for UI display
-        transport_name: formData.transport_name, // Fixed: Send as 'transport_name' field
+        transport_name: formData.transport_name,
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
-        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-        // bill: formData.bill,
-        // tax: formData.tax,
         items: selectedProducts.map(item => {
           // Parse the stored IDs directly (they're already strings containing the IDs)
           const categoryId = item.category ? parseInt(item.category) : null;
@@ -1168,14 +1166,12 @@ export default function PurchaseCreate() {
           return {
             product_id: item.product_id,
             product_name: item.product_name,
-            category_id: categoryId, // ✅ Now properly parsed from stored string ID
-            subcategory_id: subcategoryId, // ✅ Now properly parsed from stored string ID
-            company_id: companyId, // ✅ Now properly parsed from stored string ID
-            model_id: modelId, // ✅ Now populated from selected car model or looked up from car_model
-            car_model: carModelNames || item.car_model || '', // ✅ Car model names for display
-            // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-            // hsn: '', // Will be fetched by API from product
-            part: item.part_number, // ✅ Use stored part number from item
+            category_id: categoryId,
+            subcategory_id: subcategoryId,
+            company_id: companyId,
+            model_id: modelId,
+            car_model: carModelNames || item.car_model || '',
+            part: item.part_number,
             qty: item.qty,
             rate: item.rate,
             gst_percentage: item.gst_percentage || 0,
@@ -1190,19 +1186,19 @@ export default function PurchaseCreate() {
         packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,
         packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0,
         packing_forwarding_total: parseFloat(formData.packing_forwarding_total) || 0,
-        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-        // tax_rate: parseFloat(formData.tax_rate) || 0,
-        // basic_value: parseFloat(formData.basic_value) || 0,
         total_cgst: parseFloat(formData.total_cgst) || 0,
         total_sgst: parseFloat(formData.total_sgst) || 0,
         total_igst: parseFloat(formData.total_igst) || 0,
         notes: formData.notes,
         total_tax: totalTax,
-        payment_status: formData.payment_status,
-        payment_mode: formData.payment_mode,
-        // ===== EXTRA FIELDS - COMMENTED OUT (CALCULATED FIELD NOT STORED) =====
-        // grand_total: grandTotal
+        payment_status: formData.payment_status || 0, 
+        payment_mode: formData.payment_mode || 0,    
       };
+
+      // Add invoice_number only for POST (creation), exclude from PUT (update)
+      const submitData = isEditMode
+        ? baseSubmitData  // PUT: No invoice_number needed
+        : { ...baseSubmitData, invoice_number: formData.invoice_number }; // POST: Include invoice_number
 
       const method = isEditMode ? 'PUT' : 'POST';
       const url = isEditMode ? `/api/purchases/${editPurchaseId}` : '/api/purchases';
@@ -1226,12 +1222,18 @@ export default function PurchaseCreate() {
 
         // Close the current tab only if we opened it as a new tab for creation
         // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditMode && window.opener) {
-          router.push('/purchases');
-          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        if (typeof window !== 'undefined' && !isEditMode) {
+          window.close(); // Just close the window for new tabs
         } else {
           router.push('/purchases');
         }
+
+        // Broadcast the creation/update event
+        broadcast({
+          type: isEditMode ? 'updated' : 'created',
+          resource: 'purchases',
+          data: { id: isEditMode ? editPurchaseId : (response as any).purchase?.id || (response as any).id }
+        });
 
         // Show success snackbar after navigation
         showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);

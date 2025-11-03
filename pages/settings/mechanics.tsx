@@ -5,6 +5,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Mechanic {
   id: number;
@@ -312,12 +313,11 @@ export default function MechanicDetails() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Mechanics</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search mechanics..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -447,11 +447,10 @@ export default function MechanicDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Full Name *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="input w-full"
                   required
                   placeholder="Enter mechanic's full name"
                 />
@@ -461,11 +460,10 @@ export default function MechanicDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Phone Number *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="input w-full"
                   required
                   maxLength={10}
                   placeholder="Enter phone number"
@@ -476,11 +474,10 @@ export default function MechanicDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   City
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.city}
                   onChange={(e) => setFormData(prev => ({ ...prev, city: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter city (optional)"
                 />
               </div>

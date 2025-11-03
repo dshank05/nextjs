@@ -4,6 +4,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Und
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { ClearableInput } from '../common';
 
 interface PurchaseItem {
   id: number;
@@ -326,7 +327,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         {/* UID Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
-          <input
+          <ClearableInput
             type="number"
             placeholder="Enter invoice no"
             value={uidFilter}
@@ -346,7 +347,6 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 });
               }
             }}
-            className="input w-full"
             min="1"
           />
         </div>
@@ -354,12 +354,11 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         {/* Search Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-          <input
+          <ClearableInput
             type="text"
             placeholder="Search purchases..."
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input w-full"
           />
         </div>
 
@@ -453,7 +452,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         {/* Amount Min */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <input
+          <ClearableInput
             type="number"
             placeholder="0"
             value={amountMin}
@@ -473,7 +472,6 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 });
               }
             }}
-            className="input w-full"
             min="0"
           />
         </div>
@@ -481,7 +479,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         {/* Amount Max */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <input
+          <ClearableInput
             type="number"
             placeholder="No limit"
             value={amountMax}
@@ -501,7 +499,6 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 });
               }
             }}
-            className="input w-full"
             min="0"
           />
         </div>

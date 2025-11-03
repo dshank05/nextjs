@@ -215,8 +215,7 @@ export default function CreateVendor() {
         // Close the current tab only if we opened it as a new tab for creation
         // Don't close if we were navigated to editing from within the app
         if (typeof window !== 'undefined' && !isEditing && window.opener) {
-          router.push('/entry/vendordetails');
-          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+          setTimeout(() => window.close(), 100);
         } else {
           router.push(isEditing ? `/vendors/view/${id}` : '/entry/vendordetails');
         }

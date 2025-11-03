@@ -4,6 +4,7 @@ import { Loader } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
+import { ClearableInput, ClearableTextarea } from '../../components/common';
 
 interface Customer {
   id: string;
@@ -1001,11 +1002,10 @@ export default function SaleReturnCreatePage() {
               <div className="grid grid-cols-1 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">RETURN NOTES</label>
-                  <textarea
+                  <ClearableTextarea
                     value={returnNotes}
                     onChange={(e) => setReturnNotes(e.target.value)}
                     rows={3}
-                    className="input w-full"
                     placeholder="Additional notes for the return"
                   />
                 </div>

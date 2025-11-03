@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface User {
@@ -248,12 +249,11 @@ export default function Users() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Users</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search users..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -376,31 +376,28 @@ export default function Users() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.username}
                   onChange={(e) => setFormData(prev => ({ ...prev, username: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
-                <input
+                <ClearableInput
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Phone</label>
-                <input
+                <ClearableInput
                   type="tel"
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter 10-digit phone number"
                   pattern="[0-9]{10}"
                   title="Phone number must be exactly 10 digits"

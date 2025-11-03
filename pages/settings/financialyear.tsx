@@ -5,6 +5,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { ClearableInput } from '../../components/common';
 
 interface FinancialYear {
   id: number;

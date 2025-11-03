@@ -5,6 +5,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
+import { ClearableInput } from '../common';
 
 interface Product {
   id: number;
@@ -256,7 +257,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         {/* UID Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">UID</label>
-          <input
+          <ClearableInput
             type="text"
             placeholder="Enter product ID..."
             value={uidFilter}
@@ -277,19 +278,17 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 });
               }
             }}
-            className="input w-full"
           />
         </div>
 
         {/* Search Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-          <input
+          <ClearableInput
             type="text"
             placeholder="Search products..."
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
-            className="input w-full"
           />
         </div>
 
@@ -417,7 +416,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         {/* Part No Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Part No</label>
-          <input
+          <ClearableInput
             type="text"
             placeholder="Enter part number..."
             value={partNoFilter}
@@ -438,7 +437,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 });
               }
             }}
-            className="input w-full"
           />
         </div>
       </div>

@@ -3,6 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface State {
@@ -234,12 +235,11 @@ export default function States() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">State Name</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search states..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -350,11 +350,10 @@ export default function States() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">State Name</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.state_name}
                   onChange={(e) => setFormData(prev => ({ ...prev, state_name: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter state name"
                   required
                 />

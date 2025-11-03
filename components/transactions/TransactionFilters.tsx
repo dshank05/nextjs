@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ClearableInput } from '../common';
 
 // Define the types for the props this component will receive
 interface TransactionFiltersProps {
@@ -111,12 +112,11 @@ export const TransactionFilters = ({
         {/* Search */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Search Invoice/Customer</label>
-          <input
+          <ClearableInput
             type="text"
             placeholder="Search transactions..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="input w-full"
           />
         </div>
 
@@ -225,12 +225,11 @@ export const TransactionFilters = ({
         {/* Amount Min */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <input
+          <ClearableInput
             type="number"
             placeholder="0"
             value={amountMin}
             onChange={(e) => setAmountMin(e.target.value)}
-            className="input w-full"
             min="0"
           />
         </div>
@@ -238,12 +237,11 @@ export const TransactionFilters = ({
         {/* Amount Max */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <input
+          <ClearableInput
             type="number"
             placeholder="No limit"
             value={amountMax}
             onChange={(e) => setAmountMax(e.target.value)}
-            className="input w-full"
             min="0"
           />
         </div>

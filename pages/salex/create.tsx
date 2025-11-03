@@ -7,7 +7,7 @@ import { ProductSelectionPanel } from '../../components/common/ProductSelectionP
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
-import { subscribeBroadcast } from '../../lib/broadcast';
+import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 
 interface Customer {
   id: string;
@@ -1307,12 +1307,18 @@ export default function InvoiceCCreate() {
 
         // Close the current tab only if we opened it as a new tab for creation
         // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditMode && window.opener) {
-          router.push('/salex');
-          setTimeout(() => window.close(), 100); // Small delay to let navigation happen first
+        if (typeof window !== 'undefined' && !isEditMode) {
+          window.close()
         } else {
           router.push('/salex');
         }
+
+        // Broadcast the creation/update event
+        broadcast({
+          type: isEditMode ? 'updated' : 'created',
+          resource: 'salex',
+          data: { id: isEditMode ? editInvoiceId : (response as any).salex?.id || (response as any).id }
+        });
 
         // Show success snackbar after navigation
         showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');

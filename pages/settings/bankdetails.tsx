@@ -5,6 +5,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface BankAccount {
   id: number;
@@ -266,12 +267,11 @@ export default function BankDetails() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Bank Accounts</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search bank accounts..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -383,41 +383,37 @@ export default function BankDetails() {
               )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Account Name</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.bank_name}
                   onChange={(e) => setFormData(prev => ({ ...prev, bank_name: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Account Number</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.account_number}
                   onChange={(e) => setFormData(prev => ({ ...prev, account_number: e.target.value }))}
-                  className="input w-full"
                   required
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Bank Name</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.bank_address}
                   onChange={(e) => setFormData(prev => ({ ...prev, bank_address: e.target.value }))}
-                  className="input w-full"
                   placeholder="Optional"
                 />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">IFSC Code</label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.ifsc}
                   onChange={(e) => setFormData(prev => ({ ...prev, ifsc: e.target.value }))}
-                  className="input w-full"
                   placeholder="Optional"
                 />
               </div>

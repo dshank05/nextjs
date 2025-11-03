@@ -5,6 +5,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ClearableInput } from '../../components/common';
 
 interface Staff {
   id: number;
@@ -321,12 +322,11 @@ export default function StaffDetails() {
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
               <label className="block text-sm font-medium text-slate-300 mb-2">Search Staff</label>
-              <input
+              <ClearableInput
                 type="text"
                 placeholder="Search staff..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
               />
             </div>
             <div>
@@ -457,11 +457,10 @@ export default function StaffDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Full Name *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  className="input w-full"
                   required
                   placeholder="Enter staff member's full name"
                 />
@@ -471,11 +470,10 @@ export default function StaffDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Phone Number *
                 </label>
-                <input
+                <ClearableInput
                   type="text"
                   value={formData.phone}
                   onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                  className="input w-full"
                   required
                   maxLength={10}
                   placeholder="Enter phone number"
@@ -486,11 +484,10 @@ export default function StaffDetails() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">
                   Email Address
                 </label>
-                <input
+                <ClearableInput
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  className="input w-full"
                   placeholder="Enter email address (optional)"
                 />
               </div>

@@ -5,6 +5,7 @@ import { Edit } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/ConfirmationModal';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
+import { formatBarcode } from '../../../lib/barcode-scanner';
 
 interface Product {
   id: number;
@@ -13,6 +14,8 @@ interface Product {
   min_stock?: number;
   rate?: number;
   part_no?: string;
+  barcode?: string;
+  pic?: string;
   categoryName?: string;
   companyName?: string;
   subcategoryName?: string;
@@ -185,11 +188,17 @@ export default function ProductView() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
           {/* Left: Image */}
           <div className="flex flex-col items-center justify-center">
-            <div className="w-48 h-32 bg-slate-600 rounded-xl flex items-center justify-center mb-4">
-              <div className="text-6xl">📦</div>
+            <div className="w-48 h-32 bg-slate-600 rounded-xl flex items-center justify-center mb-4 overflow-hidden">
+              {product.pic ? (
+                <img
+                  src={product.pic.startsWith('http') ? product.pic : `${window.location.origin}${product.pic}`}
+                  alt={product.product_name}
+                  className="w-full h-full object-cover rounded-xl"
+                />
+              ) : (
+                <div className="text-slate-400 font-medium">NO IMAGE FOUND</div>
+              )}
             </div>
-            <h3 className="text-lg font-semibold text-white mb-2">{product.product_name}</h3>
-            <p className="text-slate-400 text-sm mb-2">{product.categoryName} • {product.companyName}</p>
           </div>
 
           {/* Right: Key-Value Display + Actions */}
@@ -293,6 +302,10 @@ export default function ProductView() {
               <div className="flex justify-between">
                 <span className="text-slate-400">Part Number:</span>
                 <span className="text-white font-medium">{product.part_no || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Barcode:</span>
+                <span className="text-white font-mono text-sm">{product.barcode || 'NO BARCODE FOUND'}</span>
               </div>
             </div>
           </div>
