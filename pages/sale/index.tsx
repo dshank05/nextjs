@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { SaleTable } from '../../components/transactions/SaleTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Sale {
   id: number;
@@ -53,20 +51,10 @@ export default function SalePage() {
 
   // AbortController ref for cancelling pending requests
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Debounce timeout ref
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'invoice_no', label: 'Invoice No', enabled: true },
-    { key: 'customer_name', label: 'Customer Name', enabled: true },
-    { key: 'total', label: 'Total Amount', enabled: true },
-    { key: 'invoice_date', label: 'Invoice Date', enabled: true },
-    { key: 'payment_status', label: 'Payment Status', enabled: true },
-    { key: 'bill_reference', label: 'Bill Reference', enabled: true },
-  ];
 
   // Modal states for return confirmation
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -92,6 +80,8 @@ export default function SalePage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }>({
     customerFilter: '',
     statusFilter: 'all',
@@ -99,36 +89,62 @@ export default function SalePage() {
     dateTo: '',
     amountMin: '',
     amountMax: '',
-    uidFilter: ''
+    uidFilter: '',
+    sortBy: 'invoice_date',
+    sortOrder: 'desc'
   });
 
-  // Fetch sales when pagination, search, or filters change
+  // Debounced fetch function with abort controller
+  const debouncedFetchSales = useCallback(() => {
+    // Clear previous timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+
+    // Set new timeout for debounced execution
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchSales(abortControllerRef.current?.signal);
+    }, 300); // 300ms debounce delay
+  }, []);
+
+  // Fetch sales when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
-    fetchSales();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+    debouncedFetchSales();
+  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchSales]);
 
   // Listen for broadcast messages to refresh data when sales are created/updated/deleted in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'sales' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Sale ${msg.type} in another tab, refreshing data...`);
-        fetchSales();
+        debouncedFetchSales();
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [debouncedFetchSales]);
 
-  // Cleanup: Cancel any pending requests when component unmounts
+  // Cleanup: Cancel any pending requests and timeouts when component unmounts
   useEffect(() => {
     return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
   }, []);
 
-  const fetchSales = async () => {
+  const fetchSales = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
     try {
       // Cancel any pending request
       if (abortControllerRef.current) {
@@ -141,18 +157,24 @@ export default function SalePage() {
       setLoading(true);
       setError(null);
 
+      // Use override filters if provided, otherwise use current state
+      const filtersToUse = overrideFilters || currentFilters;
+
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
         // Add filter parameters
-        customer: currentFilters.customerFilter,
-        status: currentFilters.statusFilter,
-        dateFrom: currentFilters.dateFrom,
-        dateTo: currentFilters.dateTo,
-        amountMin: currentFilters.amountMin,
-        amountMax: currentFilters.amountMax,
-        uid: currentFilters.uidFilter
+        customer: filtersToUse.customerFilter,
+        status: filtersToUse.statusFilter,
+        dateFrom: filtersToUse.dateFrom,
+        dateTo: filtersToUse.dateTo,
+        amountMin: filtersToUse.amountMin,
+        amountMax: filtersToUse.amountMax,
+        uid: filtersToUse.uidFilter,
+        // Add sort parameters
+        sortBy: filtersToUse.sortBy || 'invoice_date',
+        sortOrder: filtersToUse.sortOrder || 'desc'
       });
 
       const response = await fetch(`/api/sales?${params}`, {
@@ -225,63 +247,7 @@ export default function SalePage() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Sale Report',
-        fileName: `Sale_Report_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, sales, config);
-    } else {
-      openColumnSelector();
-    }
-  };
 
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    const exportData = sales.map(sale => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = sale.id;
-            break;
-          case 'invoice_no':
-            row['Invoice No'] = sale.invoice_no;
-            break;
-          case 'customer_name':
-            row['Customer Name'] = sale.customer_name || '';
-            break;
-          case 'total':
-            row['Total Amount'] = sale.total;
-            break;
-          case 'invoice_date':
-            row['Invoice Date'] = sale.formattedDate || sale.invoice_date || '';
-            break;
-          case 'payment_status':
-            row['Payment Status'] = sale.payment_status === 1 ? 'Paid' : 'Unpaid';
-            break;
-          case 'bill_reference':
-            row['Bill Reference'] = sale.bill_reference || '';
-            break;
-        }
-      });
-      return row;
-    });
-
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Sale Report',
-      fileName: `Sale_Report_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   // Handle return actions
   const handlePartialReturn = (transaction: Sale) => {
@@ -359,10 +325,36 @@ export default function SalePage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => {
+    console.log('📥 Sales index handleApplyFilters received:', filters);
+
+    // Check if this is a sort operation (only sortBy/sortOrder changed)
+    const isSortOperation = (
+      filters.customerFilter === currentFilters.customerFilter &&
+      filters.statusFilter === currentFilters.statusFilter &&
+      filters.dateFrom === currentFilters.dateFrom &&
+      filters.dateTo === currentFilters.dateTo &&
+      filters.amountMin === currentFilters.amountMin &&
+      filters.amountMax === currentFilters.amountMax &&
+      filters.uidFilter === currentFilters.uidFilter &&
+      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
+    );
+
     setCurrentFilters(filters);
     // Reset to first page when applying filters
     setPagination(prev => ({ ...prev, page: 1 }));
+
+    // For sort operations, fetch immediately without debouncing
+    if (isSortOperation) {
+      console.log('🎯 Sort operation detected - fetching immediately');
+      fetchSales(undefined, filters);
+    } else {
+      console.log('🔄 Filter operation detected - using debounced fetch');
+      // For other filter changes, use debounced fetch
+      debouncedFetchSales();
+    }
   };
 
   // Print individual sale
@@ -403,7 +395,7 @@ export default function SalePage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={handleExport}
+        onExport={() => {}} // Export handled internally by SaleTable
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}} // Handled by Link in component
         onPrintDetails={handlePrintSale}
@@ -434,14 +426,6 @@ This will return all items in the sale order and cannot be undone.`}
         loadingText="Processing Return..."
         onConfirm={confirmReturnWholeOrder}
         onCancel={cancelReturnWholeOrder}
-      />
-
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
       />
     </div>
   );

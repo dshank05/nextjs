@@ -5,7 +5,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
-import { ClearableInput } from '../common';
+import { ClearableInput, ExportMenu } from '../common';
 
 interface Product {
   id: number;
@@ -53,11 +53,14 @@ interface ProductTableProps {
     subcategoryFilter: string;
     modelFilter: string[];
     companyFilter: string;
+    quantityFilter: string;
     stockFilter: string;
     startDate: string;
     endDate: string;
     uidFilter: string;
     partNoFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => void;
 }
 
@@ -77,16 +80,19 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   onExport,
   onApplyFilters
 }) => {
-  // Filter states
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [subcategoryFilter, setSubcategoryFilter] = useState('');
-  const [modelFilter, setModelFilter] = useState<string[]>([]);
-  const [companyFilter, setCompanyFilter] = useState('');
-  const [stockFilter, setStockFilter] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [uidFilter, setUidFilter] = useState('');
-  const [partNoFilter, setPartNoFilter] = useState('');
+  // Consolidated filter state
+  const [filters, setFilters] = useState({
+    categoryFilter: '',
+    subcategoryFilter: '',
+    modelFilter: [] as string[],
+    companyFilter: '',
+    quantityFilter: '',
+    stockFilter: 'all',
+    startDate: '',
+    endDate: '',
+    uidFilter: '',
+    partNoFilter: ''
+  });
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     subcategories: [],
@@ -100,8 +106,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   const [dynamicSubcategories, setDynamicSubcategories] = useState<{ id: string; subcategory_name: string; category_id?: number; index?: number }[]>([]);
   const [dynamicSubcategoriesLoading, setDynamicSubcategoriesLoading] = useState(false);
 
-  // Sorting states
-  const [sortBy, setSortBy] = useState<SortField>('id');
+  // Sorting states - now using backend sorting
+  const [sortBy, setSortBy] = useState<SortField>('categoryName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   // Debounced search
@@ -114,13 +120,13 @@ export const ProductTable: React.FC<ProductTableProps> = ({
 
   // Fetch dynamic subcategories when category changes
   useEffect(() => {
-    if (categoryFilter) {
-      fetchDynamicSubcategories(categoryFilter);
-      setSubcategoryFilter('');
+    if (filters.categoryFilter) {
+      fetchDynamicSubcategories(filters.categoryFilter);
+      setFilters(prev => ({ ...prev, subcategoryFilter: '' }));
     } else {
       setDynamicSubcategories([]);
     }
-  }, [categoryFilter]);
+  }, [filters.categoryFilter]);
 
   const fetchFilterOptions = async () => {
     try {
@@ -157,63 +163,23 @@ export const ProductTable: React.FC<ProductTableProps> = ({
 
 
 
-  // Sorting logic
+  // Sorting logic - now triggers API re-fetch
   const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
+    const newSortBy = field;
+    const newSortOrder = (sortBy === field && sortOrder === 'asc') ? 'desc' : 'asc';
+
+    setSortBy(newSortBy);
+    setSortOrder(newSortOrder);
+
+    // Trigger API re-fetch with new sort parameters
+    if (onApplyFilters) {
+      onApplyFilters({
+        ...filters,
+        sortBy: newSortBy,
+        sortOrder: newSortOrder
+      });
     }
   };
-
-  const sortedProducts = useMemo(() => {
-    return [...products].sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      switch (sortBy) {
-        case 'id':
-          aValue = a.id || 0;
-          bValue = b.id || 0;
-          break;
-        case 'categoryName':
-          aValue = a.categoryName?.toString().toLowerCase() || '';
-          bValue = b.categoryName?.toString().toLowerCase() || '';
-          break;
-        case 'companyName':
-          aValue = a.companyName?.toString().toLowerCase() || '';
-          bValue = b.companyName?.toString().toLowerCase() || '';
-          break;
-        case 'subcategoryName':
-          aValue = a.subcategoryName?.toString().toLowerCase() || '';
-          bValue = b.subcategoryName?.toString().toLowerCase() || '';
-          break;
-        case 'part_no':
-          aValue = a.part_no?.toString().toLowerCase() || '';
-          bValue = b.part_no?.toString().toLowerCase() || '';
-          break;
-        case 'stock':
-          aValue = a.stock || 0;
-          bValue = b.stock || 0;
-          break;
-        case 'rate':
-          aValue = a.latestPurchaseRate || a.rate || 0;
-          bValue = b.latestPurchaseRate || b.rate || 0;
-          break;
-        case 'lastPurchaseDate':
-          aValue = a.lastPurchaseDate || '';
-          bValue = b.lastPurchaseDate || '';
-          break;
-        default:
-          return 0;
-      }
-
-      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [products, sortBy, sortOrder]);
 
   const getSortIcon = (field: SortField) => {
     if (sortBy !== field) {
@@ -235,16 +201,24 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   return (
     <div className="card">
       <div className="flex items-center justify-end gap-2 mb-4">
-        {onExport && (
-          <>
-            <button className="btn-secondary" onClick={() => onExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => onExport('pdf')}>
-              📄 Export PDF
-            </button>
-          </>
-        )}
+        <ExportMenu
+          data={products}
+          columns={[
+            { key: 'id', label: 'ID', enabled: true },
+            { key: 'product_name', label: 'Product Name', enabled: true },
+            { key: 'categoryName', label: 'Category', enabled: true },
+            { key: 'subcategoryName', label: 'Subcategory', enabled: true },
+            { key: 'companyName', label: 'Company', enabled: true },
+            { key: 'part_no', label: 'Part Number', enabled: true },
+            { key: 'stock', label: 'Stock Quantity', enabled: true },
+            { key: 'rate', label: 'Rate', enabled: true },
+            { key: 'lastPurchaseDate', label: 'Last Purchase Date', enabled: true },
+          ]}
+          config={{
+            title: 'Product Report',
+            fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
+          }}
+        />
         {actionButton && (
           <div className="flex-shrink-0">
             {actionButton}
@@ -253,28 +227,24 @@ export const ProductTable: React.FC<ProductTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9 gap-4 mb-4">
         {/* UID Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">UID</label>
           <ClearableInput
             type="text"
             placeholder="Enter product ID..."
-            value={uidFilter}
+            value={filters.uidFilter}
             onChange={(e) => {
-              setUidFilter(e.target.value);
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, uidFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  categoryFilter,
-                  subcategoryFilter,
-                  modelFilter,
-                  companyFilter,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter: e.target.value,
-                  partNoFilter
+                  ...filters,
+                  uidFilter: newValue,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -300,22 +270,17 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               { id: '', name: 'All Categories' },
               ...filterOptions.categories
             ]}
-            selectedValue={categoryFilter}
+            selectedValue={filters.categoryFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setCategoryFilter(newValue);
+              setFilters(prev => ({ ...prev, categoryFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
+                  ...filters,
                   categoryFilter: newValue,
-                  subcategoryFilter,
-                  modelFilter,
-                  companyFilter,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter,
-                  partNoFilter
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -331,54 +296,49 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               { id: '', name: 'All Subcategories' },
               ...dynamicSubcategories.map(sub => ({ id: sub.id, name: sub.subcategory_name }))
             ]}
-            selectedValue={subcategoryFilter}
+            selectedValue={filters.subcategoryFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setSubcategoryFilter(newValue);
+              setFilters(prev => ({ ...prev, subcategoryFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  categoryFilter,
+                  ...filters,
                   subcategoryFilter: newValue,
-                  modelFilter,
-                  companyFilter,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter,
-                  partNoFilter
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
-            placeholder={categoryFilter ? (dynamicSubcategoriesLoading ? "Loading..." : "Select subcategory...") : "Select a category first"}
-            className={!categoryFilter ? 'opacity-50 cursor-not-allowed' : ''}
+            placeholder={filters.categoryFilter ? (dynamicSubcategoriesLoading ? "Loading..." : "Select subcategory...") : "Select a category first"}
+            disabled={!filters.categoryFilter}
           />
         </div>
 
         {/* Car Models Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Car Models</label>
-          <SearchableMultiSelect
-            options={filterOptions.models}
-            selectedValues={modelFilter}
-            onSelectionChange={(values) => {
-              setModelFilter(values);
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Car Models' },
+              ...filterOptions.models
+            ]}
+            selectedValue={filters.modelFilter.length > 0 ? filters.modelFilter[0] : ''}
+            onSelectionChange={(value) => {
+              const newValue = value || '';
+              const newModelFilter = newValue ? [newValue] : [];
+              setFilters(prev => ({ ...prev, modelFilter: newModelFilter }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  categoryFilter,
-                  subcategoryFilter,
-                  modelFilter: values,
-                  companyFilter,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter,
-                  partNoFilter
+                  ...filters,
+                  modelFilter: newModelFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
-            placeholder="Select car models..."
+            placeholder="Select car model..."
           />
         </div>
 
@@ -390,26 +350,45 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               { id: '', name: 'All Companies' },
               ...filterOptions.companies
             ]}
-            selectedValue={companyFilter}
+            selectedValue={filters.companyFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setCompanyFilter(newValue);
+              setFilters(prev => ({ ...prev, companyFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  categoryFilter,
-                  subcategoryFilter,
-                  modelFilter,
+                  ...filters,
                   companyFilter: newValue,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter,
-                  partNoFilter
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
             placeholder="Select company..."
+          />
+        </div>
+
+        {/* Quantity Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Quantity</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter quantity..."
+            value={filters.quantityFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, quantityFilter: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  quantityFilter: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
           />
         </div>
 
@@ -419,24 +398,43 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <ClearableInput
             type="text"
             placeholder="Enter part number..."
-            value={partNoFilter}
+            value={filters.partNoFilter}
             onChange={(e) => {
-              setPartNoFilter(e.target.value);
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, partNoFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  categoryFilter,
-                  subcategoryFilter,
-                  modelFilter,
-                  companyFilter,
-                  stockFilter,
-                  startDate,
-                  endDate,
-                  uidFilter,
-                  partNoFilter: e.target.value
+                  ...filters,
+                  partNoFilter: newValue,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
+          />
+        </div>
+
+        {/* Date Range Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
+          <DateRangeFilter
+            startDate={filters.startDate}
+            endDate={filters.endDate}
+            onDateChange={(start, end) => {
+              setFilters(prev => ({ ...prev, startDate: start, endDate: end }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  startDate: start,
+                  endDate: end,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            placeholder="Select date range..."
           />
         </div>
       </div>
@@ -482,12 +480,15 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
                 Rate {getSortIcon('rate')}
               </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('lastPurchaseDate')}>
+                Last Purchase Date {getSortIcon('lastPurchaseDate')}
+              </th>
 
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sortedProducts.map((product, idx) => (
+            {products.map((product, idx) => (
               <tr key={product.id}>
                 <td>{idx + 1}</td>
                 <td className="text-slate-400 text-sm">{product.id}</td>
@@ -499,7 +500,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                       {product.carModelsDisplay.split(', ').map((model: string, index: number) => (
                         <span
                           key={index}
-                          className="px-2 py-1 bg-blue-600/20 text-blue-300 text-xs rounded-full border border-blue-500/30"
+                          className="px-2 py-1 bg-blue-600/20 text-blue-300 rounded-full border border-blue-500/30"
                         >
                           {model.trim()}
                         </span>
@@ -513,6 +514,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 <td className="text-slate-300">{product.part_no || '-'}</td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
+                <td className="text-slate-300">{product.lastPurchaseDate || '-'}</td>
                 <td>
                   <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
                     <Eye className="w-4 h-4" />
@@ -523,7 +525,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           </tbody>
         </table>
 
-        {sortedProducts.length === 0 && !loading && (
+        {products.length === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No products found with the current filters.</div>
         )}
       </div>

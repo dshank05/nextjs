@@ -4,7 +4,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Und
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
-import { ClearableInput } from '../common';
+import { ClearableInput, ExportMenu } from '../common';
 
 interface SalexItem {
   id: number;
@@ -87,6 +87,8 @@ interface SalexTableProps {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => void;
   onViewDetails?: (salex: Salex) => void;
   onPrintDetails?: (salex: Salex) => void;
@@ -94,7 +96,7 @@ interface SalexTableProps {
   onFullReturn?: (salex: Salex) => void;
 }
 
-type SortField = 'invoice_no' | 'customer_vendor_name' | 'total' | 'invoice_date' | 'status';
+type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status';
 type SortOrder = 'asc' | 'desc';
 
 export const SalexTable: React.FC<SalexTableProps> = ({
@@ -166,7 +168,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
         dateTo,
         amountMin,
         amountMax,
-        uidFilter
+        uidFilter,
+        sortBy,
+        sortOrder
       });
     }
   };
@@ -188,69 +192,27 @@ export const SalexTable: React.FC<SalexTableProps> = ({
     (customer.name || customer.billing_name || '').toLowerCase().includes(customerSearch.toLowerCase())
   );
 
-  // Sorting logic
+  // Sorting logic - now uses backend sorting
   const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
+    const newSortOrder = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortBy(field);
+    setSortOrder(newSortOrder);
+
+    // Apply filters with new sort parameters
+    if (onApplyFilters) {
+      onApplyFilters({
+        customerFilter,
+        statusFilter,
+        dateFrom,
+        dateTo,
+        amountMin,
+        amountMax,
+        uidFilter,
+        sortBy: field,
+        sortOrder: newSortOrder
+      });
     }
   };
-
-  // Normalize date values for sorting
-  const normalizeDateValue = (dateValue: number | string): number => {
-    if (typeof dateValue === 'string') {
-      if (/^\d+$/.test(dateValue)) {
-        const timestamp = parseInt(dateValue);
-        if (timestamp > 1000000000) {
-          return timestamp;
-        }
-      }
-      const parsed = new Date(dateValue);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.getTime();
-      }
-      return 0;
-    }
-    return dateValue;
-  };
-
-  const sortedSalexs = useMemo(() => {
-    return [...salexs].sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      switch (sortBy) {
-        case 'invoice_no':
-          aValue = a.invoice_no;
-          bValue = b.invoice_no;
-          break;
-        case 'customer_vendor_name':
-          aValue = a.customer_vendor_name?.toString().toLowerCase() || '';
-          bValue = b.customer_vendor_name?.toString().toLowerCase() || '';
-          break;
-        case 'total':
-          aValue = a.total;
-          bValue = b.total;
-          break;
-        case 'invoice_date':
-          aValue = normalizeDateValue(a.invoice_date);
-          bValue = normalizeDateValue(b.invoice_date);
-          break;
-        case 'status':
-          aValue = a.status || 0;
-          bValue = b.status || 0;
-          break;
-        default:
-          return 0;
-      }
-
-      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [salexs, sortBy, sortOrder]);
 
   const getSortIcon = (field: SortField) => {
     if (sortBy !== field) {
@@ -305,16 +267,22 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   return (
     <div className="card">
       <div className="flex items-center justify-end gap-2 mb-4">
-        {onExport && (
-          <>
-            <button className="btn-secondary" onClick={() => onExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => onExport('pdf')}>
-              📄 Export PDF
-            </button>
-          </>
-        )}
+        <ExportMenu
+          data={salexs}
+          columns={[
+            { key: 'id', label: 'ID', enabled: true },
+            { key: 'invoice_no', label: 'Invoice No', enabled: true },
+            { key: 'customer_vendor_name', label: 'Customer Name', enabled: true },
+            { key: 'total', label: 'Total Amount', enabled: true },
+            { key: 'invoice_date', label: 'Invoice Date', enabled: true },
+            { key: 'payment_status', label: 'Payment Status', enabled: true },
+            { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+          ]}
+          config={{
+            title: 'Salex Report',
+            fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
+          }}
+        />
         {actionButton && (
           <div className="flex-shrink-0">
             {actionButton}
@@ -343,7 +311,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter: newValue
+                  uidFilter: newValue,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -386,7 +356,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -412,7 +384,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo: end,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -437,7 +411,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -468,7 +444,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo,
                   amountMin: newValue,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -495,7 +473,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax: newValue,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -527,8 +507,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                 Invoice No {getSortIcon('invoice_no')}
               </th>
               <th>Bill Ref</th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_vendor_name')}>
-                Customer {getSortIcon('customer_vendor_name')}
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_name')}>
+                Customer {getSortIcon('customer_name')}
               </th>
               <th>Items</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
@@ -538,14 +518,14 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                 Date {getSortIcon('invoice_date')}
               </th>
               <th>Payment Mode</th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                Status {getSortIcon('status')}
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
+                Status {getSortIcon('payment_status')}
               </th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sortedSalexs.map((salex, idx) => (
+            {salexs.map((salex, idx) => (
               <tr key={salex.id}>
                 <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td className="font-medium text-white">
@@ -610,7 +590,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           </tbody>
         </table>
 
-        {sortedSalexs.length === 0 && !loading && (
+        {salexs.length === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No salex found with the current filters.</div>
         )}
       </div>

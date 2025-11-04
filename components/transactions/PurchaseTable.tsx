@@ -4,7 +4,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Und
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
-import { ClearableInput } from '../common';
+import { ClearableInput, ExportMenu } from '../common';
 
 interface PurchaseItem {
   id: number;
@@ -87,14 +87,19 @@ interface PurchaseTableProps {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => void;
   onViewDetails?: (purchase: Purchase) => void;
   onPrintDetails?: (purchase: Purchase) => void;
   onPartialReturn?: (purchase: Purchase) => void;
   onFullReturn?: (purchase: Purchase) => void;
+  // Add sort state props to make this a controlled component
+  sortBy?: SortField;
+  sortOrder?: SortOrder;
 }
 
-type SortField = 'invoice_no' | 'customer_vendor_name' | 'total' | 'invoice_date' | 'status';
+type SortField = 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status';
 type SortOrder = 'asc' | 'desc';
 
 export const PurchaseTable: React.FC<PurchaseTableProps> = ({
@@ -112,7 +117,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   onViewDetails,
   onPrintDetails,
   onPartialReturn,
-  onFullReturn
+  onFullReturn,
+  sortBy: propSortBy = 'invoice_date',
+  sortOrder: propSortOrder = 'desc'
 }) => {
   // Filter states
   const [vendorFilter, setVendorFilter] = useState('');
@@ -128,9 +135,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   const [vendorSearch, setVendorSearch] = useState('');
   const [showVendorDropdown, setShowVendorDropdown] = useState(false);
 
-  // Sorting states
-  const [sortBy, setSortBy] = useState<SortField>('invoice_date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  // Use props for sorting state (controlled component)
+  const sortBy = propSortBy;
+  const sortOrder = propSortOrder;
 
   // Debounced search
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -166,7 +173,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         dateTo,
         amountMin,
         amountMax,
-        uidFilter
+        uidFilter,
+        sortBy,
+        sortOrder
       });
     }
   };
@@ -188,69 +197,30 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
     (vendor.name || vendor.vendor_name || '').toLowerCase().includes(vendorSearch.toLowerCase())
   );
 
-  // Sorting logic
+  // Sorting logic - now uses backend sorting
   const handleSort = (field: SortField) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
+    const newSortOrder = sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc';
+
+    console.log('🔄 PurchaseTable handleSort - Before:', { sortBy, sortOrder });
+    console.log('🔄 PurchaseTable handleSort - After:', { newSortBy: field, newSortOrder });
+
+    // Apply filters with new sort parameters (parent will update props)
+    if (onApplyFilters) {
+      const filterParams = {
+        vendorFilter,
+        statusFilter,
+        dateFrom,
+        dateTo,
+        amountMin,
+        amountMax,
+        uidFilter,
+        sortBy: field,
+        sortOrder: newSortOrder
+      };
+      console.log('📤 PurchaseTable calling onApplyFilters with:', filterParams);
+      onApplyFilters(filterParams);
     }
   };
-
-  // Normalize date values for sorting
-  const normalizeDateValue = (dateValue: number | string): number => {
-    if (typeof dateValue === 'string') {
-      if (/^\d+$/.test(dateValue)) {
-        const timestamp = parseInt(dateValue);
-        if (timestamp > 1000000000) {
-          return timestamp;
-        }
-      }
-      const parsed = new Date(dateValue);
-      if (!isNaN(parsed.getTime())) {
-        return parsed.getTime();
-      }
-      return 0;
-    }
-    return dateValue;
-  };
-
-  const sortedPurchases = useMemo(() => {
-    return [...purchases].sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-      switch (sortBy) {
-        case 'invoice_no':
-          aValue = a.invoice_no;
-          bValue = b.invoice_no;
-          break;
-        case 'customer_vendor_name':
-          aValue = a.customer_vendor_name?.toString().toLowerCase() || '';
-          bValue = b.customer_vendor_name?.toString().toLowerCase() || '';
-          break;
-        case 'total':
-          aValue = a.total;
-          bValue = b.total;
-          break;
-        case 'invoice_date':
-          aValue = normalizeDateValue(a.invoice_date);
-          bValue = normalizeDateValue(b.invoice_date);
-          break;
-        case 'status':
-          aValue = a.status || 0;
-          bValue = b.status || 0;
-          break;
-        default:
-          return 0;
-      }
-
-      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [purchases, sortBy, sortOrder]);
 
   const getSortIcon = (field: SortField) => {
     if (sortBy !== field) {
@@ -305,16 +275,22 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   return (
     <div className="card">
       <div className="flex items-center justify-end gap-2 mb-4">
-        {onExport && (
-          <>
-            <button className="btn-secondary" onClick={() => onExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => onExport('pdf')}>
-              📄 Export PDF
-            </button>
-          </>
-        )}
+        <ExportMenu
+          data={purchases}
+          columns={[
+            { key: 'id', label: 'ID', enabled: true },
+            { key: 'invoice_no', label: 'Invoice No', enabled: true },
+            { key: 'customer_vendor_name', label: 'Vendor Name', enabled: true },
+            { key: 'total', label: 'Total Amount', enabled: true },
+            { key: 'invoice_date', label: 'Invoice Date', enabled: true },
+            { key: 'payment_status', label: 'Payment Status', enabled: true },
+            { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+          ]}
+          config={{
+            title: 'Purchase Report',
+            fileName: `Purchase_Report_${new Date().toISOString().split('T')[0]}`
+          }}
+        />
         {actionButton && (
           <div className="flex-shrink-0">
             {actionButton}
@@ -343,7 +319,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter: newValue
+                  uidFilter: newValue,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -386,7 +364,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -412,7 +392,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo: end,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -437,7 +419,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -468,7 +452,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo,
                   amountMin: newValue,
                   amountMax,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -495,7 +481,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   dateTo,
                   amountMin,
                   amountMax: newValue,
-                  uidFilter
+                  uidFilter,
+                  sortBy,
+                  sortOrder
                 });
               }
             }}
@@ -527,8 +515,8 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 Invoice No {getSortIcon('invoice_no')}
               </th>
               <th>Bill Ref</th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_vendor_name')}>
-                Vendor {getSortIcon('customer_vendor_name')}
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('vendor_name')}>
+                Vendor {getSortIcon('vendor_name')}
               </th>
               <th>Items</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
@@ -538,14 +526,14 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 Date {getSortIcon('invoice_date')}
               </th>
               <th>Payment Mode</th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                Status {getSortIcon('status')}
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
+                Status {getSortIcon('payment_status')}
               </th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {sortedPurchases.map((purchase, idx) => (
+            {purchases.map((purchase, idx) => (
               <tr key={purchase.id}>
                 <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td className="font-medium text-white">
@@ -610,7 +598,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
           </tbody>
         </table>
 
-        {sortedPurchases.length === 0 && !loading && (
+        {purchases.length === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No purchases found with the current filters.</div>
         )}
       </div>

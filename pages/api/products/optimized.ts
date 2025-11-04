@@ -63,15 +63,23 @@ async function handler(
       subcategory = '', // Filters actual subcategories
       model = '', // NEW: Filters car models (comma-separated IDs)
       company_id = '',
+      quantity = '', // NEW: Filter by exact quantity/stock
       lowStock = 'false',
       startDate = '',
       endDate = '',
       uid = '', // NEW: Filter by product ID
-      part_no = '' // NEW: Filter by part number
+      part_no = '', // NEW: Filter by part number
+      sortBy = 'categoryName', // NEW: Sort field (default: categoryName)
+      sortOrder = 'asc' // NEW: Sort order (default: asc)
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
+
+    // Validate and set sort parameters
+    const validSortFields = ['id', 'product_name', 'part_no', 'stock', 'rate', 'lastPurchaseDate', 'categoryName', 'companyName', 'subcategoryName']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'categoryName'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // Parse date filters - convert to Unix timestamps for comparison with last_purchase_date
     let startDateTimestamp: number | undefined
@@ -95,7 +103,7 @@ async function handler(
     }
 
     // Handle complex filtering that requires post-processing
-    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '') || (model && model !== '') || (startDateTimestamp || endDateTimestamp)
+    const needsPostFiltering = lowStock === 'true' || (subcategory && subcategory !== '') || (model && model !== '') || (startDateTimestamp || endDateTimestamp) || (quantity && quantity !== '')
 
     if (needsPostFiltering) {
       // For complex filters, get all matching products first
@@ -163,11 +171,45 @@ async function handler(
         orderBy: { id: 'desc' },
       })
 
+      // Create lookup maps for sorting (needed for category/company/subcategory names)
+      const categoryIds = Array.from(new Set(allProducts.map(p => p.product_category_id).filter(Boolean)))
+      const subcategoryIds = Array.from(new Set(allProducts.map(p => p.product_subcategory_id).filter(Boolean)))
+      const companyIds = Array.from(new Set(allProducts.map(p => p.company_id).filter(Boolean)))
+
+      const [categoryRecords, subcategoryRecords, companyRecords] = await Promise.all([
+        categoryIds.length > 0 ? prisma.product_category.findMany({
+          where: { id: { in: categoryIds } },
+          select: { id: true, category_name: true }
+        }) : Promise.resolve([]),
+        subcategoryIds.length > 0 ? prisma.product_subcategory.findMany({
+          where: { id: { in: subcategoryIds } },
+          select: { id: true, subcategory_name: true }
+        }) : Promise.resolve([]),
+        companyIds.length > 0 ? prisma.product_company.findMany({
+          where: { id: { in: companyIds } },
+          select: { id: true, company_name: true }
+        }) : Promise.resolve([])
+      ]);
+
+      const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.category_name]));
+      const subcategoryMap = new Map(subcategoryRecords.map(sub => [sub.id, sub.subcategory_name]));
+      const companyMap = new Map(companyRecords.map(comp => [comp.id.toString(), comp.company_name]));
+
       // Apply post-filters
       if (lowStock === 'true') {
         allProducts = allProducts.filter((product: any) =>
           (product.stock || 0) < (product.min_stock || 0) || (product.stock || 0) < 2
         )
+      }
+
+      // Apply quantity filter (exact stock match)
+      if (quantity && quantity !== '') {
+        const quantityNum = parseInt(quantity as string);
+        if (!isNaN(quantityNum)) {
+          allProducts = allProducts.filter((product: any) =>
+            (product.stock || 0) === quantityNum
+          );
+        }
       }
 
       // Apply date filtering as post-filter if needed (for products without last_purchase_date)
@@ -209,7 +251,66 @@ async function handler(
         }
       }
 
-      // Apply pagination after filtering
+      // Apply sorting before pagination
+      allProducts.sort((a, b) => {
+        let aValue: any;
+        let bValue: any;
+
+        // Get enhanced data for sorting (we need category names, etc.)
+        const aCategoryName = a.product_category_id ? categoryMap.get(a.product_category_id) || '' : '';
+        const bCategoryName = b.product_category_id ? categoryMap.get(b.product_category_id) || '' : '';
+        const aCompanyName = a.company_id ? companyMap.get(a.company_id.toString()) || '' : '';
+        const bCompanyName = b.company_id ? companyMap.get(b.company_id.toString()) || '' : '';
+        const aSubcategoryName = a.product_subcategory_id ? subcategoryMap.get(a.product_subcategory_id) || '' : '';
+        const bSubcategoryName = b.product_subcategory_id ? subcategoryMap.get(b.product_subcategory_id) || '' : '';
+
+        switch (sortField) {
+          case 'id':
+            aValue = a.id || 0;
+            bValue = b.id || 0;
+            break;
+          case 'product_name':
+            aValue = a.product_name?.toString().toLowerCase() || '';
+            bValue = b.product_name?.toString().toLowerCase() || '';
+            break;
+          case 'part_no':
+            aValue = a.part_no?.toString().toLowerCase() || '';
+            bValue = b.part_no?.toString().toLowerCase() || '';
+            break;
+          case 'stock':
+            aValue = a.stock || 0;
+            bValue = b.stock || 0;
+            break;
+          case 'rate':
+            aValue = a.opening_rate || 0;
+            bValue = b.opening_rate || 0;
+            break;
+          case 'lastPurchaseDate':
+            aValue = a.last_purchase_date || 0;
+            bValue = b.last_purchase_date || 0;
+            break;
+          case 'categoryName':
+            aValue = aCategoryName.toLowerCase();
+            bValue = bCategoryName.toLowerCase();
+            break;
+          case 'companyName':
+            aValue = aCompanyName.toLowerCase();
+            bValue = bCompanyName.toLowerCase();
+            break;
+          case 'subcategoryName':
+            aValue = aSubcategoryName.toLowerCase();
+            bValue = bSubcategoryName.toLowerCase();
+            break;
+          default:
+            return 0;
+        }
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
+
+      // Apply pagination after filtering and sorting
       const skip = (pageNum - 1) * limitNum
       const products = allProducts.slice(skip, skip + limitNum)
       const total = allProducts.length
@@ -292,6 +393,34 @@ async function handler(
         }
       }
 
+      // Build orderBy based on sort field
+      let orderBy: any;
+      if (sortField === 'categoryName') {
+        // Special handling for category sorting - need to join
+        orderBy = {
+          category_ref: {
+            category_name: sortDirection
+          }
+        };
+      } else if (sortField === 'companyName') {
+        // Special handling for company sorting - need to join
+        orderBy = {
+          product_company_ref: {
+            company_name: sortDirection
+          }
+        };
+      } else if (sortField === 'subcategoryName') {
+        // Special handling for subcategory sorting - need to join
+        orderBy = {
+          subcategory_ref: {
+            subcategory_name: sortDirection
+          }
+        };
+      } else {
+        // Direct field sorting
+        orderBy = { [sortField]: sortDirection };
+      }
+
       // Get products with efficient pagination (only active products)
       const [products, total] = await Promise.all([
         prisma.product.findMany({
@@ -301,7 +430,10 @@ async function handler(
           },
           skip,
           take: limitNum,
-          orderBy: { id: 'desc' },
+          orderBy,
+          include: sortField === 'categoryName' ? { category_ref: true } :
+                  sortField === 'companyName' ? { product_company_ref: true } :
+                  sortField === 'subcategoryName' ? { subcategory_ref: true } : undefined,
         }),
         prisma.product.count({
           where: {

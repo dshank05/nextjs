@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { PurchaseTable } from '../../components/transactions/PurchaseTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Purchase {
   id: number;
@@ -53,20 +51,10 @@ export default function PurchasesPage() {
 
   // AbortController ref for cancelling pending requests
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Debounce timeout ref
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'invoice_no', label: 'Invoice No', enabled: true },
-    { key: 'vendor_name', label: 'Vendor Name', enabled: true },
-    { key: 'total', label: 'Total Amount', enabled: true },
-    { key: 'invoice_date', label: 'Invoice Date', enabled: true },
-    { key: 'payment_status', label: 'Payment Status', enabled: true },
-    { key: 'bill_reference', label: 'Bill Reference', enabled: true },
-  ];
 
   // Modal states for return confirmation
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -92,6 +80,8 @@ export default function PurchasesPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }>({
     vendorFilter: '',
     statusFilter: 'all',
@@ -99,36 +89,62 @@ export default function PurchasesPage() {
     dateTo: '',
     amountMin: '',
     amountMax: '',
-    uidFilter: ''
+    uidFilter: '',
+    sortBy: 'invoice_date',
+    sortOrder: 'desc'
   });
 
-  // Fetch purchases when pagination, search, or filters change
+  // Debounced fetch function with abort controller
+  const debouncedFetchPurchases = useCallback(() => {
+    // Clear previous timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+
+    // Set new timeout for debounced execution
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchPurchases(abortControllerRef.current?.signal);
+    }, 300); // 300ms debounce delay
+  }, []);
+
+  // Fetch purchases when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
-    fetchPurchases();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+    debouncedFetchPurchases();
+  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchPurchases]);
 
   // Listen for broadcast messages to refresh data when purchases are created/updated/deleted in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'purchases' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Purchase ${msg.type} in another tab, refreshing data...`);
-        fetchPurchases();
+        debouncedFetchPurchases();
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [debouncedFetchPurchases]);
 
-  // Cleanup: Cancel any pending requests when component unmounts
+  // Cleanup: Cancel any pending requests and timeouts when component unmounts
   useEffect(() => {
     return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
   }, []);
 
-  const fetchPurchases = async () => {
+  const fetchPurchases = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
     try {
       // Cancel any pending request
       if (abortControllerRef.current) {
@@ -141,19 +157,28 @@ export default function PurchasesPage() {
       setLoading(true);
       setError(null);
 
+      // Use override filters if provided, otherwise use current state
+      const filtersToUse = overrideFilters || currentFilters;
+
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
         // Add filter parameters
-        vendor: currentFilters.vendorFilter,
-        status: currentFilters.statusFilter,
-        startDate: currentFilters.dateFrom,
-        endDate: currentFilters.dateTo,
-        amountMin: currentFilters.amountMin,
-        amountMax: currentFilters.amountMax,
-        uid: currentFilters.uidFilter
+        vendor: filtersToUse.vendorFilter,
+        status: filtersToUse.statusFilter,
+        startDate: filtersToUse.dateFrom,
+        endDate: filtersToUse.dateTo,
+        amountMin: filtersToUse.amountMin,
+        amountMax: filtersToUse.amountMax,
+        uid: filtersToUse.uidFilter,
+        // Add sort parameters
+        sortBy: filtersToUse.sortBy || 'invoice_date',
+        sortOrder: filtersToUse.sortOrder || 'desc'
       });
+
+      console.log('🚀 Purchases fetchPurchases - API call with params:', Object.fromEntries(params));
+      console.log('🚀 Purchases fetchPurchases - filters used:', filtersToUse);
 
       const response = await fetch(`/api/purchases?${params}`, {
         signal: abortControllerRef.current.signal
@@ -225,63 +250,7 @@ export default function PurchasesPage() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Purchase Report',
-        fileName: `Purchase_Report_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, purchases, config);
-    } else {
-      openColumnSelector();
-    }
-  };
 
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    const exportData = purchases.map(purchase => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = purchase.id;
-            break;
-          case 'invoice_no':
-            row['Invoice No'] = purchase.invoice_no;
-            break;
-          case 'vendor_name':
-            row['Vendor Name'] = purchase.vendor_name || '';
-            break;
-          case 'total':
-            row['Total Amount'] = purchase.total;
-            break;
-          case 'invoice_date':
-            row['Invoice Date'] = purchase.formattedDate || purchase.invoice_date || '';
-            break;
-          case 'payment_status':
-            row['Payment Status'] = purchase.payment_status === 1 ? 'Paid' : 'Unpaid';
-            break;
-          case 'bill_reference':
-            row['Bill Reference'] = purchase.bill_reference || '';
-            break;
-        }
-      });
-      return row;
-    });
-
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Purchase Report',
-      fileName: `Purchase_Report_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   // Handle return actions
   const handlePartialReturn = (transaction: Purchase) => {
@@ -369,10 +338,36 @@ export default function PurchasesPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => {
+    console.log('📥 Purchases index handleApplyFilters received:', filters);
+
+    // Check if this is a sort operation (only sortBy/sortOrder changed)
+    const isSortOperation = (
+      filters.vendorFilter === currentFilters.vendorFilter &&
+      filters.statusFilter === currentFilters.statusFilter &&
+      filters.dateFrom === currentFilters.dateFrom &&
+      filters.dateTo === currentFilters.dateTo &&
+      filters.amountMin === currentFilters.amountMin &&
+      filters.amountMax === currentFilters.amountMax &&
+      filters.uidFilter === currentFilters.uidFilter &&
+      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
+    );
+
     setCurrentFilters(filters);
     // Reset to first page when applying filters
     setPagination(prev => ({ ...prev, page: 1 }));
+
+    // For sort operations, fetch immediately without debouncing
+    if (isSortOperation) {
+      console.log('🎯 Sort operation detected - fetching immediately');
+      fetchPurchases(undefined, filters);
+    } else {
+      console.log('🔄 Filter operation detected - using debounced fetch');
+      // For other filter changes, use debounced fetch
+      debouncedFetchPurchases();
+    }
   };
 
   return (
@@ -406,13 +401,15 @@ export default function PurchasesPage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={handleExport}
+        onExport={() => {}} // Export handled internally by PurchaseTable
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}} // Handled by Link in component
         onPrintDetails={handlePrintPurchase}
         onPartialReturn={handlePartialReturn}
         onFullReturn={handleFullReturn}
-        actionButton={
+        sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status'}
+        sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
+        actionButton={(
           <a
             href="/purchases/create"
             target="_blank"
@@ -421,7 +418,7 @@ export default function PurchasesPage() {
           >
             Add Purchase
           </a>
-        }
+        )}
       />
 
       {/* Confirmation Modal for Full Order Return */}
@@ -437,14 +434,6 @@ This will return all items in the purchase order and cannot be undone.`}
         loadingText="Processing Return..."
         onConfirm={confirmReturnWholeOrder}
         onCancel={cancelReturnWholeOrder}
-      />
-
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
       />
     </div>
   );

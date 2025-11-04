@@ -144,7 +144,24 @@ function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; fi
 // ---------------------
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = '1', limit = '50', search = '', category = '', includeInactive = 'false' } = req.query;
+    const {
+      page = '1',
+      limit = '50',
+      search = '',
+      category = '',
+      includeInactive = 'false',
+      categoryFilter = '',
+      subcategoryFilter = '',
+      modelFilter = '',
+      companyFilter = '',
+      quantityFilter = '',
+      stockFilter = 'all',
+      startDate = '',
+      endDate = '',
+      uidFilter = '',
+      partNoFilter = ''
+    } = req.query;
+
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
@@ -152,6 +169,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const where: any = {};
     if (includeInactive !== 'true') where.is_active = true;
 
+    // Handle search term (from search input)
     if (search) {
       const term = (search as string).trim();
       where.OR = [
@@ -160,18 +178,109 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ];
     }
 
+    // Handle category filter (legacy support)
     if (category) where.product_category_id = parseInt(category as string);
 
-    const [products, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        skip,
-        take: limitNum,
-        orderBy: { id: 'desc' },
-        include: { gst_rate: true },
-      }),
-      prisma.product.count({ where }),
-    ]);
+    // Handle advanced filters from ProductTable
+    if (categoryFilter) where.product_category_id = parseInt(categoryFilter as string);
+    if (subcategoryFilter) where.product_subcategory_id = parseInt(subcategoryFilter as string);
+    if (companyFilter) where.company_id = parseInt(companyFilter as string);
+    if (partNoFilter) where.part_no = { contains: partNoFilter as string, mode: 'insensitive' };
+    if (uidFilter) where.id = parseInt(uidFilter as string);
+
+    // Handle quantity filter (stock filtering)
+    if (quantityFilter) {
+      const quantity = parseInt(quantityFilter as string);
+      if (!isNaN(quantity)) {
+        where.stock = quantity;
+      }
+    }
+
+    // Handle stock status filter
+    if (stockFilter && stockFilter !== 'all') {
+      switch (stockFilter) {
+        case 'in_stock':
+          where.stock = { gt: 0 };
+          break;
+        case 'out_of_stock':
+          where.stock = { equals: 0 };
+          break;
+        case 'low_stock':
+          // Low stock: stock > 0 AND stock <= min_stock
+          // This will be handled with raw SQL in the query
+          break;
+      }
+    }
+
+    // Handle car model filter
+    if (modelFilter) {
+      const modelIds = (modelFilter as string).split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+      if (modelIds.length > 0) {
+        where.car_model_ids = { hasSome: modelIds };
+      }
+    }
+
+    // Handle date range filters
+    if (startDate || endDate) {
+      where.created_at = {};
+      if (startDate) where.created_at.gte = new Date(startDate as string);
+      if (endDate) where.created_at.lte = new Date(endDate as string);
+    }
+
+    let products: any[];
+    let total: number;
+
+    // Handle low stock filter with raw SQL since Prisma doesn't support field-to-field comparisons
+    if (stockFilter === 'low_stock') {
+      const baseWhere = { ...where };
+      delete baseWhere.stock; // Remove stock filter since we'll handle it in SQL
+
+      // Get products with low stock using raw SQL
+      const lowStockProducts = await prisma.$queryRaw`
+        SELECT p.*, g.rate as gst_rate_value
+        FROM product p
+        LEFT JOIN gst_tax_rate g ON p.gst_rate_id = g.id
+        WHERE ${baseWhere.is_active !== undefined ? `p.is_active = ${baseWhere.is_active}` : '1=1'}
+          ${baseWhere.product_category_id ? `AND p.product_category_id = ${baseWhere.product_category_id}` : ''}
+          ${baseWhere.product_subcategory_id ? `AND p.product_subcategory_id = ${baseWhere.product_subcategory_id}` : ''}
+          ${baseWhere.company_id ? `AND p.company_id = ${baseWhere.company_id}` : ''}
+          ${baseWhere.part_no ? `AND p.part_no ILIKE '%${baseWhere.part_no.contains}%'` : ''}
+          ${baseWhere.id ? `AND p.id = ${baseWhere.id}` : ''}
+          ${baseWhere.stock ? `AND p.stock = ${baseWhere.stock}` : ''}
+          AND p.stock > 0 AND p.stock <= p.min_stock
+        ORDER BY p.id DESC
+        LIMIT ${limitNum} OFFSET ${skip}
+      ` as any[];
+
+      // Get total count for low stock
+      const totalResult = await prisma.$queryRaw`
+        SELECT COUNT(*) as count
+        FROM product p
+        WHERE ${baseWhere.is_active !== undefined ? `p.is_active = ${baseWhere.is_active}` : '1=1'}
+          ${baseWhere.product_category_id ? `AND p.product_category_id = ${baseWhere.product_category_id}` : ''}
+          ${baseWhere.product_subcategory_id ? `AND p.product_subcategory_id = ${baseWhere.product_subcategory_id}` : ''}
+          ${baseWhere.company_id ? `AND p.company_id = ${baseWhere.company_id}` : ''}
+          ${baseWhere.part_no ? `AND p.part_no ILIKE '%${baseWhere.part_no?.contains}%'` : ''}
+          ${baseWhere.id ? `AND p.id = ${baseWhere.id}` : ''}
+          ${baseWhere.stock ? `AND p.stock = ${baseWhere.stock}` : ''}
+          AND p.stock > 0 AND p.stock <= p.min_stock
+      ` as any[];
+
+      products = lowStockProducts;
+      total = parseInt(totalResult[0].count);
+    } else {
+      // Normal Prisma query for other cases
+      [products, total] = await Promise.all([
+        prisma.product.findMany({
+          where,
+          skip,
+          take: limitNum,
+          orderBy: { id: 'desc' },
+          include: { gst_rate: true },
+        }),
+        prisma.product.count({ where }),
+      ]);
+    }
 
     // Get latest purchase rates in batch
     const productIds = products.map(p => p.id);

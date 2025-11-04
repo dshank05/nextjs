@@ -33,8 +33,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       amountMin = '',
       amountMax = '',
       vendor = '',
-      uid = '' // NEW: Filter by purchase ID
+      uid = '', // NEW: Filter by purchase ID
+      sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
+      sortOrder = 'desc' // NEW: Sort order (default: desc)
     } = req.query
+
+    console.log('🔍 Purchases API received query params:', req.query);
+    console.log('🔍 Purchases API extracted sort params:', { sortBy, sortOrder });
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
@@ -105,38 +110,86 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Filter out fully returned purchases (return_status = 2)
     where.return_status = { not: 2 }; // 0=none, 1=partial, 2=full (hide fully returned)
 
-    // Get purchase invoices with related vendor data
-    const [purchaseInvoices, total] = await Promise.all([
-      prisma.purchase.findMany({
-        where,
-        select: {
-          id: true,
-          invoice_no: true,
-          bill_reference: true,
-          items_total: true,
-          freight: true,
-          total_taxable_value: true,
-          taxrate: true,
-          total_cgst: true,
-          total_sgst: true,
-          total_igst: true,
-          total_tax: true,
-          total: true,
-          notes: true,
-          invoice_date: true,
-          payment_mode: true,
-          payment_status: true,
-          fy: true,
-          transport: true,
-          vendor_id: true,
-          return_status: true // Include return status for client-side indicators
-        },
-        skip,
-        take: limitNum,
-        orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
-      }),
-      prisma.purchase.count({ where })
-    ])
+    // Validate and set sort parameters
+    const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
+
+    // For vendor_name sorting, we need to fetch all data first and sort in JavaScript
+    // For other fields, we can sort at database level
+    const needsPostSorting = sortField === 'vendor_name'
+
+    let purchaseInvoices: any[]
+    let total: number
+
+    if (needsPostSorting) {
+      // Get all purchase invoices without sorting (we'll sort after fetching vendor names)
+      const result = await Promise.all([
+        prisma.purchase.findMany({
+          where,
+          select: {
+            id: true,
+            invoice_no: true,
+            bill_reference: true,
+            items_total: true,
+            freight: true,
+            total_taxable_value: true,
+            taxrate: true,
+            total_cgst: true,
+            total_sgst: true,
+            total_igst: true,
+            total_tax: true,
+            total: true,
+            notes: true,
+            invoice_date: true,
+            payment_mode: true,
+            payment_status: true,
+            fy: true,
+            transport: true,
+            vendor_id: true,
+            return_status: true // Include return status for client-side indicators
+          }
+        }),
+        prisma.purchase.count({ where })
+      ])
+      purchaseInvoices = result[0]
+      total = result[1]
+    } else {
+      // Get purchase invoices with database-level sorting
+      const result = await Promise.all([
+        prisma.purchase.findMany({
+          where,
+          skip,
+          take: limitNum,
+          orderBy: { [sortField]: sortDirection },
+          select: {
+            id: true,
+            invoice_no: true,
+            bill_reference: true,
+            items_total: true,
+            freight: true,
+            total_taxable_value: true,
+            taxrate: true,
+            total_cgst: true,
+            total_sgst: true,
+            total_igst: true,
+            total_tax: true,
+            total: true,
+            notes: true,
+            invoice_date: true,
+            payment_mode: true,
+            payment_status: true,
+            fy: true,
+            transport: true,
+            vendor_id: true,
+            return_status: true // Include return status for client-side indicators
+          }
+        }),
+        prisma.purchase.count({ where })
+      ])
+      purchaseInvoices = result[0]
+      total = result[1]
+    }
 
     // Get item counts, vendor info, and staff info in batch queries
     const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
@@ -168,7 +221,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const staffMap = new Map(staffData.map(staff => [staff.id, staff]))
 
     // Enhanced purchase invoices using maps
-    const enhancedPurchases = purchaseInvoices.map((invoice: any) => {
+    let enhancedPurchases = purchaseInvoices.map((invoice: any) => {
       // Handle date format for purchases - could be string dates or Unix timestamps
       let formattedDate: string | null = null
       try {
@@ -240,7 +293,35 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         }
     })
 
+    // Apply post-sorting for vendor_name if needed
+    if (needsPostSorting) {
+      console.log('🔄 Applying post-sorting for vendor_name, direction:', sortDirection);
+      enhancedPurchases.sort((a, b) => {
+        const aValue = (a.vendor_name || '').toString().toLowerCase()
+        const bValue = (b.vendor_name || '').toString().toLowerCase()
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+        return 0
+      })
+
+      // Apply pagination after sorting
+      enhancedPurchases = enhancedPurchases.slice(skip, skip + limitNum)
+      console.log('📊 Post-sorted and paginated purchases, returned count:', enhancedPurchases.length);
+    } else {
+      console.log('📊 Database-sorted purchases, returned count:', enhancedPurchases.length);
+    }
+
     const totalPages = Math.ceil(total / limitNum)
+
+    console.log('📤 API Response - first 3 purchases:', enhancedPurchases.slice(0, 3).map(p => ({
+      id: p.id,
+      invoice_no: p.invoice_no,
+      vendor_name: p.vendor_name,
+      total: p.total,
+      invoice_date: p.invoice_date,
+      payment_status: p.payment_status
+    })));
 
     res.status(200).json({
       purchases: enhancedPurchases,

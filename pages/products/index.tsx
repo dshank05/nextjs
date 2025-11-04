@@ -1,9 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Product {
   id: number;
@@ -27,19 +25,7 @@ interface ProductResponse {
 }
 
 export default function Products() {
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'product_name', label: 'Product Name', enabled: true },
-    { key: 'part_no', label: 'Part No', enabled: true },
-    { key: 'stock', label: 'Stock', enabled: true },
-    { key: 'rate', label: 'Rate', enabled: true },
-    { key: 'categoryName', label: 'Category', enabled: true },
-    { key: 'companyName', label: 'Company', enabled: true },
-  ];
 
   const [products, setProducts] = useState<Product[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
@@ -51,41 +37,34 @@ export default function Products() {
     subcategoryFilter: string;
     modelFilter: string[];
     companyFilter: string;
+    quantityFilter: string;
     stockFilter: string;
     startDate: string;
     endDate: string;
     uidFilter: string;
     partNoFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }>({
     categoryFilter: '',
     subcategoryFilter: '',
     modelFilter: [],
     companyFilter: '',
+    quantityFilter: '',
     stockFilter: 'all',
     startDate: '',
     endDate: '',
     uidFilter: '',
-    partNoFilter: ''
+    partNoFilter: '',
+    sortBy: 'categoryName',
+    sortOrder: 'asc'
   });
 
-  // Fetch products when pagination, search, or filters change
-  useEffect(() => {
-    fetchProducts();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+  // Refs for debouncing and abort controllers
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Listen for broadcast messages to refresh data when products are created/updated/deleted in other tabs
-  useEffect(() => {
-    const unsubscribe = subscribeBroadcast((msg) => {
-      if (msg.resource === 'products' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
-        console.log(`🔄 Product ${msg.type} in another tab, refreshing data...`);
-        fetchProducts();
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  const fetchProducts = async () => {
+  const fetchProducts = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
@@ -99,14 +78,21 @@ export default function Products() {
         subcategory: currentFilters.subcategoryFilter,
         model: currentFilters.modelFilter.join(','),
         company_id: currentFilters.companyFilter,
+        quantity: currentFilters.quantityFilter,
         lowStock: currentFilters.stockFilter === 'low' ? 'true' : 'false',
         startDate: currentFilters.startDate,
         endDate: currentFilters.endDate,
         uid: currentFilters.uidFilter,
-        part_no: currentFilters.partNoFilter
+        part_no: currentFilters.partNoFilter,
+        // Add sort parameters
+        sortBy: currentFilters.sortBy || 'categoryName',
+        sortOrder: currentFilters.sortOrder || 'asc'
       });
 
-      const response = await fetch(`/api/products/optimized?${params}`);
+      const response = await fetch(`/api/products/optimized?${params}`, {
+        signal // Pass abort signal to fetch
+      });
+
       if (!response.ok) {
         throw new Error('Failed to fetch products');
       }
@@ -133,12 +119,67 @@ export default function Products() {
       setProducts(transformedProducts);
       setPagination(data.pagination);
     } catch (err) {
+      // Don't set error if request was aborted
+      if (err instanceof Error && err.name === 'AbortError') {
+        console.log('Request was cancelled');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'An error occurred');
       console.error('Failed to fetch products:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+
+  // Debounced fetch function with abort controller
+  const debouncedFetchProducts = useCallback(() => {
+    // Clear previous timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+
+    // Set new timeout for debounced execution
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchProducts(abortControllerRef.current?.signal);
+    }, 300); // 300ms debounce delay
+  }, [fetchProducts]);
+
+  // Fetch products when pagination, search, or filters change
+  useEffect(() => {
+    debouncedFetchProducts();
+  }, [pagination.page, pagination.limit, searchTerm, currentFilters, debouncedFetchProducts]);
+
+  // Listen for broadcast messages to refresh data when products are created/updated/deleted in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'products' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
+        console.log(`🔄 Product ${msg.type} in another tab, refreshing data...`);
+        fetchProducts();
+      }
+    });
+
+    return unsubscribe;
+  }, [fetchProducts]);
+
+  // Cleanup timeouts and abort controllers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const handlePageChange = (newPage: number) => {
     if (newPage > 0 && newPage <= pagination.totalPages) {
@@ -150,63 +191,7 @@ export default function Products() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Product Report',
-        fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, products, config);
-    } else {
-      openColumnSelector();
-    }
-  };
 
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    const exportData = products.map(product => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = product.id;
-            break;
-          case 'product_name':
-            row['Product Name'] = product.product_name || '';
-            break;
-          case 'part_no':
-            row['Part No'] = product.part_no || '';
-            break;
-          case 'stock':
-            row.Stock = product.stock || 0;
-            break;
-          case 'rate':
-            row.Rate = product.rate || 0;
-            break;
-          case 'categoryName':
-            row.Category = product.categoryName || '';
-            break;
-          case 'companyName':
-            row.Company = product.companyName || '';
-            break;
-        }
-      });
-      return row;
-    });
-
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Product Report',
-      fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   // Handle filter application
   const handleApplyFilters = (filters: {
@@ -214,11 +199,14 @@ export default function Products() {
     subcategoryFilter: string;
     modelFilter: string[];
     companyFilter: string;
+    quantityFilter: string;
     stockFilter: string;
     startDate: string;
     endDate: string;
     uidFilter: string;
     partNoFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => {
     setCurrentFilters(filters);
     // Reset to first page when applying filters
@@ -256,9 +244,9 @@ export default function Products() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={handleExport}
+        onExport={() => {}} // Export handled internally by ProductTable
         onApplyFilters={handleApplyFilters}
-        actionButton={
+        actionButton={(
           <a
             href="/products/create"
             target="_blank"
@@ -267,15 +255,7 @@ export default function Products() {
           >
             Add Product
           </a>
-        }
-      />
-
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
+        )}
       />
     </div>
   );

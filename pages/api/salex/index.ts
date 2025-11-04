@@ -16,7 +16,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       amountMin = '',
       amountMax = '',
       vendor = '',
-      uid = '' // NEW: Filter by salex ID
+      uid = '', // NEW: Filter by salex ID
+      sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
+      sortOrder = 'desc' // NEW: Sort order (default: desc)
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -70,16 +72,84 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
-    // Get salex invoices with related data
-    const [salexInvoices, total] = await Promise.all([
-      prisma.invoicex.findMany({
-        where,
-        skip,
-        take: limitNum,
-        orderBy: { invoice_date: 'desc' }, // Order by date descending (newest first)
-      }),
-      prisma.invoicex.count({ where })
-    ])
+    // Validate and set sort parameters
+    const validSortFields = ['id', 'invoice_no', 'customer_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
+    const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
+
+    // For customer_name sorting, we need to fetch all data first and sort in JavaScript
+    // For other fields, we can sort at database level
+    const needsPostSorting = sortField === 'customer_name'
+
+    let salexInvoices: any[]
+    let total: number
+
+    if (needsPostSorting) {
+      // Get all salex invoices without sorting (we'll sort after fetching customer names)
+      const result = await Promise.all([
+        prisma.invoicex.findMany({
+          where,
+          select: {
+            id: true,
+            invoice_no: true,
+            select_customer: true,
+            items_total: true,
+            freight: true,
+            total_taxable_value: true,
+            taxrate: true,
+            total_cgst: true,
+            total_sgst: true,
+            total_igst: true,
+            total_tax: true,
+            total: true,
+            notes: true,
+            invoice_date: true,
+            payment_status: true,
+            payment_mode: true,
+            fy: true,
+            bill_reference: true,
+            return_status: true
+          }
+        }),
+        prisma.invoicex.count({ where })
+      ])
+      salexInvoices = result[0]
+      total = result[1]
+    } else {
+      // Get salex invoices with database-level sorting
+      const result = await Promise.all([
+        prisma.invoicex.findMany({
+          where,
+          skip,
+          take: limitNum,
+          orderBy: { [sortField]: sortDirection },
+          select: {
+            id: true,
+            invoice_no: true,
+            select_customer: true,
+            items_total: true,
+            freight: true,
+            total_taxable_value: true,
+            taxrate: true,
+            total_cgst: true,
+            total_sgst: true,
+            total_igst: true,
+            total_tax: true,
+            total: true,
+            notes: true,
+            invoice_date: true,
+            payment_status: true,
+            payment_mode: true,
+            fy: true,
+            bill_reference: true,
+            return_status: true
+          }
+        }),
+        prisma.invoicex.count({ where })
+      ])
+      salexInvoices = result[0]
+      total = result[1]
+    }
 
     // Get customer names and item counts in batch queries
     const invoiceIds = salexInvoices.map((inv: { id: any }) => inv.id)
@@ -105,7 +175,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced salex invoices using maps
-    const enhancedSalex = salexInvoices.map((invoice: any) => {
+    let enhancedSalex = salexInvoices.map((invoice: any) => {
       // Handle integer timestamp format for salex
       let formattedDate = 'Invalid Date'
       try {
@@ -154,6 +224,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
+
+    // Apply post-sorting for customer_name if needed
+    if (needsPostSorting) {
+      enhancedSalex.sort((a, b) => {
+        const aValue = (a.customer_name || '').toString().toLowerCase()
+        const bValue = (b.customer_name || '').toString().toLowerCase()
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+        return 0
+      })
+
+      // Apply pagination after sorting
+      enhancedSalex = enhancedSalex.slice(skip, skip + limitNum)
+    }
 
     const totalPages = Math.ceil(total / limitNum)
 

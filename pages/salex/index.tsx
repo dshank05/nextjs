@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import { SalexTable } from '../../components/transactions/SalexTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Salex {
   id: number;
@@ -53,20 +51,10 @@ export default function SalexPage() {
 
   // AbortController ref for cancelling pending requests
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Debounce timeout ref
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'invoice_no', label: 'Invoice No', enabled: true },
-    { key: 'customer_name', label: 'Customer Name', enabled: true },
-    { key: 'total', label: 'Total Amount', enabled: true },
-    { key: 'invoice_date', label: 'Invoice Date', enabled: true },
-    { key: 'payment_status', label: 'Payment Status', enabled: true },
-    { key: 'bill_reference', label: 'Bill Reference', enabled: true },
-  ];
 
   // Modal states for return confirmation
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -92,6 +80,8 @@ export default function SalexPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }>({
     customerFilter: '',
     statusFilter: 'all',
@@ -99,36 +89,62 @@ export default function SalexPage() {
     dateTo: '',
     amountMin: '',
     amountMax: '',
-    uidFilter: ''
+    uidFilter: '',
+    sortBy: 'invoice_date',
+    sortOrder: 'desc'
   });
 
-  // Fetch salex when pagination, search, or filters change
+  // Debounced fetch function with abort controller
+  const debouncedFetchSalex = useCallback(() => {
+    // Clear previous timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+
+    // Cancel previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller
+    abortControllerRef.current = new AbortController();
+
+    // Set new timeout for debounced execution
+    debounceTimeoutRef.current = setTimeout(() => {
+      fetchSalex(abortControllerRef.current?.signal);
+    }, 300); // 300ms debounce delay
+  }, []);
+
+  // Fetch salex when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
-    fetchSalex();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+    debouncedFetchSalex();
+  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchSalex]);
 
   // Listen for broadcast messages to refresh data when salex are created/updated/deleted in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'salex' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Salex ${msg.type} in another tab, refreshing data...`);
-        fetchSalex();
+        debouncedFetchSalex();
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [debouncedFetchSalex]);
 
-  // Cleanup: Cancel any pending requests when component unmounts
+  // Cleanup: Cancel any pending requests and timeouts when component unmounts
   useEffect(() => {
     return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
   }, []);
 
-  const fetchSalex = async () => {
+  const fetchSalex = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
     try {
       // Cancel any pending request
       if (abortControllerRef.current) {
@@ -141,18 +157,24 @@ export default function SalexPage() {
       setLoading(true);
       setError(null);
 
+      // Use override filters if provided, otherwise use current state
+      const filtersToUse = overrideFilters || currentFilters;
+
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
         // Add filter parameters
-        customer: currentFilters.customerFilter,
-        status: currentFilters.statusFilter,
-        startDate: currentFilters.dateFrom,
-        endDate: currentFilters.dateTo,
-        amountMin: currentFilters.amountMin,
-        amountMax: currentFilters.amountMax,
-        uid: currentFilters.uidFilter
+        customer: filtersToUse.customerFilter,
+        status: filtersToUse.statusFilter,
+        startDate: filtersToUse.dateFrom,
+        endDate: filtersToUse.dateTo,
+        amountMin: filtersToUse.amountMin,
+        amountMax: filtersToUse.amountMax,
+        uid: filtersToUse.uidFilter,
+        // Add sort parameters
+        sortBy: filtersToUse.sortBy || 'invoice_date',
+        sortOrder: filtersToUse.sortOrder || 'desc'
       });
 
       const response = await fetch(`/api/salex?${params}`, {
@@ -225,63 +247,7 @@ export default function SalexPage() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Salex Report',
-        fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, salex, config);
-    } else {
-      openColumnSelector();
-    }
-  };
 
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    const exportData = salex.map(salexItem => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = salexItem.id;
-            break;
-          case 'invoice_no':
-            row['Invoice No'] = salexItem.invoice_no;
-            break;
-          case 'customer_name':
-            row['Customer Name'] = salexItem.customer_name || '';
-            break;
-          case 'total':
-            row['Total Amount'] = salexItem.total;
-            break;
-          case 'invoice_date':
-            row['Invoice Date'] = salexItem.formattedDate || salexItem.invoice_date || '';
-            break;
-          case 'payment_status':
-            row['Payment Status'] = salexItem.payment_status === 1 ? 'Paid' : 'Unpaid';
-            break;
-          case 'bill_reference':
-            row['Bill Reference'] = salexItem.bill_reference || '';
-            break;
-        }
-      });
-      return row;
-    });
-
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Salex Report',
-      fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   // Handle return actions
   const handlePartialReturn = (transaction: Salex) => {
@@ -366,10 +332,36 @@ export default function SalexPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   }) => {
+    console.log('📥 Salex index handleApplyFilters received:', filters);
+
+    // Check if this is a sort operation (only sortBy/sortOrder changed)
+    const isSortOperation = (
+      filters.customerFilter === currentFilters.customerFilter &&
+      filters.statusFilter === currentFilters.statusFilter &&
+      filters.dateFrom === currentFilters.dateFrom &&
+      filters.dateTo === currentFilters.dateTo &&
+      filters.amountMin === currentFilters.amountMin &&
+      filters.amountMax === currentFilters.amountMax &&
+      filters.uidFilter === currentFilters.uidFilter &&
+      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
+    );
+
     setCurrentFilters(filters);
     // Reset to first page when applying filters
     setPagination(prev => ({ ...prev, page: 1 }));
+
+    // For sort operations, fetch immediately without debouncing
+    if (isSortOperation) {
+      console.log('🎯 Sort operation detected - fetching immediately');
+      fetchSalex(undefined, filters);
+    } else {
+      console.log('🔄 Filter operation detected - using debounced fetch');
+      // For other filter changes, use debounced fetch
+      debouncedFetchSalex();
+    }
   };
 
   return (
@@ -403,13 +395,13 @@ export default function SalexPage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={handleExport}
+        onExport={() => {}} // Export handled internally by SalexTable
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}} // Handled by Link in component
         onPrintDetails={handlePrintSalex}
         onPartialReturn={handlePartialReturn}
         onFullReturn={handleFullReturn}
-        actionButton={
+        actionButton={(
           <a
             href="/salex/create"
             target="_blank"
@@ -418,7 +410,7 @@ export default function SalexPage() {
           >
             Add New Invoice
           </a>
-        }
+        )}
       />
 
       {/* Confirmation Modal for Full Order Return */}
@@ -434,14 +426,6 @@ This will return all items in the salex order and cannot be undone.`}
         loadingText="Processing Return..."
         onConfirm={confirmReturnWholeOrder}
         onCancel={cancelReturnWholeOrder}
-      />
-
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
       />
     </div>
   );

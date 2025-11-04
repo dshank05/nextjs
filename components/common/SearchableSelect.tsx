@@ -31,12 +31,14 @@ export function SearchableSelect({
   // Auto-focus search input when dropdown opens
   useEffect(() => {
     if (isDropdownOpen && searchInputRef.current) {
+      // Clear the selected value when dropdown opens
+      onSelectionChange(null);
       // Small delay to ensure the input is rendered
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 10);
     }
-  }, [isDropdownOpen]);
+  }, [isDropdownOpen]); // Removed onSelectionChange from dependencies to prevent infinite loop
 
   // Close dropdown when clicking outside
   useEffect(() => {
