@@ -200,40 +200,51 @@ export const ProductTable: React.FC<ProductTableProps> = ({
 
   return (
     <div className="card">
-      <div className="flex items-center justify-end gap-2 mb-4">
-        <ExportMenu
-          data={products}
-          columns={[
-            { key: 'id', label: 'ID', enabled: true },
-            { key: 'product_name', label: 'Product Name', enabled: true },
-            { key: 'categoryName', label: 'Category', enabled: true },
-            { key: 'subcategoryName', label: 'Subcategory', enabled: true },
-            { key: 'companyName', label: 'Company', enabled: true },
-            { key: 'part_no', label: 'Part Number', enabled: true },
-            { key: 'stock', label: 'Stock Quantity', enabled: true },
-            { key: 'rate', label: 'Rate', enabled: true },
-            { key: 'lastPurchaseDate', label: 'Last Purchase Date', enabled: true },
-          ]}
-          config={{
-            title: 'Product Report',
-            fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
-          }}
-        />
-        {actionButton && (
-          <div className="flex-shrink-0">
-            {actionButton}
-          </div>
-        )}
+      <div className="flex items-end justify-between gap-4 mb-4">
+        <div className="flex-1 max-w-md">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
+          <ClearableInput
+            type="text"
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            data={products}
+            columns={[
+              { key: 'id', label: 'ID', enabled: true },
+              { key: 'product_name', label: 'Product Name', enabled: true },
+              { key: 'categoryName', label: 'Category', enabled: true },
+              { key: 'subcategoryName', label: 'Subcategory', enabled: true },
+              { key: 'companyName', label: 'Company', enabled: true },
+              { key: 'part_no', label: 'Part Number', enabled: true },
+              { key: 'stock', label: 'Stock Quantity', enabled: true },
+              { key: 'rate', label: 'Rate', enabled: true },
+              { key: 'lastPurchaseDate', label: 'Last Purchase Date', enabled: true },
+            ]}
+            config={{
+              title: 'Product Report',
+              fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
+            }}
+          />
+          {actionButton && (
+            <div className="flex-shrink-0">
+              {actionButton}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9 gap-4 mb-4">
+      <div className="flex flex-wrap gap-4 mb-4">
         {/* UID Filter */}
-        <div>
+        <div className="w-32 flex-shrink-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">UID</label>
           <ClearableInput
             type="text"
-            placeholder="Enter product ID..."
+            placeholder="Enter ID..."
             value={filters.uidFilter}
             onChange={(e) => {
               const newValue = e.target.value;
@@ -251,19 +262,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           />
         </div>
 
-        {/* Search Filter */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-          <ClearableInput
-            type="text"
-            placeholder="Search products..."
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-        </div>
-
         {/* Category Filter */}
-        <div>
+        <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
           <SearchableSelect
             options={[
@@ -289,7 +289,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Subcategory Filter */}
-        <div>
+        <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
           <SearchableSelect
             options={[
@@ -316,7 +316,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Car Models Filter */}
-        <div>
+        <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Car Models</label>
           <SearchableSelect
             options={[
@@ -343,7 +343,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Company Filter */}
-        <div>
+        <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Company</label>
           <SearchableSelect
             options={[
@@ -368,8 +368,31 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           />
         </div>
 
+        {/* Part No Filter */}
+        <div className="flex-1 min-w-0">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Part No</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter part number..."
+            value={filters.partNoFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, partNoFilter: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  partNoFilter: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+          />
+        </div>
+
         {/* Quantity Filter */}
-        <div>
+        <div className="w-32 flex-shrink-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Quantity</label>
           <ClearableInput
             type="number"
@@ -392,31 +415,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           />
         </div>
 
-        {/* Part No Filter */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Part No</label>
-          <ClearableInput
-            type="text"
-            placeholder="Enter part number..."
-            value={filters.partNoFilter}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, partNoFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  partNoFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-          />
-        </div>
-
         {/* Date Range Filter */}
-        <div>
+        <div className="flex-1 min-w-0">
           <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
           <DateRangeFilter
             startDate={filters.startDate}
