@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ClearableInput } from '../../components/common';
 
@@ -38,65 +37,7 @@ export default function FinancialYear() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'fy', label: 'FY', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Financial Years Report',
-        fileName: `Financial_Years_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, financialYears, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = financialYears.map(year => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = year.id;
-            break;
-          case 'fy':
-            row.FY = year.fy;
-            break;
-          case 'status':
-            row.Status = year.id === currentFyId ? 'Current' : 'Inactive';
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Financial Years Report',
-      fileName: `Financial_Years_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     if (!loading) {
@@ -398,14 +339,18 @@ export default function FinancialYear() {
 
       <div className="card">
         <div className="flex justify-end space-x-2 mb-2">
-          <div className="flex space-x-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-          </div>
+          <ExportMenu
+            data={financialYears}
+            columns={[
+              { key: 'id', label: 'ID', enabled: true },
+              { key: 'fy', label: 'FY', enabled: true },
+              { key: 'status', label: 'Status', enabled: true },
+            ]}
+            config={{
+              title: 'Financial Years Report',
+              fileName: 'Financial_Years'
+            }}
+          />
           <button className="btn-primary" onClick={handleAdd}>Add Financial Year</button>
         </div>
         {loading ? (
@@ -563,13 +508,7 @@ export default function FinancialYear() {
         onCancel={handleCancelSubmit}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

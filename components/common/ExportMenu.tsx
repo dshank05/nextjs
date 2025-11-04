@@ -10,6 +10,7 @@ interface Column {
 interface ExportConfig {
   title: string;
   fileName: string;
+  dropdownOptions?: Record<string, string[]>; // Column name -> array of dropdown options
 }
 
 interface ExportMenuProps {
@@ -91,6 +92,12 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
         switch (key) {
           case 'id':
             row[label] = item.id || item.ID;
+            break;
+          case 'serialNumber':
+            row[label] = item.serialNumber || '';
+            break;
+          case 'carModelsDisplay':
+            row[label] = item.carModelsDisplay || '';
             break;
           case 'invoice_no':
             row[label] = item.invoice_no || item['Invoice No'];

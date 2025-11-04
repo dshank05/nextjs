@@ -3,8 +3,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 
 interface Mechanic {
@@ -54,69 +53,7 @@ export default function MechanicDetails() {
     }
   }, [debouncedSearchTerm]);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'name', label: 'Name', enabled: true },
-    { key: 'phone', label: 'Phone', enabled: true },
-    { key: 'city', label: 'City', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Mechanics Report',
-        fileName: `Mechanics_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, mechanics, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = mechanics.map(mechanic => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'name':
-            row.Name = mechanic.name;
-            break;
-          case 'phone':
-            row.Phone = mechanic.phone;
-            break;
-          case 'city':
-            row.City = mechanic.city || '';
-            break;
-          case 'status':
-            row.Status = mechanic.status;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Mechanics Report',
-      fileName: `Mechanics_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
 
   useEffect(() => {
@@ -334,13 +271,19 @@ export default function MechanicDetails() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={mechanics}
+              columns={[
+                { key: 'name', label: 'Name', enabled: true },
+                { key: 'phone', label: 'Phone', enabled: true },
+                { key: 'city', label: 'City', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+              ]}
+              config={{
+                title: 'Mechanics Report',
+                fileName: 'Mechanics'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add Mechanic</button>
           </div>
         </div>
@@ -546,13 +489,7 @@ export default function MechanicDetails() {
         onCancel={cancelSave}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 };

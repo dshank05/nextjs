@@ -3,8 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 
 interface BankAccount {
@@ -38,18 +37,6 @@ export default function BankDetails() {
   const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'bank_name', label: 'Account Name', enabled: true },
-    { key: 'account_number', label: 'Account Number', enabled: true },
-    { key: 'bank_address', label: 'Bank Name', enabled: true },
-    { key: 'ifsc', label: 'IFSC Code', enabled: true },
-  ];
-
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
 
   const handleSort = (field: string) => {
     if (sortBy === field) {
@@ -208,58 +195,6 @@ export default function BankDetails() {
     setPendingData(null);
   };
 
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Bank Accounts Report',
-        fileName: `BankAccounts_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, bankAccounts, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = bankAccounts.map(account => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = account.id;
-            break;
-          case 'bank_name':
-            row['Account Name'] = account.bank_name;
-            break;
-          case 'account_number':
-            row['Account Number'] = account.account_number;
-            break;
-          case 'bank_address':
-            row['Bank Name'] = account.bank_address || '';
-            break;
-          case 'ifsc':
-            row['IFSC Code'] = account.ifsc || '';
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Bank Accounts Report',
-      fileName: `BankAccounts_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
   return (
     <div className="space-y-6">
       <div className="card">
@@ -288,13 +223,20 @@ export default function BankDetails() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={bankAccounts}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'bank_name', label: 'Account Name', enabled: true },
+                { key: 'account_number', label: 'Account Number', enabled: true },
+                { key: 'bank_address', label: 'Bank Name', enabled: true },
+                { key: 'ifsc', label: 'IFSC Code', enabled: true },
+              ]}
+              config={{
+                title: 'Bank Accounts Report',
+                fileName: 'Bank_Accounts'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add Bank Account</button>
           </div>
         </div>
@@ -439,13 +381,7 @@ export default function BankDetails() {
         onCancel={handleCancelSubmit}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={closeColumnSelector}
-      />
+
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -273,73 +272,7 @@ export default function GSTTaxRate() {
     setAbortController(null);
   };
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'hsn_code', label: 'HSN Code', enabled: true },
-    { key: 'rate', label: 'Rate (%)', enabled: true },
-    { key: 'applicable_for', label: 'Description', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'GST Rates Report',
-        fileName: `GST_Rates_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, gstRates, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = gstRates.map(rate => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = rate.id;
-            break;
-          case 'hsn_code':
-            row['HSN Code'] = rate.hsn_code;
-            break;
-          case 'rate':
-            row['Rate (%)'] = rate.rate;
-            break;
-          case 'applicable_for':
-            row['Description'] = rate.applicable_for;
-            break;
-          case 'status':
-            row.Status = rate.status;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'GST Rates Report',
-      fileName: `GST_Rates_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   return (
     <div className="space-y-6">
@@ -370,13 +303,20 @@ export default function GSTTaxRate() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={gstRates}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'hsn_code', label: 'HSN Code', enabled: true },
+                { key: 'rate', label: 'Rate (%)', enabled: true },
+                { key: 'applicable_for', label: 'Description', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+              ]}
+              config={{
+                title: 'GST Rates Report',
+                fileName: 'GST_Rates'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add GST Rate</button>
           </div>
         </div>
@@ -570,13 +510,7 @@ export default function GSTTaxRate() {
         onCancel={cancelStatusChange}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { ClearableInput } from '../../components/common';
+import { ClearableInput, ExportMenu } from '../../components/common';
 
 interface Product {
   id: number;
@@ -209,6 +209,22 @@ export default function InactiveProducts() {
       </div>
 
       <div className="card">
+        <div className="flex justify-end space-x-2 mb-2">
+          <ExportMenu
+            data={products}
+            columns={[
+              { key: 'product_name', label: 'Product Name', enabled: true },
+              { key: 'part_no', label: 'Part Number', enabled: true },
+              { key: 'categoryName', label: 'Category', enabled: true },
+              { key: 'companyName', label: 'Company', enabled: true },
+              { key: 'stock', label: 'Stock', enabled: true },
+            ]}
+            config={{
+              title: 'Inactive Products Report',
+              fileName: 'Inactive_Products'
+            }}
+          />
+        </div>
         {loading ? (
           <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>

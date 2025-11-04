@@ -3,8 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 
 interface Warehouse {
@@ -40,69 +39,7 @@ export default function Warehouse() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'name', label: 'Name', enabled: true },
-    { key: 'location', label: 'Location', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Warehouses Report',
-        fileName: `Warehouses_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, warehouses, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = warehouses.map(warehouse => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = warehouse.id;
-            break;
-          case 'name':
-            row.Name = warehouse.name;
-            break;
-          case 'location':
-            row.Location = warehouse.location;
-            break;
-          case 'status':
-            row.Status = warehouse.status;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Warehouses Report',
-      fileName: `Warehouses_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     if (!loading) {
@@ -326,13 +263,19 @@ export default function Warehouse() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={warehouses}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'name', label: 'Name', enabled: true },
+                { key: 'location', label: 'Location', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+              ]}
+              config={{
+                title: 'Warehouses Report',
+                fileName: 'Warehouses'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add Warehouse</button>
           </div>
         </div>
@@ -482,13 +425,7 @@ export default function Warehouse() {
         onCancel={handleCancelToggle}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

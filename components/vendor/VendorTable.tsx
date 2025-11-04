@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
-import { ClearableInput } from '../common';
+import { ClearableInput, ExportMenu } from '../common';
 
 interface Vendor {
   id: number;
@@ -34,10 +34,9 @@ interface VendorTableProps {
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
-  onExport?: (exportType: 'excel' | 'pdf') => void;
 }
 
-export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton, onExport }) => {
+export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -100,16 +99,22 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {onExport && (
-            <>
-              <button className="btn-secondary" onClick={() => onExport('excel')}>
-                📊 Export Excel
-              </button>
-              <button className="btn-secondary" onClick={() => onExport('pdf')}>
-                📄 Export PDF
-              </button>
-            </>
-          )}
+          <ExportMenu
+            data={vendors}
+            columns={[
+              { key: 'id', label: 'ID', enabled: true },
+              { key: 'vendor_name', label: 'Vendor Name', enabled: true },
+              { key: 'contact_no', label: 'Contact Number', enabled: true },
+              { key: 'email', label: 'Email', enabled: true },
+              { key: 'tax_id', label: 'GST ID', enabled: true },
+              { key: 'city', label: 'City', enabled: true },
+              { key: 'status', label: 'Status', enabled: true },
+            ]}
+            config={{
+              title: 'Vendor Details Report',
+              fileName: `Vendor_Details_${new Date().toISOString().split('T')[0]}`
+            }}
+          />
           {actionButton && (
             <div className="flex-shrink-0">
               {actionButton}

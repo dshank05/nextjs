@@ -442,12 +442,19 @@ export default function ProductCreate() {
 
         setShowConfirmModal(false);
 
+        // Navigate to product view page for both create and update
+        const productId = isEditing ? editingProductId : responseData.product?.id;
+        if (productId) {
+          router.push(`/products/view/${productId}`);
+        } else {
+          // Fallback to products list if no product ID
+          router.push('/products');
+        }
+
         // Close the current tab only if we opened it as a new tab for creation
         // Don't close if we were navigated to editing from within the app
         if (typeof window !== 'undefined' && !isEditing) {
           window.close(); // Just close the window for new tabs
-        } else {
-          router.push(isEditing ? `/products/view/${editingProductId}` : '/products');
         }
       } else {
         console.error('API Error:', responseData);
@@ -468,6 +475,16 @@ export default function ProductCreate() {
     <div className="space-y-3">
       <div className="card">
         <form onSubmit={handleSubmit} className="p-3 space-y-3">
+        {/* UID Display for Edit Mode */}
+        {isEditing && editingProductId && (
+          <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mb-4">
+            <div className="flex items-center space-x-2">
+              <span className="text-blue-300 font-medium">PRODUCT UID:</span>
+              <span className="text-blue-100 font-mono text-lg font-bold">{editingProductId}</span>
+            </div>
+          </div>
+        )}
+
         {/* Row 1: Image and Barcode Upload */}
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -524,7 +541,6 @@ export default function ProductCreate() {
 
         {/* Product Information - 3 Columns Per Row */}
         <div className="mb-3 space-y-2">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Product Information</h3>
           <div className="space-y-4">
             {/* Row 1: Category | Sub Category | Car Models */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -552,7 +568,7 @@ export default function ProductCreate() {
                         ? "Loading subcategories..."
                         : "Select Sub Category"
                   }
-                  className={!formData.product_category || subcategoriesLoading ? "opacity-50 cursor-not-allowed" : ""}
+                  disabled={!formData.product_category || subcategoriesLoading}
                 />
               </div>
 
@@ -607,7 +623,6 @@ export default function ProductCreate() {
 
         {/* Row 4: Pricing */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Pricing</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
@@ -666,7 +681,6 @@ export default function ProductCreate() {
 
         {/* Row 5: Location & Tax */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Location & Tax</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
@@ -723,7 +737,7 @@ export default function ProductCreate() {
                       ? "Loading racks..."
                       : "Select Rack"
                 }
-                className={!formData.warehouse || racksLoading ? "opacity-50 cursor-not-allowed" : ""}
+                disabled={!formData.warehouse || racksLoading}
               />
             </div>
           </div>
@@ -731,7 +745,6 @@ export default function ProductCreate() {
 
         {/* Row 6: Additional Information */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Additional Information</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
@@ -757,7 +770,6 @@ export default function ProductCreate() {
 
         {/* Row 7: Stock & Inventory */}
         <div className="space-y-4">
-          <h3 className="text-lg font-medium text-slate-200 border-b border-slate-600 pb-2">Stock & Inventory</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>

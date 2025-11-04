@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -37,77 +36,7 @@ export default function Users() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'username', label: 'Username', enabled: true },
-    { key: 'email', label: 'Email', enabled: true },
-    { key: 'phone', label: 'Phone', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-    { key: 'created_at', label: 'Created Date', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector: showExportColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF, ExportConfig } = require('../../lib/export-utils');
-      const config = {
-        title: 'Users Report',
-        fileName: `Users_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, users, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = users.map(user => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = user.id;
-            break;
-          case 'username':
-            row.Username = user.username;
-            break;
-          case 'email':
-            row.Email = user.email;
-            break;
-          case 'phone':
-            row.Phone = user.phone || '';
-            break;
-          case 'status':
-            row.Status = getStatusText(user.status);
-            break;
-          case 'created_at':
-            row['Created Date'] = formatDate(user.created_at);
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric, ExportConfig } = require('../../lib/export-utils');
-    const config = {
-      title: 'Users Report',
-      fileName: `Users_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelExportSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     if (!loading) {
@@ -270,13 +199,21 @@ export default function Users() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={users}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'username', label: 'Username', enabled: true },
+                { key: 'email', label: 'Email', enabled: true },
+                { key: 'phone', label: 'Phone', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+                { key: 'created_at', label: 'Created Date', enabled: true },
+              ]}
+              config={{
+                title: 'Users Report',
+                fileName: 'Users'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add User</button>
           </div>
         </div>
@@ -437,13 +374,7 @@ export default function Users() {
         </div>
       )}
 
-      <ExportColumnSelector
-        isOpen={showExportColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelExportSelection}
-      />
+
     </div>
   );
 }

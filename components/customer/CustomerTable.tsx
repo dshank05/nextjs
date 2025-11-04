@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, Edit, Trash2 } from 'lucide-react';
-import { ClearableInput } from '../common';
+import { ClearableInput, ExportMenu } from '../common';
 
 interface Customer {
   id: number;
@@ -43,10 +43,9 @@ interface CustomerTableProps {
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
-  onExport?: (exportType: 'excel' | 'pdf') => void;
 }
 
-export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton, onExport }) => {
+export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, pagination, loading = false, onPageChange, searchTerm, onSearchChange, itemsPerPage, onItemsPerPageChange, actionButton }) => {
   const getPageNumbers = () => {
     if (!pagination) return [];
     const pages = [];
@@ -109,16 +108,23 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {onExport && (
-            <>
-              <button className="btn-secondary" onClick={() => onExport('excel')}>
-                📊 Export Excel
-              </button>
-              <button className="btn-secondary" onClick={() => onExport('pdf')}>
-                📄 Export PDF
-              </button>
-            </>
-          )}
+          <ExportMenu
+            data={customers}
+            columns={[
+              { key: 'id', label: 'ID', enabled: true },
+              { key: 'billing_name', label: 'Customer Name', enabled: true },
+              { key: 'contact_no', label: 'Contact Number', enabled: true },
+              { key: 'email', label: 'Email', enabled: true },
+              { key: 'billing_gstin', label: 'GSTIN', enabled: true },
+              { key: 'billing_city', label: 'City', enabled: true },
+              { key: 'billing_state', label: 'State', enabled: true },
+              { key: 'status', label: 'Status', enabled: true },
+            ]}
+            config={{
+              title: 'Customer Details Report',
+              fileName: `Customer_Details_${new Date().toISOString().split('T')[0]}`
+            }}
+          />
           {actionButton && (
             <div className="flex-shrink-0">
               {actionButton}

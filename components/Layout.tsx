@@ -156,6 +156,70 @@ const Layout = ({ children }: LayoutProps) => {
   };
 
   const getPageTitle = () => {
+    // Check for edit mode (when create routes have edit query param)
+    const hasEditParam = router.query.edit || router.query.id;
+
+    // Handle dynamic routes first
+    if (router.pathname === '/products/create') {
+      return hasEditParam ? 'PRODUCT UPDATE' : 'PRODUCT CREATE';
+    }
+    if (router.pathname.startsWith('/products/view/')) {
+      return 'PRODUCT VIEW';
+    }
+    if (router.pathname.startsWith('/products/')) {
+      return 'PRODUCTS';
+    }
+
+    // Purchase routes
+    if (router.pathname === '/purchases/create') {
+      return hasEditParam ? 'PURCHASE UPDATE' : 'PURCHASE CREATE';
+    }
+    if (router.pathname.startsWith('/purchases/view/')) {
+      return 'PURCHASE VIEW';
+    }
+    if (router.pathname.startsWith('/purchases/')) {
+      return 'PURCHASE';
+    }
+
+    // Sale routes
+    if (router.pathname === '/sale/create') {
+      return hasEditParam ? 'SALE UPDATE' : 'SALE CREATE';
+    }
+    if (router.pathname.startsWith('/sale/view/')) {
+      return 'SALE VIEW';
+    }
+    if (router.pathname.startsWith('/sale/')) {
+      return 'INVOICE';
+    }
+
+    // Salex routes
+    if (router.pathname === '/salex/create') {
+      return hasEditParam ? 'SALEX UPDATE' : 'SALEX CREATE';
+    }
+    if (router.pathname.startsWith('/salex/view/')) {
+      return 'SALEX VIEW';
+    }
+    if (router.pathname.startsWith('/salex/')) {
+      return 'INVOICE C';
+    }
+
+    // Customer routes
+    if (router.pathname === '/customers/create') {
+      return hasEditParam ? 'CUSTOMER UPDATE' : 'CUSTOMER CREATE';
+    }
+    if (router.pathname.startsWith('/customers/view/')) {
+      return 'CUSTOMER VIEW';
+    }
+
+    // Vendor routes
+    if (router.pathname === '/vendors/create') {
+      return hasEditParam ? 'VENDOR UPDATE' : 'VENDOR CREATE';
+    }
+    if (router.pathname.startsWith('/vendors/view/')) {
+      return 'VENDOR VIEW';
+    }
+
+    // Check navigation items
     for (const item of navigation) {
       if (item.subpages) {
         const subpage = item.subpages.find(sub => sub.href === router.pathname);

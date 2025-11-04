@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
@@ -38,61 +37,7 @@ export default function States() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'code', label: 'Code', enabled: true },
-    { key: 'state_name', label: 'State Name', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'States Report',
-        fileName: `States_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, states, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = states.map(state => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'code':
-            row.Code = state.code;
-            break;
-          case 'state_name':
-            row['State Name'] = state.state_name;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'States Report',
-      fileName: `States_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     if (!loading) {
@@ -256,13 +201,17 @@ export default function States() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={states}
+              columns={[
+                { key: 'code', label: 'Code', enabled: true },
+                { key: 'state_name', label: 'State Name', enabled: true },
+              ]}
+              config={{
+                title: 'States Report',
+                fileName: 'States'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add State</button>
           </div>
         </div>
@@ -385,13 +334,7 @@ export default function States() {
         }}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

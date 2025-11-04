@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // Types for export data
 interface Transaction {
@@ -33,6 +33,7 @@ interface Transaction {
 export interface ExportConfig {
   title: string;
   fileName: string;
+  dropdownOptions?: Record<string, string[]>; // Column name -> array of dropdown options
 }
 
 // Helper function to format date
@@ -88,7 +89,8 @@ export const exportToPDF = async (
       background: white !important;
       color: black !important;
       font-family: Arial, sans-serif !important;
-      font-size: 12px !important;
+      font-size: 16px !important;
+      border-collapse: collapse !important;
     `;
 
     // Apply white background and black text to all elements in the clone
@@ -99,9 +101,13 @@ export const exportToPDF = async (
         background: white !important;
         border-color: #333 !important;
         font-family: Arial, sans-serif !important;
-        font-size: 12px !important;
+        font-size: 16px !important;
+        padding: 10px 16px !important;
+        margin: 0 !important;
       `;
     });
+
+
 
     // Hide sorting icons in header (but keep the headers visible)
     const headerCells = clonedTable.querySelectorAll('thead th');
@@ -119,8 +125,8 @@ export const exportToPDF = async (
     }
 
     // Hide Actions column cells in data rows
-    const tableRows = clonedTable.querySelectorAll('tbody tr');
-    tableRows.forEach(row => {
+    const bodyRows = clonedTable.querySelectorAll('tbody tr');
+    bodyRows.forEach(row => {
       const cells = row.querySelectorAll('td');
       if (cells.length > 0) {
         const lastCell = cells[cells.length - 1] as HTMLElement;
@@ -135,7 +141,22 @@ export const exportToPDF = async (
       const textNode = document.createTextNode(statusText);
       el.textContent = '';
       el.appendChild(textNode);
-      (el as HTMLElement).style.cssText = 'color: black !important; background: white !important; font-size: 12px !important;';
+      (el as HTMLElement).style.cssText = 'color: black !important; background: white !important; font-size: 16px !important;';
+    });
+
+    // Remove blue styling from car model chips but keep layout
+    const carModelChips = clonedTable.querySelectorAll('span.bg-blue-600\\/20, span.text-blue-300');
+    carModelChips.forEach(chip => {
+      // Remove blue background, text color, borders, and rounded styling
+      (chip as HTMLElement).style.cssText = `
+        background: white !important;
+        color: black !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        margin: 0 4px 0 0 !important;
+        display: inline !important;
+      `;
     });
 
     // Temporarily add to DOM for rendering
@@ -143,7 +164,7 @@ export const exportToPDF = async (
 
     // Create canvas from the modified table element
     const canvas = await html2canvas(clonedTable, {
-      scale: 2, // Higher resolution
+      scale: 3, // Increased from 2 to 3 for sharper text & proper row height with 16px font
       useCORS: true,
       logging: false,
       backgroundColor: '#ffffff',
@@ -155,30 +176,20 @@ export const exportToPDF = async (
     const imgData = canvas.toDataURL('image/png');
 
     // Create PDF
-    const pdf = new jsPDF('landscape', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = pdfWidth - 20; // 10mm margin on each side
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const pdf = new jsPDF('portrait', 'mm', 'a4');
+    const pdfWidth = pdf.internal.pageSize.getWidth() - 20; // 10mm margin each side
+    let pdfHeight = pdf.internal.pageSize.getHeight() - 20;  // top/bottom margin
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    let position = 25; // initial Y
 
     // Add title
     pdf.setFontSize(16);
     pdf.text(config.title, 10, 15);
 
-    // Add table image
-    const yPosition = 25;
-    if (imgHeight > pdfHeight - yPosition - 20) {
-      // If image is too tall, scale it down
-      const scaledHeight = pdfHeight - yPosition - 20;
-      const scaledWidth = (scaledHeight * imgWidth) / imgHeight;
-      pdf.addImage(imgData, 'PNG', 10, yPosition, scaledWidth, scaledHeight);
+    const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
-      // Add page number
-      pdf.setFontSize(8);
-      pdf.text('Page 1', pdfWidth / 2, pdfHeight - 10, { align: 'center' });
-    } else {
-      pdf.addImage(imgData, 'PNG', 10, yPosition, imgWidth, imgHeight);
-    }
+    // Add table image with proper positioning
+    pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, imgHeight > pdfHeight ? pdfHeight : imgHeight);
 
     // Download the PDF
     pdf.save(`${config.fileName}_${new Date().toISOString().split('T')[0]}.pdf`);
@@ -188,98 +199,64 @@ export const exportToPDF = async (
   }
 };
 
-// Excel Export function (legacy for transactions)
-export const exportToExcel = (
-  transactions: Transaction[],
-  config: ExportConfig
-): void => {
-  try {
-    // Prepare data for Excel
-    const excelData = transactions.map((transaction, index) => ({
-      'SN': index + 1,
-      'Invoice No': transaction.invoice_no,
-      'Customer/Vendor': transaction.customer_vendor_name,
-      'Items Qty': transaction.item_count || transaction.items?.length || 0,
-      'Total': transaction.total,
-      'Tax Amount': transaction.total_tax || 0,
-      'Date': formatDate(transaction.invoice_date),
-      'Payment Status': getStatusText(transaction.status, transaction.type),
-      'Payment Mode': getPaymentModeText(transaction.payment_mode),
-      'Notes': transaction.notes || '',
-    }));
 
-    // Create worksheet
-    const ws = XLSX.utils.json_to_sheet(excelData);
-
-    // Set column widths
-    const colWidths = [
-      { wch: 5 },  // SN
-      { wch: 12 }, // Invoice No
-      { wch: 25 }, // Customer/Vendor
-      { wch: 8 },  // Items Qty
-      { wch: 10 }, // Total
-      { wch: 10 }, // Tax Amount
-      { wch: 12 }, // Date
-      { wch: 15 }, // Payment Status
-      { wch: 12 }, // Payment Mode
-      { wch: 30 }, // Notes
-    ];
-    ws['!cols'] = colWidths;
-
-    // Create workbook
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Data');
-
-    // Add summary sheet
-    const summaryData = [
-      { 'Metric': 'Total Records', 'Value': transactions.length },
-      { 'Metric': 'Export Date', 'Value': new Date().toLocaleString('en-IN') },
-      { 'Metric': 'Total Amount', 'Value': transactions.reduce((sum, t) => sum + (t.total || 0), 0) },
-    ];
-    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
-
-    // Download the Excel file
-    XLSX.writeFile(wb, `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
-  } catch (error) {
-    console.error('Error exporting to Excel:', error);
-    alert('Error exporting Excel file. Please try again.');
-  }
-};
 
 // Generic Excel Export function for dynamic data
-export const exportToExcelGeneric = (
+export const exportToExcelGeneric = async (
   data: any[],
   config: ExportConfig,
   selectedColumns?: string[]
-): void => {
+): Promise<void> => {
   try {
-    // Create worksheet from data
-    const ws = XLSX.utils.json_to_sheet(data);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Data');
 
-    // Set column widths based on content
-    const colWidths = Object.keys(data[0] || {}).map(key => {
-      // Set reasonable width based on column name length
-      const minWidth = Math.max(10, key.length);
-      return { wch: minWidth };
+    // Define columns dynamically
+    const headers = Object.keys(data[0] || {});
+    sheet.columns = headers.map(header => ({
+      header: header,
+      key: header,
+      width: Math.max(10, header.length)
+    }));
+
+    // Add data rows (starting from row 2)
+    data.forEach(row => {
+      sheet.addRow(row);
     });
-    ws['!cols'] = colWidths;
 
-    // Create workbook
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Data');
+    // Style headers (row 1)
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, size: 16 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1E88E5' },
+      };
+    });
 
-    // Add summary sheet
-    const summaryData = [
-      { 'Metric': 'Total Records', 'Value': data.length },
-      { 'Metric': 'Export Date', 'Value': new Date().toLocaleString('en-IN') },
-      { 'Metric': 'Selected Columns', 'Value': selectedColumns ? selectedColumns.join(', ') : 'All' },
-    ];
-    const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-    XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary');
+    // Style all data rows with 16px font
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) { // Skip header row
+        row.eachCell((cell) => {
+          cell.font = { size: 16 };
+        });
+      }
+    });
 
-    // Download the Excel file
-    XLSX.writeFile(wb, `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+   
+
+
+    // Generate buffer and download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Error exporting to Excel:', error);
     alert('Error exporting Excel file. Please try again.');

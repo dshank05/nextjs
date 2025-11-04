@@ -3,8 +3,6 @@ import { useRouter } from 'next/router';
 import { useDebounce } from '../../hooks/useDebounce';
 import { VendorTable } from '../../components/vendor/VendorTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 
 interface Vendor {
   id: number;
@@ -38,82 +36,6 @@ export default function VendorDetailsPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'vendor_name', label: 'Vendor Name', enabled: true },
-    { key: 'contact_no', label: 'Contact Number', enabled: true },
-    { key: 'email', label: 'Email', enabled: true },
-    { key: 'tax_id', label: 'GST ID', enabled: true },
-    { key: 'city', label: 'City', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
-
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Vendor Details Report',
-        fileName: `Vendor_Details_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, vendors, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = vendors.map(vendor => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = vendor.id;
-            break;
-          case 'vendor_name':
-            row['Vendor Name'] = vendor.vendor_name;
-            break;
-          case 'contact_no':
-            row['Contact Number'] = vendor.contact_no || '';
-            break;
-          case 'email':
-            row.Email = vendor.email || '';
-            break;
-          case 'tax_id':
-            row['GST ID'] = vendor.tax_id || '';
-            break;
-          case 'city':
-            row.City = vendor.city || '';
-            break;
-          case 'status':
-            row.Status = vendor.status || 'Active';
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Vendor Details Report',
-      fileName: `Vendor_Details_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   // Reset to page 1 when search changes
   useEffect(() => {
@@ -221,7 +143,6 @@ export default function VendorDetailsPage() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={handleExport}
         actionButton={
           <a
             href="/vendors/create"
@@ -232,14 +153,6 @@ export default function VendorDetailsPage() {
             Add Vendor
           </a>
         }
-      />
-
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
       />
 
       {/*

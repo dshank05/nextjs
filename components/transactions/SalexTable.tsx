@@ -266,32 +266,47 @@ export const SalexTable: React.FC<SalexTableProps> = ({
 
   return (
     <div className="card">
-      <div className="flex items-center justify-end gap-2 mb-4">
-        <ExportMenu
-          data={salexs}
-          columns={[
-            { key: 'id', label: 'ID', enabled: true },
-            { key: 'invoice_no', label: 'Invoice No', enabled: true },
-            { key: 'customer_vendor_name', label: 'Customer Name', enabled: true },
-            { key: 'total', label: 'Total Amount', enabled: true },
-            { key: 'invoice_date', label: 'Invoice Date', enabled: true },
-            { key: 'payment_status', label: 'Payment Status', enabled: true },
-            { key: 'bill_reference', label: 'Bill Reference', enabled: true },
-          ]}
-          config={{
-            title: 'Salex Report',
-            fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
-          }}
-        />
-        {actionButton && (
-          <div className="flex-shrink-0">
-            {actionButton}
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <div className="flex items-center gap-2">
+          <div className="w-64">
+            <ClearableInput
+              type="text"
+              placeholder="Search salex..."
+              value={searchTerm}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-2">
+          <ExportMenu
+            data={salexs}
+            columns={[
+              { key: 'id', label: 'ID', enabled: true },
+              { key: 'invoice_no', label: 'Invoice No', enabled: true },
+              { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+              { key: 'customer_vendor_name', label: 'Customer Name', enabled: true },
+              { key: 'item_count', label: 'Items Count', enabled: true },
+              { key: 'total', label: 'Total Amount', enabled: true },
+              { key: 'invoice_date', label: 'Invoice Date', enabled: true },
+              { key: 'payment_mode', label: 'Payment Mode', enabled: true },
+              { key: 'payment_status', label: 'Payment Status', enabled: true },
+              { key: 'notes', label: 'Notes', enabled: true },
+            ]}
+            config={{
+              title: 'Salex Report',
+              fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
+            }}
+          />
+          {actionButton && (
+            <div className="flex-shrink-0">
+              {actionButton}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-4">
         {/* UID Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
@@ -318,17 +333,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               }
             }}
             min="1"
-          />
-        </div>
-
-        {/* Search Filter */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
-          <ClearableInput
-            type="text"
-            placeholder="Search salex..."
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
           />
         </div>
 

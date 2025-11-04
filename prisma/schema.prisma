@@ -53,7 +53,7 @@ model Product {
   car_model_ids          String?
   pic                    String?              @db.VarChar(255)
   barcode                String?              @db.VarChar(100)
-  part_no                String?              @db.VarChar(100)
+  part_no                String?              @unique @db.VarChar(100)
   min_stock              Int?
   stock                  Int?
   opening_rate           Float?

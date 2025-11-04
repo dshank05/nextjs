@@ -251,6 +251,10 @@ async function handler(
         }
       }
 
+      // Get purchase rates for sorting (needed for rate and lastPurchaseDate sorting)
+      const productIdsForSorting = allProducts.map(p => p.id.toString());
+      const purchaseRatesForSorting = await getPurchaseRatesOptimized(productIdsForSorting);
+
       // Apply sorting before pagination
       allProducts.sort((a, b) => {
         let aValue: any;
@@ -282,8 +286,9 @@ async function handler(
             bValue = b.stock || 0;
             break;
           case 'rate':
-            aValue = a.opening_rate || 0;
-            bValue = b.opening_rate || 0;
+            // Sort by latest purchase rate (same as UI displays)
+            aValue = purchaseRatesForSorting.get(a.id.toString()) || a.opening_rate || 0;
+            bValue = purchaseRatesForSorting.get(b.id.toString()) || b.opening_rate || 0;
             break;
           case 'lastPurchaseDate':
             aValue = a.last_purchase_date || 0;
@@ -416,6 +421,12 @@ async function handler(
             subcategory_name: sortDirection
           }
         };
+      } else if (sortField === 'rate') {
+        // For rate sorting in simple path, sort by opening_rate (fallback when no purchase data)
+        orderBy = { opening_rate: sortDirection };
+      } else if (sortField === 'lastPurchaseDate') {
+        // Map frontend field name to database field name
+        orderBy = { last_purchase_date: sortDirection };
       } else {
         // Direct field sorting
         orderBy = { [sortField]: sortDirection };

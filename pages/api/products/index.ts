@@ -345,6 +345,26 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       console.log('POST /products: Warehouse validation failed');
       return res.status(400).json({ message: 'Warehouse is required' });
     }
+
+    // Check for duplicate part number (case-insensitive)
+    if (productData.part_no && productData.part_no.trim() !== '') {
+      const trimmedPartNo = productData.part_no.trim();
+      // Use raw SQL for case-insensitive comparison since Prisma doesn't support mode on nullable strings
+      const existingProduct = await prisma.$queryRaw`
+        SELECT id, part_no FROM product
+        WHERE LOWER(part_no) = LOWER(${trimmedPartNo})
+        AND is_active = true
+        LIMIT 1
+      ` as any[];
+
+      if (existingProduct.length > 0) {
+        console.log('POST /products: Duplicate part number validation failed');
+        return res.status(400).json({
+          message: `Part number "${trimmedPartNo}" is already in use by another product (ID: ${existingProduct[0].id}). Please use a different part number.`
+        });
+      }
+    }
+
     console.log('POST /products: Basic validation passed');
 
     // Optional FK validations

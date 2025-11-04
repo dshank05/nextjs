@@ -3,8 +3,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 
 interface Staff {
@@ -49,69 +48,7 @@ export default function StaffDetails() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'name', label: 'Name', enabled: true },
-    { key: 'phone', label: 'Phone', enabled: true },
-    { key: 'email', label: 'Email', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Staff Members Report',
-        fileName: `Staff_Members_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, staff, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = staff.map(member => {
-      const row: any = {};
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'name':
-            row.Name = member.name;
-            break;
-          case 'phone':
-            row.Phone = member.phone;
-            break;
-          case 'email':
-            row.Email = member.email || '';
-            break;
-          case 'status':
-            row.Status = member.status;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Staff Members Report',
-      fileName: `Staff_Members_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     if (!loading) {
@@ -343,13 +280,19 @@ export default function StaffDetails() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={staff}
+              columns={[
+                { key: 'name', label: 'Name', enabled: true },
+                { key: 'phone', label: 'Phone', enabled: true },
+                { key: 'email', label: 'Email', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+              ]}
+              config={{
+                title: 'Staff Members Report',
+                fileName: 'Staff_Members'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add Staff Member</button>
           </div>
         </div>
@@ -556,13 +499,7 @@ export default function StaffDetails() {
         onCancel={cancelSave}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

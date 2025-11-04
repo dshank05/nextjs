@@ -3,8 +3,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useExport } from '../../hooks/useExport';
-import { ExportColumnSelector } from '../../components/ExportColumnSelector';
+import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 
 interface WarehouseRack {
@@ -52,74 +51,7 @@ export default function WarehouseRacks() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  // Column definitions for export
-  const exportColumns = [
-    { key: 'id', label: 'ID', enabled: true },
-    { key: 'warehouse', label: 'Warehouse', enabled: true },
-    { key: 'rack_number', label: 'Rack Number', enabled: true },
-    { key: 'description', label: 'Description', enabled: true },
-    { key: 'status', label: 'Status', enabled: true },
-  ];
 
-  // Export functionality
-  const { showColumnSelector, openColumnSelector, closeColumnSelector } = useExport();
-
-  const handleExport = (exportType: 'excel' | 'pdf') => {
-    if (exportType === 'pdf') {
-      // For PDF, export current table view
-      const { exportToPDF } = require('../../lib/export-utils');
-      const config = {
-        title: 'Warehouse Racks Report',
-        fileName: `WarehouseRacks_${new Date().toISOString().split('T')[0]}`
-      };
-      exportToPDF(document.querySelector('.table') as HTMLElement, racks, config);
-    } else {
-      // For Excel, show column selector
-      openColumnSelector();
-    }
-  };
-
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
-    closeColumnSelector();
-
-    // Prepare data with selected columns
-    const exportData = racks.map(rack => {
-      const row: any = {};
-      const warehouse = warehouses.find(w => w.id === rack.warehouse_id);
-      selectedColumnKeys.forEach(key => {
-        switch (key) {
-          case 'id':
-            row.ID = rack.id;
-            break;
-          case 'warehouse':
-            row.Warehouse = warehouse ? `${warehouse.name} - ${warehouse.location}` : 'Unknown Warehouse';
-            break;
-          case 'rack_number':
-            row['Rack Number'] = rack.rack_number;
-            break;
-          case 'description':
-            row.Description = rack.description || '';
-            break;
-          case 'status':
-            row.Status = rack.status;
-            break;
-        }
-      });
-      return row;
-    });
-
-    // Export to Excel
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
-    const config = {
-      title: 'Warehouse Racks Report',
-      fileName: `WarehouseRacks_${new Date().toISOString().split('T')[0]}`
-    };
-    exportToExcelGeneric(exportData, config);
-  };
-
-  const cancelColumnSelection = () => {
-    closeColumnSelector();
-  };
 
   useEffect(() => {
     fetchWarehouses();
@@ -423,13 +355,20 @@ export default function WarehouseRacks() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="btn-secondary" onClick={() => handleExport('excel')}>
-              📊 Export Excel
-            </button>
-            <button className="btn-secondary" onClick={() => handleExport('pdf')}>
-              📄 Export PDF
-            </button>
-            {/* <button onClick={() => setSearchTerm('')} className="btn-secondary mr-2">Clear</button> */}
+            <ExportMenu
+              data={racks}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'warehouse_name', label: 'Warehouse', enabled: true },
+                { key: 'rack_number', label: 'Rack Number', enabled: true },
+                { key: 'description', label: 'Description', enabled: true },
+                { key: 'status', label: 'Status', enabled: true },
+              ]}
+              config={{
+                title: 'Warehouse Racks Report',
+                fileName: 'Warehouse_Racks'
+              }}
+            />
             <button className="btn-primary" onClick={handleAdd}>Add Warehouse Rack</button>
           </div>
         </div>
@@ -606,13 +545,7 @@ export default function WarehouseRacks() {
         onCancel={handleCancelToggle}
       />
 
-      <ExportColumnSelector
-        isOpen={showColumnSelector}
-        title="Select Columns for Excel Export"
-        columns={exportColumns}
-        onConfirm={handleColumnSelection}
-        onCancel={cancelColumnSelection}
-      />
+
     </div>
   );
 }

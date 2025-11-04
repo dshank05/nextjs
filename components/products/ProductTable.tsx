@@ -212,12 +212,14 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <ExportMenu
-            data={products}
+            data={products.map((product, idx) => ({ ...product, serialNumber: idx + 1 }))}
             columns={[
-              { key: 'id', label: 'ID', enabled: true },
+              { key: 'serialNumber', label: 'S.N', enabled: true },
+              { key: 'id', label: 'UID', enabled: true },
               { key: 'product_name', label: 'Product Name', enabled: true },
               { key: 'categoryName', label: 'Category', enabled: true },
               { key: 'subcategoryName', label: 'Subcategory', enabled: true },
+              { key: 'carModelsDisplay', label: 'Car Models', enabled: true },
               { key: 'companyName', label: 'Company', enabled: true },
               { key: 'part_no', label: 'Part Number', enabled: true },
               { key: 'stock', label: 'Stock Quantity', enabled: true },
@@ -226,7 +228,13 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             ]}
             config={{
               title: 'Product Report',
-              fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`,
+              dropdownOptions: {
+                'Category': filterOptions.categories.map(cat => cat.name),
+                'Subcategory': dynamicSubcategories.map(sub => sub.subcategory_name),
+                'Company': filterOptions.companies.map(comp => comp.name),
+                'Car Models': filterOptions.models.map(model => model.name)
+              }
             }}
           />
           {actionButton && (

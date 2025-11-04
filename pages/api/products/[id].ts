@@ -197,6 +197,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
         }
 
+        // Check for duplicate part number (case-insensitive, excluding current product)
+        if (productData.part_no && productData.part_no.trim() !== '') {
+          const trimmedPartNo = productData.part_no.trim();
+          // Use raw SQL for case-insensitive comparison since Prisma doesn't support mode on nullable strings
+          const existingProduct = await prisma.$queryRaw`
+            SELECT id, part_no FROM product
+            WHERE LOWER(part_no) = LOWER(${trimmedPartNo})
+            AND is_active = true
+            AND id != ${productId}
+            LIMIT 1
+          ` as any[];
+
+          if (existingProduct.length > 0) {
+            return res.status(400).json({
+              message: `Part number "${trimmedPartNo}" is already in use by another product (ID: ${existingProduct[0].id}). Please use a different part number.`
+            });
+          }
+        }
+
         const imageUrl = null; // Temporarily disabled
         const barcodeUrl = null; // Temporarily disabled
 
