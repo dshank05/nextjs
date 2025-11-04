@@ -1613,11 +1613,12 @@ export default function InvoiceCreate() {
         }
         setShowConfirmationModal(false);
 
-        // Close the current tab only if we opened it as a new tab for creation
-        // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditMode) {
-          window.close()
+        // Navigate to sale view page for both create and update
+        const saleId = isEditMode ? editInvoiceId : (response as any).invoice?.id;
+        if (saleId) {
+          router.push(`/sale/view/${saleId}`);
         } else {
+          // Fallback to sales list if no sale ID
           router.push('/sale');
         }
 

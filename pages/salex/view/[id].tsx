@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, FileText, Truck } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
+import { subscribeBroadcast } from '../../../lib/broadcast';
 
 interface InvoiceItem {
   id: number;
@@ -107,6 +108,18 @@ export default function InvoiceCView() {
     }
   }, [id]);
 
+  // Listen for broadcast messages to refresh data when salex are updated in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'salex' && msg.type === 'updated' && msg.data?.id === parseInt(id as string)) {
+        console.log(`🔄 Salex ${msg.data.id} updated in another tab, refreshing data...`);
+        fetchInvoice();
+      }
+    });
+
+    return unsubscribe;
+  }, [id]);
+
   const fetchInvoice = async () => {
     try {
       const response = await fetch(`/api/salex/${id}`);
@@ -129,7 +142,6 @@ export default function InvoiceCView() {
         invoiceItems
       });
     }
-    router.push(`/salex/create?edit=${id}`);
   };
 
   if (loading) {
@@ -230,14 +242,15 @@ export default function InvoiceCView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-            <button
-              onClick={handleEditInvoice}
-              className="btn-primary flex items-center gap-2"
-              title="Edit Invoice C"
-            >
-              <Edit className="w-4 h-4" />
-              Edit
-            </button>
+              <Link
+                href={`/salex/create?edit=${id}`}
+                onClick={handleEditInvoice}
+                className="btn-primary flex items-center gap-2"
+                title="Edit Invoice C"
+              >
+                <Edit className="w-4 h-4" />
+                Edit
+              </Link>
             </div>
           </div>
         </div>

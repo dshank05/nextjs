@@ -534,7 +534,6 @@ export default function PurchaseCreate() {
       showSnackbar('error', 'Failed to load products. Please try again.');
     }
   };
-
   const fetchFilterOptions = async () => {
     try {
       const response = await fetch('/api/products/filters');
@@ -1191,8 +1190,8 @@ export default function PurchaseCreate() {
         total_igst: parseFloat(formData.total_igst) || 0,
         notes: formData.notes,
         total_tax: totalTax,
-        payment_status: formData.payment_status || 0, 
-        payment_mode: formData.payment_mode || 0,    
+        payment_status: formData.payment_status || 0,
+        payment_mode: formData.payment_mode || 0,
       };
 
       // Add invoice_number only for POST (creation), exclude from PUT (update)
@@ -1220,20 +1219,21 @@ export default function PurchaseCreate() {
           SessionStorageService.remove('purchases', editPurchaseId.toString());
         }
 
-        // Close the current tab only if we opened it as a new tab for creation
-        // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditMode) {
-          window.close(); // Just close the window for new tabs
-        } else {
-          router.push('/purchases');
-        }
-
         // Broadcast the creation/update event
+        const purchaseId = isEditMode ? editPurchaseId : (response as any).purchase?.id || (response as any).id;
         broadcast({
           type: isEditMode ? 'updated' : 'created',
           resource: 'purchases',
-          data: { id: isEditMode ? editPurchaseId : (response as any).purchase?.id || (response as any).id }
+          data: { id: purchaseId }
         });
+
+        // Navigate to purchase view page for both create and update
+        if (purchaseId) {
+          router.push(`/purchases/view/${purchaseId}`);
+        } else {
+          // Fallback to purchases list if no purchase ID
+          router.push('/purchases');
+        }
 
         // Show success snackbar after navigation
         showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);
@@ -1249,6 +1249,8 @@ export default function PurchaseCreate() {
       setLoading(false);
     }
   };
+
+
 
   const handleCancelSubmit = () => {
     setShowConfirmationModal(false);

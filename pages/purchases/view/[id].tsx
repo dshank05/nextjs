@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Trash2, FileText, Truck } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
+import { subscribeBroadcast } from '../../../lib/broadcast';
 
 interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
@@ -109,6 +110,18 @@ export default function PurchaseView() {
     if (id) {
       fetchPurchase();
     }
+  }, [id]);
+
+  // Listen for broadcast messages to refresh data when this purchase is updated in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'purchases' && msg.type === 'updated' && msg.id && msg.id.toString() === id?.toString()) {
+        console.log(`🔄 Purchase ${msg.id} updated in another tab, refreshing view page...`);
+        fetchPurchase();
+      }
+    });
+
+    return unsubscribe;
   }, [id]);
 
   const fetchPurchase = async () => {
@@ -232,14 +245,15 @@ export default function PurchaseView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button
+              <Link
+                href={`/purchases/create?edit=${id}`}
                 onClick={handleEditPurchase}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Purchase"
               >
                 <Edit className="w-4 h-4" />
                 Edit
-              </button>
+              </Link>
             </div>
           </div>
         </div>

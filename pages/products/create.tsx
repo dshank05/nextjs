@@ -450,12 +450,6 @@ export default function ProductCreate() {
           // Fallback to products list if no product ID
           router.push('/products');
         }
-
-        // Close the current tab only if we opened it as a new tab for creation
-        // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditing) {
-          window.close(); // Just close the window for new tabs
-        }
       } else {
         console.error('API Error:', responseData);
         const action = isEditing ? 'update' : 'create';

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { SaleTable } from '../../components/transactions/SaleTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
@@ -402,14 +403,12 @@ export default function SalePage() {
         onPartialReturn={handlePartialReturn}
         onFullReturn={handleFullReturn}
         actionButton={
-          <a
+          <Link
             href="/sale/create"
-            target="_blank"
-            rel="noopener noreferrer"
             className="btn-primary"
           >
             Add New Invoice
-          </a>
+          </Link>
         }
       />
 

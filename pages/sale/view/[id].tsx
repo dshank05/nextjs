@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, FileText, Truck } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
+import { subscribeBroadcast } from '../../../lib/broadcast';
 
 
 interface InvoiceItem {
@@ -122,6 +123,18 @@ export default function InvoiceView() {
     }
   }, [id]);
 
+  // Listen for broadcast messages to refresh data when sales are updated in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'sales' && msg.type === 'updated' && msg.data?.id === parseInt(id as string)) {
+        console.log(`🔄 Sale ${msg.data.id} updated in another tab, refreshing data...`);
+        fetchInvoice();
+      }
+    });
+
+    return unsubscribe;
+  }, [id]);
+
   const fetchInvoice = async () => {
     try {
       const response = await fetch(`/api/sales/${id}`);
@@ -159,7 +172,6 @@ export default function InvoiceView() {
         invoiceItems
       });
     }
-    router.push(`/sale/create?edit=${id}`);
   };
 
   if (loading) {
@@ -257,14 +269,15 @@ export default function InvoiceView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
-              <button
+              <Link
+                href={`/sale/create?edit=${id}`}
                 onClick={handleEditInvoice}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Invoice"
               >
                 <Edit className="w-4 h-4" />
                 Edit
-              </button>
+              </Link>
             </div>
           </div>
         </div>

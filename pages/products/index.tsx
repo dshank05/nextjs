@@ -247,14 +247,12 @@ export default function Products() {
         onExport={() => {}} // Export handled internally by ProductTable
         onApplyFilters={handleApplyFilters}
         actionButton={(
-          <a
+          <Link
             href="/products/create"
-            target="_blank"
-            rel="noopener noreferrer"
             className="btn-primary"
           >
             Add Product
-          </a>
+          </Link>
         )}
       />
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { PurchaseTable } from '../../components/transactions/PurchaseTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -410,14 +411,12 @@ export default function PurchasesPage() {
         sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         actionButton={(
-          <a
+          <Link
             href="/purchases/create"
-            target="_blank"
-            rel="noopener noreferrer"
             className="btn-primary"
           >
             Add Purchase
-          </a>
+          </Link>
         )}
       />
 

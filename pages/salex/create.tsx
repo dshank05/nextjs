@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
@@ -1305,11 +1306,12 @@ export default function InvoiceCCreate() {
         }
         setShowConfirmationModal(false);
 
-        // Close the current tab only if we opened it as a new tab for creation
-        // Don't close if we were navigated to editing from within the app
-        if (typeof window !== 'undefined' && !isEditMode) {
-          window.close()
+        // Navigate to salex view page for both create and update
+        const salexId = isEditMode ? editInvoiceId : (response as any).salex?.id;
+        if (salexId) {
+          router.push(`/salex/view/${salexId}`);
         } else {
+          // Fallback to salex list if no salex ID
           router.push('/salex');
         }
 
@@ -1431,14 +1433,12 @@ export default function InvoiceCCreate() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
-                    <a
+                    <Link
                       href="/customers/create?from=salex"
-                      target="_blank"
-                      rel="noopener noreferrer"
                       className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
                     >
                       + Add New Customer
-                    </a>
+                    </Link>
                   </div>
                   <SearchableSelect
                     options={[

@@ -6,6 +6,7 @@ import { ConfirmationModal } from '../../../components/ConfirmationModal';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { formatBarcode } from '../../../lib/barcode-scanner';
+import { subscribeBroadcast } from '../../../lib/broadcast';
 
 interface Product {
   id: number;
@@ -69,6 +70,19 @@ export default function ProductView() {
     }
   }, [id]);
 
+  // Listen for broadcast messages to refresh data when this product is updated in other tabs
+  useEffect(() => {
+    const unsubscribe = subscribeBroadcast((msg) => {
+      if (msg.resource === 'products' && msg.type === 'updated' && msg.id && msg.id.toString() === id?.toString()) {
+        console.log(`🔄 Product ${msg.id} updated in another tab, refreshing view page...`);
+        fetchProduct();
+        fetchTransactionData();
+      }
+    });
+
+    return unsubscribe;
+  }, [id]);
+
   const fetchProduct = async () => {
     try {
       const response = await fetch(`/api/products/${id}`);
@@ -117,8 +131,9 @@ export default function ProductView() {
     if (product) {
       SessionStorageService.set('products', id.toString(), product);
     }
-    router.push(`/products/create?edit=${id}`);
   };
+
+
 
   const toggleProductStatus = () => {
     if (!product) return;
@@ -249,14 +264,15 @@ export default function ProductView() {
               >
                 {product.is_active ? '🚫 Inactive' : '✅ Reactivate'}
               </button>
-              <button
+              <Link
+                href={`/products/create?edit=${id}`}
                 onClick={handleEditProduct}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Product"
               >
                 <Edit className="w-4 h-4" />
                 Edit
-              </button>
+              </Link>
             </div>
           </div>
         </div>
