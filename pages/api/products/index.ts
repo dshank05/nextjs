@@ -418,7 +418,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     try {
       const product = await prisma.product.create({ data: finalProductData });
       console.log('POST /products: Product created successfully:', product.id);
-      res.status(201).json({ status: 'success', message: 'Product created', product });
+      res.status(201).json({
+        message: 'Product created successfully',
+        product: {
+          id: product.id,
+          product_name: product.product_name,
+          part_no: product.part_no
+        }
+      });
     } catch (dbError) {
       console.error('POST /products: Database error:', dbError);
       return res.status(500).json({

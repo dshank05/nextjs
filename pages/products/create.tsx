@@ -152,8 +152,8 @@ export default function ProductCreate() {
       }
     } catch (error) { console.error('Error fetching warehouses:', error); }
   };
-  
-  
+
+
   const fetchGstRates = async () => {
     try {
       const response = await fetch('/api/gst-rates');
@@ -469,191 +469,191 @@ export default function ProductCreate() {
     <div className="space-y-3">
       <div className="card">
         <form onSubmit={handleSubmit} className="p-3 space-y-3">
-        {/* UID Display for Edit Mode */}
-        {isEditing && editingProductId && (
-          <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mb-4">
-            <div className="flex items-center space-x-2">
-              <span className="text-blue-300 font-medium">PRODUCT UID:</span>
-              <span className="text-blue-100 font-mono text-lg font-bold">{editingProductId}</span>
+          {/* UID Display for Edit Mode */}
+          {isEditing && editingProductId && (
+            <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mb-4">
+              <div className="flex items-center space-x-2">
+                <span className="text-blue-300 font-medium">PRODUCT UID:</span>
+                <span className="text-blue-100 font-mono text-lg font-bold">{editingProductId}</span>
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Row 1: Image and Barcode Upload */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">PRODUCT IMAGE</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    setImageFile(file);
-                    const reader = new FileReader();
-                    reader.onload = () => setImagePreview(reader.result as string);
-                    reader.readAsDataURL(file);
-                  }
-                }}
-                className="input w-full"
-              />
-              {imagePreview && (
-                <img src={imagePreview} alt="Product Preview" className="w-20 h-20 object-cover mt-2 rounded border" />
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">BARCODE IMAGE</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    setBarcodeFile(file);
-                    const reader = new FileReader();
-                    reader.onload = () => setBarcodePreview(reader.result as string);
-                    reader.readAsDataURL(file);
-                  }
-                }}
-                className="input w-full"
-              />
-              {barcodePreview && (
-                <img src={barcodePreview} alt="Barcode Preview" className="w-20 h-20 object-cover mt-2 rounded border bg-white" />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Hidden Barcode Field - Auto-populated from image scanning */}
-        <input
-          type="hidden"
-          name="barcode"
-          value={formData.barcode}
-        />
-
-        {/* Product Information - 3 Columns Per Row */}
-        <div className="mb-3 space-y-2">
+          {/* Row 1: Image and Barcode Upload */}
           <div className="space-y-4">
-            {/* Row 1: Category | Sub Category | Car Models */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
-                <SearchableSelect
-                  options={filterOptions.categories.map(cat => ({ id: cat.id.toString(), name: cat.name }))}
-                  selectedValue={formData.product_category}
-                  onSelectionChange={(value) => handleInputChange('product_category', value || '')}
-                  placeholder="Select Category"
-                />
-                {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
-                <SearchableSelect
-                  options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
-                  selectedValue={formData.product_subcategory}
-                  onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
-                  placeholder={
-                    !formData.product_category
-                      ? "Please select a category first"
-                      : subcategoriesLoading
-                        ? "Loading subcategories..."
-                        : "Select Sub Category"
-                  }
-                  disabled={!formData.product_category || subcategoriesLoading}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
-                <SearchableMultiSelect
-                  options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
-                  selectedValues={formData.car_models}
-                  onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
-                  placeholder="Select car models..."
-                  closeOnSelect={false}
-                />
-              </div>
-            </div>
-
-            {/* Row 2: Company | Part Number | Display Name */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
-                <SearchableSelect
-                  options={filterOptions.companies.map(comp => ({ id: comp.id.toString(), name: comp.name }))}
-                  selectedValue={formData.company_id}
-                  onSelectionChange={(value) => handleInputChange('company_id', value || '')}
-                  placeholder="Select Company"
-                />
-                {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
-                <ClearableInput
-                  type="text"
-                  value={formData.part_no}
-                  onChange={(e) => handleInputChange('part_no', e.target.value)}
-                  placeholder="Enter part number"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY NAME</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">PRODUCT IMAGE</label>
                 <input
-                  type="text"
-                  value={generateProductDisplay() || 'Complete product details to see display name'}
-                  className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                  readOnly
-                  disabled
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setImageFile(file);
+                      const reader = new FileReader();
+                      reader.onload = () => setImagePreview(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="input w-full"
                 />
+                {imagePreview && (
+                  <img src={imagePreview} alt="Product Preview" className="w-20 h-20 object-cover mt-2 rounded border" />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">BARCODE IMAGE</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setBarcodeFile(file);
+                      const reader = new FileReader();
+                      reader.onload = () => setBarcodePreview(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="input w-full"
+                />
+                {barcodePreview && (
+                  <img src={barcodePreview} alt="Barcode Preview" className="w-20 h-20 object-cover mt-2 rounded border bg-white" />
+                )}
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Row 4: Pricing */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
-              <ClearableInput
-                type="number"
-                step="0.01"
-                value={formData.mrp}
-                onChange={(e) => handleInputChange('mrp', e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
+          {/* Hidden Barcode Field - Auto-populated from image scanning */}
+          <input
+            type="hidden"
+            name="barcode"
+            value={formData.barcode}
+          />
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
-              <ClearableInput
-                type="number"
-                step="0.01"
-                value={formData.discount}
-                onChange={(e) => handleInputChange('discount', e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
+          {/* Product Information - 3 Columns Per Row */}
+          <div className="mb-3 space-y-2">
+            <div className="space-y-4">
+              {/* Row 1: Category | Sub Category | Car Models */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CATEGORY *</label>
+                  <SearchableSelect
+                    options={filterOptions.categories.map(cat => ({ id: cat.id.toString(), name: cat.name }))}
+                    selectedValue={formData.product_category}
+                    onSelectionChange={(value) => handleInputChange('product_category', value || '')}
+                    placeholder="Select Category"
+                  />
+                  {errors.product_category && <p className="text-red-400 text-xs mt-1">{errors.product_category}</p>}
+                </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">MARGIN</label>
-              <ClearableInput
-                type="number"
-                step="0.01"
-                value={formData.margin}
-                onChange={(e) => handleInputChange('margin', e.target.value)}
-                placeholder="Profit margin in ₹"
-              />
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
+                  <SearchableSelect
+                    options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
+                    selectedValue={formData.product_subcategory}
+                    onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
+                    placeholder={
+                      !formData.product_category
+                        ? "Please select a category first"
+                        : subcategoriesLoading
+                          ? "Loading subcategories..."
+                          : "Select Sub Category"
+                    }
+                    disabled={!formData.product_category || subcategoriesLoading}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CAR MODELS</label>
+                  <SearchableMultiSelect
+                    options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
+                    selectedValues={formData.car_models}
+                    onSelectionChange={(values) => handleMultiSelectChange('car_models', values)}
+                    placeholder="Select car models..."
+                    closeOnSelect={false}
+                  />
+                </div>
+              </div>
+
+              {/* Row 2: Company | Part Number | Display Name */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">COMPANY *</label>
+                  <SearchableSelect
+                    options={filterOptions.companies.map(comp => ({ id: comp.id.toString(), name: comp.name }))}
+                    selectedValue={formData.company_id}
+                    onSelectionChange={(value) => handleInputChange('company_id', value || '')}
+                    placeholder="Select Company"
+                  />
+                  {errors.company_id && <p className="text-red-400 text-xs mt-1">{errors.company_id}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">PART NUMBER</label>
+                  <ClearableInput
+                    type="text"
+                    value={formData.part_no}
+                    onChange={(e) => handleInputChange('part_no', e.target.value)}
+                    placeholder="Enter part number"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">DISPLAY NAME</label>
+                  <input
+                    type="text"
+                    value={generateProductDisplay() || 'Complete product details to see display name'}
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    readOnly
+                    disabled
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Selling Price Display */}
-          {/* <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
+          {/* Row 4: Pricing */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
+                <ClearableInput
+                  type="number"
+                  step="0.01"
+                  value={formData.mrp}
+                  onChange={(e) => handleInputChange('mrp', e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+                <ClearableInput
+                  type="number"
+                  step="0.01"
+                  value={formData.discount}
+                  onChange={(e) => handleInputChange('discount', e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">MARGIN</label>
+                <ClearableInput
+                  type="number"
+                  step="0.01"
+                  value={formData.margin}
+                  onChange={(e) => handleInputChange('margin', e.target.value)}
+                  placeholder="Profit margin in ₹"
+                />
+              </div>
+            </div>
+
+            {/* Selling Price Display */}
+            {/* <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-blue-300 font-medium">SELLING PRICE</span>
@@ -671,191 +671,191 @@ export default function ProductCreate() {
               </div>
             </div>
           </div> */}
-        </div>
+          </div>
 
-        {/* Row 5: Location & Tax */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
-              <SearchableSelect
-                options={gstRates.map(rate => ({ id: rate.hsn_code, name: rate.hsn_code }))}
-                selectedValue={formData.hsn}
-                onSelectionChange={(value) => handleInputChange('hsn', value || '')}
-                placeholder="Select HSN Code"
-              />
+          {/* Row 5: Location & Tax */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
+                <SearchableSelect
+                  options={gstRates.map(rate => ({ id: rate.hsn_code, name: rate.hsn_code }))}
+                  selectedValue={formData.hsn}
+                  onSelectionChange={(value) => handleInputChange('hsn', value || '')}
+                  placeholder="Select HSN Code"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE</label>
+                <input
+                  type="text"
+                  value={(() => {
+                    const selectedRate = gstRates.find(rate => rate.id.toString() === formData.gst_rate);
+                    return selectedRate ? `${selectedRate.rate}%` : '';
+                  })()}
+                  className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                  placeholder="Auto-filled from HSN"
+                  readOnly
+                  disabled
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE *</label>
+                <SearchableSelect
+                  options={warehouses.map(warehouse => ({
+                    id: warehouse.id.toString(),
+                    name: `${warehouse.name} - ${warehouse.location}`
+                  }))}
+                  selectedValue={formData.warehouse}
+                  onSelectionChange={(value) => handleInputChange('warehouse', value || '')}
+                  placeholder="Select Warehouse"
+                />
+                {errors.warehouse && <p className="text-red-400 text-xs mt-1">{errors.warehouse}</p>}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">RACK</label>
+                <SearchableSelect
+                  options={racks.filter(rack => rack.status === 'Active').map(rack => ({
+                    id: rack.id.toString(),
+                    name: `${rack.rack_number} ${rack.description ? `(${rack.description})` : ''}`
+                  }))}
+                  selectedValue={formData.rack_id}
+                  onSelectionChange={(value) => handleInputChange('rack_id', value || '')}
+                  placeholder={
+                    !formData.warehouse
+                      ? "Please select a warehouse first"
+                      : racksLoading
+                        ? "Loading racks..."
+                        : "Select Rack"
+                  }
+                  disabled={!formData.warehouse || racksLoading}
+                />
+              </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">GST RATE</label>
-              <input
-                type="text"
-                value={(() => {
-                  const selectedRate = gstRates.find(rate => rate.id.toString() === formData.gst_rate);
-                  return selectedRate ? `${selectedRate.rate}%` : '';
-                })()}
-                className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                placeholder="Auto-filled from HSN"
-                readOnly
-                disabled
-              />
+          {/* Row 6: Additional Information */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
+                <ClearableTextarea
+                  value={formData.descriptions}
+                  onChange={(e) => handleInputChange('descriptions', e.target.value)}
+                  rows={3}
+                  placeholder="Enter product description"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
+                <ClearableTextarea
+                  value={formData.notes}
+                  onChange={(e) => handleInputChange('notes', e.target.value)}
+                  rows={3}
+                  placeholder="Enter additional notes"
+                />
+              </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">WAREHOUSE *</label>
-              <SearchableSelect
-                options={warehouses.map(warehouse => ({
-                  id: warehouse.id.toString(),
-                  name: `${warehouse.name} - ${warehouse.location}`
-                }))}
-                selectedValue={formData.warehouse}
-                onSelectionChange={(value) => handleInputChange('warehouse', value || '')}
-                placeholder="Select Warehouse"
-              />
-              {errors.warehouse && <p className="text-red-400 text-xs mt-1">{errors.warehouse}</p>}
+          {/* Row 7: Stock & Inventory */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
+                <ClearableInput
+                  type="number"
+                  value={formData.min_stock}
+                  onChange={(e) => handleInputChange('min_stock', e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
+                <ClearableInput
+                  type="number"
+                  value={formData.opening_stock}
+                  onChange={(e) => handleInputChange('opening_stock', e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">OPENING RATE</label>
+                <ClearableInput
+                  type="number"
+                  step="0.01"
+                  value={formData.opening_rate}
+                  onChange={(e) => handleInputChange('opening_rate', e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">RACK</label>
-              <SearchableSelect
-                options={racks.filter(rack => rack.status === 'Active').map(rack => ({
-                  id: rack.id.toString(),
-                  name: `${rack.rack_number} ${rack.description ? `(${rack.description})` : ''}`
-                }))}
-                selectedValue={formData.rack_id}
-                onSelectionChange={(value) => handleInputChange('rack_id', value || '')}
-                placeholder={
-                  !formData.warehouse
-                    ? "Please select a warehouse first"
-                    : racksLoading
-                      ? "Loading racks..."
-                      : "Select Rack"
+          {/* Total Amount Display */}
+          <div className="bg-slate-700 rounded p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-300 font-medium">TOTAL AMOUNT</span>
+              <div className="flex items-center space-x-2">
+                <Calculator className="w-4 h-4 text-slate-400" />
+                <span className="text-white font-semibold text-lg">
+                  ₹{calculateTotalAmount().toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Error Display */}
+          {errors.submit && (
+            <div className="bg-red-900 border border-red-700 rounded p-3">
+              <p className="text-red-200 text-sm">{errors.submit}</p>
+            </div>
+          )}
+
+          {/* Form Actions */}
+          <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
+            <button
+              type="button"
+              onClick={() => {
+                // Clean up sessionStorage on cancel
+                if (isEditing && editingProductId) {
+                  SessionStorageService.remove('products', editingProductId.toString());
                 }
-                disabled={!formData.warehouse || racksLoading}
-              />
-            </div>
+                router.push('/products');
+              }}
+              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Product' : 'Create Product')}
+            </button>
           </div>
-        </div>
+        </form>
+      </div>
 
-        {/* Row 6: Additional Information */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
-              <ClearableTextarea
-                value={formData.descriptions}
-                onChange={(e) => handleInputChange('descriptions', e.target.value)}
-                rows={3}
-                placeholder="Enter product description"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
-              <ClearableTextarea
-                value={formData.notes}
-                onChange={(e) => handleInputChange('notes', e.target.value)}
-                rows={3}
-                placeholder="Enter additional notes"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Row 7: Stock & Inventory */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">MINIMUM STOCK</label>
-              <ClearableInput
-                type="number"
-                value={formData.min_stock}
-                onChange={(e) => handleInputChange('min_stock', e.target.value)}
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">OPENING STOCK</label>
-              <ClearableInput
-                type="number"
-                value={formData.opening_stock}
-                onChange={(e) => handleInputChange('opening_stock', e.target.value)}
-                placeholder="0"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">OPENING RATE</label>
-              <ClearableInput
-                type="number"
-                step="0.01"
-                value={formData.opening_rate}
-                onChange={(e) => handleInputChange('opening_rate', e.target.value)}
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Total Amount Display */}
-        <div className="bg-slate-700 rounded p-4">
-          <div className="flex items-center justify-between">
-            <span className="text-slate-300 font-medium">TOTAL AMOUNT</span>
-            <div className="flex items-center space-x-2">
-              <Calculator className="w-4 h-4 text-slate-400" />
-              <span className="text-white font-semibold text-lg">
-                ₹{calculateTotalAmount().toFixed(2)}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Error Display */}
-        {errors.submit && (
-          <div className="bg-red-900 border border-red-700 rounded p-3">
-            <p className="text-red-200 text-sm">{errors.submit}</p>
-          </div>
-        )}
-
-        {/* Form Actions */}
-        <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
-          <button
-            type="button"
-            onClick={() => {
-              // Clean up sessionStorage on cancel
-              if (isEditing && editingProductId) {
-                SessionStorageService.remove('products', editingProductId.toString());
-              }
-              router.push('/products');
-            }}
-            className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={loading}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Product' : 'Create Product')}
-          </button>
-        </div>
-      </form>
+      {/* Main Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title={isEditing ? "Update Product?" : "Create Product?"}
+        message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? `This will update the existing product with UID: ${editingProductId}.` : 'This action cannot be undone.'}`}
+        confirmText={isEditing ? "Update Product" : "Create Product"}
+        cancelText="Cancel"
+        showLoading={isSaving}
+        loadingText={isEditing ? "Updating Product..." : "Creating Product..."}
+        onConfirm={handleConfirmSubmit}
+        onCancel={() => setShowConfirmModal(false)}
+      />
     </div>
-
-    {/* Main Confirmation Modal */}
-    <ConfirmationModal
-      isOpen={showConfirmModal}
-      title={isEditing ? "Update Product?" : "Create Product?"}
-      message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? `This will update the existing product with UID: ${editingProductId}.` : 'This action cannot be undone.'}`}
-      confirmText={isEditing ? "Update Product" : "Create Product"}
-      cancelText="Cancel"
-      showLoading={isSaving}
-      loadingText={isEditing ? "Updating Product..." : "Creating Product..."}
-      onConfirm={handleConfirmSubmit}
-      onCancel={() => setShowConfirmModal(false)}
-    />
-  </div>
   );
 }

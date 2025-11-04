@@ -1306,6 +1306,14 @@ export default function InvoiceCCreate() {
         }
         setShowConfirmationModal(false);
 
+
+        // Broadcast the creation/update event
+        broadcast({
+          type: isEditMode ? 'updated' : 'created',
+          resource: 'salex',
+          data: { id: isEditMode ? editInvoiceId : (response as any).salex?.id || (response as any).id }
+        });
+
         // Navigate to salex view page for both create and update
         const salexId = isEditMode ? editInvoiceId : (response as any).salex?.id;
         if (salexId) {
@@ -1315,12 +1323,6 @@ export default function InvoiceCCreate() {
           router.push('/salex');
         }
 
-        // Broadcast the creation/update event
-        broadcast({
-          type: isEditMode ? 'updated' : 'created',
-          resource: 'salex',
-          data: { id: isEditMode ? editInvoiceId : (response as any).salex?.id || (response as any).id }
-        });
 
         // Show success snackbar after navigation
         showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');

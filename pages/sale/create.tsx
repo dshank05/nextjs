@@ -1613,21 +1613,23 @@ export default function InvoiceCreate() {
         }
         setShowConfirmationModal(false);
 
+
+        // Broadcast the creation/update event
+        broadcast({
+          type: isEditMode ? 'updated' : 'created',
+          resource: 'sales',
+          data: { id: isEditMode ? editInvoiceId : (response as any).sale?.id || (response as any).id }
+        });
+
+
         // Navigate to sale view page for both create and update
-        const saleId = isEditMode ? editInvoiceId : (response as any).invoice?.id;
+        const saleId = isEditMode ? editInvoiceId : (response as any).sale?.id;
         if (saleId) {
           router.push(`/sale/view/${saleId}`);
         } else {
           // Fallback to sales list if no sale ID
           router.push('/sale');
         }
-
-        // Broadcast the creation/update event
-        broadcast({
-          type: isEditMode ? 'updated' : 'created',
-          resource: 'sales',
-          data: { id: isEditMode ? editInvoiceId : (response as any).invoice?.id || (response as any).id }
-        });
 
         // Show snackbar after navigation
         showSnackbar('success', `Invoice ${isEditMode ? 'updated' : 'created'} successfully!`);
