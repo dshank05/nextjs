@@ -4,7 +4,7 @@ import { TransactionTable } from '../../components/transactions/TransactionTable
 import { TransactionFilters } from '../../components/transactions/TransactionFilters';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { FileText, Download, RotateCcw, RefreshCw } from 'lucide-react';
-import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils';
+import { exportToPDF, exportToExcelGeneric, getTableForExport } from '../../lib/export-utils';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
 // Define types for sales data (matching the Invoice and Invoiceitems tables)
@@ -345,7 +345,7 @@ export default function SaleReturnPage() {
     console.log('Exporting sales to Excel...');
     if (salesAsTransactions.length > 0) {
       try {
-        exportToExcel(salesAsTransactions, {
+        exportToExcelGeneric(salesAsTransactions, {
           title: 'Sales Report',
           fileName: 'sales_report'
         });

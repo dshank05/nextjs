@@ -4,7 +4,7 @@ import { TransactionTable } from '../../components/transactions/TransactionTable
 import { TransactionFilters } from '../../components/transactions/TransactionFilters';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { FileText, Download, RotateCcw, RefreshCw } from 'lucide-react';
-import { exportToPDF, exportToExcel, getTableForExport } from '../../lib/export-utils';
+import { exportToPDF, exportToExcelGeneric, getTableForExport } from '../../lib/export-utils';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
 // Define types for purchase data (matching the Purchase table)
@@ -290,7 +290,7 @@ export default function PurchaseReturnPage() {
     console.log('Exporting purchases to Excel...');
     if (purchasesAsTransactions.length > 0) {
       try {
-        exportToExcel(purchasesAsTransactions, {
+        exportToExcelGeneric(purchasesAsTransactions, {
           title: 'Purchase Report',
           fileName: 'purchase_report'
         });
