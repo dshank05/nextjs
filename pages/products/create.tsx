@@ -4,7 +4,7 @@ import { Calculator } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
-import { ClearableInput, ClearableTextarea } from '../../components/common';
+import { ClearableInput, ClearableTextarea, FileUpload } from '../../components/common';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
@@ -79,7 +79,12 @@ export default function ProductCreate() {
   const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [barcodePreview, setBarcodePreview] = useState<string>('');
+  const [existingImageUrl, setExistingImageUrl] = useState<string>('');
+  const [existingBarcodeUrl, setExistingBarcodeUrl] = useState<string>('');
+  const [isNewImage, setIsNewImage] = useState<boolean>(false);
+  const [isNewBarcode, setIsNewBarcode] = useState<boolean>(false);
   const [loading, setLoading] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -251,6 +256,7 @@ export default function ProductCreate() {
   };
 
   const loadProductForEdit = async (productId: number) => {
+    setEditLoading(true);
     try {
       const response = await fetch(`/api/products/${productId}`);
       if (response.ok) {
@@ -299,10 +305,14 @@ export default function ProductCreate() {
 
         // Set existing images for editing
         if (product.pic) {
+          setExistingImageUrl(product.pic); // Set existing image URL
           setImagePreview(product.pic); // Show existing image
+          setIsNewImage(false); // Mark as existing
         }
         if (product.barcode) {
+          setExistingBarcodeUrl(product.barcode); // Set existing barcode URL
           setBarcodePreview(product.barcode); // Show existing barcode image
+          setIsNewBarcode(false); // Mark as existing
         }
 
         // Load racks for the selected warehouse
@@ -312,6 +322,9 @@ export default function ProductCreate() {
       }
     } catch (error) {
       console.error('Error loading product for edit:', error);
+      showSnackbar('error', 'Failed to load product data for editing');
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -375,10 +388,10 @@ export default function ProductCreate() {
       // Generate display name first
       const displayName = generateProductDisplay();
 
-      // Create FormData payload (reverted from JSON)
+      // Create FormData payload (UI sends FormData with productData JSON + files)
       const formDataToSend = new FormData();
 
-      // Add product data as JSON string (same as before)
+      // Add product data as JSON string with file state information
       const productData = {
         product_name: displayName,
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
@@ -403,9 +416,25 @@ export default function ProductCreate() {
         mrp: formData.mrp ? parseFloat(formData.mrp) : null,
         discount: formData.discount ? parseFloat(formData.discount) : null,
         margin: formData.margin ? parseFloat(formData.margin) : null,
+
+        // File state information for smart handling
+        fileStates: {
+          image: {
+            hasNewFile: isNewImage && !!imageFile,
+            existingUrl: existingImageUrl || null
+          },
+          barcode: {
+            hasNewFile: isNewBarcode && !!barcodeFile,
+            existingUrl: existingBarcodeUrl || null
+          }
+        }
       };
 
       formDataToSend.append('productData', JSON.stringify(productData));
+
+      // Only add NEW files (not existing ones)
+      if (isNewImage && imageFile) formDataToSend.append('image', imageFile);
+      if (isNewBarcode && barcodeFile) formDataToSend.append('barcode', barcodeFile);
 
       const url = isEditing && editingProductId ? `/api/products/${editingProductId}` : '/api/products';
       const method = isEditing && editingProductId ? 'PUT' : 'POST';
@@ -467,7 +496,18 @@ export default function ProductCreate() {
 
   return (
     <div className="space-y-3">
-      <div className="card">
+      <div className="card relative">
+        {/* Loading overlay for edit mode */}
+        {editLoading && (
+          <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center z-50 rounded-lg">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p className="text-slate-300 font-medium">Loading product data...</p>
+              <p className="text-slate-400 text-sm mt-1">Please wait while we fetch the product details</p>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="p-3 space-y-3">
           {/* Product Display for Edit Mode */}
           {isEditing && editingProductId && (
@@ -481,50 +521,64 @@ export default function ProductCreate() {
           )}
 
           {/* Row 1: Image and Barcode Upload */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">PRODUCT IMAGE</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setImageFile(file);
-                      const reader = new FileReader();
-                      reader.onload = () => setImagePreview(reader.result as string);
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                  className="input w-full"
-                />
-                {imagePreview && (
-                  <img src={imagePreview} alt="Product Preview" className="w-20 h-20 object-cover mt-2 rounded border" />
-                )}
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FileUpload
+              label="PRODUCT IMAGE"
+              accept="image/*"
+              maxSize={5}
+              value={imageFile}
+              previewUrl={imagePreview}
+              existingUrl={existingImageUrl}
+              onChange={(file, isNew) => {
+                setImageFile(file);
+                setIsNewImage(isNew);
+                if (file) {
+                  // New file uploaded
+                  const reader = new FileReader();
+                  reader.onload = () => setImagePreview(reader.result as string);
+                  reader.readAsDataURL(file);
+                } else {
+                  // File removed - check if it was existing
+                  if (existingImageUrl && !isNew) {
+                    // User removed existing file - signal deletion
+                    setExistingImageUrl(null); // null = delete signal
+                  }
+                  setImagePreview('');
+                }
+              }}
+              onError={(error) => showSnackbar('error', error)}
+              icon="image"
+              placeholder="Drop product image here or click to browse"
+            />
 
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">BARCODE IMAGE</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      setBarcodeFile(file);
-                      const reader = new FileReader();
-                      reader.onload = () => setBarcodePreview(reader.result as string);
-                      reader.readAsDataURL(file);
-                    }
-                  }}
-                  className="input w-full"
-                />
-                {barcodePreview && (
-                  <img src={barcodePreview} alt="Barcode Preview" className="w-20 h-20 object-cover mt-2 rounded border bg-white" />
-                )}
-              </div>
-            </div>
+            <FileUpload
+              label="BARCODE IMAGE"
+              accept="image/*"
+              maxSize={5}
+              value={barcodeFile}
+              previewUrl={barcodePreview}
+              existingUrl={existingBarcodeUrl}
+              onChange={(file, isNew) => {
+                setBarcodeFile(file);
+                setIsNewBarcode(isNew);
+                if (file) {
+                  // New file uploaded
+                  const reader = new FileReader();
+                  reader.onload = () => setBarcodePreview(reader.result as string);
+                  reader.readAsDataURL(file);
+                } else {
+                  // File removed - check if it was existing
+                  if (existingBarcodeUrl && !isNew) {
+                    // User removed existing file - signal deletion
+                    setExistingBarcodeUrl(null); // null = delete signal
+                  }
+                  setBarcodePreview('');
+                }
+              }}
+              onError={(error) => showSnackbar('error', error)}
+              icon="barcode"
+              placeholder="Drop barcode image here or click to browse"
+            />
           </div>
 
           {/* Hidden Barcode Field - Auto-populated from image scanning */}

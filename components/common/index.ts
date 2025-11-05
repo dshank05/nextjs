@@ -4,3 +4,6 @@ export { ClearableInput } from './ClearableInput';
 export { ClearableTextarea } from './ClearableTextarea';
 export { ProductSelectionPanel } from './ProductSelectionPanel';
 export { ExportMenu } from './ExportMenu';
+export { FileUpload } from './FileUpload';
+export { ImageCarousel } from './ImageCarousel';
+export { ImagePreviewModal } from './ImagePreviewModal';

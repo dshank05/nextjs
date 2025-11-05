@@ -17,6 +17,8 @@ interface Product {
   lastPurchaseDate?: string;
   carModelsDisplay?: string;
   subcategoryName?: string;
+  pic?: string; // Product image URL
+  barcode?: string; // Barcode image URL
 }
 
 interface ProductResponse {
@@ -113,7 +115,9 @@ export default function Products() {
         latestPurchaseRate: product.latestPurchaseRate,
         lastPurchaseDate: product.lastPurchaseDate,
         carModelsDisplay: product.carModelsDisplay,
-        subcategoryName: product.subcategoryName
+        subcategoryName: product.subcategoryName,
+        pic: product.pic, // ✅ Added for Media column
+        barcode: product.barcode // ✅ Added for Media column
       }));
 
       setProducts(transformedProducts);

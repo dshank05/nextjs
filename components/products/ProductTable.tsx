@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, ChevronDown, X, Check } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Eye, ChevronDown, X, Check, Image } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
-import { ClearableInput, ExportMenu } from '../common';
+import { ClearableInput, ExportMenu, ImagePreviewModal } from '../common';
 
 interface Product {
   id: number;
@@ -21,6 +21,8 @@ interface Product {
   lastPurchaseDate?: string;
   carModelsDisplay?: string;
   subcategoryName?: string;
+  pic?: string; // Product image URL
+  barcode?: string; // Barcode image URL
 }
 
 interface Pagination {
@@ -112,6 +114,14 @@ export const ProductTable: React.FC<ProductTableProps> = ({
 
   // Debounced search
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Image preview modal state
+  const [imagePreviewModal, setImagePreviewModal] = useState({
+    isOpen: false,
+    productName: '',
+    imageUrl: '',
+    barcodeUrl: ''
+  });
 
   // Fetch filter options on mount
   useEffect(() => {
@@ -482,6 +492,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
                 Part Number {getSortIcon('part_no')}
               </th>
+              <th>Media</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
                 Stock {getSortIcon('stock')}
               </th>
@@ -520,6 +531,24 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 </td>
                 <td className="text-slate-300">{product.companyName || '-'}</td>
                 <td className="text-slate-300">{product.part_no || '-'}</td>
+                <td>
+                  {(product.pic || product.barcode) ? (
+                    <button
+                      onClick={() => setImagePreviewModal({
+                        isOpen: true,
+                        productName: product.product_name,
+                        imageUrl: product.pic || '',
+                        barcodeUrl: product.barcode || ''
+                      })}
+                      className="text-blue-400 hover:text-blue-300 transition-colors"
+                      title="View Product Media"
+                    >
+                      <Image className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <span className="text-slate-500 text-sm">-</span>
+                  )}
+                </td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
                 <td className="text-slate-300">{product.lastPurchaseDate || '-'}</td>
@@ -549,6 +578,15 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <button onClick={() => onPageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
         </div>
       )}
+
+      {/* Image Preview Modal */}
+      <ImagePreviewModal
+        isOpen={imagePreviewModal.isOpen}
+        onClose={() => setImagePreviewModal(prev => ({ ...prev, isOpen: false }))}
+        imageUrl={imagePreviewModal.imageUrl}
+        barcodeUrl={imagePreviewModal.barcodeUrl}
+        productName={imagePreviewModal.productName}
+      />
 
     </div>
   );

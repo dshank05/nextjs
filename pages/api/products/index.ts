@@ -4,35 +4,24 @@ import { withObservability } from '../../../lib/withObservability';
 import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
-import Client from 'ssh2-sftp-client';
+import { Client } from 'basic-ftp';
 
-// ---------------------
-// Helper: Upload file to SFTP and return public URL (TEMPORARILY DISABLED)
-// ---------------------
+// ==================== Helper: Upload file to Hostinger FTP ====================
 async function uploadFileToStorage(file: formidable.File): Promise<string | null> {
-  // TEMPORARILY DISABLED: File upload functionality commented out
-  // TODO: Uncomment when FTP/SFTP credentials are available
+  const client = new Client();
 
-  /*
-  const sftp = new Client();
   try {
-    // Connect to SFTP server
-    await sftp.connect({
+    // Connect to FTP server
+    await client.access({
       host: process.env.FTP_HOST,
-      port: parseInt(process.env.FTP_PORT) || 22, // SFTP uses port 22
-      username: process.env.FTP_USERNAME,
+      port: parseInt(process.env.FTP_PORT) || 21,
+      user: process.env.FTP_USERNAME,
       password: process.env.FTP_PASSWORD,
+      secure: false // Regular FTP, not FTPS
     });
 
     // Ensure remote directory exists
-    try {
-      await sftp.mkdir('public_html/uploads', true);
-    } catch (mkdirErr: any) {
-      // Ignore if directory already exists (code 4)
-      if (mkdirErr.code !== 4) {
-        throw mkdirErr;
-      }
-    }
+    await client.ensureDir('/public_html/uploads');
 
     // Generate unique filename
     const timestamp = Date.now();
@@ -43,7 +32,7 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
     const uniqueName = `${base}_${timestamp}_${random}${ext}`;
 
     // Upload file
-    await sftp.put(file.filepath, `public_html/uploads/${uniqueName}`);
+    await client.uploadFrom(file.filepath, `/public_html/uploads/${uniqueName}`);
 
     // Clean up local temp file
     fs.unlink(file.filepath, (err) => {
@@ -52,30 +41,16 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
 
     const hostingerDomain = process.env.HOSTINGER_DOMAIN || 'https://baijnathsons.com';
     const publicUrl = `${hostingerDomain}/uploads/${uniqueName}`;
-    console.log('SFTP upload successful:', publicUrl);
+    console.log('FTP upload successful:', publicUrl);
 
     return publicUrl;
   } catch (error) {
-    console.error('SFTP upload error:', error);
+    console.error('FTP upload error:', error);
     throw error;
   } finally {
-    // Always disconnect
-    try {
-      await sftp.end();
-    } catch (endErr) {
-      console.warn('SFTP disconnect error:', endErr);
-    }
+    // Always close the connection
+    client.close();
   }
-  */
-
-  // Clean up temp file
-  fs.unlink(file.filepath, (err) => {
-    if (err) console.warn('Failed to clean up temp file:', err);
-  });
-
-  // Return null to disable file uploads temporarily
-  console.log('File upload temporarily disabled');
-  return null;
 }
 
 // ---------------------
@@ -332,9 +307,43 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const productData = JSON.parse(productDataStr);
     console.log('POST /products: Product data parsed:', productData);
 
-    const imageUrl = null; // Temporarily disabled
-    const barcodeUrl = null; // Temporarily disabled
-    console.log('POST /products: File uploads disabled');
+    // Smart file handling for new products (all files are new)
+    const uploadPromises: Promise<void>[] = [];
+    let imageUrl: string | null = null;
+    let barcodeUrl: string | null = null;
+
+    // Upload image if provided
+    if (files.image && files.image[0]) {
+      uploadPromises.push(
+        (async () => {
+          try {
+            imageUrl = await uploadFileToStorage(files.image[0]);
+          } catch (uploadError) {
+            console.error('Image upload failed:', uploadError);
+            // Continue without image - don't fail the entire creation
+          }
+        })()
+      );
+    }
+
+    // Upload barcode if provided
+    if (files.barcode && files.barcode[0]) {
+      uploadPromises.push(
+        (async () => {
+          try {
+            barcodeUrl = await uploadFileToStorage(files.barcode[0]);
+          } catch (uploadError) {
+            console.error('Barcode upload failed:', uploadError);
+            // Continue without barcode - don't fail the entire creation
+          }
+        })()
+      );
+    }
+
+    // Wait for all uploads to complete in parallel
+    if (uploadPromises.length > 0) {
+      await Promise.all(uploadPromises);
+    }
 
     // Basic validation
     if (!productData.product_name || productData.product_name.trim() === '') {

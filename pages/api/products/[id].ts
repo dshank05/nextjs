@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/db'
 import formidable from 'formidable'
 import fs from 'fs'
 import path from 'path'
-import Client from 'ssh2-sftp-client'
+import { Client } from 'basic-ftp'
 
 // ==================== Helper: Promisify Formidable ====================
 function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; files: formidable.Files }> {
@@ -23,31 +23,58 @@ function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; fi
   });
 }
 
-// ==================== Helper: Upload file to Hostinger SFTP (TEMPORARILY DISABLED) ====================
-async function uploadFileToStorage(file: formidable.File): Promise<string | null> {
-  // TEMPORARILY DISABLED: File upload functionality commented out
-  // TODO: Uncomment when FTP/SFTP credentials are available
-
-  /*
-  const sftp = new Client();
+// ==================== Helper: Delete old file from FTP ====================
+async function deleteOldFile(fileUrl: string): Promise<void> {
   try {
-    // Connect to SFTP server
-    await sftp.connect({
+    // Extract filename from URL
+    const urlParts = fileUrl.split('/');
+    const filename = urlParts[urlParts.length - 1];
+
+    if (!filename) return;
+
+    const client = new Client();
+
+    // Connect to FTP server
+    await client.access({
       host: process.env.FTP_HOST,
-      port: parseInt(process.env.FTP_PORT) || 22, // SFTP uses port 22
-      username: process.env.FTP_USERNAME,
+      port: parseInt(process.env.FTP_PORT) || 21,
+      user: process.env.FTP_USERNAME,
       password: process.env.FTP_PASSWORD,
+      secure: false // Regular FTP, not FTPS
+    });
+
+    // Try to delete the file
+    try {
+      await client.remove(`/public_html/uploads/${filename}`);
+      console.log('Old file deleted successfully:', filename);
+    } catch (deleteError) {
+      // File might not exist or already deleted - not a critical error
+      console.warn('Could not delete old file (might not exist):', filename);
+    }
+
+    client.close();
+  } catch (error) {
+    console.warn('Error deleting old file:', error);
+    // Don't throw - file deletion failure shouldn't break the update
+  }
+}
+
+// ==================== Helper: Upload file to Hostinger FTP ====================
+async function uploadFileToStorage(file: formidable.File): Promise<string | null> {
+  const client = new Client();
+
+  try {
+    // Connect to FTP server
+    await client.access({
+      host: process.env.FTP_HOST,
+      port: parseInt(process.env.FTP_PORT) || 21,
+      user: process.env.FTP_USERNAME,
+      password: process.env.FTP_PASSWORD,
+      secure: false // Regular FTP, not FTPS
     });
 
     // Ensure remote directory exists
-    try {
-      await sftp.mkdir('public_html/uploads', true);
-    } catch (mkdirErr: any) {
-      // Ignore if directory already exists (code 4)
-      if (mkdirErr.code !== 4) {
-        throw mkdirErr;
-      }
-    }
+    await client.ensureDir('/public_html/uploads');
 
     // Generate unique filename
     const timestamp = Date.now();
@@ -58,7 +85,7 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
     const uniqueName = `${base}_${timestamp}_${random}${ext}`;
 
     // Upload file
-    await sftp.put(file.filepath, `public_html/uploads/${uniqueName}`);
+    await client.uploadFrom(file.filepath, `/public_html/uploads/${uniqueName}`);
 
     // Clean up local temp file
     fs.unlink(file.filepath, (err) => {
@@ -67,30 +94,16 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
 
     const hostingerDomain = process.env.HOSTINGER_DOMAIN || 'https://baijnathsons.com';
     const publicUrl = `${hostingerDomain}/uploads/${uniqueName}`;
-    console.log('SFTP upload successful:', publicUrl);
+    console.log('FTP upload successful:', publicUrl);
 
     return publicUrl;
   } catch (error) {
-    console.error('SFTP upload error:', error);
+    console.error('FTP upload error:', error);
     throw error;
   } finally {
-    // Always disconnect
-    try {
-      await sftp.end();
-    } catch (endErr) {
-      console.warn('SFTP disconnect error:', endErr);
-    }
+    // Always close the connection
+    client.close();
   }
-  */
-
-  // Clean up temp file
-  fs.unlink(file.filepath, (err) => {
-    if (err) console.warn('Failed to clean up temp file:', err);
-  });
-
-  // Return null to disable file uploads temporarily
-  console.log('File upload temporarily disabled');
-  return null;
 }
 
 // ==================== Helper: Enhance Product ====================
@@ -179,7 +192,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       case 'PUT': {
-        // Parse FormData (UI sends FormData with productData JSON)
+        // Parse FormData (UI sends FormData with productData JSON + files)
         const { fields, files } = await parseForm(req);
 
         const productDataStr = Array.isArray(fields.productData) ? fields.productData[0] : fields.productData;
@@ -216,8 +229,92 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
-        const imageUrl = null; // Temporarily disabled
-        const barcodeUrl = null; // Temporarily disabled
+        // Smart file handling - handle new uploads, existing files, and deletions
+        const fileStates = productData.fileStates || {};
+        const uploadPromises: Promise<void>[] = [];
+        let imageUrl: string | null = null;
+        let barcodeUrl: string | null = null;
+
+        // Handle image file
+        if (fileStates.image?.hasNewFile && files.image && files.image[0]) {
+          // NEW FILE: Upload new file and delete old one if exists
+          uploadPromises.push(
+            (async () => {
+              try {
+                imageUrl = await uploadFileToStorage(files.image[0]);
+                // Delete old file if it exists
+                if (imageUrl && fileStates.image.existingUrl) {
+                  await deleteOldFile(fileStates.image.existingUrl);
+                }
+              } catch (uploadError) {
+                console.error('Image upload failed:', uploadError);
+                // Continue without image - don't fail the entire update
+              }
+            })()
+          );
+        } else if (fileStates.image && fileStates.image.existingUrl === null && fileStates.image.hasNewFile === false) {
+          // DELETE: User explicitly removed existing file - delete from FTP and set DB to null
+          try {
+            // Get current product to check existing file
+            const currentProduct = await prisma.product.findUnique({
+              where: { id: productId },
+              select: { pic: true }
+            });
+            if (currentProduct?.pic) {
+              await deleteOldFile(currentProduct.pic);
+            }
+          } catch (deleteError) {
+            console.warn('Failed to delete existing image file:', deleteError);
+          }
+          imageUrl = null; // Set DB field to null
+        } else if (fileStates.image?.existingUrl) {
+          // KEEP EXISTING: Preserve existing URL
+          imageUrl = fileStates.image.existingUrl;
+        }
+        // If no fileStates.image or existingUrl is undefined, keep current DB value (no change)
+
+        // Handle barcode file
+        if (fileStates.barcode?.hasNewFile && files.barcode && files.barcode[0]) {
+          // NEW FILE: Upload new file and delete old one if exists
+          uploadPromises.push(
+            (async () => {
+              try {
+                barcodeUrl = await uploadFileToStorage(files.barcode[0]);
+                // Delete old file if it exists
+                if (barcodeUrl && fileStates.barcode.existingUrl) {
+                  await deleteOldFile(fileStates.barcode.existingUrl);
+                }
+              } catch (uploadError) {
+                console.error('Barcode upload failed:', uploadError);
+                // Continue without barcode - don't fail the entire update
+              }
+            })()
+          );
+        } else if (fileStates.barcode && fileStates.barcode.existingUrl === null && fileStates.barcode.hasNewFile === false) {
+          // DELETE: User explicitly removed existing file - delete from FTP and set DB to null
+          try {
+            // Get current product to check existing file
+            const currentProduct = await prisma.product.findUnique({
+              where: { id: productId },
+              select: { barcode: true }
+            });
+            if (currentProduct?.barcode) {
+              await deleteOldFile(currentProduct.barcode);
+            }
+          } catch (deleteError) {
+            console.warn('Failed to delete existing barcode file:', deleteError);
+          }
+          barcodeUrl = null; // Set DB field to null
+        } else if (fileStates.barcode?.existingUrl) {
+          // KEEP EXISTING: Preserve existing URL
+          barcodeUrl = fileStates.barcode.existingUrl;
+        }
+        // If no fileStates.barcode or existingUrl is undefined, keep current DB value (no change)
+
+        // Wait for all uploads to complete in parallel
+        if (uploadPromises.length > 0) {
+          await Promise.all(uploadPromises);
+        }
 
         const finalData: any = {
           product_name: productData.product_name,
@@ -231,8 +328,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           opening_stock: productData.opening_stock ? parseInt(productData.opening_stock) : 0,
           opening_rate: productData.opening_rate ? parseFloat(productData.opening_rate) : 0,
           hsn: productData.hsn || null,
-          ...(imageUrl && { pic: imageUrl }),
-          ...(barcodeUrl && { barcode: barcodeUrl }),
+          // Handle file URLs - can be string, null, or undefined (for no change)
+          ...(imageUrl !== undefined && { pic: imageUrl }),
+          ...(barcodeUrl !== undefined && { barcode: barcodeUrl }),
           descriptions: productData.descriptions || null,
           mrp: productData.mrp ? parseFloat(productData.mrp) : null,
           discount: productData.discount ? parseFloat(productData.discount) : null,

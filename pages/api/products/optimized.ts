@@ -548,7 +548,7 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
     const rate = latestPurchaseRate; // For UI compatibility
 
     // OPTIMIZATION: Only include fields that are actually used in the UI
-    // Commented out extensive unused fields - uncomment if needed later
+    // Added pic and barcode for Media column visual cues
     return {
       id: product.id,
       product_name: product.product_name,
@@ -563,6 +563,8 @@ async function enhanceProducts(products: any[]): Promise<any[]> {
       carModelsDisplay, // UI expects this separate field for car models column
       latestPurchaseRate,
       lastPurchaseDate: product.last_purchase_date ? format(new Date(product.last_purchase_date * 1000), 'dd/MM/yyyy') : '-',
+      pic: product.pic || undefined, // ✅ Added for Media column
+      barcode: product.barcode || undefined, // ✅ Added for Media column
       index: undefined // Will be set by frontend
 
       // OPTIMIZATION: Commented out unused product fields - uncomment if needed

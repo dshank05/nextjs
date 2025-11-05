@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/ConfirmationModal';
+import { ImageCarousel } from '../../../components/common/ImageCarousel';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { formatBarcode } from '../../../lib/barcode-scanner';
@@ -210,19 +211,33 @@ export default function ProductView() {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
-          {/* Left: Image */}
+          {/* Left: Image Display */}
           <div className="flex flex-col items-center justify-center">
-            <div className="w-48 h-32 bg-slate-600 rounded-xl flex items-center justify-center mb-4 overflow-hidden">
-              {product.pic ? (
-                <img
-                  src={product.pic.startsWith('http') ? product.pic : `${window.location.origin}${product.pic}`}
-                  alt={product.product_name}
-                  className="w-full h-full object-cover rounded-xl"
-                />
-              ) : (
-                <div className="text-slate-400 font-medium">NO IMAGE FOUND</div>
-              )}
-            </div>
+            {product.pic || product.barcode ? (
+              <ImageCarousel
+                items={[
+                  ...(product.pic ? [{
+                    id: 'product-image',
+                    src: product.pic.startsWith('http') ? product.pic : `${window.location.origin}${product.pic}`,
+                    alt: product.product_name,
+                    type: 'image' as const
+                  }] : []),
+                  ...(product.barcode ? [{
+                    id: 'product-barcode',
+                    src: product.barcode.startsWith('http') ? product.barcode : `${window.location.origin}${product.barcode}`,
+                    alt: 'Product Barcode',
+                    type: 'barcode' as const
+                  }] : [])
+                ]}
+              />
+            ) : (
+              <div className="w-[28rem] h-80 bg-slate-600 rounded-xl flex items-center justify-center shadow-lg">
+                <div className="text-slate-400 font-medium text-center">
+                  <div className="text-4xl mb-2">📷</div>
+                  <div>NO IMAGE FOUND</div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right: All Product Information in 6x3 Grid */}
