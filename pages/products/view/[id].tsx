@@ -225,51 +225,114 @@ export default function ProductView() {
             </div>
           </div>
 
-          {/* Right: Key-Value Display + Actions */}
-          <div className="space-y-4">
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+          {/* Right: All Product Information in 6x3 Grid */}
+          <div className="grid grid-cols-3 gap-4">
+            {/* Row 1 */}
+            <div className="flex justify-between">
               <span className="text-slate-400">Category:</span>
               <span className="text-white font-medium">{product.categoryName || 'N/A'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
               <span className="text-slate-400">Company:</span>
               <span className="text-white font-medium">{product.companyName || 'N/A'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
               <span className="text-slate-400">Subcategory:</span>
               <span className="text-white font-medium">{product.subcategoryName || 'N/A'}</span>
             </div>
-            {product.carModelsDisplay && (
-              <div className="border-b border-slate-700 pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-400">Compatible Models:</span>
-                  <div className="flex flex-wrap gap-1">
-                    {product.carModelsDisplay.split(', ').map((model, index) => (
-                      <span
-                        key={index}
-                        className="px-2 py-1 bg-blue-600/20 text-blue-300 text-xs rounded-full border border-blue-500/30"
-                      >
-                        {model.trim()}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+
+            {/* Row 2 */}
+            <div className="flex justify-between">
               <span className="text-slate-400">Part Number:</span>
               <span className="text-white font-medium">{product.part_no || 'N/A'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
               <span className="text-slate-400">Stock:</span>
               <span className="text-white font-medium">{product.stock || 0}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Min Stock:</span>
+              <span className="text-white font-medium">{product.min_stock || 0}</span>
+            </div>
+
+            {/* Row 3 */}
+            <div className="flex justify-between">
+              <span className="text-slate-400">MRP:</span>
+              <span className="text-white font-medium">₹{product.mrp || '0.00'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Discount:</span>
+              <span className="text-white font-medium">₹{product.discount || '0.00'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Margin:</span>
+              <span className="text-white font-medium">₹{product.margin || '0.00'}</span>
+            </div>
+
+            {/* Row 4 */}
+            <div className="flex justify-between">
+              <span className="text-slate-400">Warehouse:</span>
+              <span className="text-white font-medium">{product.warehouse || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Rack:</span>
+              <span className="text-white font-medium">{product.rack_number || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">GST Rate:</span>
+              <span className="text-white font-medium">{product.gst_rate || 'N/A'}%</span>
+            </div>
+
+            {/* Row 5 */}
+            <div className="flex justify-between">
+              <span className="text-slate-400">HSN:</span>
+              <span className="text-white font-medium">{product.hsn || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-400">Latest Rate:</span>
               <span className="text-white font-medium">₹{product.latestPurchaseRate || product.rate || 0}</span>
             </div>
+            <div className="col-span-1"></div>
 
-            <div className="flex justify-end space-x-3 pt-4">
+            {/* Row 6 - Notes and Description (2 columns) */}
+            <div className="col-span-3 grid grid-cols-2 gap-4 mb-4">
+              <div className="flex flex-col">
+                <span className="text-slate-400 text-sm mb-2 font-medium">Notes:</span>
+                <div className="bg-slate-700 rounded p-3 text-white text-sm min-h-16 max-h-24 overflow-y-auto">
+                  {product.notes || 'No notes available'}
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-slate-400 text-sm mb-2 font-medium">Description:</span>
+                <div className="bg-slate-700 rounded p-3 text-white text-sm min-h-16 max-h-24 overflow-y-auto">
+                  {product.descriptions || 'No description available'}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 7 - Car Models (full row, can display multiple) */}
+            <div className="col-span-3 mb-4">
+              <div className="flex items-start gap-2">
+                <span className="text-slate-400 font-medium">Compatible Models:</span>
+                <div className="flex flex-wrap gap-2 flex-1">
+                  {product.carModelsDisplay ? (
+                    product.carModelsDisplay.split(', ').map((model, index) => (
+                      <span
+                        key={index}
+                        className="px-3 py-1 bg-blue-600/20 text-blue-300 text-sm rounded-full border border-blue-500/30 font-medium"
+                      >
+                        {model.trim()}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-slate-400">No models specified</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Row 8 - Actions */}
+            <div className="col-span-3 flex justify-end space-x-3 pt-2">
               <button
                 onClick={toggleProductStatus}
                 className={`btn-secondary flex items-center gap-2 ${product.is_active ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}
@@ -290,87 +353,7 @@ export default function ProductView() {
           </div>
         </div>
 
-        {/* Detailed Information Section - Merged into main card */}
-        <div className="space-y-4 p-6 pt-0">
-          {/* 5 Columns Layout */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-            {/* Column 1: MRP, Discount */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">MRP:</span>
-                <span className="text-white font-medium">₹{product.mrp || '0.00'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Discount:</span>
-                <span className="text-white font-medium">₹{product.discount || '0.00'}</span>
-              </div>
-            </div>
 
-            {/* Column 2: Margin, Stock */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Margin:</span>
-                <span className="text-white font-medium">₹{product.margin || '0.00'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Stock:</span>
-                <span className="text-white font-medium">{product.stock || 0}</span>
-              </div>
-            </div>
-
-            {/* Column 3: Min Stock, Part Number */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Min Stock:</span>
-                <span className="text-white font-medium">{product.min_stock || 0}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Part Number:</span>
-                <span className="text-white font-medium">{product.part_no || 'N/A'}</span>
-              </div>
-            </div>
-
-            {/* Column 4: Warehouse, Rack */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Warehouse:</span>
-                <span className="text-white font-medium">{product.warehouse || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Rack:</span>
-                <span className="text-white font-medium">{product.rack_number || 'N/A'}</span>
-              </div>
-            </div>
-
-            {/* Column 5: GST Rate, HSN */}
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">GST Rate:</span>
-                <span className="text-white font-medium">{product.gst_rate || 'N/A'}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">HSN:</span>
-                <span className="text-white font-medium">{product.hsn || 'N/A'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Second Row: Notes and Descriptions spanning 2 columns each */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-slate-400 text-sm mb-1">Notes:</label>
-              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
-                {product.notes || 'No notes available'}
-              </div>
-            </div>
-            <div>
-              <label className="block text-slate-400 text-sm mb-1">Descriptions:</label>
-              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
-                {product.descriptions || 'No descriptions available'}
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Transaction Tables Section - Merged into main card */}
         <div className="space-y-6 p-6 pt-0">
