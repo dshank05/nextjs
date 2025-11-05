@@ -31,6 +31,7 @@ interface Product {
   mrp?: string;
   discount?: string;
   sale_price?: string;
+  margin?: string;
   opening_rate?: number;
   is_active?: boolean;
 }
@@ -288,41 +289,37 @@ export default function ProductView() {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Detailed Information Card */}
-      <div className="card">
-        <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">📋 Detailed Information</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 pt-0">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🛒 Sales & Pricing</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Opening Rate:</span>
-                <span className="text-white font-medium">₹{product.opening_rate || '0.00'}</span>
-              </div>
+        {/* Detailed Information Section - Merged into main card */}
+        <div className="space-y-4 p-6 pt-0">
+          {/* 5 Columns Layout */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            {/* Column 1: MRP, Discount */}
+            <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400">MRP:</span>
                 <span className="text-white font-medium">₹{product.mrp || '0.00'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Sale Price:</span>
-                <span className="text-white font-medium">₹{product.sale_price || '0.00'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Discount:</span>
                 <span className="text-white font-medium">₹{product.discount || '0.00'}</span>
               </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📦 Inventory</h3>
-            <div className="space-y-3">
+            {/* Column 2: Margin, Stock */}
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Margin:</span>
+                <span className="text-white font-medium">₹{product.margin || '0.00'}</span>
+              </div>
               <div className="flex justify-between">
                 <span className="text-slate-400">Stock:</span>
                 <span className="text-white font-medium">{product.stock || 0}</span>
               </div>
+            </div>
+
+            {/* Column 3: Min Stock, Part Number */}
+            <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400">Min Stock:</span>
                 <span className="text-white font-medium">{product.min_stock || 0}</span>
@@ -331,16 +328,10 @@ export default function ProductView() {
                 <span className="text-slate-400">Part Number:</span>
                 <span className="text-white font-medium">{product.part_no || 'N/A'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Barcode:</span>
-                <span className="text-white font-mono text-sm">{product.barcode || 'NO BARCODE FOUND'}</span>
-              </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🏢 Location & Tax</h3>
-            <div className="space-y-3">
+            {/* Column 4: Warehouse, Rack */}
+            <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400">Warehouse:</span>
                 <span className="text-white font-medium">{product.warehouse || 'N/A'}</span>
@@ -349,6 +340,10 @@ export default function ProductView() {
                 <span className="text-slate-400">Rack:</span>
                 <span className="text-white font-medium">{product.rack_number || 'N/A'}</span>
               </div>
+            </div>
+
+            {/* Column 5: GST Rate, HSN */}
+            <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-slate-400">GST Rate:</span>
                 <span className="text-white font-medium">{product.gst_rate || 'N/A'}%</span>
@@ -360,220 +355,218 @@ export default function ProductView() {
             </div>
           </div>
 
-          <div className="md:col-span-2 lg:col-span-3 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📝 Additional Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-400 text-sm mb-1">Notes:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm min-h-16">
-                  {product.notes || 'No notes available'}
-                </div>
+          {/* Second Row: Notes and Descriptions spanning 2 columns each */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Notes:</label>
+              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
+                {product.notes || 'No notes available'}
               </div>
-              <div>
-                <label className="block text-slate-400 text-sm mb-1">Descriptions:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm min-h-16">
-                  {product.descriptions || 'No descriptions available'}
-                </div>
+            </div>
+            <div>
+              <label className="block text-slate-400 text-sm mb-1">Descriptions:</label>
+              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
+                {product.descriptions || 'No descriptions available'}
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Last 5 Tables */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Last Five Purchase */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">LAST FIVE PURCHASE</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>INVOICE NUMBER</th>
-                  <th>VENDOR</th>
-                  <th>QTY</th>
-                  <th>RATE</th>
-                  <th>AMOUNT</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purchases.length > 0 ? purchases.map((purchase, index) => (
-                  <tr key={index}>
-                    <td>{purchase.sn}</td>
-                    <td>{purchase.invoice_number || '-'}</td>
-                    <td>{purchase.vendor || '-'}</td>
-                    <td>{purchase.qty}</td>
-                    <td>₹{purchase.rate}</td>
-                    <td>₹{purchase.amount}</td>
-                    <td>{new Date(purchase.date).toLocaleDateString('en-IN')}</td>
-                  </tr>
-                )) : (
+        {/* Transaction Tables Section - Merged into main card */}
+        <div className="space-y-6 p-6 pt-0">
+          {/* Last Five Purchase */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE PURCHASE</h3>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-8">
-                      No purchase records found
-                    </td>
+                    <th className="w-16">SN</th>
+                    <th>INVOICE NUMBER</th>
+                    <th>VENDOR</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                    <th>DATE</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {purchases.length > 0 ? purchases.map((purchase, index) => (
+                    <tr key={index}>
+                      <td>{purchase.sn}</td>
+                      <td>{purchase.invoice_number || '-'}</td>
+                      <td>{purchase.vendor || '-'}</td>
+                      <td>{purchase.qty}</td>
+                      <td>₹{purchase.rate}</td>
+                      <td>₹{purchase.amount}</td>
+                      <td>{new Date(purchase.date).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="text-center text-slate-400 py-4">
+                        No purchase records found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Last Five Sale */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">LAST FIVE SALE</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>INVOICE NUMBER</th>
-                  <th>CUSTOMER</th>
-                  <th>QTY</th>
-                  <th>RATE</th>
-                  <th>AMOUNT</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sales.length > 0 ? sales.map((sale, index) => (
-                  <tr key={index}>
-                    <td>{sale.sn}</td>
-                    <td>{sale.invoice_number || '-'}</td>
-                    <td>{sale.customer || '-'}</td>
-                    <td>{sale.qty}</td>
-                    <td>₹{sale.rate}</td>
-                    <td>₹{sale.amount}</td>
-                    <td>{new Date(sale.date).toLocaleDateString('en-IN')}</td>
-                  </tr>
-                )) : (
+          {/* Last Five Sale */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE</h3>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-8">
-                      No sales records found
-                    </td>
+                    <th className="w-16">SN</th>
+                    <th>INVOICE NUMBER</th>
+                    <th>CUSTOMER</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                    <th>DATE</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sales.length > 0 ? sales.map((sale, index) => (
+                    <tr key={index}>
+                      <td>{sale.sn}</td>
+                      <td>{sale.invoice_number || '-'}</td>
+                      <td>{sale.customer || '-'}</td>
+                      <td>{sale.qty}</td>
+                      <td>₹{sale.rate}</td>
+                      <td>₹{sale.amount}</td>
+                      <td>{new Date(sale.date).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="text-center text-slate-400 py-4">
+                        No sales records found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Last Five Sale X */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">LAST FIVE SALE X</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>INVOICE NUMBER</th>
-                  <th>CUSTOMER</th>
-                  <th>QTY</th>
-                  <th>RATE</th>
-                  <th>AMOUNT</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {salex.length > 0 ? salex.map((salexItem, index) => (
-                  <tr key={index}>
-                    <td>{salexItem.sn}</td>
-                    <td>{salexItem.invoice_number || '-'}</td>
-                    <td>{salexItem.customer || '-'}</td>
-                    <td>{salexItem.qty}</td>
-                    <td>₹{salexItem.rate}</td>
-                    <td>₹{salexItem.amount}</td>
-                    <td>{new Date(salexItem.date).toLocaleDateString('en-IN')}</td>
-                  </tr>
-                )) : (
+          {/* Last Five Sale X */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE X</h3>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-8">
-                      No salex records found
-                    </td>
+                    <th className="w-16">SN</th>
+                    <th>INVOICE NUMBER</th>
+                    <th>CUSTOMER</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                    <th>DATE</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {salex.length > 0 ? salex.map((salexItem, index) => (
+                    <tr key={index}>
+                      <td>{salexItem.sn}</td>
+                      <td>{salexItem.invoice_number || '-'}</td>
+                      <td>{salexItem.customer || '-'}</td>
+                      <td>{salexItem.qty}</td>
+                      <td>₹{salexItem.rate}</td>
+                      <td>₹{salexItem.amount}</td>
+                      <td>{new Date(salexItem.date).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="text-center text-slate-400 py-4">
+                        No salex records found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Last Five Sale Return */}
-        <div className="card">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">LAST FIVE SALE RETURN</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>VOUCHER NUMBER</th>
-                  <th>CUSTOMER</th>
-                  <th>QTY</th>
-                  <th>RATE</th>
-                  <th>AMOUNT</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {saleReturns.length > 0 ? saleReturns.map((saleReturn, index) => (
-                  <tr key={index}>
-                    <td>{saleReturn.sn}</td>
-                    <td>{saleReturn.voucher_number || '-'}</td>
-                    <td>{saleReturn.customer || '-'}</td>
-                    <td>{saleReturn.qty}</td>
-                    <td>₹{saleReturn.rate}</td>
-                    <td>₹{saleReturn.amount}</td>
-                    <td>{new Date(saleReturn.date).toLocaleDateString('en-IN')}</td>
-                  </tr>
-                )) : (
+          {/* Last Five Sale Return */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE RETURN</h3>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-8">
-                      No sale return records found
-                    </td>
+                    <th className="w-16">SN</th>
+                    <th>VOUCHER NUMBER</th>
+                    <th>CUSTOMER</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                    <th>DATE</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {saleReturns.length > 0 ? saleReturns.map((saleReturn, index) => (
+                    <tr key={index}>
+                      <td>{saleReturn.sn}</td>
+                      <td>{saleReturn.voucher_number || '-'}</td>
+                      <td>{saleReturn.customer || '-'}</td>
+                      <td>{saleReturn.qty}</td>
+                      <td>₹{saleReturn.rate}</td>
+                      <td>₹{saleReturn.amount}</td>
+                      <td>{new Date(saleReturn.date).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="text-center text-slate-400 py-8">
+                        No sale return records found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        {/* Last Five Purchase Return */}
-        <div className="card col-span-1 lg:col-span-2">
-          <h3 className="text-xl font-semibold text-white p-6 pb-4 border-b border-slate-700">LAST FIVE PURCHASE RETURN</h3>
-          <div className="p-6">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-16">SN</th>
-                  <th>VOUCHER NUMBER</th>
-                  <th>VENDOR</th>
-                  <th>QTY</th>
-                  <th>RATE</th>
-                  <th>AMOUNT</th>
-                  <th>DATE</th>
-                </tr>
-              </thead>
-              <tbody>
-                {purchaseReturns.length > 0 ? purchaseReturns.map((purchaseReturn, index) => (
-                  <tr key={index}>
-                    <td>{purchaseReturn.sn}</td>
-                    <td>{purchaseReturn.voucher_number || '-'}</td>
-                    <td>{purchaseReturn.vendor || '-'}</td>
-                    <td>{purchaseReturn.qty}</td>
-                    <td>₹{purchaseReturn.rate}</td>
-                    <td>₹{purchaseReturn.amount}</td>
-                    <td>{new Date(purchaseReturn.date).toLocaleDateString('en-IN')}</td>
-                  </tr>
-                )) : (
+          {/* Last Five Purchase Return */}
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE PURCHASE RETURN</h3>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-8">
-                      No purchase return records found
-                    </td>
+                    <th className="w-16">SN</th>
+                    <th>VOUCHER NUMBER</th>
+                    <th>VENDOR</th>
+                    <th>QTY</th>
+                    <th>RATE</th>
+                    <th>AMOUNT</th>
+                    <th>DATE</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {purchaseReturns.length > 0 ? purchaseReturns.map((purchaseReturn, index) => (
+                    <tr key={index}>
+                      <td>{purchaseReturn.sn}</td>
+                      <td>{purchaseReturn.voucher_number || '-'}</td>
+                      <td>{purchaseReturn.vendor || '-'}</td>
+                      <td>{purchaseReturn.qty}</td>
+                      <td>₹{purchaseReturn.rate}</td>
+                      <td>₹{purchaseReturn.amount}</td>
+                      <td>{new Date(purchaseReturn.date).toLocaleDateString('en-IN')}</td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={7} className="text-center text-slate-400 py-8">
+                        No purchase return records found
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
