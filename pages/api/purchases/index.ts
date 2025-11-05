@@ -38,8 +38,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       sortOrder = 'desc' // NEW: Sort order (default: desc)
     } = req.query
 
-    console.log('🔍 Purchases API received query params:', req.query);
-    console.log('🔍 Purchases API extracted sort params:', { sortBy, sortOrder });
+
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
@@ -295,7 +294,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Apply post-sorting for vendor_name if needed
     if (needsPostSorting) {
-      console.log('🔄 Applying post-sorting for vendor_name, direction:', sortDirection);
       enhancedPurchases.sort((a, b) => {
         const aValue = (a.vendor_name || '').toString().toLowerCase()
         const bValue = (b.vendor_name || '').toString().toLowerCase()
@@ -307,21 +305,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
       // Apply pagination after sorting
       enhancedPurchases = enhancedPurchases.slice(skip, skip + limitNum)
-      console.log('📊 Post-sorted and paginated purchases, returned count:', enhancedPurchases.length);
-    } else {
-      console.log('📊 Database-sorted purchases, returned count:', enhancedPurchases.length);
     }
 
     const totalPages = Math.ceil(total / limitNum)
 
-    console.log('📤 API Response - first 3 purchases:', enhancedPurchases.slice(0, 3).map(p => ({
-      id: p.id,
-      invoice_no: p.invoice_no,
-      vendor_name: p.vendor_name,
-      total: p.total,
-      invoice_date: p.invoice_date,
-      payment_status: p.payment_status
-    })));
+
 
     res.status(200).json({
       purchases: enhancedPurchases,
@@ -388,8 +376,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     } = req.body
 
-    console.log('📝 API Received POST data:', req.body);
-
     // ===== FUTURE SCHEMA EXPANSION FIELDS =====
     // These fields don't exist in current Purchase/PurchaseItems tables, similar to Product API approach:
     // TODO: Add these fields to Purchase/PurchaseItems schemas when ready:
@@ -426,23 +412,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const validPaymentStatuses = [0, 1];
     const validPaymentModes = [0, 1];
 
-    console.log('🔍 DEBUG - Received payment values:', { payment_status, payment_mode, payment_status_type: typeof payment_status, payment_mode_type: typeof payment_mode });
-
     if (!validPaymentStatuses.includes(payment_status)) {
-      console.log('❌ DEBUG - Invalid payment_status:', payment_status);
       return res.status(400).json({
         message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
       })
     }
 
     if (!validPaymentModes.includes(payment_mode)) {
-      console.log('❌ DEBUG - Invalid payment_mode:', payment_mode);
       return res.status(400).json({
         message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
       })
     }
-
-    console.log('✅ DEBUG - Payment validation passed');
 
     // ===== VALIDATE VENDOR EXISTS =====
     // Vendor must already exist - purchase only stores the relationship
@@ -456,10 +436,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    console.log('🏗️ Purchase Table Data: All main fields are stored');
-    console.log('🏗️ Vendor Relationship: Using existing vendor ID:', vendor_id);
-    console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
-
     // Convert date to Unix timestamp
     const invoiceDate = new Date(date).getTime() / 1000
 
@@ -467,117 +443,125 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
-    // Create purchase record
-    const purchase = await prisma.purchase.create({
-      data: {
-        invoice_no: nextInvoiceNo,
-        bill_reference: bill_reference, // Keep bill reference separate from vendor name
-        staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
-        vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
-        items_total: itemsTotal,
-        freight: transport_cost || 0,
-        total_taxable_value: itemsTotal,
-        // taxrate: tax_rate || 0,
-        total_cgst: total_cgst || 0,
-        total_sgst: total_sgst || 0,
-        total_igst: total_igst || 0,
-        total_tax: total_tax || 0,
-        total: calculatedGrandTotal,
-        notes: notes || '',
-        descriptions: descriptions,
-        packing_forwarding_qty: packing_forwarding_qty || 0,
-        packing_forwarding_rate: packing_forwarding_rate || 0,
-        packing_forwarding_total: packing_forwarding_total || 0,
-        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-        // basic_value: basic_value || 0,
-        // bill: bill,
-        // tax: tax,
-        // taxrate: tax_rate || 0,
-        invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
-        updated_at: new Date().toISOString().split('T')[0], // Current date
-        payment_status: payment_status,
-        payment_mode: payment_mode,
-        fy: currentFy, // Use FY from invoice counter
-        transport: transport_name || '',
-        transport_name: transport_name,
-        vehicle_number: vehicle_number,
-        return_status: 0 // 0=none, 1=partial, 2=full - new purchases have no returns
-        // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-        // taxrate: tax_rate || 0,
-        // basic_value: basic_value || 0,
-        // bill: bill,
-        // tax: tax,
-      }
-    })
-
-    // Create purchase items
-    for (const item of items) {
-      // Fetch product details from database
-      const product = await prisma.product.findUnique({
-        where: { id: parseInt(item.product_id) }
-      })
-
-      if (!product) {
-        throw new Error(`Product with ID ${item.product_id} not found`)
-      }
-
-      // Get product details from database
-      const productName = product.product_name || ''
-      const categoryId = product.product_category_id || 0
-      const subcategoryId = product.product_subcategory_id || 0
-      const hsn = product.hsn || ''
-
-      // Use model_id directly from frontend (already looked up from car_model)
-      const modelId = item.model_id ? parseInt(item.model_id) : null;
-
-      // Use company_id directly from the frontend data
-      const companyId = item.company_id ? parseInt(item.company_id) : null;
-
-      await prisma.purchaseitems.create({
+    // ===== CRITICAL FIX: Use database transaction for atomic operations =====
+    // This ensures purchase creation, item creation, and product updates all succeed or all fail together
+    const purchase = await prisma.$transaction(async (tx) => {
+      // Create purchase record within transaction
+      const purchase = await tx.purchase.create({
         data: {
-          invoice_no: purchase.invoice_no,
-          product_id: parseInt(item.product_id), // ✅ CRITICAL FIX: Save product_id to maintain relationship
-          name_of_product: productName,
-          category_id: categoryId,
-          subcategory_id: subcategoryId,
-          model_id: modelId, // ✅ Use model_id directly from frontend
-          company_id: companyId, // ✅ Use company_id from frontend
-          car_model: item.car_model || '', // ✅ Store the car model string for display
-          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
+          invoice_no: nextInvoiceNo,
+          bill_reference: bill_reference, // Keep bill reference separate from vendor name
+          staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
+          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
+          items_total: itemsTotal,
+          freight: transport_cost || 0,
+          total_taxable_value: itemsTotal,
+          // taxrate: tax_rate || 0,
+          total_cgst: total_cgst || 0,
+          total_sgst: total_sgst || 0,
+          total_igst: total_igst || 0,
+          total_tax: total_tax || 0,
+          total: calculatedGrandTotal,
+          notes: notes || '',
+          descriptions: descriptions,
+          packing_forwarding_qty: packing_forwarding_qty || 0,
+          packing_forwarding_rate: packing_forwarding_rate || 0,
+          packing_forwarding_total: packing_forwarding_total || 0,
           // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-          // hsn: hsn,
-          part: item.part || '', // ✅ Use part number from frontend
-          qty: item.qty,
-          // unit: 1, // @deprecated - Default unit (not used for products)
-          rate: item.rate,
-          subtotal: item.total,
-          gst_percentage: item.gst_percentage || 0,
-          cgst: item.cgst || 0,
-          sgst: item.sgst || 0,
-          igst: item.igst || 0,
-          tax: item.tax || 0,
+          // basic_value: basic_value || 0,
+          // bill: bill,
+          // tax: tax,
+          // taxrate: tax_rate || 0,
+          invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
+          updated_at: new Date().toISOString().split('T')[0], // Current date
+          payment_status: payment_status,
+          payment_mode: payment_mode,
           fy: currentFy, // Use FY from invoice counter
-          invoice_date: invoiceDate
+          transport: transport_name || '',
+          transport_name: transport_name,
+          vehicle_number: vehicle_number,
+          return_status: 0 // 0=none, 1=partial, 2=full - new purchases have no returns
+          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+          // taxrate: tax_rate || 0,
+          // basic_value: basic_value || 0,
+          // bill: bill,
+          // tax: tax,
         }
-      })
+      });
 
-      // Validate and convert quantity to number to prevent null/undefined/0 issues
-      const validatedQty = Number(item.qty) || 0;
+      // Create purchase items and update products within the same transaction
+      for (const item of items) {
+        const productId = parseInt(item.product_id);
 
-      // Increase product stock and update latest purchase rate when purchase is created
-      await prisma.product.update({
-        where: { id: parseInt(item.product_id) },
-        data: {
-          stock: {
-            increment: validatedQty
-          },
-          // ===== RATE MANAGEMENT =====
-          // Update latest purchase rate and timestamp when purchase is created
-          latest_purchase_rate: item.rate,
-          last_purchase_date: invoiceDate
+        // ===== VALIDATION: Ensure product exists =====
+        const product = await tx.product.findUnique({
+          where: { id: productId }
+        });
+
+        if (!product) {
+          throw new Error(`Product with ID ${productId} not found`);
         }
-      })
-    }
+
+        // Get product details from database
+        const productName = product.product_name || '';
+        const categoryId = product.product_category_id || 0;
+        const subcategoryId = product.product_subcategory_id || 0;
+        const hsn = product.hsn || '';
+
+        // Use model_id directly from frontend (already looked up from car_model)
+        const modelId = item.model_id ? parseInt(item.model_id) : null;
+        // Use company_id directly from the frontend data
+        const companyId = item.company_id ? parseInt(item.company_id) : null;
+
+        // Create purchase item record
+        await tx.purchaseitems.create({
+          data: {
+            invoice_no: purchase.invoice_no,
+            product_id: productId, // ✅ CRITICAL FIX: Save product_id to maintain relationship
+            name_of_product: productName,
+            category_id: categoryId,
+            subcategory_id: subcategoryId,
+            model_id: modelId, // ✅ Use model_id directly from frontend
+            company_id: companyId, // ✅ Use company_id from frontend
+            car_model: item.car_model || '', // ✅ Store the car model string for display
+            vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
+            // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
+            // hsn: hsn,
+            part: item.part || '', // ✅ Use part number from frontend
+            qty: item.qty,
+            // unit: 1, // @deprecated - Default unit (not used for products)
+            rate: item.rate,
+            subtotal: item.total,
+            gst_percentage: item.gst_percentage || 0,
+            cgst: item.cgst || 0,
+            sgst: item.sgst || 0,
+            igst: item.igst || 0,
+            tax: item.tax || 0,
+            fy: currentFy, // Use FY from invoice counter
+            invoice_date: invoiceDate
+          }
+        });
+
+        // Validate and convert quantity to number to prevent null/undefined/0 issues
+        const validatedQty = Number(item.qty) || 0;
+
+        // ===== CRITICAL: Update product stock and purchase tracking WITHIN transaction =====
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            stock: {
+              increment: validatedQty
+            },
+            // ===== RATE MANAGEMENT =====
+            // Update latest purchase rate and timestamp when purchase is created
+            latest_purchase_rate: item.rate,
+            last_purchase_date: invoiceDate
+          }
+        });
+      }
+
+      return purchase;
+    });
 
     res.status(201).json({
       message: 'Purchase created successfully',
@@ -654,7 +638,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
     } = req.body
 
-    console.log('🔄 API Received PUT data:', req.body);
+
 
     // ===== VALIDATION =====
     if (!invoice_number || !vendor_id) {
@@ -798,14 +782,14 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           const existingData = existingItemsMap.get(productId)
 
           if (!existingData) {
-            // New item - create it and increase stock
-            // Fetch product details from database for new item
+            // ===== NEW ITEM: Create it and increase stock =====
+            // ===== VALIDATION: Ensure product exists =====
             const product = await tx.product.findUnique({
               where: { id: productId }
-            })
+            });
 
             if (!product) {
-              throw new Error(`Product with ID ${productId} not found`)
+              throw new Error(`Product with ID ${productId} not found`);
             }
 
             // Use model_id directly from frontend (already looked up)
@@ -835,12 +819,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 fy: financialYear,
                 invoice_date: invoiceDate
               }
-            })
+            });
 
             // Validate and convert quantity to number to prevent null/undefined/0 issues
             const validatedNewQty = Number(newData.qty) || 0;
 
-            // Increase stock and update rate for new purchase
+            // ===== CRITICAL: Update product stock and purchase tracking =====
             await tx.product.update({
               where: { id: productId },
               data: {
@@ -852,14 +836,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 latest_purchase_rate: newData.rate,
                 last_purchase_date: invoiceDate
               }
-            })
+            });
           } else {
-            // Existing item - check if quantity changed
+            // ===== EXISTING ITEM: Check if quantity/rate changed =====
             const validatedNewQty = Number(newData.qty) || 0;
             const validatedExistingQty = Number(existingData.qty) || 0;
             const qtyDifference = validatedNewQty - validatedExistingQty;
+            const rateChanged = newData.rate !== existingData.item.rate;
 
-            if (Math.abs(qtyDifference) > 0.001) { // Allow for small floating point differences
+            if (Math.abs(qtyDifference) > 0.001 || rateChanged) { // Allow for small floating point differences
               // Update quantity and adjust stock
               await tx.purchaseitems.update({
                 where: { id: existingData.id },
@@ -868,17 +853,30 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                   rate: newData.rate,
                   subtotal: newData.total
                 }
-              })
+              });
 
               // Adjust stock based on quantity difference
-              await tx.product.update({
-                where: { id: productId },
-                data: {
-                  stock: {
-                    increment: qtyDifference // Add the difference (can be negative)
+              if (Math.abs(qtyDifference) > 0.001) {
+                await tx.product.update({
+                  where: { id: productId },
+                  data: {
+                    stock: {
+                      increment: qtyDifference // Add the difference (can be negative)
+                    }
                   }
-                }
-              })
+                });
+              }
+
+              // Update purchase rate if it changed
+              if (rateChanged) {
+                await tx.product.update({
+                  where: { id: productId },
+                  data: {
+                    latest_purchase_rate: newData.rate,
+                    last_purchase_date: invoiceDate
+                  }
+                });
+              }
             }
           }
         }

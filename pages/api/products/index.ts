@@ -396,6 +396,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
     console.log('POST /products: GST rate validation passed');
 
+    // ===== IMPLEMENTATION: opening_stock = stock during product creation =====
+    const initialStock = productData.stock ? parseInt(productData.stock) : 0;
+
     const finalProductData = {
       product_name: productData.product_name,
       product_category_id: productData.product_category_id ? parseInt(productData.product_category_id) : null,
@@ -404,8 +407,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       company_id: productData.company_id ? parseInt(productData.company_id) : null,
       part_no: productData.part_no || null,
       min_stock: productData.min_stock ? parseInt(productData.min_stock) : 0,
-      stock: productData.stock ? parseInt(productData.stock) : 0,
-      opening_stock: productData.opening_stock ? parseInt(productData.opening_stock) : 0,
+      stock: initialStock,
+      opening_stock: initialStock,  // ✅ Always equals initial stock on creation
       opening_rate: productData.opening_rate ? parseFloat(productData.opening_rate) : 0,
       hsn: productData.hsn || null,
       pic: imageUrl,
@@ -451,27 +454,70 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 }
 
 // ---------------------
-// Optimized batch fetch of latest purchase rates
+// ULTRA OPTIMIZED: Get all purchase rates in a single efficient query
 // ---------------------
 async function getPurchaseRatesOptimized(productIds: number[]): Promise<Map<number, { rate: number; date: number }>> {
   if (!productIds.length) return new Map();
+
   try {
+    // 🔥 SINGLE EFFICIENT QUERY: Get latest purchase rates for all products at once
+    // Uses window function approach with ROW_NUMBER() to get the latest record per product
     const latestPurchases = await prisma.$queryRaw`
-      SELECT DISTINCT pi.product_id, pi.rate, pi.invoice_date
-      FROM purchase_items pi
-      INNER JOIN (
-        SELECT product_id, MAX(invoice_date) AS max_date
+      SELECT DISTINCT
+        pi.product_id,
+        pi.rate,
+        pi.invoice_date
+      FROM (
+        SELECT
+          product_id,
+          rate,
+          invoice_date,
+          ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY invoice_date DESC, rate DESC) as rn
         FROM purchase_items
         WHERE product_id IN (${productIds.join(',')})
-        GROUP BY product_id
-      ) latest ON pi.product_id = latest.product_id AND pi.invoice_date = latest.max_date
-      ORDER BY pi.product_id
+          AND rate > 0
+      ) pi
+      WHERE pi.rn = 1
     ` as any[];
 
-    return new Map(latestPurchases.map(r => [r.product_id, { rate: r.rate, date: r.invoice_date }]));
+    // Build result map from single query results
+    const resultMap = new Map<number, { rate: number; date: number }>();
+    latestPurchases.forEach((record: any) => {
+      resultMap.set(record.product_id, {
+        rate: record.rate,
+        date: record.invoice_date
+      });
+    });
+
+    return resultMap;
+
   } catch (e) {
-    console.error('Raw SQL failed:', e);
-    return new Map(); // fallback empty
+    // Fallback: try to get data directly from product table
+    try {
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          latest_purchase_rate: true,
+          last_purchase_date: true
+        }
+      });
+
+      const fallbackMap = new Map<number, { rate: number; date: number }>();
+      products.forEach(p => {
+        if (p.latest_purchase_rate && p.last_purchase_date) {
+          fallbackMap.set(p.id, {
+            rate: p.latest_purchase_rate,
+            date: p.last_purchase_date
+          });
+        }
+      });
+
+      return fallbackMap;
+
+    } catch (fallbackError) {
+      return new Map(); // final fallback
+    }
   }
 }
 
