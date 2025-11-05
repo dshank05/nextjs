@@ -117,12 +117,12 @@ async function handler(
     if (search) {
       const normalizedSearch = normalizeSearchText(search as string)
       where.OR = [
-        { product_name: { contains: search as string, mode: 'insensitive' } },
-        { display_name: { contains: search as string, mode: 'insensitive' } },
-        { part_no: { contains: search as string, mode: 'insensitive' } },
-        { product_name: { contains: normalizedSearch, mode: 'insensitive' } },
-        { display_name: { contains: normalizedSearch, mode: 'insensitive' } },
-        { part_no: { contains: normalizedSearch, mode: 'insensitive' } }
+        { product_name: { contains: search as string } },
+        { display_name: { contains: search as string } },
+        { part_no: { contains: search as string } },
+        { product_name: { contains: normalizedSearch } },
+        { display_name: { contains: normalizedSearch } },
+        { part_no: { contains: normalizedSearch } }
       ]
     }
 
@@ -138,7 +138,7 @@ async function handler(
 
     // Handle part_no filtering
     if (part_no && part_no !== '') {
-      where.part_no = { contains: part_no as string, mode: 'insensitive' }
+      where.part_no = { contains: part_no as string }
     }
 
     // Handle low stock filter (database level)

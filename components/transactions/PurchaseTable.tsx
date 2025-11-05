@@ -494,6 +494,38 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
             min="0"
           />
         </div>
+
+        {/* Clear Filters Button */}
+        <div className="flex items-end">
+          <button
+            onClick={() => {
+              setVendorFilter('');
+              setStatusFilter('all');
+              setDateFrom('');
+              setDateTo('');
+              setAmountMin('');
+              setAmountMax('');
+              setUidFilter('');
+              // Apply cleared filters
+              if (onApplyFilters) {
+                onApplyFilters({
+                  vendorFilter: '',
+                  statusFilter: 'all',
+                  dateFrom: '',
+                  dateTo: '',
+                  amountMin: '',
+                  amountMax: '',
+                  uidFilter: '',
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            className="btn-secondary px-4 py-2"
+          >
+            Clear Filters
+          </button>
+        </div>
       </div>
 
       {/* Table Section */}

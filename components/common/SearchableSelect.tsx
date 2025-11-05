@@ -25,20 +25,19 @@ export function SearchableSelect({
 }: SearchableSelectProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasInteracted, setHasInteracted] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Auto-focus search input when dropdown opens
   useEffect(() => {
     if (isDropdownOpen && searchInputRef.current) {
-      // Clear the selected value when dropdown opens
-      onSelectionChange(null);
       // Small delay to ensure the input is rendered
       setTimeout(() => {
         searchInputRef.current?.focus();
       }, 10);
     }
-  }, [isDropdownOpen]); // Removed onSelectionChange from dependencies to prevent infinite loop
+  }, [isDropdownOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -46,6 +45,7 @@ export function SearchableSelect({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsDropdownOpen(false);
         setSearchQuery('');
+        setHasInteracted(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -124,7 +124,20 @@ export function SearchableSelect({
               type="text"
               placeholder="Search options..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => {
+                if (!hasInteracted && selectedValue) {
+                  setHasInteracted(true);
+                  onSelectionChange(null);
+                }
+              }}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                if (!hasInteracted && selectedValue) {
+                  setHasInteracted(true);
+                  onSelectionChange(null);
+                }
+                setSearchQuery(newValue);
+              }}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>

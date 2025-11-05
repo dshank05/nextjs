@@ -486,6 +486,38 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             min="0"
           />
         </div>
+
+        {/* Clear Filters Button */}
+        <div className="flex items-end">
+          <button
+            onClick={() => {
+              setCustomerFilter('');
+              setStatusFilter('all');
+              setDateFrom('');
+              setDateTo('');
+              setAmountMin('');
+              setAmountMax('');
+              setUidFilter('');
+              // Apply cleared filters
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter: '',
+                  statusFilter: 'all',
+                  dateFrom: '',
+                  dateTo: '',
+                  amountMin: '',
+                  amountMax: '',
+                  uidFilter: '',
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            className="btn-secondary px-4 py-2"
+          >
+            Clear Filters
+          </button>
+        </div>
       </div>
 
       {/* Table Section */}

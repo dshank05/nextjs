@@ -455,6 +455,39 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             placeholder="Select date range..."
           />
         </div>
+
+        {/* Clear Filters Button */}
+        <div className="flex items-end">
+          <button
+            onClick={() => {
+              const clearedFilters = {
+                categoryFilter: '',
+                subcategoryFilter: '',
+                modelFilter: [],
+                companyFilter: '',
+                quantityFilter: '',
+                stockFilter: 'all',
+                startDate: '',
+                endDate: '',
+                uidFilter: '',
+                partNoFilter: ''
+              };
+              setFilters(clearedFilters);
+              setDynamicSubcategories([]);
+              // Apply cleared filters
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...clearedFilters,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            className="btn-secondary px-4 py-2"
+          >
+            Clear Filters
+          </button>
+        </div>
       </div>
 
       {/* Table Section */}
