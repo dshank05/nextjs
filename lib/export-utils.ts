@@ -201,6 +201,17 @@ export const exportToPDF = async (
 
 
 
+// Helper function to convert column number to Excel column letter (A, B, C, ..., Z, AA, AB, etc.)
+const getExcelColumnLetter = (columnNumber: number): string => {
+  let result = '';
+  while (columnNumber > 0) {
+    columnNumber--; // Adjust for 0-based indexing
+    result = String.fromCharCode(65 + (columnNumber % 26)) + result;
+    columnNumber = Math.floor(columnNumber / 26);
+  }
+  return result;
+};
+
 // Generic Excel Export function for dynamic data
 export const exportToExcelGeneric = async (
   data: any[],
@@ -223,6 +234,11 @@ export const exportToExcelGeneric = async (
     data.forEach(row => {
       sheet.addRow(row);
     });
+
+    // Add autofilter to all columns and rows
+    const lastColumn = getExcelColumnLetter(headers.length);
+    const lastRow = data.length + 1; // +1 for header row
+    sheet.autoFilter = `A1:${lastColumn}${lastRow}`;
 
     // Style headers (row 1)
     sheet.getRow(1).eachCell((cell) => {
