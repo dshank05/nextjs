@@ -469,12 +469,13 @@ export default function ProductCreate() {
     <div className="space-y-3">
       <div className="card">
         <form onSubmit={handleSubmit} className="p-3 space-y-3">
-          {/* UID Display for Edit Mode */}
+          {/* Product Display for Edit Mode */}
           {isEditing && editingProductId && (
-            <div className="bg-blue-900/20 border border-blue-700/50 rounded p-3 mb-4">
-              <div className="flex items-center space-x-2">
-                <span className="text-blue-300 font-medium">PRODUCT UID:</span>
-                <span className="text-blue-100 font-mono text-lg font-bold">{editingProductId}</span>
+            <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4 mb-4">
+              <div className="text-center">
+                <h1 className="text-xl font-bold text-blue-100">
+                  {generateProductDisplay()} | UID: {editingProductId}
+                </h1>
               </div>
             </div>
           )}

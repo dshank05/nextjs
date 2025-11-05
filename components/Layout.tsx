@@ -169,7 +169,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'PRODUCT UPDATE' : 'PRODUCT CREATE';
     }
     if (router.pathname.startsWith('/products/view/')) {
-      return `PRODUCT VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'PRODUCT VIEW';
     }
     if (router.pathname.startsWith('/products/')) {
       return 'PRODUCTS';
@@ -180,7 +180,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'PURCHASE UPDATE' : 'PURCHASE CREATE';
     }
     if (router.pathname.startsWith('/purchases/view/')) {
-      return `PURCHASE VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'PURCHASE VIEW';
     }
     if (router.pathname.startsWith('/purchases/')) {
       return 'PURCHASE';
@@ -191,7 +191,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'SALE UPDATE' : 'SALE CREATE';
     }
     if (router.pathname.startsWith('/sale/view/')) {
-      return `SALE VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'SALE VIEW';
     }
     if (router.pathname.startsWith('/sale/')) {
       return 'INVOICE';
@@ -202,7 +202,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'SALEX UPDATE' : 'SALEX CREATE';
     }
     if (router.pathname.startsWith('/salex/view/')) {
-      return `SALEX VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'SALEX VIEW';
     }
     if (router.pathname.startsWith('/salex/')) {
       return 'INVOICE C';
@@ -213,7 +213,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'CUSTOMER UPDATE' : 'CUSTOMER CREATE';
     }
     if (router.pathname.startsWith('/customers/view/')) {
-      return `CUSTOMER VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'CUSTOMER VIEW';
     }
 
     // Vendor routes
@@ -221,7 +221,7 @@ const Layout = ({ children }: LayoutProps) => {
       return hasEditParam ? 'VENDOR UPDATE' : 'VENDOR CREATE';
     }
     if (router.pathname.startsWith('/vendors/view/')) {
-      return `VENDOR VIEW${router.query.id ? ` : ${router.query.id}` : ''}`;
+      return 'VENDOR VIEW';
     }
 
     // Check navigation items

@@ -200,6 +200,14 @@ export default function ProductView() {
     <div className="space-y-6">
       {/* Main Product Overview Card */}
       <div className="card">
+        {/* Product Display Name Section */}
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4 mb-6">
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-blue-100">
+              {product.product_name} | UID: {product.id}
+            </h1>
+          </div>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
           {/* Left: Image */}
           <div className="flex flex-col items-center justify-center">
