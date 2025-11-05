@@ -256,6 +256,10 @@ export default function ProductView() {
               </div>
             )}
             <div className="flex justify-between border-b border-slate-700 pb-2">
+              <span className="text-slate-400">Part Number:</span>
+              <span className="text-white font-medium">{product.part_no || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-700 pb-2">
               <span className="text-slate-400">Stock:</span>
               <span className="text-white font-medium">{product.stock || 0}</span>
             </div>
