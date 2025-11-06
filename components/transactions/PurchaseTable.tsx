@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Undo2 } from 'lucide-react';
-import { useDebounce } from '../../hooks/useDebounce';
+import { ArrowUp, ArrowDown, Eye, Printer, FileMinus, Undo2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
@@ -87,6 +86,11 @@ interface PurchaseTableProps {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    billReference: string;
+    itemCount: string;
+    paymentMode: string;
+    total: string;
+    totalTax: string;
     sortBy?: string;
     sortOrder?: string;
   }) => void;
@@ -99,7 +103,7 @@ interface PurchaseTableProps {
   sortOrder?: SortOrder;
 }
 
-type SortField = 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status';
+type SortField = 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax';
 type SortOrder = 'asc' | 'desc';
 
 export const PurchaseTable: React.FC<PurchaseTableProps> = ({
@@ -118,29 +122,29 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   onPrintDetails,
   onPartialReturn,
   onFullReturn,
-  sortBy: propSortBy = 'invoice_date',
+  sortBy: propSortBy = 'invoice_no',
   sortOrder: propSortOrder = 'desc'
 }) => {
-  // Filter states
-  const [vendorFilter, setVendorFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [amountMin, setAmountMin] = useState('');
-  const [amountMax, setAmountMax] = useState('');
-  const [uidFilter, setUidFilter] = useState('');
+  // Filter states - consolidated into single object
+  const [filters, setFilters] = useState({
+    vendorFilter: '',
+    statusFilter: 'all',
+    dateFrom: '',
+    dateTo: '',
+    amountMin: '',
+    amountMax: '',
+    uidFilter: '',
+    billReference: '',
+    itemCount: '',
+    paymentMode: '',
+    total: '',
+    totalTax: ''
+  });
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ vendors: [] });
-
-  // UI states for dropdowns
-  const [vendorSearch, setVendorSearch] = useState('');
-  const [showVendorDropdown, setShowVendorDropdown] = useState(false);
 
   // Use props for sorting state (controlled component)
   const sortBy = propSortBy;
   const sortOrder = propSortOrder;
-
-  // Debounced search
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   // Fetch filter options on mount
   useEffect(() => {
@@ -159,43 +163,23 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
     }
   };
 
-  // Filter handlers
-  const handleVendorSelect = (vendor: { id: string; name?: string; vendor_name?: string }) => {
-    setVendorFilter(vendor.id);
-    setVendorSearch(vendor.name || vendor.vendor_name || '');
-    setShowVendorDropdown(false);
-    // Auto-apply filter
-    if (onApplyFilters) {
-      onApplyFilters({
-        vendorFilter: vendor.id,
-        statusFilter,
-        dateFrom,
-        dateTo,
-        amountMin,
-        amountMax,
-        uidFilter,
-        sortBy,
-        sortOrder
-      });
-    }
-  };
-
   const clearFilters = () => {
     onSearchChange('');
-    setVendorFilter('');
-    setVendorSearch('');
-    setStatusFilter('all');
-    setDateFrom('');
-    setDateTo('');
-    setAmountMin('');
-    setAmountMax('');
-    setUidFilter('');
+    setFilters({
+      vendorFilter: '',
+      statusFilter: 'all',
+      dateFrom: '',
+      dateTo: '',
+      amountMin: '',
+      amountMax: '',
+      uidFilter: '',
+      billReference: '',
+      itemCount: '',
+      paymentMode: '',
+      total: '',
+      totalTax: ''
+    });
   };
-
-  // Filtered options
-  const filteredVendors = filterOptions.vendors.filter(vendor =>
-    (vendor.name || vendor.vendor_name || '').toLowerCase().includes(vendorSearch.toLowerCase())
-  );
 
   // Sorting logic - now uses backend sorting
   const handleSort = (field: SortField) => {
@@ -207,13 +191,18 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
     // Apply filters with new sort parameters (parent will update props)
     if (onApplyFilters) {
       const filterParams = {
-        vendorFilter,
-        statusFilter,
-        dateFrom,
-        dateTo,
-        amountMin,
-        amountMax,
-        uidFilter,
+        vendorFilter: filters.vendorFilter,
+        statusFilter: filters.statusFilter,
+        dateFrom: filters.dateFrom,
+        dateTo: filters.dateTo,
+        amountMin: filters.amountMin,
+        amountMax: filters.amountMax,
+        uidFilter: filters.uidFilter,
+        billReference: filters.billReference,
+        itemCount: filters.itemCount,
+        paymentMode: filters.paymentMode,
+        total: filters.total,
+        totalTax: filters.totalTax,
         sortBy: field,
         sortOrder: newSortOrder
       };
@@ -294,6 +283,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               { key: 'bill_reference', label: 'Bill Reference', enabled: true },
               { key: 'customer_vendor_name', label: 'Vendor Name', enabled: true },
               { key: 'item_count', label: 'Items Count', enabled: true },
+              { key: 'total_tax', label: 'Total Tax', enabled: true },
               { key: 'total', label: 'Total Amount', enabled: true },
               { key: 'invoice_date', label: 'Invoice Date', enabled: true },
               { key: 'payment_mode', label: 'Payment Mode', enabled: true },
@@ -314,26 +304,21 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 mb-4">
-        {/* UID Filter */}
-        <div>
+      <div className="flex flex-wrap gap-4 mb-4">
+        {/* Invoice No Filter */}
+        <div className="w-28">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
           <ClearableInput
             type="number"
             placeholder="Enter invoice no"
-            value={uidFilter}
+            value={filters.uidFilter}
             onChange={(e) => {
               const newValue = e.target.value;
-              setUidFilter(newValue);
+              setFilters(prev => ({ ...prev, uidFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  vendorFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax,
+                  ...filters,
                   uidFilter: newValue,
                   sortBy,
                   sortOrder
@@ -341,6 +326,29 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               }
             }}
             min="1"
+          />
+        </div>
+
+        {/* Bill Reference Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Bill Reference</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter bill reference"
+            value={filters.billReference}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, billReference: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  billReference: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
           />
         </div>
 
@@ -355,20 +363,15 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 name: vendor.name || vendor.vendor_name || ''
               }))
             ]}
-            selectedValue={vendorFilter}
+            selectedValue={filters.vendorFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setVendorFilter(newValue);
+              setFilters(prev => ({ ...prev, vendorFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
+                  ...filters,
                   vendorFilter: newValue,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax,
-                  uidFilter,
                   sortBy,
                   sortOrder
                 });
@@ -378,25 +381,92 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
           />
         </div>
 
+        {/* Item Count Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Items Count</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter item count"
+            value={filters.itemCount}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, itemCount: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  itemCount: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
+        {/* Total Tax Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Total Tax</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter total tax"
+            value={filters.totalTax}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, totalTax: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  totalTax: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
+        {/* Total Filter */}
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Total Amount</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter total amount"
+            value={filters.total}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, total: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  total: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
         {/* Date Range Filter */}
         <div>
           <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
           <DateRangeFilter
-            startDate={dateFrom}
-            endDate={dateTo}
+            startDate={filters.dateFrom}
+            endDate={filters.dateTo}
             onDateChange={(start, end) => {
-              setDateFrom(start);
-              setDateTo(end);
+              setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  vendorFilter,
-                  statusFilter,
+                  ...filters,
                   dateFrom: start,
                   dateTo: end,
-                  amountMin,
-                  amountMax,
-                  uidFilter,
                   sortBy,
                   sortOrder
                 });
@@ -406,92 +476,66 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
           />
         </div>
 
-        {/* Status Filter */}
+        {/* Payment Mode Filter */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setStatusFilter(newValue);
+          <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Modes' },
+              { id: '0', name: 'Cash' },
+              { id: '1', name: 'Bank' }
+            ]}
+            selectedValue={filters.paymentMode}
+            onSelectionChange={(value) => {
+              const newValue = value || '';
+              setFilters(prev => ({ ...prev, paymentMode: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
-                  vendorFilter,
-                  statusFilter: newValue,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax,
-                  uidFilter,
+                  ...filters,
+                  paymentMode: newValue,
                   sortBy,
                   sortOrder
                 });
               }
             }}
-            className="select w-full"
-          >
-            <option value="all">All Status</option>
-            <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
-          </select>
-        </div>
-
-        {/* Amount Min */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="0"
-            value={amountMin}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMin(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  vendorFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin: newValue,
-                  amountMax,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
+            placeholder="Select payment mode..."
           />
         </div>
 
-        {/* Amount Max */}
+        {/* Status Filter */}
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="No limit"
-            value={amountMax}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMax(newValue);
-              // Auto-apply filter
+          <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
+          <SearchableSelect
+            key={`status-${filters.statusFilter}`}
+            options={[
+              { id: 'all', name: 'All Status' },
+              { id: 'paid', name: 'Paid' },
+              { id: 'unpaid', name: 'Unpaid' }
+            ]}
+            selectedValue={filters.statusFilter}
+            onSelectionChange={(value) => {
+              const newValue = value || 'all';
+              setFilters(prev => ({ ...prev, statusFilter: newValue }));
+              // Auto-apply filter - convert frontend values to API values
               if (onApplyFilters) {
+                let apiStatusValue = '';
+                if (newValue === 'paid') {
+                  apiStatusValue = '1';
+                } else if (newValue === 'unpaid') {
+                  apiStatusValue = '0';
+                } else if (newValue === 'all') {
+                  apiStatusValue = '';
+                }
                 onApplyFilters({
-                  vendorFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax: newValue,
-                  uidFilter,
+                  ...filters,
+                  statusFilter: apiStatusValue,
                   sortBy,
                   sortOrder
                 });
               }
             }}
-            min="0"
+            placeholder="Select status..."
           />
         </div>
 
@@ -499,13 +543,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         <div className="flex items-end">
           <button
             onClick={() => {
-              setVendorFilter('');
-              setStatusFilter('all');
-              setDateFrom('');
-              setDateTo('');
-              setAmountMin('');
-              setAmountMax('');
-              setUidFilter('');
+              clearFilters();
               // Apply cleared filters
               if (onApplyFilters) {
                 onApplyFilters({
@@ -516,6 +554,11 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   amountMin: '',
                   amountMax: '',
                   uidFilter: '',
+                  billReference: '',
+                  itemCount: '',
+                  paymentMode: '',
+                  total: '',
+                  totalTax: '',
                   sortBy,
                   sortOrder
                 });
@@ -550,18 +593,27 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_no')}>
                 Invoice No {getSortIcon('invoice_no')}
               </th>
-              <th>Bill Ref</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bill_reference')}>
+                Bill Ref {getSortIcon('bill_reference')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('vendor_name')}>
                 Vendor {getSortIcon('vendor_name')}
               </th>
-              <th>Items</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('item_count')}>
+                Items {getSortIcon('item_count')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_tax')}>
+                Tax {getSortIcon('total_tax')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
                 Total {getSortIcon('total')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_date')}>
                 Date {getSortIcon('invoice_date')}
               </th>
-              <th>Payment Mode</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_mode')}>
+                Payment Mode {getSortIcon('payment_mode')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
                 Status {getSortIcon('payment_status')}
               </th>
@@ -585,6 +637,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
+                <td className="text-slate-300">₹{(purchase.total_tax || 0).toLocaleString('en-IN')}</td>
                 <td className="text-slate-300 font-semibold">₹{purchase.total.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(purchase.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(purchase.payment_mode)}</td>

@@ -81,6 +81,11 @@ export default function PurchasesPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    billReference: string;
+    itemCount: string;
+    paymentMode: string;
+    total: string;
+    totalTax: string;
     sortBy?: string;
     sortOrder?: string;
   }>({
@@ -91,12 +96,17 @@ export default function PurchasesPage() {
     amountMin: '',
     amountMax: '',
     uidFilter: '',
-    sortBy: 'invoice_date',
+    billReference: '',
+    itemCount: '',
+    paymentMode: '',
+    total: '',
+    totalTax: '',
+    sortBy: 'invoice_no',
     sortOrder: 'desc'
   });
 
   // Debounced fetch function with abort controller
-  const debouncedFetchPurchases = useCallback(() => {
+  const debouncedFetchPurchases = useCallback((filtersToUse?: typeof currentFilters) => {
     // Clear previous timeout
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
@@ -112,7 +122,7 @@ export default function PurchasesPage() {
 
     // Set new timeout for debounced execution
     debounceTimeoutRef.current = setTimeout(() => {
-      fetchPurchases(abortControllerRef.current?.signal);
+      fetchPurchases(abortControllerRef.current?.signal, filtersToUse);
     }, 300); // 300ms debounce delay
   }, []);
 
@@ -173,6 +183,12 @@ export default function PurchasesPage() {
         amountMin: filtersToUse.amountMin,
         amountMax: filtersToUse.amountMax,
         uid: filtersToUse.uidFilter,
+        billReference: filtersToUse.billReference,
+        itemCount: filtersToUse.itemCount,
+        paymentMode: filtersToUse.paymentMode,
+        totalTax: filtersToUse.totalTax,
+        // Note: 'total' filter is mapped to amountMin if provided (for exact amount search)
+        ...(filtersToUse.total && !filtersToUse.amountMin ? { amountMin: filtersToUse.total, amountMax: filtersToUse.total } : {}),
         // Add sort parameters
         sortBy: filtersToUse.sortBy || 'invoice_date',
         sortOrder: filtersToUse.sortOrder || 'desc'
@@ -339,6 +355,11 @@ export default function PurchasesPage() {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    billReference: string;
+    itemCount: string;
+    paymentMode: string;
+    total: string;
+    totalTax: string;
     sortBy?: string;
     sortOrder?: string;
   }) => {
@@ -353,6 +374,11 @@ export default function PurchasesPage() {
       filters.amountMin === currentFilters.amountMin &&
       filters.amountMax === currentFilters.amountMax &&
       filters.uidFilter === currentFilters.uidFilter &&
+      filters.billReference === currentFilters.billReference &&
+      filters.itemCount === currentFilters.itemCount &&
+      filters.paymentMode === currentFilters.paymentMode &&
+      filters.total === currentFilters.total &&
+      filters.totalTax === currentFilters.totalTax &&
       (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
     );
 
@@ -366,8 +392,8 @@ export default function PurchasesPage() {
       fetchPurchases(undefined, filters);
     } else {
       console.log('🔄 Filter operation detected - using debounced fetch');
-      // For other filter changes, use debounced fetch
-      debouncedFetchPurchases();
+      // For other filter changes, use debounced fetch with new filters
+      debouncedFetchPurchases(filters);
     }
   };
 
@@ -408,7 +434,7 @@ export default function PurchasesPage() {
         onPrintDetails={handlePrintPurchase}
         onPartialReturn={handlePartialReturn}
         onFullReturn={handleFullReturn}
-        sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status'}
+        sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         actionButton={(
           <Link

@@ -34,6 +34,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       amountMax = '',
       vendor = '',
       uid = '', // NEW: Filter by purchase ID
+      billReference = '', // NEW: Filter by bill reference
+      itemCount = '', // NEW: Filter by item count
+      paymentMode = '', // NEW: Filter by payment mode
+      totalTax = '', // NEW: Filter by total tax amount
       sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
       sortOrder = 'desc' // NEW: Sort order (default: desc)
     } = req.query
@@ -106,17 +110,32 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
+    // Bill Reference filter
+    if (billReference && billReference !== '') {
+      where.bill_reference = { contains: billReference as string }
+    }
+
+    // Payment Mode filter
+    if (paymentMode && paymentMode !== '') {
+      where.payment_mode = parseInt(paymentMode as string)
+    }
+
+    // Total Tax filter
+    if (totalTax && totalTax !== '') {
+      where.total_tax = parseFloat(totalTax as string)
+    }
+
     // Filter out fully returned purchases (return_status = 2)
     where.return_status = { not: 2 }; // 0=none, 1=partial, 2=full (hide fully returned)
 
     // Validate and set sort parameters
-    const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
+    const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'total_tax', 'invoice_date', 'payment_status', 'payment_mode', 'fy', 'bill_reference', 'item_count']
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
-    // For vendor_name sorting, we need to fetch all data first and sort in JavaScript
+    // For vendor_name and item_count sorting, we need to fetch all data first and sort in JavaScript
     // For other fields, we can sort at database level
-    const needsPostSorting = sortField === 'vendor_name'
+    const needsPostSorting = sortField === 'vendor_name' || sortField === 'item_count'
 
     let purchaseInvoices: any[]
     let total: number
@@ -274,7 +293,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           // total_cgst: invoice.total_cgst || 0,
           // total_sgst: invoice.total_sgst || 0,
           // total_igst: invoice.total_igst || 0,
-          // total_tax: invoice.total_tax || 0,
+          total_tax: invoice.total_tax || 0, // ✅ Include total_tax for display and filtering
           // notes: invoice.notes || '',
           // transport: invoice.transport || '',
           // items: [], // Never populated in GET response
@@ -292,11 +311,25 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         }
     })
 
-    // Apply post-sorting for vendor_name if needed
+    // Apply item count filtering if specified
+    if (itemCount && itemCount !== '') {
+      const itemCountNum = parseInt(itemCount as string)
+      enhancedPurchases = enhancedPurchases.filter(purchase => purchase.item_count === itemCountNum)
+    }
+
+    // Apply post-sorting for vendor_name or item_count if needed
     if (needsPostSorting) {
       enhancedPurchases.sort((a, b) => {
-        const aValue = (a.vendor_name || '').toString().toLowerCase()
-        const bValue = (b.vendor_name || '').toString().toLowerCase()
+        let aValue: any
+        let bValue: any
+
+        if (sortField === 'vendor_name') {
+          aValue = (a.vendor_name || '').toString().toLowerCase()
+          bValue = (b.vendor_name || '').toString().toLowerCase()
+        } else if (sortField === 'item_count') {
+          aValue = a.item_count || 0
+          bValue = b.item_count || 0
+        }
 
         if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
         if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
