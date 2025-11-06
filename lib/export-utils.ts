@@ -216,7 +216,8 @@ const getExcelColumnLetter = (columnNumber: number): string => {
 export const exportToExcelGeneric = async (
   data: any[],
   config: ExportConfig,
-  selectedColumns?: string[]
+  selectedColumns?: string[],
+  showHeaders: boolean = true
 ): Promise<void> => {
   try {
     const workbook = new ExcelJS.Workbook();
@@ -225,39 +226,48 @@ export const exportToExcelGeneric = async (
     // Define columns dynamically
     const headers = Object.keys(data[0] || {});
     sheet.columns = headers.map(header => ({
-      header: header,
+      header: showHeaders ? header : '',
       key: header,
       width: Math.max(10, header.length)
     }));
 
-    // Add data rows (starting from row 2)
+    // Add data rows (starting from row 1 if no headers, row 2 if headers)
     data.forEach(row => {
       sheet.addRow(row);
     });
 
-    // Add autofilter to all columns and rows
-    const lastColumn = getExcelColumnLetter(headers.length);
-    const lastRow = data.length + 1; // +1 for header row
-    sheet.autoFilter = `A1:${lastColumn}${lastRow}`;
+    // Add autofilter only if headers are shown
+    if (showHeaders) {
+      const lastColumn = getExcelColumnLetter(headers.length);
+      const lastRow = data.length + 1; // +1 for header row
+      sheet.autoFilter = `A1:${lastColumn}${lastRow}`;
 
-    // Style headers (row 1)
-    sheet.getRow(1).eachCell((cell) => {
-      cell.font = { bold: true, size: 16 };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF1E88E5' },
-      };
-    });
+      // Style headers (row 1) only if shown
+      sheet.getRow(1).eachCell((cell) => {
+        cell.font = { bold: true, size: 16 };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FF1E88E5' },
+        };
+      });
 
-    // Style all data rows with 16px font
-    sheet.eachRow((row, rowNumber) => {
-      if (rowNumber > 1) { // Skip header row
+      // Style all data rows with 16px font (starting from row 2)
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber > 1) {
+          row.eachCell((cell) => {
+            cell.font = { size: 16 };
+          });
+        }
+      });
+    } else {
+      // Style all rows with 16px font (starting from row 1, no headers)
+      sheet.eachRow((row) => {
         row.eachCell((cell) => {
           cell.font = { size: 16 };
         });
-      }
-    });
+      });
+    }
 
    
 

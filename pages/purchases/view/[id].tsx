@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2, FileText, Truck } from 'lucide-react';
+import { Edit, Trash2, FileText, Truck, Printer, FileSpreadsheet } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
+import { ExportMenu } from '../../../components/common';
 
 interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
@@ -146,6 +147,593 @@ export default function PurchaseView() {
     router.push(`/purchases/create?edit=${id}`);
   };
 
+  // Custom print function for the whole page with proper styling
+  const handlePrintPage = () => {
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Purchase Invoice #${purchase.invoice_number || purchase.invoice_no}</title>
+          <style>
+            @media print {
+              body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                margin: 0;
+                padding: 20px;
+                background: white;
+                color: black;
+              }
+
+              .print-header {
+                background: #1e293b;
+                color: white;
+                padding: 20px;
+                border-radius: 8px;
+                margin-bottom: 30px;
+                text-align: center;
+                border: 1px solid #334155;
+              }
+
+              .print-header h1 {
+                margin: 0;
+                font-size: 24px;
+                font-weight: bold;
+              }
+
+              .info-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 30px;
+                margin-bottom: 30px;
+              }
+
+              .info-section {
+                background: #f8fafc;
+                padding: 20px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+              }
+
+              .info-section h3 {
+                margin: 0 0 15px 0;
+                font-size: 16px;
+                font-weight: bold;
+                color: #1e293b;
+                border-bottom: 2px solid #3b82f6;
+                padding-bottom: 5px;
+              }
+
+              .info-item {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 8px;
+                padding: 4px 0;
+                border-bottom: 1px solid #f1f5f9;
+              }
+
+              .info-label {
+                font-weight: 500;
+                color: #64748b;
+              }
+
+              .info-value {
+                font-weight: 600;
+                color: #1e293b;
+              }
+
+              .total-highlight {
+                font-size: 18px;
+                color: #dc2626;
+              }
+
+              .table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 30px;
+                font-size: 12px;
+              }
+
+              .table th,
+              .table td {
+                border: 1px solid #e2e8f0;
+                padding: 8px 12px;
+                text-align: left;
+              }
+
+              .table th {
+                background: #f8fafc;
+                font-weight: bold;
+                color: #1e293b;
+              }
+
+              .table tbody tr:nth-child(even) {
+                background: #f8fafc;
+              }
+
+              .table tfoot {
+                font-weight: bold;
+                background: #e2e8f0;
+              }
+
+              .notes-section {
+                margin-top: 30px;
+                background: #fefefe;
+                padding: 20px;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+              }
+
+              .notes-section h4 {
+                margin: 0 0 10px 0;
+                color: #1e293b;
+                font-size: 14px;
+              }
+
+              .notes-content {
+                background: white;
+                padding: 10px;
+                border-radius: 4px;
+                border: 1px solid #e2e8f0;
+                white-space: pre-wrap;
+                font-size: 12px;
+                line-height: 1.4;
+              }
+
+              @page {
+                margin: 0.5in;
+                size: A4;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>Purchase Invoice #${purchase.invoice_number || purchase.invoice_no} • ${purchase.vendor?.vendor_name} • ${formatDate(purchase.date || purchase.invoice_date)}</h1>
+          </div>
+
+          <div class="info-grid">
+            <div class="info-section">
+              <h3>Basic Information</h3>
+              <div class="info-item">
+                <span class="info-label">Total:</span>
+                <span class="info-value total-highlight">₹${purchase.total?.toLocaleString('en-IN')}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Items:</span>
+                <span class="info-value">${purchase.items?.length || 0}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Invoice:</span>
+                <span class="info-value">${purchase.invoice_number || purchase.invoice_no}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Date:</span>
+                <span class="info-value">${formatDate(purchase.date || purchase.invoice_date)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Status:</span>
+                <span class="info-value">${purchase.payment_status === 1 ? 'Paid' : 'Unpaid'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Payment Mode:</span>
+                <span class="info-value">${getPaymentModeText(purchase.payment_mode)}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Bill Reference:</span>
+                <span class="info-value">${purchase.bill_reference || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div class="info-section">
+              <h3>Vendor Details</h3>
+              <div class="info-item">
+                <span class="info-label">Vendor:</span>
+                <span class="info-value">${purchase.vendor?.vendor_name}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Contact:</span>
+                <span class="info-value">${purchase.vendor?.contact_no || 'N/A'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Email:</span>
+                <span class="info-value">${purchase.vendor?.email || 'N/A'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">GSTIN:</span>
+                <span class="info-value">${purchase.vendor?.tax_id || 'N/A'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Staff:</span>
+                <span class="info-value">${purchase.staff?.name || 'N/A'}</span>
+              </div>
+            </div>
+
+            <div class="info-section">
+              <h3>Financial Summary</h3>
+              <div class="info-item">
+                <span class="info-label">Items Total:</span>
+                <span class="info-value">₹${purchase.items_total?.toLocaleString('en-IN')}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Freight:</span>
+                <span class="info-value">₹${purchase.freight?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Taxable Value:</span>
+                <span class="info-value">₹${purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Total Tax:</span>
+                <span class="info-value">₹${purchase.total_tax?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Grand Total:</span>
+                <span class="info-value total-highlight">₹${purchase.total?.toLocaleString('en-IN')}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">CGST:</span>
+                <span class="info-value">₹${purchase.total_cgst?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">SGST:</span>
+                <span class="info-value">₹${purchase.total_sgst?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">IGST:</span>
+                <span class="info-value">₹${purchase.total_igst?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+            </div>
+
+            <div class="info-section">
+              <h3>Transport Information</h3>
+              <div class="info-item">
+                <span class="info-label">Transport:</span>
+                <span class="info-value">${purchase.transport_name || 'N/A'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Vehicle:</span>
+                <span class="info-value">${purchase.vehicle_number || 'N/A'}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Freight:</span>
+                <span class="info-value">₹${purchase.freight?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+            </div>
+          </div>
+
+          <table class="table">
+            <thead>
+              <tr>
+                <th style="width: 60px;">SN</th>
+                <th>Product Name</th>
+                <th>Part No</th>
+                <th>HSN</th>
+                <th style="width: 80px;">Qty</th>
+                <th style="width: 100px;">Rate</th>
+                <th style="width: 120px;">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${purchase.items?.map((item, index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${item.product_name}</td>
+                  <td>${item.part || 'N/A'}</td>
+                  <td>${item.hsn || 'N/A'}</td>
+                  <td>${item.qty}</td>
+                  <td>₹${item.rate?.toLocaleString('en-IN')}</td>
+                  <td>₹${(item.total || item.subtotal)?.toLocaleString('en-IN')}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="7" style="text-align: center;">No items found</td></tr>'}
+            </tbody>
+            ${purchase.items && purchase.items.length > 0 ? `
+              <tfoot>
+                <tr>
+                  <td colspan="5" style="text-align: right; font-weight: bold;">Items Total:</td>
+                  <td colspan="2" style="font-weight: bold;">₹${purchase.items_total?.toLocaleString('en-IN')}</td>
+                </tr>
+              </tfoot>
+            ` : ''}
+          </table>
+
+          ${(purchase.notes || purchase.descriptions) ? `
+            <div class="notes-section">
+              ${purchase.notes ? `
+                <h4>Notes:</h4>
+                <div class="notes-content">${purchase.notes}</div>
+              ` : ''}
+              ${purchase.descriptions ? `
+                <h4>Descriptions:</h4>
+                <div class="notes-content">${purchase.descriptions}</div>
+              ` : ''}
+            </div>
+          ` : ''}
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+
+      // Wait for content to load then print
+      printWindow.onload = () => {
+        printWindow.print();
+        printWindow.close();
+      };
+    } else {
+      alert('Please allow popups for this site to use the print function.');
+    }
+  };
+
+  // Custom PDF export function for the whole page
+  const handleExportPageAsPDF = async () => {
+    try {
+      // Import html2pdf dynamically
+      const html2pdf = (await import('html2pdf.js')).default;
+
+      const element = document.querySelector('.card') as HTMLElement;
+      if (!element) {
+        alert('Error: Could not find page content for PDF export');
+        return;
+      }
+
+      const options = {
+        margin: 0.5,
+        filename: `Purchase_${purchase.invoice_number || purchase.invoice_no}_Full_Page_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'in' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await html2pdf().set(options).from(element).save();
+    } catch (error) {
+      console.error('PDF export error:', error);
+      alert('Error exporting PDF. Please try again.');
+    }
+  };
+
+  // Custom Excel export function for the whole page data
+  const handleExportPageAsExcel = () => {
+    try {
+      // Create comprehensive Excel data from the entire page
+      const excelData = [];
+
+      // Add header info
+      excelData.push({
+        'Section': 'Purchase Invoice Information',
+        'Label': `Invoice #${purchase.invoice_number || purchase.invoice_no}`,
+        'Value': '',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Purchase Invoice Information',
+        'Label': 'Vendor',
+        'Value': purchase.vendor?.vendor_name || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Purchase Invoice Information',
+        'Label': 'Date',
+        'Value': formatDate(purchase.date || purchase.invoice_date),
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Purchase Invoice Information',
+        'Label': 'Status',
+        'Value': purchase.payment_status === 1 ? 'Paid' : 'Unpaid',
+        'Notes': ''
+      });
+
+      // Add basic purchase info
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Basic Information',
+        'Label': 'Total Amount',
+        'Value': purchase.total || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Basic Information',
+        'Label': 'Items Count',
+        'Value': purchase.items?.length || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Basic Information',
+        'Label': 'Payment Mode',
+        'Value': getPaymentModeText(purchase.payment_mode),
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Basic Information',
+        'Label': 'Bill Reference',
+        'Value': purchase.bill_reference || 'N/A',
+        'Notes': ''
+      });
+
+      // Add vendor details
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Vendor Details',
+        'Label': 'Vendor Name',
+        'Value': purchase.vendor?.vendor_name || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Vendor Details',
+        'Label': 'Contact',
+        'Value': purchase.vendor?.contact_no || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Vendor Details',
+        'Label': 'Email',
+        'Value': purchase.vendor?.email || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Vendor Details',
+        'Label': 'GSTIN',
+        'Value': purchase.vendor?.tax_id || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Vendor Details',
+        'Label': 'Staff',
+        'Value': purchase.staff?.name || 'N/A',
+        'Notes': ''
+      });
+
+      // Add financial summary
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'Items Total',
+        'Value': purchase.items_total || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'Freight',
+        'Value': purchase.freight || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'Taxable Value',
+        'Value': purchase.total_taxable_value || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'Total Tax',
+        'Value': purchase.total_tax || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'Grand Total',
+        'Value': purchase.total || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'CGST',
+        'Value': purchase.total_cgst || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'SGST',
+        'Value': purchase.total_sgst || 0,
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Financial Summary',
+        'Label': 'IGST',
+        'Value': purchase.total_igst || 0,
+        'Notes': ''
+      });
+
+      // Add transport info
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Transport Information',
+        'Label': 'Transport Name',
+        'Value': purchase.transport_name || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Transport Information',
+        'Label': 'Vehicle Number',
+        'Value': purchase.vehicle_number || 'N/A',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Transport Information',
+        'Label': 'Freight Amount',
+        'Value': purchase.freight || 0,
+        'Notes': ''
+      });
+
+      // Add notes and descriptions
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Additional Information',
+        'Label': 'Notes',
+        'Value': purchase.notes || 'No notes available',
+        'Notes': ''
+      });
+
+      excelData.push({
+        'Section': 'Additional Information',
+        'Label': 'Descriptions',
+        'Value': purchase.descriptions || 'No descriptions available',
+        'Notes': ''
+      });
+
+      // Add purchase items
+      excelData.push({ 'Section': '', 'Label': '', 'Value': '', 'Notes': '' }); // Empty row
+      excelData.push({
+        'Section': 'Purchase Items',
+        'Label': 'Item Details',
+        'Value': '',
+        'Notes': 'See below for itemized list'
+      });
+
+      // Add each purchase item
+      purchase.items?.forEach((item, index) => {
+        excelData.push({
+          'Section': 'Purchase Items',
+          'Label': `Item ${index + 1}`,
+          'Value': item.product_name || 'N/A',
+          'Notes': `Part: ${item.part || 'N/A'}, HSN: ${item.hsn || 'N/A'}, Qty: ${item.qty}, Rate: ₹${item.rate?.toLocaleString('en-IN')}, Total: ₹${(item.total || item.subtotal)?.toLocaleString('en-IN')}`
+        });
+      });
+
+      // Add items total
+      excelData.push({
+        'Section': 'Purchase Items',
+        'Label': 'Items Total',
+        'Value': purchase.items_total || 0,
+        'Notes': 'Sum of all item totals'
+      });
+
+      // Use the existing export utility
+      const { exportToExcelGeneric } = require('../../../lib/export-utils');
+      exportToExcelGeneric(excelData, {
+        title: 'Purchase Details - Full Page',
+        fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}_Full_Page_${new Date().toISOString().split('T')[0]}`
+      });
+
+    } catch (error) {
+      console.error('Excel export error:', error);
+      alert('Error exporting Excel. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="card h-96 flex items-center justify-center">
@@ -200,199 +788,178 @@ export default function PurchaseView() {
 
   return (
     <div className="space-y-6">
-      {/* Main Purchase Overview Card */}
+      {/* Single Comprehensive Card */}
       <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 p-6">
-          {/* Left: Info Icon */}
-          <div className="flex flex-col items-center justify-center">
-            <div className="w-48 h-32 bg-slate-600 rounded-xl flex items-center justify-center mb-4">
-              <div className="text-6xl">🧾</div>
-            </div>
-            <h3 className="text-lg font-semibold text-white mb-2">Purchase Invoice #{purchase.invoice_number || purchase.invoice_no}</h3>
-            <p className="text-slate-400 text-sm mb-2">{purchase.vendor?.vendor_name } • {formatDate(purchase.date || purchase.invoice_date)}</p>
-            <div className="flex items-center gap-2 mt-2">{getStatusBadge(purchase.payment_status)}</div>
+        {/* Purchase Banner Inside Card */}
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4 mb-6">
+          <div className="text-center">
+            <h1 className="text-xl font-bold text-blue-100">
+              Purchase #{purchase.invoice_number || purchase.invoice_no} • {purchase.vendor?.vendor_name}
+            </h1>
           </div>
+        </div>
 
-          {/* Right: Key-Value Display + Actions */}
-          <div className="space-y-4">
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Vendor:</span>
-              <span className="text-white font-medium">{purchase.vendor?.vendor_name }</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 p-6 pt-0">
+          {/* Column 1: Basic Purchase Info */}
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Total:</span>
+              <span className="text-white font-bold text-lg">₹{purchase.total?.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Invoice Number:</span>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Items:</span>
+              <span className="text-white font-medium">{purchase.items?.length || 0}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Invoice:</span>
               <span className="text-white font-medium">{purchase.invoice_number || purchase.invoice_no}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Date:</span>
+              <span className="text-white font-medium">{formatDate(purchase.date || purchase.invoice_date)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Status:</span>
+              <span className="text-white font-medium">{getStatusBadge(purchase.payment_status)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Payment Mode:</span>
+              <span className="text-white font-medium">{getPaymentModeText(purchase.payment_mode)}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-slate-400">Bill Reference:</span>
               <span className="text-white font-medium">{purchase.bill_reference || 'N/A'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Staff Details:</span>
-              <span className="text-white font-medium">{purchase.staff?.name || 'N/A'}</span>
+          </div>
+
+          {/* Column 2: Vendor & Staff Info */}
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Vendor:</span>
+              <span className="text-white font-medium">{purchase.vendor?.vendor_name}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
               <span className="text-slate-400">Contact:</span>
               <span className="text-white font-medium">{purchase.vendor?.contact_no || 'N/A'}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Email:</span>
+              <span className="text-white font-medium">{purchase.vendor?.email || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">GSTIN:</span>
+              <span className="text-white font-medium">{purchase.vendor?.tax_id || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Staff:</span>
+              <span className="text-white font-medium">{purchase.staff?.name || 'N/A'}</span>
+            </div>
+          </div>
+
+          {/* Column 3: Financial Summary */}
+          <div className="space-y-3">
+            <div className="flex justify-between">
               <span className="text-slate-400">Items Total:</span>
               <span className="text-white font-medium">₹{purchase.items_total?.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between border-b border-slate-700 pb-2">
-              <span className="text-slate-400">Total Amount:</span>
-              <span className="text-white font-semibold text-lg">₹{purchase.total?.toLocaleString('en-IN')}</span>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Freight:</span>
+              <span className="text-white font-medium">₹{purchase.freight?.toLocaleString('en-IN') || '0'}</span>
             </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <Link
-                href={`/purchases/create?edit=${id}`}
-                onClick={handleEditPurchase}
-                className="btn-primary flex items-center gap-2"
-                title="Edit Purchase"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
-              </Link>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Taxable Value:</span>
+              <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Detailed Information Card */}
-      <div className="card">
-        <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">📋 Purchase Details</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6 pt-0">
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🧾 Invoice Information</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Invoice Number:</span>
-                <span className="text-white font-medium">{purchase.invoice_number || purchase.invoice_no}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Date:</span>
-                <span className="text-white font-medium">{formatDate(purchase.date || purchase.invoice_date)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Status:</span>
-                <span className="text-white font-medium">{getStatusBadge(purchase.payment_status)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Payment Mode:</span>
-                <span className="text-white font-medium">{getPaymentModeText(purchase.payment_mode)}</span>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Total Tax:</span>
+              <span className="text-white font-medium">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span className="text-slate-400">Grand Total:</span>
+              <span className="text-white font-bold">₹{purchase.total?.toLocaleString('en-IN')}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">CGST:</span>
+              <span className="text-white font-medium">₹{purchase.total_cgst?.toLocaleString('en-IN') || '0'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">SGST:</span>
+              <span className="text-white font-medium">₹{purchase.total_sgst?.toLocaleString('en-IN') || '0'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">IGST:</span>
+              <span className="text-white font-medium">₹{purchase.total_igst?.toLocaleString('en-IN') || '0'}</span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🏢 Vendor Information</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Vendor Name:</span>
-                <span className="text-white font-medium">{purchase.vendor?.vendor_name}</span>
+          {/* Column 4: Transport & Additional */}
+          <div className="space-y-3">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Transport:</span>
+              <span className="text-white font-medium">{purchase.transport_name || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Vehicle:</span>
+              <span className="text-white font-medium">{purchase.vehicle_number || 'N/A'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Freight:</span>
+              <span className="text-white font-medium">₹{purchase.freight?.toLocaleString('en-IN') || '0'}</span>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Notes:</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Contact:</span>
-                <span className="text-white font-medium">{purchase.vendor?.contact_no || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Email:</span>
-                <span className="text-white font-medium">{purchase.vendor?.email || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">GSTIN:</span>
-                <span className="text-white font-medium">{purchase.vendor?.tax_id || 'N/A'}</span>
+              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
+                {purchase.notes || 'No notes available'}
               </div>
             </div>
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">📊 Financial Summary</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Items Total:</span>
-                <span className="text-white font-medium">₹{purchase.items_total?.toLocaleString('en-IN')}</span>
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Descriptions:</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Freight:</span>
-                <span className="text-white font-medium">₹{purchase.freight?.toLocaleString('en-IN') || '0'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Taxable Value:</span>
-                <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Total Tax:</span>
-                <span className="text-white font-medium">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span className="text-slate-400">Grand Total:</span>
-                <span className="text-white font-medium">₹{purchase.total?.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-2 lg:col-span-3 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">💰 GST Breakdown</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="flex justify-between p-3 bg-slate-700 rounded">
-                <span className="text-slate-400">CGST:</span>
-                <span className="text-white font-medium">₹{purchase.total_cgst?.toLocaleString('en-IN') || '0'}</span>
-              </div>
-              <div className="flex justify-between p-3 bg-slate-700 rounded">
-                <span className="text-slate-400">SGST:</span>
-                <span className="text-white font-medium">₹{purchase.total_sgst?.toLocaleString('en-IN') || '0'}</span>
-              </div>
-              <div className="flex justify-between p-3 bg-slate-700 rounded">
-                <span className="text-slate-400">IGST:</span>
-                <span className="text-white font-medium">₹{purchase.total_igst?.toLocaleString('en-IN') || '0'}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="md:col-span-2 lg:col-span-3 space-y-4">
-            <h3 className="text-sm font-semibold text-slate-300 border-b border-slate-700 pb-2">🚚 Transport & Additional Info</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-slate-400 text-sm mb-1">Transport Name:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {purchase.transport_name || 'No transport information available'}
-                </div>
-              </div>
-              <div>
-                <label className="block text-slate-400 text-sm mb-1">Vehicle Number:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {purchase.vehicle_number || 'No vehicle number available'}
-                </div>
-              </div>
-              <div>
-                <label className="block text-slate-400 text-sm mb-1">Freight:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  ₹{purchase.freight?.toLocaleString('en-IN') || '0'}
-                </div>
-              </div>
-              <div className="md:col-span-3">
-                <label className="block text-slate-400 text-sm mb-1">Notes:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {purchase.notes || 'No notes available'}
-                </div>
-              </div>
-              <div className="md:col-span-3">
-                <label className="block text-slate-400 text-sm mb-1">Descriptions:</label>
-                <div className="bg-slate-700 rounded p-3 text-white text-sm">
-                  {purchase.descriptions || 'No descriptions available'}
-                </div>
+              <div className="bg-slate-700 rounded p-2 text-white text-sm min-h-12">
+                {purchase.descriptions || 'No descriptions available'}
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Purchase Items Card */}
-      <div className="card">
-        <h2 className="text-xl font-semibold text-white mb-6 p-6 pb-0">📦 Purchase Items ({purchase.items?.length || 0})</h2>
-        <div className="p-6 pt-0">
+        {/* Actions Row - Separate from columns */}
+        <div className="border-t border-slate-700 mt-6 pt-4 px-6">
+          <div className="flex justify-end items-center gap-3">
+            <ExportMenu
+              data={[purchase]}
+              columns={[
+                { key: 'invoice_number', label: 'Invoice Number', enabled: true },
+                { key: 'vendor_name', label: 'Vendor Name', enabled: true },
+                { key: 'date', label: 'Date', enabled: true },
+                { key: 'total', label: 'Total Amount', enabled: true },
+                { key: 'payment_status', label: 'Payment Status', enabled: true },
+                { key: 'payment_mode', label: 'Payment Mode', enabled: true },
+                { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+                { key: 'transport_name', label: 'Transport', enabled: true },
+                { key: 'notes', label: 'Notes', enabled: true },
+              ]}
+              config={{
+                title: 'Purchase Details',
+                fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}_${new Date().toISOString().split('T')[0]}`
+              }}
+            />
+            <Link
+              href={`/purchases/create?edit=${id}`}
+              onClick={handleEditPurchase}
+              className="btn-primary flex items-center gap-2"
+              title="Edit Purchase"
+            >
+              <Edit className="w-4 h-4" />
+              Edit Purchase
+            </Link>
+          </div>
+        </div>
+
+        {/* Purchase Items Table - Integrated into same card */}
+        <div className="border-t border-slate-700 mt-6 pt-6">
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
