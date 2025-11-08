@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import createLocalStorageStateHook from 'use-local-storage-state';
 import { PurchaseTable } from '../../components/transactions/PurchaseTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
@@ -50,12 +51,48 @@ export default function PurchasesPage() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
+  // Define filter type
+  type PurchaseFilterState = {
+    vendorFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+    billReference: string;
+    itemCount: string;
+    paymentMode: string;
+    total: string;
+    totalTax: string;
+    sortBy: string;
+    sortOrder: string;
+  };
+
+  // Create persistent filter state using use-local-storage-state
+  const [currentFilters, setCurrentFilters] = createLocalStorageStateHook<PurchaseFilterState>('purchases-page-filters', {
+    defaultValue: {
+      vendorFilter: '',
+      statusFilter: 'all',
+      dateFrom: '',
+      dateTo: '',
+      amountMin: '',
+      amountMax: '',
+      uidFilter: '',
+      billReference: '',
+      itemCount: '',
+      paymentMode: '',
+      total: '',
+      totalTax: '',
+      sortBy: 'invoice_no',
+      sortOrder: 'desc'
+    }
+  });
+
   // AbortController ref for cancelling pending requests
   const abortControllerRef = useRef<AbortController | null>(null);
   // Debounce timeout ref
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-
 
   // Modal states for return confirmation
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -73,37 +110,6 @@ export default function PurchasesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentFilters, setCurrentFilters] = useState<{
-    vendorFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    billReference: string;
-    itemCount: string;
-    paymentMode: string;
-    total: string;
-    totalTax: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }>({
-    vendorFilter: '',
-    statusFilter: 'all',
-    dateFrom: '',
-    dateTo: '',
-    amountMin: '',
-    amountMax: '',
-    uidFilter: '',
-    billReference: '',
-    itemCount: '',
-    paymentMode: '',
-    total: '',
-    totalTax: '',
-    sortBy: 'invoice_no',
-    sortOrder: 'desc'
-  });
 
   // Debounced fetch function with abort controller
   const debouncedFetchPurchases = useCallback((filtersToUse?: typeof currentFilters) => {
@@ -124,7 +130,7 @@ export default function PurchasesPage() {
     debounceTimeoutRef.current = setTimeout(() => {
       fetchPurchases(abortControllerRef.current?.signal, filtersToUse);
     }, 300); // 300ms debounce delay
-  }, []);
+  }, [currentFilters]); // Add currentFilters to dependencies
 
   // Fetch purchases when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
@@ -347,22 +353,7 @@ export default function PurchasesPage() {
   };
 
   // Handle filter application
-  const handleApplyFilters = (filters: {
-    vendorFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    billReference: string;
-    itemCount: string;
-    paymentMode: string;
-    total: string;
-    totalTax: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }) => {
+  const handleApplyFilters = (filters: PurchaseFilterState) => {
     console.log('📥 Purchases index handleApplyFilters received:', filters);
 
     // Check if this is a sort operation (only sortBy/sortOrder changed)
@@ -436,6 +427,20 @@ export default function PurchasesPage() {
         onFullReturn={handleFullReturn}
         sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
+        initialFilters={{
+          vendorFilter: currentFilters.vendorFilter,
+          statusFilter: currentFilters.statusFilter,
+          dateFrom: currentFilters.dateFrom,
+          dateTo: currentFilters.dateTo,
+          amountMin: currentFilters.amountMin,
+          amountMax: currentFilters.amountMax,
+          uidFilter: currentFilters.uidFilter,
+          billReference: currentFilters.billReference,
+          itemCount: currentFilters.itemCount,
+          paymentMode: currentFilters.paymentMode,
+          total: currentFilters.total,
+          totalTax: currentFilters.totalTax
+        }}
         actionButton={(
           <Link
             href="/purchases/create"

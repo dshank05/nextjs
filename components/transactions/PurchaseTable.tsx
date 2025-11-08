@@ -101,6 +101,20 @@ interface PurchaseTableProps {
   // Add sort state props to make this a controlled component
   sortBy?: SortField;
   sortOrder?: SortOrder;
+  initialFilters?: {
+    vendorFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+    billReference: string;
+    itemCount: string;
+    paymentMode: string;
+    total: string;
+    totalTax: string;
+  };
 }
 
 type SortField = 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax';
@@ -123,22 +137,23 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   onPartialReturn,
   onFullReturn,
   sortBy: propSortBy = 'invoice_no',
-  sortOrder: propSortOrder = 'desc'
+  sortOrder: propSortOrder = 'desc',
+  initialFilters
 }) => {
-  // Filter states - consolidated into single object
+  // Filter states - consolidated into single object - initialize with initialFilters if provided
   const [filters, setFilters] = useState({
-    vendorFilter: '',
-    statusFilter: 'all',
-    dateFrom: '',
-    dateTo: '',
-    amountMin: '',
-    amountMax: '',
-    uidFilter: '',
-    billReference: '',
-    itemCount: '',
-    paymentMode: '',
-    total: '',
-    totalTax: ''
+    vendorFilter: initialFilters?.vendorFilter || '',
+    statusFilter: initialFilters?.statusFilter || 'all',
+    dateFrom: initialFilters?.dateFrom || '',
+    dateTo: initialFilters?.dateTo || '',
+    amountMin: initialFilters?.amountMin || '',
+    amountMax: initialFilters?.amountMax || '',
+    uidFilter: initialFilters?.uidFilter || '',
+    billReference: initialFilters?.billReference || '',
+    itemCount: initialFilters?.itemCount || '',
+    paymentMode: initialFilters?.paymentMode || '',
+    total: initialFilters?.total || '',
+    totalTax: initialFilters?.totalTax || ''
   });
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ vendors: [] });
 
@@ -150,6 +165,26 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   useEffect(() => {
     fetchFilterOptions();
   }, []);
+
+  // Update filters when initialFilters change
+  useEffect(() => {
+    if (initialFilters) {
+      setFilters({
+        vendorFilter: initialFilters.vendorFilter || '',
+        statusFilter: initialFilters.statusFilter || 'all',
+        dateFrom: initialFilters.dateFrom || '',
+        dateTo: initialFilters.dateTo || '',
+        amountMin: initialFilters.amountMin || '',
+        amountMax: initialFilters.amountMax || '',
+        uidFilter: initialFilters.uidFilter || '',
+        billReference: initialFilters.billReference || '',
+        itemCount: initialFilters.itemCount || '',
+        paymentMode: initialFilters.paymentMode || '',
+        total: initialFilters.total || '',
+        totalTax: initialFilters.totalTax || ''
+      });
+    }
+  }, [initialFilters]);
 
   const fetchFilterOptions = async () => {
     try {

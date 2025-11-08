@@ -94,6 +94,15 @@ interface SaleTableProps {
   onPrintDetails?: (sale: Sale) => void;
   onPartialReturn?: (sale: Sale) => void;
   onFullReturn?: (sale: Sale) => void;
+  initialFilters?: {
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+  };
 }
 
 type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status';
@@ -114,16 +123,17 @@ export const SaleTable: React.FC<SaleTableProps> = ({
   onViewDetails,
   onPrintDetails,
   onPartialReturn,
-  onFullReturn
+  onFullReturn,
+  initialFilters
 }) => {
-  // Filter states
-  const [customerFilter, setCustomerFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [amountMin, setAmountMin] = useState('');
-  const [amountMax, setAmountMax] = useState('');
-  const [uidFilter, setUidFilter] = useState('');
+  // Filter states - initialize with initialFilters if provided
+  const [customerFilter, setCustomerFilter] = useState(initialFilters?.customerFilter || '');
+  const [statusFilter, setStatusFilter] = useState(initialFilters?.statusFilter || 'all');
+  const [dateFrom, setDateFrom] = useState(initialFilters?.dateFrom || '');
+  const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '');
+  const [amountMin, setAmountMin] = useState(initialFilters?.amountMin || '');
+  const [amountMax, setAmountMax] = useState(initialFilters?.amountMax || '');
+  const [uidFilter, setUidFilter] = useState(initialFilters?.uidFilter || '');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ customers: [] });
 
   // UI states for dropdowns
@@ -141,6 +151,19 @@ export const SaleTable: React.FC<SaleTableProps> = ({
   useEffect(() => {
     fetchFilterOptions();
   }, []);
+
+  // Update filters when initialFilters change
+  useEffect(() => {
+    if (initialFilters) {
+      setCustomerFilter(initialFilters.customerFilter || '');
+      setStatusFilter(initialFilters.statusFilter || 'all');
+      setDateFrom(initialFilters.dateFrom || '');
+      setDateTo(initialFilters.dateTo || '');
+      setAmountMin(initialFilters.amountMin || '');
+      setAmountMax(initialFilters.amountMax || '');
+      setUidFilter(initialFilters.uidFilter || '');
+    }
+  }, [initialFilters]);
 
   const fetchFilterOptions = async () => {
     try {

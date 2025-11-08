@@ -64,6 +64,18 @@ interface ProductTableProps {
     sortBy?: string;
     sortOrder?: string;
   }) => void;
+  initialFilters?: {
+    categoryFilter: string;
+    subcategoryFilter: string;
+    modelFilter: string[];
+    companyFilter: string;
+    quantityFilter: string;
+    stockFilter: string;
+    startDate: string;
+    endDate: string;
+    uidFilter: string;
+    partNoFilter: string;
+  };
 }
 
 type SortField = 'id' | 'categoryName' | 'companyName' | 'subcategoryName' | 'part_no' | 'stock' | 'rate' | 'lastPurchaseDate';
@@ -80,20 +92,21 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   onItemsPerPageChange,
   actionButton,
   onExport,
-  onApplyFilters
+  onApplyFilters,
+  initialFilters
 }) => {
-  // Consolidated filter state
+  // Consolidated filter state - initialize with initialFilters if provided
   const [filters, setFilters] = useState({
-    categoryFilter: '',
-    subcategoryFilter: '',
-    modelFilter: [] as string[],
-    companyFilter: '',
-    quantityFilter: '',
-    stockFilter: 'all',
-    startDate: '',
-    endDate: '',
-    uidFilter: '',
-    partNoFilter: ''
+    categoryFilter: initialFilters?.categoryFilter || '',
+    subcategoryFilter: initialFilters?.subcategoryFilter || '',
+    modelFilter: initialFilters?.modelFilter || [],
+    companyFilter: initialFilters?.companyFilter || '',
+    quantityFilter: initialFilters?.quantityFilter || '',
+    stockFilter: initialFilters?.stockFilter || 'all',
+    startDate: initialFilters?.startDate || '',
+    endDate: initialFilters?.endDate || '',
+    uidFilter: initialFilters?.uidFilter || '',
+    partNoFilter: initialFilters?.partNoFilter || ''
   });
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -127,6 +140,24 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   useEffect(() => {
     fetchFilterOptions();
   }, []);
+
+  // Update filters when initialFilters change
+  useEffect(() => {
+    if (initialFilters) {
+      setFilters({
+        categoryFilter: initialFilters.categoryFilter || '',
+        subcategoryFilter: initialFilters.subcategoryFilter || '',
+        modelFilter: initialFilters.modelFilter || [],
+        companyFilter: initialFilters.companyFilter || '',
+        quantityFilter: initialFilters.quantityFilter || '',
+        stockFilter: initialFilters.stockFilter || 'all',
+        startDate: initialFilters.startDate || '',
+        endDate: initialFilters.endDate || '',
+        uidFilter: initialFilters.uidFilter || '',
+        partNoFilter: initialFilters.partNoFilter || ''
+      });
+    }
+  }, [initialFilters]);
 
   // Fetch dynamic subcategories when category changes
   useEffect(() => {
@@ -525,7 +556,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
                 Part Number {getSortIcon('part_no')}
               </th>
-              <th>Media</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
                 Stock {getSortIcon('stock')}
               </th>
@@ -564,31 +594,29 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 </td>
                 <td className="text-slate-300">{product.companyName || '-'}</td>
                 <td className="text-slate-300">{product.part_no || '-'}</td>
-                <td>
-                  {(product.pic || product.barcode) ? (
-                    <button
-                      onClick={() => setImagePreviewModal({
-                        isOpen: true,
-                        productName: product.product_name,
-                        imageUrl: product.pic || '',
-                        barcodeUrl: product.barcode || ''
-                      })}
-                      className="text-blue-400 hover:text-blue-300 transition-colors"
-                      title="View Product Media"
-                    >
-                      <Image className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <span className="text-slate-500 text-sm">-</span>
-                  )}
-                </td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
                 <td className="text-slate-300">{product.lastPurchaseDate || '-'}</td>
                 <td>
-                  <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
-                    <Eye className="w-4 h-4" />
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                    {(product.pic || product.barcode) && (
+                      <button
+                        onClick={() => setImagePreviewModal({
+                          isOpen: true,
+                          productName: product.product_name,
+                          imageUrl: product.pic || '',
+                          barcodeUrl: product.barcode || ''
+                        })}
+                        className="btn-icon text-blue-400 hover:text-blue-300 transition-colors"
+                        title="View Product Media"
+                      >
+                        <Image className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

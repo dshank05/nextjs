@@ -619,9 +619,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Build where clause
     const where: any = {}
 
-    // Handle UID filtering
+    // Handle UID filtering - filter by invoice_no for "Invoice No" filter
     if (uid && uid !== '') {
-      where.id = parseInt(uid as string)
+      where.invoice_no = parseInt(uid as string)
     }
 
     if (search) {

@@ -52,6 +52,13 @@ export function SearchableSelect({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Clear search query when dropdown opens
+  useEffect(() => {
+    if (isDropdownOpen) {
+      setSearchQuery('');
+    }
+  }, [isDropdownOpen]);
+
   const filteredOptions = options.filter(option =>
     option.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -124,19 +131,8 @@ export function SearchableSelect({
               type="text"
               placeholder="Search options..."
               value={searchQuery}
-              onFocus={() => {
-                if (!hasInteracted && selectedValue) {
-                  setHasInteracted(true);
-                  onSelectionChange(null);
-                }
-              }}
               onChange={(e) => {
-                const newValue = e.target.value;
-                if (!hasInteracted && selectedValue) {
-                  setHasInteracted(true);
-                  onSelectionChange(null);
-                }
-                setSearchQuery(newValue);
+                setSearchQuery(e.target.value);
               }}
               className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />

@@ -166,7 +166,7 @@ async function enhanceProduct(product: any) {
       : '',
     rack_number: product.rack_id ? rackMap.get(product.rack_id) || product.rack_number || '' : product.rack_number || '',
     carModelsDisplay: carModelNames.join(', '),
-    sale_price: (latestPurchaseRate || product.mrp || 0) + (product.margin || 0) - (product.discount || 0),
+    sale_price: (latestPurchaseRate || product?.opening_rate || 0) + (product.margin || 0) - (product.discount || 0),
     gst_rate: product.hsn ? gstRateMap.get(product.hsn) || 0 : 0,
     opening_rate: product.opening_rate || 0
   };

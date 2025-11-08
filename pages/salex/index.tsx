@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import createLocalStorageStateHook from 'use-local-storage-state';
 import { SalexTable } from '../../components/transactions/SalexTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
@@ -50,12 +51,38 @@ export default function SalexPage() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
+  // Define filter type
+  type SalexFilterState = {
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+    sortBy: string;
+    sortOrder: string;
+  };
+
+  // Create persistent filter state using use-local-storage-state
+  const [currentFilters, setCurrentFilters] = createLocalStorageStateHook<SalexFilterState>('salex-page-filters', {
+    defaultValue: {
+      customerFilter: '',
+      statusFilter: 'all',
+      dateFrom: '',
+      dateTo: '',
+      amountMin: '',
+      amountMax: '',
+      uidFilter: '',
+      sortBy: 'invoice_date',
+      sortOrder: 'desc'
+    }
+  });
+
   // AbortController ref for cancelling pending requests
   const abortControllerRef = useRef<AbortController | null>(null);
   // Debounce timeout ref
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-
 
   // Modal states for return confirmation
   const [showReturnModal, setShowReturnModal] = useState(false);
@@ -73,27 +100,6 @@ export default function SalexPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentFilters, setCurrentFilters] = useState<{
-    customerFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }>({
-    customerFilter: '',
-    statusFilter: 'all',
-    dateFrom: '',
-    dateTo: '',
-    amountMin: '',
-    amountMax: '',
-    uidFilter: '',
-    sortBy: 'invoice_date',
-    sortOrder: 'desc'
-  });
 
   // Debounced fetch function with abort controller
   const debouncedFetchSalex = useCallback(() => {
@@ -114,7 +120,7 @@ export default function SalexPage() {
     debounceTimeoutRef.current = setTimeout(() => {
       fetchSalex(abortControllerRef.current?.signal);
     }, 300); // 300ms debounce delay
-  }, []);
+  }, [currentFilters]); // Add currentFilters to dependencies
 
   // Fetch salex when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
@@ -325,17 +331,7 @@ export default function SalexPage() {
   };
 
   // Handle filter application
-  const handleApplyFilters = (filters: {
-    customerFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }) => {
+  const handleApplyFilters = (filters: SalexFilterState) => {
     console.log('📥 Salex index handleApplyFilters received:', filters);
 
     // Check if this is a sort operation (only sortBy/sortOrder changed)
@@ -402,6 +398,15 @@ export default function SalexPage() {
         onPrintDetails={handlePrintSalex}
         onPartialReturn={handlePartialReturn}
         onFullReturn={handleFullReturn}
+        initialFilters={{
+          customerFilter: currentFilters.customerFilter,
+          statusFilter: currentFilters.statusFilter,
+          dateFrom: currentFilters.dateFrom,
+          dateTo: currentFilters.dateTo,
+          amountMin: currentFilters.amountMin,
+          amountMax: currentFilters.amountMax,
+          uidFilter: currentFilters.uidFilter
+        }}
         actionButton={(
           <Link
             href="/salex/create"

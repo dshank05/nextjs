@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import createLocalStorageStateHook from 'use-local-storage-state';
 import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 
@@ -27,14 +28,8 @@ interface ProductResponse {
 }
 
 export default function Products() {
-
-
-  const [products, setProducts] = useState<Product[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [currentFilters, setCurrentFilters] = useState<{
+  // Define filter type
+  type FilterState = {
     categoryFilter: string;
     subcategoryFilter: string;
     modelFilter: string[];
@@ -45,22 +40,33 @@ export default function Products() {
     endDate: string;
     uidFilter: string;
     partNoFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }>({
-    categoryFilter: '',
-    subcategoryFilter: '',
-    modelFilter: [],
-    companyFilter: '',
-    quantityFilter: '',
-    stockFilter: 'all',
-    startDate: '',
-    endDate: '',
-    uidFilter: '',
-    partNoFilter: '',
-    sortBy: 'categoryName',
-    sortOrder: 'asc'
+    sortBy: string;
+    sortOrder: string;
+  };
+
+  // Create persistent filter state using use-local-storage-state
+  const [currentFilters, setCurrentFilters] = createLocalStorageStateHook<FilterState>('products-page-filters', {
+    defaultValue: {
+      categoryFilter: '',
+      subcategoryFilter: '',
+      modelFilter: [],
+      companyFilter: '',
+      quantityFilter: '',
+      stockFilter: 'all',
+      startDate: '',
+      endDate: '',
+      uidFilter: '',
+      partNoFilter: '',
+      sortBy: 'categoryName',
+      sortOrder: 'asc'
+    }
   });
+
+  const [products, setProducts] = useState<Product[]>([]);
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Refs for debouncing and abort controllers
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -154,7 +160,7 @@ export default function Products() {
     debounceTimeoutRef.current = setTimeout(() => {
       fetchProducts(abortControllerRef.current?.signal);
     }, 300); // 300ms debounce delay
-  }, [fetchProducts]);
+  }, [currentFilters]); // Add currentFilters to dependencies
 
   // Fetch products when pagination, search, or filters change
   useEffect(() => {
@@ -198,20 +204,7 @@ export default function Products() {
 
 
   // Handle filter application
-  const handleApplyFilters = (filters: {
-    categoryFilter: string;
-    subcategoryFilter: string;
-    modelFilter: string[];
-    companyFilter: string;
-    quantityFilter: string;
-    stockFilter: string;
-    startDate: string;
-    endDate: string;
-    uidFilter: string;
-    partNoFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }) => {
+  const handleApplyFilters = (filters: FilterState) => {
     setCurrentFilters(filters);
     // Reset to first page when applying filters
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -250,6 +243,18 @@ export default function Products() {
         onItemsPerPageChange={handleLimitChange}
         onExport={() => {}} // Export handled internally by ProductTable
         onApplyFilters={handleApplyFilters}
+        initialFilters={{
+          categoryFilter: currentFilters.categoryFilter,
+          subcategoryFilter: currentFilters.subcategoryFilter,
+          modelFilter: currentFilters.modelFilter,
+          companyFilter: currentFilters.companyFilter,
+          quantityFilter: currentFilters.quantityFilter,
+          stockFilter: currentFilters.stockFilter,
+          startDate: currentFilters.startDate,
+          endDate: currentFilters.endDate,
+          uidFilter: currentFilters.uidFilter,
+          partNoFilter: currentFilters.partNoFilter
+        }}
         actionButton={(
           <Link
             href="/products/create"
