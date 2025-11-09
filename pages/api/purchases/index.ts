@@ -38,6 +38,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       itemCount = '', // NEW: Filter by item count
       paymentMode = '', // NEW: Filter by payment mode
       totalTax = '', // NEW: Filter by total tax amount
+      packingForwardingTotal = '', // NEW: Filter by packing/forwarding total
       sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
       sortOrder = 'desc' // NEW: Sort order (default: desc)
     } = req.query
@@ -125,11 +126,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total_tax = parseFloat(totalTax as string)
     }
 
+    // Packing/Forwarding Total filter
+    if (packingForwardingTotal && packingForwardingTotal !== '') {
+      where.packing_forwarding_total = parseFloat(packingForwardingTotal as string)
+    }
+
     // Filter out fully returned purchases (return_status = 2)
     where.return_status = { not: 2 }; // 0=none, 1=partial, 2=full (hide fully returned)
 
     // Validate and set sort parameters
-    const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'total_tax', 'invoice_date', 'payment_status', 'payment_mode', 'fy', 'bill_reference', 'item_count']
+    const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'total_tax', 'packing_forwarding_total', 'invoice_date', 'payment_status', 'payment_mode', 'fy', 'bill_reference', 'item_count']
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
@@ -152,6 +158,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             items_total: true,
             freight: true,
             total_taxable_value: true,
+            packing_forwarding_total:true,
             taxrate: true,
             total_cgst: true,
             total_sgst: true,
@@ -294,6 +301,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           // total_sgst: invoice.total_sgst || 0,
           // total_igst: invoice.total_igst || 0,
           total_tax: invoice.total_tax || 0, // ✅ Include total_tax for display and filtering
+          packing_forwarding_total: invoice.packing_forwarding_total || 0, // ✅ Include packing/forwarding total
           // notes: invoice.notes || '',
           // transport: invoice.transport || '',
           // items: [], // Never populated in GET response

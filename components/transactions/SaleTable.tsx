@@ -329,9 +329,9 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4 mb-4">
+      <div className="grid grid-cols-7 gap-4 mb-4">
         {/* UID Filter */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
           <ClearableInput
             type="number"
@@ -360,7 +360,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         </div>
 
         {/* Customer Filter */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Customer</label>
           <SearchableSelect
             options={[
@@ -394,7 +394,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         </div>
 
         {/* Date Range Filter */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
           <DateRangeFilter
             startDate={dateFrom}
@@ -422,18 +422,31 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         </div>
 
         {/* Status Filter */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => {
-              const newValue = e.target.value;
+          <SearchableSelect
+            options={[
+              { id: 'all', name: 'All Status' },
+              { id: 'paid', name: 'Paid' },
+              { id: 'unpaid', name: 'Unpaid' }
+            ]}
+            selectedValue={statusFilter}
+            onSelectionChange={(value) => {
+              const newValue = value || 'all';
               setStatusFilter(newValue);
-              // Auto-apply filter
+              // Auto-apply filter - convert frontend values to API values
               if (onApplyFilters) {
+                let apiStatusValue = '';
+                if (newValue === 'paid') {
+                  apiStatusValue = '1';
+                } else if (newValue === 'unpaid') {
+                  apiStatusValue = '0';
+                } else if (newValue === 'all') {
+                  apiStatusValue = '';
+                }
                 onApplyFilters({
                   customerFilter,
-                  statusFilter: newValue,
+                  statusFilter: apiStatusValue,
                   dateFrom,
                   dateTo,
                   amountMin,
@@ -444,16 +457,12 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                 });
               }
             }}
-            className="select w-full"
-          >
-            <option value="all">All Status</option>
-            <option value="paid">Paid</option>
-            <option value="unpaid">Unpaid</option>
-          </select>
+            placeholder="Select status..."
+          />
         </div>
 
         {/* Amount Min */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
           <ClearableInput
             type="number"
@@ -482,7 +491,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         </div>
 
         {/* Amount Max */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
           <ClearableInput
             type="number"

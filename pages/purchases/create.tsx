@@ -294,6 +294,25 @@ export default function PurchaseCreate() {
     }
   }, [isProductPanelOpen]);
 
+  // Function to generate dynamic product name in new format: UID CAR MODEL CATEGORY [SUBCATEGORY] COMPANY [PARTNUMBER]
+  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[], partNumber?: string): string => {
+    const uid = product.id.toString();
+    const carModelName = selectedCarModelIds.length > 0
+      ? filterOptions.models.find(model => model.id.toString() === selectedCarModelIds[0])?.name || ''
+      : '';
+    const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || '';
+    const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || '';
+    const companyName = filterOptions.companies.find(comp => comp.id.toString() === (product.company_id || product.company)?.toString())?.name || product.company || '';
+
+    // Build parts array - omit empty optional fields
+    const parts = [uid, carModelName, categoryName];
+    if (subcategoryName) parts.push(subcategoryName);
+    parts.push(companyName);
+    if (partNumber) parts.push(partNumber);
+
+    return parts.join(' ');
+  };
+
   // Function to filter car models based on product compatibility
   const getFilteredCarModelsForProduct = (product: Product): any[] => {
     if (!product.car_model_ids || !product.car_model_ids.trim()) {
@@ -1620,24 +1639,13 @@ export default function PurchaseCreate() {
                             // Update the product name directly when car models change
                             if (selectedRowProduct) {
                               if (value) {
-                                const selectedCarModel = filterOptions.models.find(model => model.id.toString() === value);
+                                const updatedProductName = generateDynamicProductName(selectedRowProduct, [value], productRowFilters.partNo);
 
-                                if (selectedCarModel) {
-                                  // Parse product name format: category-subcategory-carModel-company
-                                  const productName = selectedRowProduct.product_name;
-                                  const parts = productName.split('-');
-                                  if (parts.length >= 4) {
-                                    // Replace the car model part (index 2) with selected model name
-                                    parts[2] = selectedCarModel.name;
-                                    const updatedProductName = parts.join('-');
-
-                                    // Update the product's name directly
-                                    setSelectedRowProduct(prev => prev ? {
-                                      ...prev,
-                                      product_name: updatedProductName
-                                    } : null);
-                                  }
-                                }
+                                // Update the product's name directly
+                                setSelectedRowProduct(prev => prev ? {
+                                  ...prev,
+                                  product_name: updatedProductName
+                                } : null);
                               }
                             }
                           }}
@@ -1931,17 +1939,14 @@ export default function PurchaseCreate() {
                                       const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
                                       newCarModel = selectedModel ? selectedModel.name : '';
 
-                                      // Update the product name directly when car model changes
-                                      if (newCarModel && editingRowData?.product_name) {
-                                        // Parse product name format: category-subcategory-carModel-company
-                                        const productName = editingRowData.product_name;
-                                        const parts = productName.split('-');
-                                        if (parts.length >= 4) {
-                                          // Replace the car model part (index 2) with selected model name
-                                          parts[2] = newCarModel;
-                                          updatedProductName = parts.join('-');
-                                        }
+                                    // Update the product name directly when car model changes
+                                    if (newCarModel && editingRowData?.product_name) {
+                                      // Find the product being edited to get full details
+                                      const editingProduct = products.find(p => p.id === product.product_id);
+                                      if (editingProduct) {
+                                        updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
                                       }
+                                    }
                                     }
 
                                     // Update editing row data with both car model and updated product name

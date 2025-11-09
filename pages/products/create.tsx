@@ -329,21 +329,23 @@ export default function ProductCreate() {
   };
 
   const generateProductDisplay = () => {
-    const category = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
-    const subcategory = subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
-    const company = filterOptions.companies.find(c => c.id.toString() === formData.company_id)?.name || '';
+    // For new products, we don't have a UID yet, so we'll show a preview format
+    // For editing, we show the actual format with UID
+    const uid = isEditing && editingProductId ? editingProductId.toString() : '';
+    const carModelName = formData.car_models.length > 0
+      ? filterOptions.models.find(m => m.id.toString() === formData.car_models[0])?.name || ''
+      : '';
+    const categoryName = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
+    const subcategoryName = subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
+    const companyName = filterOptions.companies.find(c => c.id.toString() === formData.company_id)?.name || '';
 
-    // Get first selected car model name
-    const firstCarModelId = formData.car_models.length > 0 ? formData.car_models[0] : '';
-    const firstCarModel = filterOptions.models.find(m => m.id.toString() === firstCarModelId)?.name || '';
+    // Build parts array - omit empty optional fields
+    const parts = [uid, carModelName, categoryName];
+    if (subcategoryName) parts.push(subcategoryName);
+    parts.push(companyName);
+    if (formData.part_no) parts.push(formData.part_no);
 
-    const displayName = `${category}-${subcategory}-${firstCarModel}-${company}`.trim();
-    const cleanDisplayName = displayName
-      .replace(/^-+|-+$/g, '') // Remove leading/trailing dashes
-      .replace(/-+/g, '-') // Replace multiple dashes with single dash
-      .trim();
-
-    return cleanDisplayName;
+    return parts.join(' ');
   };
 
   const validateForm = () => {

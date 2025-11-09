@@ -205,9 +205,9 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
           fontFamily: 'Inter, sans-serif'
         }}
       >
-        <div className="flex items-center gap-2">
-          <Calendar className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-          <span style={{ color: startDateState && endDateState ? 'var(--text)' : 'var(--text-secondary)' }}>
+        <div className="flex items-center gap-2 truncate">
+          <Calendar className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--text-secondary)' }} />
+          <span className="truncate" style={{ color: startDateState && endDateState ? 'var(--text)' : 'var(--text-secondary)' }}>
             {getDisplayText()}
           </span>
         </div>

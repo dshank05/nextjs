@@ -287,9 +287,9 @@ export const ProductTable: React.FC<ProductTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="flex flex-wrap gap-4 mb-4">
+      <div className="grid grid-cols-10 gap-4 mb-4">
         {/* UID Filter */}
-        <div className="w-32 flex-shrink-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">UID</label>
           <ClearableInput
             type="text"
@@ -312,7 +312,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Category Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
           <SearchableSelect
             options={[
@@ -338,7 +338,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Subcategory Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Subcategory</label>
           <SearchableSelect
             options={[
@@ -365,7 +365,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Car Models Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Car Models</label>
           <SearchableSelect
             options={[
@@ -392,7 +392,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Company Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Company</label>
           <SearchableSelect
             options={[
@@ -418,7 +418,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Part No Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Part No</label>
           <ClearableInput
             type="text"
@@ -441,7 +441,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Quantity Filter */}
-        <div className="w-32 flex-shrink-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Quantity</label>
           <ClearableInput
             type="number"
@@ -465,7 +465,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
 
         {/* Date Range Filter */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
           <DateRangeFilter
             startDate={filters.startDate}

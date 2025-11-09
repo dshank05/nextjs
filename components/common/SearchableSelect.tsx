@@ -94,7 +94,7 @@ export function SearchableSelect({
         }`}
         onClick={() => !disabled && setIsDropdownOpen(!isDropdownOpen)}
       >
-        <div className="flex-1">
+        <div className="truncate">
           {selectedOptionName ? (
             <span className={`text-sm ${disabled ? 'text-slate-400' : 'text-white'}`}>{selectedOptionName}</span>
           ) : (

@@ -202,19 +202,23 @@ export default function InvoiceCCreate() {
     return { companyId, companyName };
   };
 
-  // Function to generate dynamic product name based on car model selection
-  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[]): string => {
+  // Function to generate dynamic product name in new format: UID CAR MODEL CATEGORY [SUBCATEGORY] COMPANY [PARTNUMBER]
+  const generateDynamicProductName = (product: Product, selectedCarModelIds: string[], partNumber?: string): string => {
+    const uid = product.id.toString();
+    const carModelName = selectedCarModelIds.length > 0
+      ? filterOptions.models.find(model => model.id.toString() === selectedCarModelIds[0])?.name || ''
+      : '';
     const categoryName = filterOptions.categories.find(cat => cat.id.toString() === product.product_category_id?.toString())?.name || '';
     const subcategoryName = filterOptions.subcategories.find(sub => sub.id.toString() === product.product_subcategory_id?.toString())?.name || '';
-    const companyName = filterOptions.companies.find(comp => comp.id.toString() === (product.company_id || product.company)?.toString())?.name || product.company || '';
+    const { companyName } = getCompanyInfo(product);
 
+    // Build parts array - omit empty optional fields
+    const parts = [uid, carModelName, categoryName];
+    if (subcategoryName) parts.push(subcategoryName);
+    parts.push(companyName);
+    if (partNumber) parts.push(partNumber);
 
-    // Use the first selected car model for the product name
-    const firstCarModelId = selectedCarModelIds[0];
-    const selectedCarModel = filterOptions.models.find(model => model.id.toString() === firstCarModelId);
-    const carModelName = selectedCarModel?.name || firstCarModelId;
-
-    return `${categoryName}-${subcategoryName}-${carModelName}-${companyName}`;
+    return parts.join(' ');
   };
 
   // Function to filter car models based on product compatibility
@@ -2012,13 +2016,10 @@ export default function InvoiceCCreate() {
 
                                       // Update the product name directly when car model changes
                                       if (newCarModel) {
-                                        // Parse product name format: category-subcategory-carModel-company
-                                        const productName = updatedProductName;
-                                        const parts = productName.split('-');
-                                        if (parts.length >= 4) {
-                                          // Replace the car model part (index 2) with selected model name
-                                          parts[2] = newCarModel;
-                                          updatedProductName = parts.join('-');
+                                        // Find the product being edited to get full details
+                                        const editingProduct = products.find(p => p.id === product.product_id);
+                                        if (editingProduct) {
+                                          updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
                                         }
                                       }
                                     }

@@ -81,7 +81,7 @@ a {
   }
   
   .table tbody td {
-    @apply px-2 py-1 whitespace-nowrap border-b border-slate-700;
+    @apply px-2 py-3 whitespace-nowrap border-b border-slate-700;
   }
   
   .table tbody tr:hover {
