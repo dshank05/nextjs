@@ -1025,7 +1025,7 @@ export default function SaleReturnCreatePage() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={selectedProducts.reduce((sum, item) => sum + item.cgst, 0).toFixed(2)}
                         readOnly
                         disabled
@@ -1037,7 +1037,7 @@ export default function SaleReturnCreatePage() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={selectedProducts.reduce((sum, item) => sum + item.sgst, 0).toFixed(2)}
                         readOnly
                         disabled
@@ -1049,7 +1049,7 @@ export default function SaleReturnCreatePage() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={selectedProducts.reduce((sum, item) => sum + item.igst, 0).toFixed(2)}
                         readOnly
                         disabled

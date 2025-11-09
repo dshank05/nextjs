@@ -40,7 +40,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
 - [x] Verify auto-calculations work properly (useEffect implemented)
 - [x] Verify grand total includes packing & forwarding (grandTotal useMemo includes packing_forwarding_total)
 - [x] Test purchase editing with existing packing & forwarding data (edit mode already handles formData initialization)
-- [x] Test edge cases (zero values, decimals, etc.) (input fields accept step="0.01" for decimals)
+- [x] Test edge cases (zero values, decimals, etc.) (input fields accept  for decimals)
 
 ### Phase 4: Final Review ✅ COMPLETED
 - [x] Code review for consistency with invoice implementation (matches exactly with sales/invoice)
@@ -59,7 +59,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
       <input
         type="number"
-        step="0.01"
+        
         value={formData.packing_forwarding_qty}
         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
         className="input w-full"
@@ -70,7 +70,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
       <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
       <input
         type="number"
-        step="0.01"
+        
         value={formData.packing_forwarding_rate}
         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
         className="input w-full"
@@ -81,7 +81,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
       <input
         type="number"
-        step="0.01"
+        
         value={formData.packing_forwarding_total}
         readOnly
         disabled

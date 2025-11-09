@@ -679,7 +679,6 @@ export default function ProductCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
                 <ClearableInput
                   type="number"
-                  step="0.01"
                   value={formData.mrp}
                   onChange={(e) => handleInputChange('mrp', e.target.value)}
                   placeholder="0.00"
@@ -690,7 +689,6 @@ export default function ProductCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                 <ClearableInput
                   type="number"
-                  step="0.01"
                   value={formData.discount}
                   onChange={(e) => handleInputChange('discount', e.target.value)}
                   placeholder="0.00"
@@ -701,7 +699,6 @@ export default function ProductCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">MARGIN</label>
                 <ClearableInput
                   type="number"
-                  step="0.01"
                   value={formData.margin}
                   onChange={(e) => handleInputChange('margin', e.target.value)}
                   placeholder="Profit margin in ₹"
@@ -846,7 +843,6 @@ export default function ProductCreate() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">OPENING RATE</label>
                 <ClearableInput
                   type="number"
-                  step="0.01"
                   value={formData.opening_rate}
                   onChange={(e) => handleInputChange('opening_rate', e.target.value)}
                   placeholder="0.00"

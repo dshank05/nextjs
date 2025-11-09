@@ -351,7 +351,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               <label className="block text-sm font-medium text-slate-300 mb-2">MRP</label>
               <input
                 type="number"
-                step="0.01"
+                
                 value={formData.mrp}
                 onChange={(e) => handleInputChange('mrp', e.target.value)}
                 className="input w-full"
@@ -363,7 +363,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
               <input
                 type="number"
-                step="0.01"
+                
                 value={formData.discount}
                 onChange={(e) => handleInputChange('discount', e.target.value)}
                 className="input w-full"
@@ -467,7 +467,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               <label className="block text-sm font-medium text-slate-300 mb-2">SALE PRICE</label>
               <input
                 type="number"
-                step="0.01"
+                
                 value={formData.sale_price}
                 onChange={(e) => handleInputChange('sale_price', e.target.value)}
                 className="input w-full"
@@ -490,7 +490,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
               <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
               <input
                 type="number"
-                step="0.01"
+                
                 value={formData.rate}
                 onChange={(e) => handleInputChange('rate', e.target.value)}
                 className="input w-full"

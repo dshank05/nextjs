@@ -1908,7 +1908,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">COMMISSION</label>
                   <input
                     type="number"
-                    step="0.01"
+                    
                     value={formData.commission}
                     onChange={(e) => handleInputChange('commission', e.target.value)}
                     className="input w-full"
@@ -2134,7 +2134,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-                          step="0.01"
+                          
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.rate}
@@ -2149,7 +2149,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-                          step="0.01"
+                          
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.gst}
@@ -2165,7 +2165,7 @@ export default function InvoiceCreate() {
                         <td className="px-4 py-3 text-center w-20">
                           <input
                             type="number"
-                            step="0.01"
+                            
                             min="0"
                             max="100"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2450,7 +2450,7 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center w-32">
                               <input
                                 type="number"
-                                step="0.01"
+                                
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2459,7 +2459,7 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center w-32">
                               <input
                                 type="number"
-                                step="0.01"
+                                
                                 value={editingRowData?.gst_percentage || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2469,7 +2469,7 @@ export default function InvoiceCreate() {
                               <td className="px-3 py-2 text-center w-20">
                                 <input
                                   type="number"
-                                  step="0.01"
+                                  
                                   min="0"
                                   max="100"
                                   value={editingRowData?.discount_percentage || ''}
@@ -2647,7 +2647,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.total_cgst}
                         readOnly
                         disabled
@@ -2659,7 +2659,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.total_sgst}
                         readOnly
                         disabled
@@ -2671,7 +2671,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.total_igst}
                         readOnly
                         disabled
@@ -2684,7 +2684,7 @@ export default function InvoiceCreate() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                         <input
                           type="number"
-                          step="0.01"
+                          
                           value={totalDiscount.toFixed(2)}
                           readOnly
                           disabled
@@ -2701,7 +2701,7 @@ export default function InvoiceCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
                     <input
                       type="number"
-                      step="0.01"
+                      
                       value={subtotal.toFixed(2)}
                       readOnly
                       disabled
@@ -2712,7 +2712,7 @@ export default function InvoiceCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL TAX</label>
                     <input
                       type="number"
-                      step="0.01"
+                      
                       value={totalTax.toFixed(2)}
                       readOnly
                       disabled
@@ -2729,7 +2729,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.packing_forwarding_qty}
                         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                         className="input w-full"
@@ -2740,7 +2740,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.packing_forwarding_rate}
                         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
                         className="input w-full"
@@ -2751,7 +2751,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                       <input
                         type="number"
-                        step="0.01"
+                        
                         value={formData.packing_forwarding_total}
                         readOnly
                         disabled

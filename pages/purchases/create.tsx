@@ -1488,7 +1488,6 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT COST</label>
                   <input
                     type="number"
-                    step="0.01"
                     value={formData.transport_cost}
                     onChange={(e) => handleInputChange('transport_cost', e.target.value)}
                     className="input w-full"
@@ -1706,7 +1705,6 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
-                          step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.rate}
@@ -1721,7 +1719,6 @@ export default function PurchaseCreate() {
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-                          step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0%"
                           value={templateRow.gst}
@@ -1939,14 +1936,14 @@ export default function PurchaseCreate() {
                                       const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
                                       newCarModel = selectedModel ? selectedModel.name : '';
 
-                                    // Update the product name directly when car model changes
-                                    if (newCarModel && editingRowData?.product_name) {
-                                      // Find the product being edited to get full details
-                                      const editingProduct = products.find(p => p.id === product.product_id);
-                                      if (editingProduct) {
-                                        updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
+                                      // Update the product name directly when car model changes
+                                      if (newCarModel && editingRowData?.product_name) {
+                                        // Find the product being edited to get full details
+                                        const editingProduct = products.find(p => p.id === product.product_id);
+                                        if (editingProduct) {
+                                          updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
+                                        }
                                       }
-                                    }
                                     }
 
                                     // Update editing row data with both car model and updated product name
@@ -1990,7 +1987,7 @@ export default function PurchaseCreate() {
                             <td className="px-4 py-3 text-center w-24">
                               <input
                                 type="number"
-                                step="0.01"
+                                
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -1999,7 +1996,7 @@ export default function PurchaseCreate() {
                             <td className="px-4 py-3 text-center w-20">
                               <input
                                 type="number"
-                                step="0.01"
+                                
                                 value={editingRowData?.gst_percentage || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2139,7 +2136,6 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                   <input
                     type="number"
-                    step="0.01"
                     value={formData.packing_forwarding_qty}
                     onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                     className="input w-full"
@@ -2150,7 +2146,6 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                   <input
                     type="number"
-                    step="0.01"
                     value={formData.packing_forwarding_rate}
                     onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
                     className="input w-full"
@@ -2161,7 +2156,6 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                   <input
                     type="number"
-                    step="0.01"
                     value={formData.packing_forwarding_total}
                     readOnly
                     disabled
@@ -2183,7 +2177,6 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
                     <input
                       type="number"
-                      step="0.01"
                       value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
                       readOnly
                       disabled
@@ -2195,7 +2188,6 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                     <input
                       type="number"
-                      step="0.01"
                       value={formData.total_cgst}
                       readOnly
                       disabled
@@ -2207,7 +2199,6 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
                     <input
                       type="number"
-                      step="0.01"
                       value={formData.total_sgst}
                       readOnly
                       disabled
@@ -2219,7 +2210,6 @@ export default function PurchaseCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
                     <input
                       type="number"
-                      step="0.01"
                       value={formData.total_igst}
                       readOnly
                       disabled
