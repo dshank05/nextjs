@@ -93,8 +93,8 @@ interface PurchaseTableProps {
     total: string;
     totalTax: string;
     packingForwardingTotal: string;
-    sortBy?: string;
-    sortOrder?: string;
+    sortBy: string;
+    sortOrder: string;
   }) => void;
   onViewDetails?: (purchase: Purchase) => void;
   onPrintDetails?: (purchase: Purchase) => void;
