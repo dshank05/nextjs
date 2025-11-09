@@ -27,6 +27,14 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     endDate ? new Date(endDate) : null
   );
 
+  // Manual input values for start and end dates
+  const [startDateInput, setStartDateInput] = useState<string>(
+    startDate || ''
+  );
+  const [endDateInput, setEndDateInput] = useState<string>(
+    endDate || ''
+  );
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Update dates when props change - ensure local timezone
@@ -34,15 +42,19 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     if (startDate) {
       const [year, month, day] = startDate.split('-').map(Number);
       setStartDateState(new Date(year, month - 1, day)); // month is 0-based
+      setStartDateInput(startDate);
     } else {
       setStartDateState(null);
+      setStartDateInput('');
     }
 
     if (endDate) {
       const [year, month, day] = endDate.split('-').map(Number);
       setEndDateState(new Date(year, month - 1, day)); // month is 0-based
+      setEndDateInput(endDate);
     } else {
       setEndDateState(null);
+      setEndDateInput('');
     }
   }, [startDate, endDate]);
 
@@ -115,9 +127,52 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
     return `${startMonth} ${startDay.toString().padStart(2, '0')} - ${endMonth} ${endDay.toString().padStart(2, '0')}, ${endYear}`;
   };
 
+  // Handle manual input changes
+  const handleStartDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setStartDateInput(value);
+
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      const newStartDate = new Date(year, month - 1, day);
+      setStartDateState(newStartDate);
+
+      // Update parent if both dates are valid
+      if (endDateInput && /^\d{4}-\d{2}-\d{2}$/.test(endDateInput)) {
+        const [endYear, endMonth, endDay] = endDateInput.split('-').map(Number);
+        const newEndDate = new Date(endYear, endMonth - 1, endDay);
+        onDateChange(value, endDateInput);
+      }
+    } else if (!value) {
+      setStartDateState(null);
+      onDateChange('', endDateInput || '');
+    }
+  };
+
+  const handleEndDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setEndDateInput(value);
+
+    if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      const newEndDate = new Date(year, month - 1, day);
+      setEndDateState(newEndDate);
+
+      // Update parent if both dates are valid
+      if (startDateInput && /^\d{4}-\d{2}-\d{2}$/.test(startDateInput)) {
+        onDateChange(startDateInput, value);
+      }
+    } else if (!value) {
+      setEndDateState(null);
+      onDateChange(startDateInput || '', '');
+    }
+  };
+
   const clearSelection = () => {
     setStartDateState(null);
     setEndDateState(null);
+    setStartDateInput('');
+    setEndDateInput('');
     onDateChange('', '');
     setIsOpen(false);
   };
@@ -304,6 +359,81 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
                     {option.label}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Manual Date Inputs */}
+          <div style={{ marginBottom: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+            <div
+              style={{
+                fontSize: '0.875rem',
+                fontWeight: '600',
+                color: 'var(--text-secondary)',
+                marginBottom: '0.75rem',
+                fontFamily: 'Inter, sans-serif'
+              }}
+            >
+              Manual Input (YYYY-MM-DD)
+            </div>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '0.25rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}
+                >
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={startDateInput}
+                  onChange={handleStartDateInputChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    backgroundColor: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.375rem',
+                    color: 'var(--text)',
+                    fontSize: '0.875rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontSize: '0.75rem',
+                    fontWeight: '500',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '0.25rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}
+                >
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={endDateInput}
+                  onChange={handleEndDateInputChange}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    backgroundColor: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.375rem',
+                    color: 'var(--text)',
+                    fontSize: '0.875rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}
+                />
               </div>
             </div>
           </div>
