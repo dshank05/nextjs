@@ -72,15 +72,26 @@ export default function Products() {
   // Refs for debouncing and abort controllers
   const abortControllerRef = useRef<AbortController | null>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const paginationRef = useRef(pagination);
+
+  // Keep pagination ref in sync
+  useEffect(() => {
+    paginationRef.current = pagination;
+  }, [pagination]);
 
   const fetchProducts = useCallback(async (signal?: AbortSignal) => {
     try {
       setLoading(true);
       setError(null);
 
+      // Use pagination ref to avoid stale closures
+      const paginationToUse = paginationRef.current;
+
+      console.log("fetched effect pagination", paginationToUse);
+
       const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
+        page: paginationToUse.page.toString(),
+        limit: paginationToUse.limit.toString(),
         search: searchTerm,
         // Add filter parameters
         category: currentFilters.categoryFilter,
@@ -161,12 +172,12 @@ export default function Products() {
     debounceTimeoutRef.current = setTimeout(() => {
       fetchProducts(abortControllerRef.current?.signal);
     }, 300); // 300ms debounce delay
-  }, [currentFilters]); // Add currentFilters to dependencies
+  }, [fetchProducts]); // Only depend on fetchProducts, not currentFilters
 
   // Fetch products when pagination, search, or filters change
   useEffect(() => {
     debouncedFetchProducts();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters, debouncedFetchProducts]);
+  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
 
   // Listen for broadcast messages to refresh data when products are created/updated/deleted in other tabs
   useEffect(() => {
@@ -194,6 +205,7 @@ export default function Products() {
 
   const handlePageChange = (newPage: number) => {
     if (newPage > 0 && newPage <= pagination.totalPages) {
+      console.log("new page", newPage)
       setPagination(prev => ({ ...prev, page: newPage }));
     }
   };
@@ -242,7 +254,7 @@ export default function Products() {
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={() => {}} // Export handled internally by ProductTable
+        onExport={() => { }} // Export handled internally by ProductTable
         onApplyFilters={handleApplyFilters}
         initialFilters={{
           categoryFilter: currentFilters.categoryFilter,
