@@ -60,7 +60,7 @@ export default function Products() {
       sortBy: 'categoryName',
       sortOrder: 'asc'
     },
-    storage: sessionStorage
+    storage: "session"
   });
 
   const [products, setProducts] = useState<Product[]>([]);

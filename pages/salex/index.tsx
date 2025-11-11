@@ -77,7 +77,7 @@ export default function SalexPage() {
       sortBy: 'invoice_date',
       sortOrder: 'desc'
     },
-    storage: sessionStorage
+    storage: "session"
   });
 
   // AbortController ref for cancelling pending requests

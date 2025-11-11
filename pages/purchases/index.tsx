@@ -87,7 +87,7 @@ export default function PurchasesPage() {
       sortBy: 'invoice_no',
       sortOrder: 'desc'
     },
-    storage: sessionStorage
+    storage: "session"
   });
 
   // AbortController ref for cancelling pending requests
