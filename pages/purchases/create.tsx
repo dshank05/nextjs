@@ -1846,7 +1846,8 @@ export default function PurchaseCreate() {
                                   setTemplateRow({
                                     qty: '1',
                                     rate: '',
-                                    gst: '0'
+                                    gst: '0',
+                                    total: ''
                                   });
                                 }
                               }
@@ -1879,7 +1880,8 @@ export default function PurchaseCreate() {
                                 setTemplateRow({
                                   qty: '1',
                                   rate: '',
-                                  gst: '0'
+                                  gst: '0',
+                                  total: ''
                                 });
                                 setErrors(prev => ({ ...prev, addProduct: '' }));
                               }}
