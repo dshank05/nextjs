@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import createLocalStorageStateHook from 'use-local-storage-state';
+import useStorageState from 'use-storage-state';
 import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 
@@ -44,8 +44,8 @@ export default function Products() {
     sortOrder: string;
   };
 
-  // Create persistent filter state using use-local-storage-state
-  const [currentFilters, setCurrentFilters] = createLocalStorageStateHook<FilterState>('products-page-filters', {
+  // Create persistent filter state using use-storage-state (sessionStorage - clears on tab close)
+  const [currentFilters, setCurrentFilters] = useStorageState<FilterState>('products-page-filters', {
     defaultValue: {
       categoryFilter: '',
       subcategoryFilter: '',
@@ -59,7 +59,8 @@ export default function Products() {
       partNoFilter: '',
       sortBy: 'categoryName',
       sortOrder: 'asc'
-    }
+    },
+    storage: sessionStorage
   });
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -139,7 +140,7 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
+  }, [searchTerm, currentFilters]);
 
   // Debounced fetch function with abort controller
   const debouncedFetchProducts = useCallback(() => {

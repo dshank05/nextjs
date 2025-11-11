@@ -110,12 +110,10 @@ export default function ProductCreate() {
     if (editId && typeof editId === 'string') {
       setIsEditing(true);
       setEditingProductId(parseInt(editId));
-      // Only load product data after GST rates are fetched
-      if (gstRates.length > 0) {
-        loadProductForEdit(parseInt(editId));
-      }
+      // Load product data immediately without waiting for GST rates
+      loadProductForEdit(parseInt(editId));
     }
-  }, [router.query.edit, filterOptions, gstRates]);
+  }, [router.query.edit, filterOptions]);
 
   // Fetch subcategories when category changes
   useEffect(() => {
@@ -138,6 +136,16 @@ export default function ProductCreate() {
       setRacks([]);
     }
   }, [formData.warehouse]);
+
+  // Populate GST rate when GST rates are loaded and HSN is set
+  useEffect(() => {
+    if (isEditing && gstRates.length > 0 && formData.hsn && !formData.gst_rate) {
+      const matchingGstRate = gstRates.find(rate => rate.hsn_code === formData.hsn);
+      if (matchingGstRate) {
+        setFormData(prev => ({ ...prev, gst_rate: matchingGstRate.id.toString() }));
+      }
+    }
+  }, [gstRates, isEditing, formData.hsn, formData.gst_rate]);
 
 
 

@@ -170,7 +170,8 @@ export default function PurchaseCreate() {
   const [templateRow, setTemplateRow] = useState({
     qty: '1',
     rate: '',
-    gst: '0'
+    gst: '0',
+    total: ''
   });
 
   // State for selected vendor details (fetched on-demand, not stored in formData)
@@ -1022,11 +1023,12 @@ export default function PurchaseCreate() {
       companyName: '',
       partNo: ''
     });
-    setTemplateRow({
-      qty: '1',
-      rate: '',
-      gst: '0'
-    });
+                                  setTemplateRow({
+                                    qty: '1',
+                                    rate: '',
+                                    gst: '0',
+                                    total: ''
+                                  });
   };
 
   const handleConfirmDelete = (item: PurchaseItem) => {
@@ -2309,7 +2311,8 @@ export default function PurchaseCreate() {
           setTemplateRow({
             qty: '1',
             rate: product.latest_selling_price?.toString() || '',
-            gst: product.gst_rate_percentage?.toString() || '0'
+            gst: product.gst_rate_percentage?.toString() || '0',
+            total: ''
           });
           setIsProductPanelOpen(false);
           setProductSearchTerm('');

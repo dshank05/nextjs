@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import createLocalStorageStateHook from 'use-local-storage-state';
+import useStorageState from 'use-storage-state';
 import { SaleTable } from '../../components/transactions/SaleTable';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
@@ -64,8 +64,8 @@ export default function SalePage() {
     sortOrder: string;
   };
 
-  // Create persistent filter state using use-local-storage-state
-  const [currentFilters, setCurrentFilters] = createLocalStorageStateHook<SaleFilterState>('sales-page-filters', {
+  // Create persistent filter state using use-storage-state (sessionStorage - clears on tab close)
+  const [currentFilters, setCurrentFilters] = useStorageState<SaleFilterState>('sales-page-filters', {
     defaultValue: {
       customerFilter: '',
       statusFilter: 'all',
@@ -76,7 +76,8 @@ export default function SalePage() {
       uidFilter: '',
       sortBy: 'invoice_date',
       sortOrder: 'desc'
-    }
+    },
+    storage: sessionStorage
   });
 
   // AbortController ref for cancelling pending requests

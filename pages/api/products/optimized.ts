@@ -186,6 +186,8 @@ async function handler(
     // Determine if we need special handling for complex filters
     const needsSpecialHandling = lowStock === 'true' || (model && model !== '') || carModelId;
 
+
+
     let products: any[];
     let total: number;
 
@@ -283,6 +285,8 @@ async function handler(
       total = totalResult;
     }
 
+
+
     // 🔥 PHASE 3 OPTIMIZATION: Batch all related data queries
     // Get all required lookup data in parallel for better performance
     const categoryIds = Array.from(new Set(products.map(p => p.product_category_id).filter(Boolean)));
@@ -359,6 +363,8 @@ async function handler(
     });
 
     const totalPages = Math.ceil(total / limitNum);
+
+
 
     res.status(200).json({
       products: enhancedProducts,
