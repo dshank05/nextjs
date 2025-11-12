@@ -482,6 +482,7 @@ export default function WarehouseRacks() {
                   value={formData.warehouse_id}
                   onChange={(e) => handleWarehouseChange(e.target.value)}
                   className="select w-full"
+                  style={editingRack ? { pointerEvents: 'none', opacity: 0.6 } : {}}
                   required
                 >
                   <option value="">Select Warehouse</option>
