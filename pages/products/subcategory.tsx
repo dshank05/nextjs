@@ -33,7 +33,6 @@ export default function Subcategories() {
   const [mainCategorySearchTerm, setMainCategorySearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<string>('subcategory_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingSubcategoryData, setPendingSubcategoryData] = useState<any>(null);
@@ -118,27 +117,27 @@ export default function Subcategories() {
   };
 
   useEffect(() => {
-    // Prevent multiple calls during initial load
-    if (isInitialLoad) {
-      setIsInitialLoad(false);
-      fetchCategories();
-      fetchSubcategories();
-      return;
-    }
-
-    // Only reset pagination and fetch when search/sort actually changes
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
     }
-  }, [debouncedSearchTerm, debouncedMainCategorySearchTerm, sortBy, sortOrder]);
+  }, [debouncedSearchTerm]);
 
   useEffect(() => {
-    // Skip initial load call since it's handled above
-    if (isInitialLoad) return;
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [debouncedMainCategorySearchTerm]);
 
+  useEffect(() => {
+    if (!loading) {
+      setPagination(prev => ({ ...prev, page: 1 }));
+    }
+  }, [sortBy, sortOrder]);
+
+  useEffect(() => {
     fetchCategories();
     fetchSubcategories();
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, debouncedMainCategorySearchTerm, sortBy, sortOrder]);
 
   // Close category dropdown on outside click
   useEffect(() => {

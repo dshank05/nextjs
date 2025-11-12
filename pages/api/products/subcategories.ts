@@ -59,7 +59,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);
       const searchTerm = search as string;
-      const sortField = sortBy as string;
+
+      // Validate sortBy to prevent SQL injection
+      const validSortFields = ['id', 'category_name', 'subcategory_name'];
+      const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'subcategory_name';
       const sortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
 
       const where: any = {};
