@@ -1919,14 +1919,18 @@ export default function PurchaseCreate() {
                                   // Clear any validation errors
                                   setErrors(prev => ({ ...prev, addProduct: '' }));
 
-                                  // Reset form (preserve category so subcategories aren't cleared)
+                                  // Reset form
                                   setSelectedRowProduct(null);
-                                  setProductRowFilters(prev => ({
-                                    ...prev,
+                                  setProductRowFilters({
+                                    category: 0,
+                                    categoryName: '',
                                     subcategory: 0,
+                                    subcategoryName: '',
                                     carModels: [],
+                                    company: 0,
+                                    companyName: '',
                                     partNo: ''
-                                  }));
+                                  });
                                   setTemplateRow({
                                     qty: '1',
                                     rate: '',
