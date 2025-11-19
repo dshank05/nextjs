@@ -1081,10 +1081,9 @@ export default function PurchaseCreate() {
 
   const grandTotal = useMemo(() => {
     const packingTotal = parseFloat(formData.packing_forwarding_total) || 0;
-    const transportCost = parseFloat(formData.transport_cost) || 0;
 
-    return subtotal + packingTotal + transportCost + totalTax;
-  }, [subtotal, totalTax, formData.packing_forwarding_total, formData.transport_cost]);
+    return subtotal + packingTotal + totalTax;
+  }, [subtotal, totalTax, formData.packing_forwarding_total]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
