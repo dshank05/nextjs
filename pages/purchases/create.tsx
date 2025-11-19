@@ -177,6 +177,9 @@ export default function PurchaseCreate() {
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
+  // State for tax toggle
+  const [enableTax, setEnableTax] = useState(true);
+
   // State for editing existing products
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
@@ -445,6 +448,11 @@ export default function PurchaseCreate() {
     const isIntraState = vendorStateForTax === businessState;
 
     const needsUpdate = selectedProducts.some(item => {
+      if (!enableTax) {
+        // If tax is disabled, all tax values should be 0
+        return item.cgst !== 0 || item.sgst !== 0 || item.igst !== 0 || item.tax !== 0;
+      }
+
       const subtotal = item.qty * item.rate;
       const taxAmount = (subtotal * item.gst_percentage) / 100;
 
@@ -461,6 +469,11 @@ export default function PurchaseCreate() {
 
     // Recalculate tax breakdowns for ALL products based on current vendor state
     const updatedProducts = selectedProducts.map(item => {
+      if (!enableTax) {
+        // If tax is disabled, set all tax values to 0
+        return { ...item, cgst: 0, sgst: 0, igst: 0, tax: 0 };
+      }
+
       const subtotal = item.qty * item.rate;
       const taxAmount = (subtotal * item.gst_percentage) / 100;
 
@@ -481,7 +494,7 @@ export default function PurchaseCreate() {
 
     // Update products with corrected tax breakdowns
     setSelectedProducts(updatedProducts);
-  }, [selectedProducts, vendorStateForTax]);
+  }, [selectedProducts, vendorStateForTax, enableTax]);
 
   // Separate effect to update tax fields from product changes
   // Important: Only runs when products change AND not during initial data loading in edit mode
@@ -990,14 +1003,14 @@ export default function PurchaseCreate() {
 
       // Recalculate tax and total
       const subtotal = editingRowData.qty * editingRowData.rate;
-      const taxAmount = (subtotal * editingRowData.gst_percentage) / 100;
+      const taxAmount = enableTax ? (subtotal * editingRowData.gst_percentage) / 100 : 0;
       const updatedItem = {
         ...editingRowData,
         tax: taxAmount,
         total: subtotal + taxAmount,
-        cgst: vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
-        sgst: vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
-        igst: vendorStateForTax !== 'Uttar Pradesh' ? taxAmount : 0
+        cgst: enableTax && vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
+        sgst: enableTax && vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
+        igst: enableTax && vendorStateForTax !== 'Uttar Pradesh' ? taxAmount : 0
       };
 
       // Update the item in selectedProducts
@@ -1513,6 +1526,22 @@ export default function PurchaseCreate() {
             <div className="mb-5 border-t border-slate-600 pt-4">
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
+              {/* Tax Toggle */}
+              <div className="mb-4 flex items-center space-x-3">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableTax}
+                    onChange={(e) => setEnableTax(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                  />
+                  <span className="text-sm font-medium text-slate-300">Enable Tax Calculation</span>
+                </label>
+                <span className="text-xs text-slate-500">
+                  {enableTax ? 'Tax will be calculated and included' : 'Tax will be disabled (values set to 0)'}
+                </span>
+              </div>
+
               {/* Product Selection & Display Table */}
               <div className={`border border-slate-600 rounded mb-3`}>
                 <table className="w-full">
@@ -1545,9 +1574,11 @@ export default function PurchaseCreate() {
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         RATE
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                        TAX (%)
-                      </th>
+                      {enableTax && (
+                        <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                          TAX (%)
+                        </th>
+                      )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                         TOTAL
                       </th>
@@ -1737,26 +1768,28 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-20">
-                        <input
-                          type="number"
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0%"
-                          value={templateRow.gst}
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              gst: e.target.value
-                            }));
-                          }}
-                          onWheel={(e) => e.preventDefault()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault();
-                            }
-                          }}
-                        />
-                      </td>
+                      {enableTax && (
+                        <td className="px-4 py-3 text-center w-20">
+                          <input
+                            type="number"
+                            className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                            placeholder="0%"
+                            value={templateRow.gst}
+                            onChange={(e) => {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                gst: e.target.value
+                              }));
+                            }}
+                            onWheel={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                              }
+                            }}
+                          />
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
@@ -1828,13 +1861,13 @@ export default function PurchaseCreate() {
                                   // Use product details and template values
                                   const qty = parseFloat(templateRow.qty) || 1;
                                   const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                  const gstPercent = templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0;
+                                  const gstPercent = enableTax ? (templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0) : 0;
                                   const subtotal = qty * rate;
-                                  const taxAmount = (subtotal * gstPercent) / 100;
+                                  const taxAmount = enableTax ? (subtotal * gstPercent) / 100 : 0;
 
                                   // Calculate tax breakdown (assume intra-state for now: CGST + SGST)
-                                  const cgst = taxAmount / 2;
-                                  const sgst = taxAmount / 2;
+                                  const cgst = enableTax ? taxAmount / 2 : 0;
+                                  const sgst = enableTax ? taxAmount / 2 : 0;
                                   const igst = 0;
 
                                   // Convert car model IDs to names for display
@@ -2036,14 +2069,8 @@ export default function PurchaseCreate() {
                           min="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
-                          value={templateRow.qty}
-                          onChange={(e) => {
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              qty: e.target.value
-                            }));
-                          }}
+                          value={editingRowData?.qty || ''}
+                          onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2104,9 +2131,11 @@ export default function PurchaseCreate() {
                             <td className="px-4 py-3 text-center text-xs text-slate-200">
                               ₹{product.rate.toFixed(2)}
                             </td>
-                            <td className="px-4 py-3 text-center text-xs text-slate-200">
-                              ₹{product.tax.toFixed(2)}
-                            </td>
+                            {enableTax && (
+                              <td className="px-4 py-3 text-center text-xs text-slate-200">
+                                ₹{product.tax.toFixed(2)}
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
                               ₹{product.total.toFixed(2)}
                             </td>
@@ -2138,7 +2167,7 @@ export default function PurchaseCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       <tr>
-                        <td colSpan={10} className="px-4 py-3"></td>
+                        <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
@@ -2147,7 +2176,7 @@ export default function PurchaseCreate() {
                         </td>
                       </tr>
                       <tr className="border-t border-slate-600">
-                        <td colSpan={10} className="px-4 py-3"></td>
+                        <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
