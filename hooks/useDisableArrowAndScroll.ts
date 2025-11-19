@@ -18,10 +18,20 @@ export function useDisableArrowAndScroll() {
       }
     };
 
+    // Handle wheel events on number inputs
+    const handleWheel = (event: WheelEvent) => {
+      const target = event.target as HTMLElement;
+      if (target.tagName === "INPUT" && (target as HTMLInputElement).type === "number") {
+        event.preventDefault();
+      }
+    };
+
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("wheel", handleWheel);
     };
   }, []);
 }

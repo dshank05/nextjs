@@ -1920,6 +1920,12 @@ export default function InvoiceCreate() {
                     onChange={(e) => handleInputChange('commission', e.target.value)}
                     className="input w-full"
                     placeholder="0.00"
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -2127,6 +2133,7 @@ export default function InvoiceCreate() {
                         <input
                           type="number"
                           min="1"
+                          
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -2135,6 +2142,12 @@ export default function InvoiceCreate() {
                               ...prev,
                               qty: e.target.value
                             }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -2151,6 +2164,12 @@ export default function InvoiceCreate() {
                               rate: e.target.value
                             }));
                           }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-32">
@@ -2165,6 +2184,12 @@ export default function InvoiceCreate() {
                               ...prev,
                               gst: e.target.value
                             }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -2184,12 +2209,19 @@ export default function InvoiceCreate() {
                                 discount: e.target.value
                               }));
                             }}
+                            onWheel={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                              }
+                            }}
                           />
                         </td>
                       )}
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
+                          
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.total}
@@ -2220,6 +2252,12 @@ export default function InvoiceCreate() {
 
                               return updated;
                             });
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -2487,6 +2525,12 @@ export default function InvoiceCreate() {
                                 value={editingRowData?.gst_percentage || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
                               />
                             </td>
                             {enableDiscount && (
@@ -2499,6 +2543,12 @@ export default function InvoiceCreate() {
                                   value={editingRowData?.discount_percentage || ''}
                                   onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
                                   className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                  onWheel={(e) => e.preventDefault()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                    }
+                                  }}
                                 />
                               </td>
                             )}

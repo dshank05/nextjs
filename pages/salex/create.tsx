@@ -1601,6 +1601,12 @@ export default function InvoiceCCreate() {
                     
                     value={formData.commission}
                     onChange={(e) => handleInputChange('commission', e.target.value)}
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
                     className="input w-full"
                     placeholder="0.00"
                   />
@@ -1797,6 +1803,7 @@ export default function InvoiceCCreate() {
                         <input
                           type="number"
                           min="1"
+                          
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -1805,6 +1812,12 @@ export default function InvoiceCCreate() {
                               ...prev,
                               qty: e.target.value
                             }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -1821,25 +1834,37 @@ export default function InvoiceCCreate() {
                               rate: e.target.value
                             }));
                           }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
                         />
                       </td>
                       {enableDiscount && (
                         <td className="px-4 py-3 text-center w-20">
-                          <input
-                            type="number"
-                            
-                            min="0"
-                            max="100"
-                            className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                            placeholder="0.00"
-                            value={templateRow.discount}
-                            onChange={(e) => {
-                              setTemplateRow(prev => ({
-                                ...prev,
-                                discount: e.target.value
-                              }));
-                            }}
-                          />
+                        <input
+                          type="number"
+
+                          min="0"
+                          max="100"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="0.00"
+                          value={templateRow.discount}
+                          onChange={(e) => {
+                            setTemplateRow(prev => ({
+                              ...prev,
+                              discount: e.target.value
+                            }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
+                        />
                         </td>
                       )}
                       <td className="px-4 py-3 text-center w-20">
@@ -1874,6 +1899,12 @@ export default function InvoiceCCreate() {
 
                               return updated;
                             });
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -2106,8 +2137,15 @@ export default function InvoiceCCreate() {
                               <input
                                 type="number"
                                 min="1"
+                                
                                 value={editingRowData?.qty || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                               />
                             </td>
@@ -2117,6 +2155,12 @@ export default function InvoiceCCreate() {
                                 
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                               />
                             </td>
@@ -2124,11 +2168,17 @@ export default function InvoiceCCreate() {
                               <td className="px-3 py-2 text-center w-20">
                                 <input
                                   type="number"
-                                  
+
                                   min="0"
                                   max="100"
                                   value={editingRowData?.discount_percentage || ''}
                                   onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                  onWheel={(e) => e.preventDefault()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                    }
+                                  }}
                                   className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                                 />
                               </td>
@@ -2164,6 +2214,12 @@ export default function InvoiceCCreate() {
 
                                     return updated;
                                   });
+                                }}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
                                 }}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                               />
@@ -2354,6 +2410,12 @@ export default function InvoiceCCreate() {
                         
                         value={formData.packing_forwarding_qty}
                         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
                         className="input w-full"
                         placeholder="0.00"
                       />
@@ -2365,6 +2427,12 @@ export default function InvoiceCCreate() {
                         
                         value={formData.packing_forwarding_rate}
                         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
                         className="input w-full"
                         placeholder="0.00"
                       />

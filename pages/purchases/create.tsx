@@ -1709,6 +1709,12 @@ export default function PurchaseCreate() {
                               qty: e.target.value
                             }));
                           }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-24">
@@ -1722,6 +1728,12 @@ export default function PurchaseCreate() {
                               ...prev,
                               rate: e.target.value
                             }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -1737,12 +1749,17 @@ export default function PurchaseCreate() {
                               gst: e.target.value
                             }));
                           }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.total}
@@ -1770,6 +1787,12 @@ export default function PurchaseCreate() {
 
                               return updated;
                             });
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
                           }}
                         />
                       </td>
@@ -2007,36 +2030,49 @@ export default function PurchaseCreate() {
                         {editingRowId === product.id ? (
                           <>
                             {/* Editable fields when inline editing */}
-                            <td className="px-4 py-3 text-center w-24">
-                              <input
-                                type="number"
-                                min="1"
-                                value={editingRowData?.qty || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
-                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-center w-24">
-                              <input
-                                type="number"
-                                
-                                value={editingRowData?.rate || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
-                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-center w-20">
-                              <input
-                                type="number"
-                                
-                                value={editingRowData?.gst_percentage || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
-                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-center w-20 text-green-400">
-                              ₹{editingRowData ? (editingRowData.qty * editingRowData.rate * (1 + editingRowData.gst_percentage / 100)).toFixed(2) : product.total.toFixed(2)}
-                            </td>
+                      <td className="px-4 py-3 text-center w-24">
+                        <input
+                          type="number"
+                          min="1"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="1"
+                          value={templateRow.qty}
+                          onChange={(e) => {
+                          onChange={(e) => {
+                            setTemplateRow(prev => ({
+                              ...prev,
+                              qty: e.target.value
+                            }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-center w-24">
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="0.00"
+                          value={templateRow.rate}
+                          onChange={(e) => {
+                            setTemplateRow(prev => ({
+                              ...prev,
+                              rate: e.target.value
+                            }));
+                          }}
+                          onWheel={(e) => e.preventDefault()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                              e.preventDefault();
+                            }
+                          }}
+                        />
+                      </td>
                             {/* Save/Cancel buttons */}
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center space-x-1">
@@ -2168,8 +2204,15 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                   <input
                     type="number"
+                    inputMode="numeric"
                     value={formData.packing_forwarding_qty}
                     onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
                     className="input w-full"
                     placeholder="0.00"
                   />
@@ -2178,8 +2221,15 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                   <input
                     type="number"
+                    inputMode="numeric"
                     value={formData.packing_forwarding_rate}
                     onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
                     className="input w-full"
                     placeholder="0.00"
                   />
