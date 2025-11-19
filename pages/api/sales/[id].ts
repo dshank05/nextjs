@@ -34,9 +34,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Sale not found' })
     }
 
-    // Get the sale items for this invoice
+    // Get the sale items for this invoice with product display_name
     const saleItems = await prisma.invoiceitems.findMany({
-      where: { invoice_no: sale.id }
+      where: { invoice_no: sale.id },
+      include: {
+        product: {
+          select: {
+            display_name: true
+          }
+        }
+      }
     })
 
     // Get complete customer data from customer_details table
@@ -120,7 +127,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       // ===== ITEM DATA (mirror POST invoiceItems structure) =====
       invoiceItems: saleItems.map(item => ({
         product_id: item.product_id,
-        name_of_product: item.name_of_product,
+        name_of_product: item.product?.display_name || item.name_of_product,
+        display_name: item.product?.display_name || item.name_of_product,
         qty: item.qty,
         rate: item.rate,
         subtotal: item.subtotal,

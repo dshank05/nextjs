@@ -387,6 +387,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       // invoice_number is now auto-generated based on FY
       bill_reference,           // ✓ Purchase.bill_reference
+      bill_reference_date,      // ✓ Purchase.bill_reference_date
       staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
@@ -492,6 +493,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: {
           invoice_no: nextInvoiceNo,
           bill_reference: bill_reference, // Keep bill reference separate from vendor name
+          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
           staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
           items_total: itemsTotal,
@@ -644,6 +646,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
       invoice_number,           // ✓ Purchase.invoice_no
       bill_reference,           // ✓ Purchase.bill_reference
+      bill_reference_date,      // ✓ Purchase.bill_reference_date
       staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
       date,                     // ✓ Purchase.invoice_date
 
@@ -729,6 +732,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         where: { id: parseInt(id as string) },
         data: {
           bill_reference: bill_reference, // Keep bill reference separate from vendor name
+          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
           staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
           vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
           items_total: itemsTotal,

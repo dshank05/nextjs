@@ -40,9 +40,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    // Get the salex items for this invoice
+    // Get the salex items for this invoice with product display_name
     const salexItems = await prisma.invoice_itemsx.findMany({
-      where: { invoice_no: salex.id }
+      where: { invoice_no: salex.id },
+      include: {
+        product: {
+          select: {
+            display_name: true
+          }
+        }
+      }
     })
 
     // Get customer data via bill_tosalesx relationship
@@ -109,7 +116,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       // Transform items to POST structure
       items: salexItems.map(item => ({
         product_id: item.product_id,
-        product_name: item.name_of_product || 'Unknown Product',
+        product_name: item.product?.display_name || item.name_of_product || 'Unknown Product',
+        display_name: item.product?.display_name || item.name_of_product || 'Unknown Product',
         category_id: item.category_id,
         subcategory_id: item.subcategory_id,
         company_id: item.company_id,

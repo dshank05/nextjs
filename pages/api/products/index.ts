@@ -317,6 +317,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const productData = JSON.parse(productDataStr);
     console.log('POST /products: Product data parsed:', productData);
 
+
+
     // Smart file handling for new products (all files are new)
     const uploadPromises: Promise<void>[] = [];
     let imageUrl: string | null = null;
@@ -440,6 +442,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     try {
       const product = await prisma.product.create({ data: finalProductData });
       console.log('POST /products: Product created successfully:', product.id);
+
+      // ===== BACKGROUND: Update display_name with UID =====
+      // Fire background update - don't wait for it to complete
+      prisma.product.update({
+        where: { id: product.id },
+        data: { display_name: `${product.id} ${product.product_name}` }
+      }).catch(error => {
+        console.error('Background display_name update failed:', error);
+        // Don't fail the main request if background update fails
+      });
+
       res.status(201).json({
         message: 'Product created successfully',
         product: {
@@ -462,6 +475,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     res.status(500).json({ status: 'failure', message: 'Failed to create product', error: error instanceof Error ? error.message : 'Unknown' });
   }
 }
+
+
 
 // ---------------------
 // ULTRA OPTIMIZED: Get all purchase rates in a single efficient query

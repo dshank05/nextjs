@@ -9,6 +9,7 @@ import { subscribeBroadcast } from '../../../lib/broadcast';
 interface InvoiceItem {
   product_id: number;
   name_of_product: string;
+  display_name?: string;
   category_id?: number;
   subcategory_id?: number;
   model_id?: number;
@@ -496,7 +497,7 @@ export default function InvoiceView() {
                 {invoiceItems.map((item, index) => (
                   <tr key={item.product_id}>
                     <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.name_of_product}</td>
+                    <td className="font-medium text-white">{item.display_name || item.name_of_product}</td>
                     <td className="text-slate-300">{item.part || 'N/A'}</td>
                     <td className="text-slate-300">{item.hsn || 'N/A'}</td>
                     <td className="text-slate-300 font-medium">{item.qty}</td>

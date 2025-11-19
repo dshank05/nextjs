@@ -10,6 +10,7 @@ interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
   invoice_no?: number;
   product_name: string; // Updated to match API
+  display_name?: string;
   category_id?: number;
   model_id?: number;
   company_id?: number;
@@ -977,7 +978,7 @@ export default function PurchaseView() {
                 {purchase.items?.map((item, index) => (
                   <tr key={item.id}>
                     <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.product_name}</td>
+                    <td className="font-medium text-white">{item.display_name || item.product_name}</td>
                     <td className="text-slate-300">{item.part || 'N/A'}</td>
                     <td className="text-slate-300">{item.hsn || 'N/A'}</td>
                     <td className="text-slate-300 font-medium">{item.qty}</td>

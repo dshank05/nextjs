@@ -29,6 +29,14 @@ export default async function handler(
           where: { invoice_no: purchase.invoice_no }
         })
 
+        // Get display_name for each product
+        const productIds = purchaseItems.map(item => item.product_id).filter(id => id !== null)
+        const products = await prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, display_name: true }
+        })
+        const productMap = new Map(products.map(p => [p.id, p.display_name]))
+
         // ✅ Use direct vendor_id FK lookup
         let vendorData = null;
         if (purchase.vendor_id) {
@@ -70,6 +78,7 @@ export default async function handler(
             id: item.id,  // ✅ CRITICAL FIX: Include real database ID
             product_id: item.product_id,
             product_name: item.name_of_product || 'Unknown Product',  // Use name_of_product as product_name
+            display_name: item.product_id ? productMap.get(item.product_id) || item.name_of_product : item.name_of_product,
             category_id: item.category_id,
             subcategory_id: item.subcategory_id,
             company_id: item.company_id,

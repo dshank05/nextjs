@@ -10,6 +10,7 @@ interface InvoiceItem {
   invoice_no?: number;
   product_id?: number;
   product_name?: string;
+  display_name?: string;
   category_id?: number;
   model_id?: number;
   company_id?: number;
@@ -454,7 +455,7 @@ export default function InvoiceCView() {
                 {invoiceItems.map((item, index) => (
                   <tr key={index}>
                     <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.product_name}</td>
+                    <td className="font-medium text-white">{item.display_name || item.product_name}</td>
                     <td className="text-slate-300">{item.part || 'N/A'}</td>
                     <td className="text-slate-300">{item.hsn || 'N/A'}</td>
                     <td className="text-slate-300 font-medium">{item.qty}</td>

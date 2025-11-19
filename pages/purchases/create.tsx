@@ -52,6 +52,7 @@ interface PurchaseItem {
   id: string;
   product_id: number;
   product_name: string;
+  display_name?: string; // Add display_name field
   car_model: string;
   category: string;
   sub_category: string;
@@ -78,6 +79,7 @@ interface Staff {
 interface PurchaseFormData {
   invoice_number: string;
   bill_reference: string;
+  bill_reference_date: string;
   staff_id?: number | null;
   date: string;
   vendor_name: string;
@@ -202,6 +204,7 @@ export default function PurchaseCreate() {
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
     bill_reference: '',
+    bill_reference_date: '',
     staff_id: null,
     date: new Date().toISOString().split('T')[0],
     vendor_name: '', // Keep for backward compatibility with validation
@@ -647,6 +650,7 @@ export default function PurchaseCreate() {
     setFormData({
       invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
       bill_reference: purchase.bill_reference || '',
+      bill_reference_date: purchase.bill_reference_date ? new Date(purchase.bill_reference_date).toISOString().split('T')[0] : '',
       staff_id: purchase.staff_id || null,
       date: formatDateForInput(purchase.date || purchase.invoice_date),
       vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
@@ -750,6 +754,7 @@ export default function PurchaseCreate() {
         setFormData({
           invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
+          bill_reference_date: purchase.bill_reference_date ? new Date(purchase.bill_reference_date).toISOString().split('T')[0] : '',
           staff_id: purchase.staff_id || null,
           date: formatDateForInput(purchase.date || purchase.invoice_date),
           vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
@@ -1339,6 +1344,15 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BILL REFERENCE DATE</label>
+                  <input
+                    type="date"
+                    value={formData.bill_reference_date}
+                    onChange={(e) => handleInputChange('bill_reference_date', e.target.value)}
+                    className="input w-full"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STAFF MEMBER</label>
                   <SearchableSelect
                     options={[
@@ -1888,6 +1902,7 @@ export default function PurchaseCreate() {
                                     id: editingItemId || Date.now().toString(),
                                     product_id: selectedProduct.id,
                                     product_name: selectedProduct.product_name,
+                                    display_name: selectedProduct.display_name,
                                     car_model: carModelNames || '',
                                     category: productRowFilters.category?.toString(),
                                     sub_category: productRowFilters.subcategory?.toString(),
@@ -1990,7 +2005,7 @@ export default function PurchaseCreate() {
                           {index + 1}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
-                          {editingRowId === product.id ? editingRowData?.product_name : product.product_name}
+                          {editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-200">
                           {(() => {

@@ -69,6 +69,7 @@ interface InvoiceItem {
   id: string;
   product_id: number;
   product_name: string;
+  display_name?: string; // Add display_name field
   car_model_ids: string[];
   car_model_names: string[];
   category_id: number;
@@ -2404,7 +2405,7 @@ export default function InvoiceCreate() {
                           {index + 1}
                         </td>
                         <td className="px-3 py-2 text-xs text-slate-200">
-                          {product.product_name}
+                          {product.display_name || product.product_name}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.category_name || '-'}

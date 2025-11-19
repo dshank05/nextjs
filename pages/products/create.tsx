@@ -403,7 +403,7 @@ export default function ProductCreate() {
 
       // Add product data as JSON string with file state information
       const productData = {
-        product_name: displayName,
+        product_name: displayName, // Send display name format (without UID) - API will add UID
         product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
         product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
         car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
