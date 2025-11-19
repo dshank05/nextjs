@@ -273,7 +273,8 @@ export default function InvoiceCCreate() {
     qty: '1',
     rate: '',
     gst: '0', // Not used but kept for template consistency
-    discount: '0'
+    discount: '0',
+    total: ''
   });
 
   // State for discount toggle
@@ -1842,17 +1843,39 @@ export default function InvoiceCCreate() {
                         </td>
                       )}
                       <td className="px-4 py-3 text-center w-20">
-                        <div className="px-2 py-2 bg-slate-800 rounded text-xs text-green-400 text-center font-medium">
-                          ₹{(() => {
-                            const qty = parseFloat(templateRow.qty) || 0;
-                            const rate = parseFloat(templateRow.rate) || 0;
-                            const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
-                            const subtotal = qty * rate;
-                            const discountAmount = (subtotal * discountPercent) / 100;
-                            const total = subtotal - discountAmount;
-                            return total.toFixed(2);
-                          })()}
-                        </div>
+                        <input
+                          type="number"
+
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="0.00"
+                          value={templateRow.total}
+                          onChange={(e) => {
+                            const newTotal = e.target.value;
+                            setTemplateRow(prev => {
+                              const updated = { ...prev, total: newTotal };
+
+                              // If total is entered and qty > 0, recalculate rate
+                              const qty = parseFloat(prev.qty) || 0;
+                              const discountPercent = enableDiscount ? parseFloat(prev.discount) || 0 : 0;
+                              const enteredTotal = parseFloat(newTotal) || 0;
+
+                              if (qty > 0 && enteredTotal > 0) {
+                                // Reverse calculation for salex: total = (rate * qty) - discount
+                                // So: rate = (total + discount) / qty
+                                // Where discount = (rate * qty * discountPercent) / 100
+                                // This creates a quadratic equation, so we need to solve iteratively
+
+                                // For simplicity, assume discount is applied to the final total
+                                // So: rate = total / qty * (1 + discountPercent/100)
+                                const rate = enteredTotal / qty / (1 - discountPercent / 100);
+
+                                updated.rate = rate.toFixed(2);
+                              }
+
+                              return updated;
+                            });
+                          }}
+                        />
                       </td>
                       <td className="px-4 py-3 text-center w-20 flex flex-row mt-2 mr-4">
                         <button
@@ -1929,7 +1952,8 @@ export default function InvoiceCCreate() {
                                   qty: '1',
                                   rate: '0',
                                   gst: '0', // Always 0 for salex
-                                  discount: '0'
+                                  discount: '0',
+                                  total: ''
                                 });
                               }
                             }
@@ -1962,7 +1986,8 @@ export default function InvoiceCCreate() {
                                   qty: '1',
                                   rate: '',
                                   gst: '0',
-                                  discount: '0'
+                                  discount: '0',
+                                  total: ''
                                 });
                               }}
                               className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
@@ -2108,12 +2133,40 @@ export default function InvoiceCCreate() {
                                 />
                               </td>
                             )}
-                            <td className="px-3 py-2 text-center text-green-400">
-                              ₹{editingRowData ? (() => {
-                                const subtotal = editingRowData.qty * editingRowData.rate;
-                                const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
-                                return (subtotal - discountAmount).toFixed(2);
-                              })() : product.total.toFixed(2)}
+                            <td className="px-3 py-2 text-center w-20">
+                              <input
+                                type="number"
+
+                                value={editingRowData?.total || ''}
+                                onChange={(e) => {
+                                  const newTotal = e.target.value;
+                                  setEditingRowData(prev => {
+                                    if (!prev) return null;
+                                    const updated = { ...prev, total: parseFloat(newTotal) || 0 };
+
+                                    // If total is entered and qty > 0, recalculate rate
+                                    const qty = prev.qty || 0;
+                                    const discountPercent = enableDiscount ? prev.discount_percentage || 0 : 0;
+                                    const enteredTotal = parseFloat(newTotal) || 0;
+
+                                    if (qty > 0 && enteredTotal > 0) {
+                                      // Reverse calculation for salex: total = (rate * qty) - discount
+                                      // So: rate = (total + discount) / qty
+                                      // Where discount = (rate * qty * discountPercent) / 100
+                                      // This creates a quadratic equation, so we need to solve iteratively
+
+                                      // For simplicity, assume discount is applied to the final total
+                                      // So: rate = total / qty * (1 + discountPercent/100)
+                                      const rate = enteredTotal / qty / (1 - discountPercent / 100);
+
+                                      updated.rate = rate;
+                                    }
+
+                                    return updated;
+                                  });
+                                }}
+                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                              />
                             </td>
                             {/* Save/Cancel buttons */}
                             <td className="px-3 py-2 text-center">
@@ -2423,7 +2476,8 @@ export default function InvoiceCCreate() {
             qty: '1',
             rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
             gst: '0',
-            discount: '0'
+            discount: '0',
+            total: ''
           });
           setIsProductPanelOpen(false);
           setProductSearchTerm('');

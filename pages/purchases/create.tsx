@@ -1741,17 +1741,38 @@ export default function PurchaseCreate() {
                         />
                       </td>
                       <td className="px-4 py-3 text-center w-20">
-                        <div className="px-2 py-2 bg-slate-800 rounded text-xs text-green-400 text-center font-medium">
-                          ₹{(() => {
-                            const qty = parseFloat(templateRow.qty) || 0;
-                            const rate = parseFloat(templateRow.rate) || 0;
-                            const gstPercent = parseFloat(templateRow.gst) || 0;
-                            const subtotal = qty * rate;
-                            const gstAmount = (subtotal * gstPercent) / 100;
-                            const total = subtotal + gstAmount;
-                            return total.toFixed(2);
-                          })()}
-                        </div>
+                        <input
+                          type="number"
+
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="0.00"
+                          value={templateRow.total}
+                          onChange={(e) => {
+                            const newTotal = e.target.value;
+                            setTemplateRow(prev => {
+                              const updated = { ...prev, total: newTotal };
+
+                              // If total is entered and qty > 0, recalculate rate
+                              const qty = parseFloat(prev.qty) || 0;
+                              const gstPercent = parseFloat(prev.gst) || 0;
+                              const enteredTotal = parseFloat(newTotal) || 0;
+
+                              if (qty > 0 && enteredTotal > 0) {
+                                // Reverse calculation: rate = (total - tax) / qty
+                                // But we need to account for GST
+                                // So: total = qty * rate * (1 + gst/100)
+                                // Therefore: rate = total / (qty * (1 + gst/100))
+
+                                const gstFactor = 1 + (gstPercent / 100);
+                                const rate = enteredTotal / (qty * gstFactor);
+
+                                updated.rate = rate.toFixed(2);
+                              }
+
+                              return updated;
+                            });
+                          }}
+                        />
                       </td>
                       <td className="px-4 py-3 text-center w-20">
                         <div className="flex items-center justify-center space-x-2">

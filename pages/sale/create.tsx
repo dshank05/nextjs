@@ -294,7 +294,8 @@ export default function InvoiceCreate() {
     qty: '1',
     rate: '',
     gst: '0',
-    discount: '0'
+    discount: '0',
+    total: ''
   });
 
   // State for discount toggle
@@ -2187,25 +2188,40 @@ export default function InvoiceCreate() {
                         </td>
                       )}
                       <td className="px-4 py-3 text-center w-20">
-                        <div className="px-2 py-2 bg-slate-800 rounded text-xs text-green-400 text-center font-medium">
-                          ₹{(() => {
-                            const qty = parseFloat(templateRow.qty) || 0;
-                            const rate = parseFloat(templateRow.rate) || 0;
-                            const gstPercent = parseFloat(templateRow.gst) || 0;
-                            const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+                        <input
+                          type="number"
+                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                          placeholder="0.00"
+                          value={templateRow.total}
+                          onChange={(e) => {
+                            const newTotal = e.target.value;
+                            setTemplateRow(prev => {
+                              const updated = { ...prev, total: newTotal };
 
-                            const subtotal = qty * rate;
-                            const discountAmount = (subtotal * discountPercent) / 100;
-                            const taxableAmount = subtotal - discountAmount;
-                            const tax = (taxableAmount * gstPercent) / 100;
+                              // If total is entered and qty > 0, recalculate rate
+                              const qty = parseFloat(prev.qty) || 0;
+                              const gstPercent = parseFloat(prev.gst) || 0;
+                              const discountPercent = enableDiscount ? parseFloat(prev.discount) || 0 : 0;
+                              const enteredTotal = parseFloat(newTotal) || 0;
 
-                            // Calculate GST breakdown
-                            const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
-                            const total = taxableAmount + tax;
+                              if (qty > 0 && enteredTotal > 0) {
+                                // Reverse calculation: rate = (total - tax) / qty
+                                // But we need to account for GST and discount
+                                // First, assume the entered total includes GST
+                                // So: total = (qty * rate * (1 - discount/100)) * (1 + gst/100)
+                                // Therefore: rate = total / (qty * (1 - discount/100) * (1 + gst/100))
 
-                            return total.toFixed(2);
-                          })()}
-                        </div>
+                                const discountFactor = 1 - (discountPercent / 100);
+                                const gstFactor = 1 + (gstPercent / 100);
+                                const rate = enteredTotal / (qty * discountFactor * gstFactor);
+
+                                updated.rate = rate.toFixed(2);
+                              }
+
+                              return updated;
+                            });
+                          }}
+                        />
                       </td>
                       <td className="px-4 py-3 text-center w-20 flex flex-row mt-2 mr-4">
                         <button
@@ -2292,7 +2308,8 @@ export default function InvoiceCreate() {
                                   qty: '1',
                                   rate: '0',
                                   gst: '0',
-                                  discount: '0'
+                                  discount: '0',
+                                  total: ''
                                 });
                               }
                             }
@@ -2328,7 +2345,8 @@ export default function InvoiceCreate() {
                                   qty: '1',
                                   rate: '',
                                   gst: '0',
-                                  discount: '0'
+                                  discount: '0',
+                                  total: ''
                                 });
                               }}
                               className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
@@ -2870,7 +2888,8 @@ export default function InvoiceCreate() {
             qty: '1',
             rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
             gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '0',
-            discount: '0'
+            discount: '0',
+            total: ''
           });
           setIsProductPanelOpen(false);
           setProductSearchTerm('');
