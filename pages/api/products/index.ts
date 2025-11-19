@@ -187,11 +187,26 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Handle car model filter
-    if (modelFilter) {
-      const modelIds = (modelFilter as string).split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-      if (modelIds.length > 0) {
-        where.car_model_ids = { hasSome: modelIds };
+    // Handle car model filter (single selection) with Prisma
+    if (modelFilter && (modelFilter as string).trim()) {
+      const modelId = (modelFilter as string).trim();
+      const modelConditions = [
+        { car_model_ids: { contains: `,${modelId},` } }, // middle: ,1,
+        { car_model_ids: { startsWith: `${modelId},` } }, // start: 1,
+        { car_model_ids: { endsWith: `,${modelId}` } },   // end: ,1
+        { car_model_ids: { equals: modelId } }            // exact: 1
+      ];
+
+      // If there's already an OR condition (from search), combine with AND
+      if (where.OR) {
+        where.AND = [
+          { OR: where.OR }, // existing search conditions
+          { OR: modelConditions } // model filter conditions
+        ];
+        delete where.OR; // Remove the OR since we're using AND now
+      } else {
+        // No search conditions, just use model conditions
+        where.OR = modelConditions;
       }
     }
 
@@ -207,22 +222,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Handle low stock filter with raw SQL since Prisma doesn't support field-to-field comparisons
     if (stockFilter === 'low_stock') {
-      const baseWhere = { ...where };
-      delete baseWhere.stock; // Remove stock filter since we'll handle it in SQL
-
-      // Get products with low stock using raw SQL
+      // Use raw SQL only for low stock filter
       const lowStockProducts = await prisma.$queryRaw`
         SELECT p.*, g.rate as gst_rate_value
         FROM product p
         LEFT JOIN gst_tax_rate g ON p.gst_rate_id = g.id
-        WHERE ${baseWhere.is_active !== undefined ? `p.is_active = ${baseWhere.is_active}` : '1=1'}
-          ${baseWhere.product_category_id ? `AND p.product_category_id = ${baseWhere.product_category_id}` : ''}
-          ${baseWhere.product_subcategory_id ? `AND p.product_subcategory_id = ${baseWhere.product_subcategory_id}` : ''}
-          ${baseWhere.company_id ? `AND p.company_id = ${baseWhere.company_id}` : ''}
-          ${baseWhere.part_no ? `AND p.part_no ILIKE '%${baseWhere.part_no.contains}%'` : ''}
-          ${baseWhere.id ? `AND p.id = ${baseWhere.id}` : ''}
-          ${baseWhere.stock ? `AND p.stock = ${baseWhere.stock}` : ''}
-          AND p.stock > 0 AND p.stock <= p.min_stock
+        WHERE ${where.is_active !== undefined ? `p.is_active = ${where.is_active}` : '1=1'}
+          ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
+          ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
+          ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
+          ${where.part_no ? `AND p.part_no ILIKE '%${where.part_no?.contains}%'` : ''}
+          ${where.id ? `AND p.id = ${where.id}` : ''}
+          ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
         ORDER BY p.id DESC
         LIMIT ${limitNum} OFFSET ${skip}
       ` as any[];
@@ -231,20 +242,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const totalResult = await prisma.$queryRaw`
         SELECT COUNT(*) as count
         FROM product p
-        WHERE ${baseWhere.is_active !== undefined ? `p.is_active = ${baseWhere.is_active}` : '1=1'}
-          ${baseWhere.product_category_id ? `AND p.product_category_id = ${baseWhere.product_category_id}` : ''}
-          ${baseWhere.product_subcategory_id ? `AND p.product_subcategory_id = ${baseWhere.product_subcategory_id}` : ''}
-          ${baseWhere.company_id ? `AND p.company_id = ${baseWhere.company_id}` : ''}
-          ${baseWhere.part_no ? `AND p.part_no ILIKE '%${baseWhere.part_no?.contains}%'` : ''}
-          ${baseWhere.id ? `AND p.id = ${baseWhere.id}` : ''}
-          ${baseWhere.stock ? `AND p.stock = ${baseWhere.stock}` : ''}
-          AND p.stock > 0 AND p.stock <= p.min_stock
+        WHERE ${where.is_active !== undefined ? `p.is_active = ${where.is_active}` : '1=1'}
+          ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
+          ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
+          ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
+          ${where.part_no ? `AND p.part_no ILIKE '%${where.part_no?.contains}%'` : ''}
+          ${where.id ? `AND p.id = ${where.id}` : ''}
+          ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
       ` as any[];
 
       products = lowStockProducts;
       total = parseInt(totalResult[0].count);
     } else {
-      // Normal Prisma query for other cases
+      // Normal Prisma query for all other cases (including model filter)
       [products, total] = await Promise.all([
         prisma.product.findMany({
           where,

@@ -193,7 +193,7 @@ export default function InvoiceCCreate() {
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
   // State for sidepanel car model filtering
-  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
+  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
 
   // Helper function to get consistent company info from product
   const getCompanyInfo = (product: Product) => {
@@ -553,14 +553,12 @@ export default function InvoiceCCreate() {
   useEffect(() => {
     let filtered = products.filter(product => {
       // Car model filter
-      if (selectedPanelCarModels.length > 0) {
+      if (selectedPanelCarModel) {
         if (!product.car_model_ids || !product.car_model_ids.trim()) {
           return false; // If no car models and filter is active, exclude product
         }
         const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
-        const hasMatchingModel = selectedPanelCarModels.some(selectedId =>
-          productModelIds.includes(selectedId)
-        );
+        const hasMatchingModel = productModelIds.includes(selectedPanelCarModel);
         if (!hasMatchingModel) return false;
       }
 
@@ -584,7 +582,7 @@ export default function InvoiceCCreate() {
     });
 
     setSearchedProducts(filtered);
-  }, [productSearchTerm, products, selectedPanelCarModels, filterOptions.models]);
+  }, [productSearchTerm, products, selectedPanelCarModel, filterOptions.models]);
 
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
@@ -649,6 +647,11 @@ export default function InvoiceCCreate() {
       setRawInvoiceItems([]);
     }
   }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
+
+  // Refetch products when car model filter changes
+  useEffect(() => {
+    fetchProducts(selectedPanelCarModel);
+  }, [selectedPanelCarModel]);
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -717,9 +720,12 @@ export default function InvoiceCCreate() {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (modelFilter: string = '') => {
     try {
-      const response = await fetch('/api/products');
+      const params = new URLSearchParams();
+      if (modelFilter) params.append('modelFilter', modelFilter);
+      const url = `/api/products?${params.toString()}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setProducts(data.products || []);
@@ -2406,8 +2412,8 @@ export default function InvoiceCCreate() {
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={memoizedFilterOptions}
-        selectedCarModels={selectedPanelCarModels}
-        onCarModelSelection={setSelectedPanelCarModels}
+        selectedCarModel={selectedPanelCarModel}
+        onCarModelSelection={setSelectedPanelCarModel}
         searchedProducts={searchedProducts}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}

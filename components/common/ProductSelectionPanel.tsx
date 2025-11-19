@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { Search, Filter } from 'lucide-react';
-import { SearchableMultiSelect } from './SearchableMultiSelect';
+import { SearchableSelect } from './SearchableSelect';
 
 export interface Product {
     id: number;
@@ -41,8 +41,8 @@ export interface ProductSelectionPanelProps {
     title: string;
     showCarModelFilter: boolean;
     filterOptions: FilterOptions;
-    selectedCarModels: string[];
-    onCarModelSelection: (values: string[]) => void;
+    selectedCarModel: string;
+    onCarModelSelection: (value: string) => void;
     searchedProducts: Product[];
     productSearchTerm: string;
     onSearchTermChange: (value: string) => void;
@@ -55,7 +55,7 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     title,
     showCarModelFilter,
     filterOptions,
-    selectedCarModels,
+    selectedCarModel,
     onCarModelSelection,
     searchedProducts,
     productSearchTerm,
@@ -112,12 +112,11 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
             {/* Car Model Filter (only shown if enabled) */}
             {showCarModelFilter && (
               <div className="flex-1 min-w-0">
-                <SearchableMultiSelect
+                <SearchableSelect
                   options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
-                  selectedValues={selectedCarModels}
-                  onSelectionChange={onCarModelSelection}
-                  placeholder="Filter by car models..."
-                  closeOnSelect={false}
+                  selectedValue={selectedCarModel}
+                  onSelectionChange={(value) => onCarModelSelection(value || '')}
+                  placeholder="Filter by car model..."
                 />
               </div>
             )}

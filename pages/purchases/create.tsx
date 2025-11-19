@@ -162,7 +162,7 @@ export default function PurchaseCreate() {
 
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
-  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
+  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
 
@@ -294,6 +294,11 @@ export default function PurchaseCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
+
+  // Refetch products when car model filter changes
+  useEffect(() => {
+    fetchProducts(selectedPanelCarModel);
+  }, [selectedPanelCarModel]);
 
   // Function to generate dynamic product name in new format: UID CAR MODEL CATEGORY [SUBCATEGORY] COMPANY [PARTNUMBER]
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[], partNumber?: string): string => {
@@ -540,9 +545,12 @@ export default function PurchaseCreate() {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (modelFilter: string = '') => {
     try {
-      const response = await fetch('/api/products');
+      const params = new URLSearchParams();
+      if (modelFilter) params.append('modelFilter', modelFilter);
+      const url = `/api/products?${params.toString()}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setProducts(data.products || []);
@@ -2303,8 +2311,8 @@ export default function PurchaseCreate() {
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={filterOptions}
-        selectedCarModels={selectedPanelCarModels}
-        onCarModelSelection={setSelectedPanelCarModels}
+        selectedCarModel={selectedPanelCarModel}
+        onCarModelSelection={setSelectedPanelCarModel}
         searchedProducts={searchedProducts}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}

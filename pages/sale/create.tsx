@@ -193,7 +193,7 @@ export default function InvoiceCreate() {
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
   // State for sidepanel car model filtering
-  const [selectedPanelCarModels, setSelectedPanelCarModels] = useState<string[]>([]);
+  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
 
   // Helper function to get consistent company info from product
   const getCompanyInfo = (product: Product) => {
@@ -425,6 +425,11 @@ export default function InvoiceCreate() {
     }
   }, [isProductPanelOpen]);
 
+  // Refetch products when car model filter changes
+  useEffect(() => {
+    fetchProducts(selectedPanelCarModel);
+  }, [selectedPanelCarModel]);
+
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
@@ -645,13 +650,11 @@ export default function InvoiceCreate() {
     let filtered = products;
 
     // Apply car model filter if any selected
-    if (selectedPanelCarModels.length > 0) {
+    if (selectedPanelCarModel) {
       filtered = filtered.filter(product => {
         if (!product.car_model_ids) return false;
         const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
-        return selectedPanelCarModels.some(selectedModel =>
-          productModelIds.includes(selectedModel)
-        );
+        return productModelIds.includes(selectedPanelCarModel);
       });
     }
 
@@ -674,7 +677,7 @@ export default function InvoiceCreate() {
     }
 
     setSearchedProducts(filtered);
-  }, [productSearchTerm, products, selectedPanelCarModels]);
+  }, [productSearchTerm, products, selectedPanelCarModel]);
 
   // Calculate and update GST totals whenever selectedProducts change
   useEffect(() => {
@@ -757,9 +760,12 @@ export default function InvoiceCreate() {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (modelFilter: string = '') => {
     try {
-      const response = await fetch('/api/products');
+      const params = new URLSearchParams();
+      if (modelFilter) params.append('modelFilter', modelFilter);
+      const url = `/api/products?${params.toString()}`;
+      const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
         setProducts(data.products || []);
@@ -2847,8 +2853,8 @@ export default function InvoiceCreate() {
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={memoizedFilterOptions}
-        selectedCarModels={selectedPanelCarModels}
-        onCarModelSelection={setSelectedPanelCarModels}
+        selectedCarModel={selectedPanelCarModel}
+        onCarModelSelection={setSelectedPanelCarModel}
         searchedProducts={searchedProducts}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}

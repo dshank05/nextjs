@@ -50,11 +50,19 @@ async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  console.log('[PRODUCTS OPTIMIZED API] Request received:', {
+    method: req.method,
+    query: req.query,
+    timestamp: new Date().toISOString()
+  });
+
   if (req.method !== 'GET') {
+    console.log('[PRODUCTS OPTIMIZED API] Method not allowed:', req.method);
     return res.status(405).json({ message: 'Method not allowed' })
   }
 
   try {
+    console.log('[PRODUCTS OPTIMIZED API] Starting query processing');
     const {
       page = '1',
       limit = '50',
@@ -73,8 +81,15 @@ async function handler(
       sortOrder = 'asc' // NEW: Sort order (default: asc)
     } = req.query
 
+    console.log('[PRODUCTS OPTIMIZED API] Parsed parameters:', {
+      page, limit, search, category, subcategory, model, company_id, quantity,
+      lowStock, startDate, endDate, uid, part_no, sortBy, sortOrder
+    });
+
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
+
+    console.log('[PRODUCTS OPTIMIZED API] Parsed numeric values:', { pageNum, limitNum });
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'product_name', 'part_no', 'stock', 'rate', 'lastPurchaseDate', 'categoryName', 'companyName', 'subcategoryName']
@@ -175,23 +190,46 @@ async function handler(
       carModelId = carModelRecord?.id;
     }
 
-    // Handle multiple car model selection
+    // Handle single car model selection
     if (model && model !== '') {
-      const selectedModelIds = (model as string).split(',').map(id => id.trim()).filter(id => id !== '');
-      if (selectedModelIds.length > 0) {
+      const selectedModelId = (model as string).trim();
+      if (selectedModelId) {
         // Use raw SQL for array contains check
       }
     }
 
     // Determine if we need special handling for complex filters
-    const needsSpecialHandling = lowStock === 'true' || (model && model !== '') || carModelId;
+    // TEMPORARILY DISABLE MODEL FILTERING FOR DEBUGGING
+    const needsSpecialHandling = lowStock === 'true' || false || carModelId;
 
+    console.log('[PRODUCTS OPTIMIZED API] Query setup complete:', {
+      where,
+      needsSpecialHandling,
+      sortField,
+      sortDirection,
+      carModelId,
+      selectedModelIds: model ? (model as string).split(',').map(id => id.trim()).filter(id => id !== '') : []
+    });
 
+    // DEBUG: Check if there are any products at all
+    const totalProductsInDb = await prisma.product.count({ where: { is_active: true } });
+    console.log('[PRODUCTS OPTIMIZED API] DEBUG - Total active products in DB:', totalProductsInDb);
+
+    // DEBUG: Check products with car model data
+    const productsWithCarModels = await prisma.product.findMany({
+      where: { is_active: true, car_model_ids: { not: null } },
+      select: { id: true, car_model_ids: true, product_name: true },
+      take: 5
+    });
+    console.log('[PRODUCTS OPTIMIZED API] DEBUG - Sample products with car models:', productsWithCarModels);
 
     let products: any[];
     let total: number;
 
+    console.log('[PRODUCTS OPTIMIZED API] Starting main product query...');
+
     if (needsSpecialHandling) {
+      console.log('[PRODUCTS OPTIMIZED API] Using raw SQL query for complex filters');
       // For complex filters that require raw SQL, get all matching products
       let rawQuery = `
         SELECT p.* FROM product p
@@ -246,8 +284,12 @@ async function handler(
 
       rawQuery += ` ORDER BY ${orderByClause} LIMIT ${limitNum} OFFSET ${(pageNum - 1) * limitNum}`;
 
+      console.log('[PRODUCTS OPTIMIZED API] Executing raw SQL query:', rawQuery);
       products = await prisma.$queryRawUnsafe(rawQuery) as any[];
+      console.log(`[PRODUCTS OPTIMIZED API] Raw SQL query completed. Found ${products.length} products, total: ${total}`);
+      console.log('[PRODUCTS OPTIMIZED API] Raw query results sample:', products.slice(0, 3));
     } else {
+      console.log('[PRODUCTS OPTIMIZED API] Using Prisma query for simple filters');
       // Simple case - use Prisma's efficient pagination
       const skip = (pageNum - 1) * limitNum;
 
@@ -267,6 +309,7 @@ async function handler(
         orderBy = { [sortField]: sortDirection };
       }
 
+      console.log('[PRODUCTS OPTIMIZED API] Executing Prisma query...');
       // Get products with efficient pagination
       const [productsResult, totalResult] = await Promise.all([
         prisma.product.findMany({
@@ -283,9 +326,12 @@ async function handler(
 
       products = productsResult;
       total = totalResult;
+      console.log(`[PRODUCTS OPTIMIZED API] Prisma query completed. Found ${products.length} products, total: ${total}`);
     }
 
 
+
+    console.log('[PRODUCTS OPTIMIZED API] Starting lookup data queries...');
 
     // 🔥 PHASE 3 OPTIMIZATION: Batch all related data queries
     // Get all required lookup data in parallel for better performance
@@ -300,6 +346,14 @@ async function handler(
     ));
     const companyIds = Array.from(new Set(products.map(p => p.company_id).filter(Boolean)));
     const productIds = products.map(p => p.id.toString());
+
+    console.log('[PRODUCTS OPTIMIZED API] Lookup data IDs:', {
+      categoryIds: categoryIds.length,
+      subcategoryIds: subcategoryIds.length,
+      carModelIds: carModelIds.length,
+      companyIds: companyIds.length,
+      productIds: productIds.length
+    });
 
     // Single batch query for all lookup data
     const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, purchaseRates] = await Promise.all([
@@ -321,6 +375,14 @@ async function handler(
       }) : Promise.resolve([]),
       getPurchaseRatesOptimized(productIds)
     ]);
+
+    console.log('[PRODUCTS OPTIMIZED API] Lookup data queries completed:', {
+      categoryRecords: categoryRecords.length,
+      subcategoryRecords: subcategoryRecords.length,
+      carModelRecords: carModelRecords.length,
+      companyRecords: companyRecords.length,
+      purchaseRatesFound: purchaseRates.size
+    });
 
     // Create efficient lookup maps
     const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.category_name]));
@@ -364,7 +426,13 @@ async function handler(
 
     const totalPages = Math.ceil(total / limitNum);
 
-
+    console.log('[PRODUCTS OPTIMIZED API] Processing complete. Sending response:', {
+      productsCount: enhancedProducts.length,
+      total,
+      totalPages,
+      page: pageNum,
+      hasMore: pageNum < totalPages
+    });
 
     res.status(200).json({
       products: enhancedProducts,
@@ -378,8 +446,13 @@ async function handler(
     });
 
   } catch (error) {
-    console.error('Optimized products fetch error:', error)
-    res.status(500).json({ 
+    console.error('[PRODUCTS OPTIMIZED API] Error occurred:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      query: req.query,
+      timestamp: new Date().toISOString()
+    });
+    res.status(500).json({
       message: 'Failed to fetch optimized products',
       error: error instanceof Error ? error.message : 'Unknown error'
     })

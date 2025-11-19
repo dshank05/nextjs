@@ -65,7 +65,7 @@ export function SearchableSelect({
 
   const handleOptionSelect = (optionId: string) => {
     // If selecting the placeholder option (empty id), treat as clearing
-    const newValue = optionId === '' ? null : (selectedValue === optionId ? null : optionId);
+    const newValue = optionId === '' ? null : optionId;
     onSelectionChange(newValue);
     setIsDropdownOpen(false);
   };
