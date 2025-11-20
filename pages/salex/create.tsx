@@ -165,6 +165,9 @@ export default function InvoiceCCreate() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [customersLoaded, setCustomersLoaded] = useState(false);
 
+  // "Other" customer selection state
+  const [isOtherCustomerSelected, setIsOtherCustomerSelected] = useState(false);
+
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
@@ -956,29 +959,60 @@ export default function InvoiceCCreate() {
     console.log('🔄 handleCustomerSelect called with customerId:', customerId);
     console.log('📋 Current customers list state:', customersLoaded ? 'loaded' : 'not loaded');
 
+    if (customerId === '0') {
+      // "Other" selected
+      console.log('🔄 "Other" customer selected');
+      setSelectedCustomerId('0');
+      setSelectedCustomer(null);
+      setIsOtherCustomerSelected(true);
+      setVendorIdToSave(0);
+
+      // Clear existing customer data and make fields editable
+      setFormData(prev => ({
+        ...prev,
+        customer_name: '',
+        contact_number: '',
+        address: '',
+        address_2: '',
+        city: '',
+        state: '',
+        gst_number: '',
+        email_id: ''
+      }));
+
+      return;
+    }
+
+    // Regular customer selected
+    setIsOtherCustomerSelected(false);
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       console.log('✅ handleCustomerSelect found customer:', customer.billing_name);
       console.log('📊 handleCustomerSelect setting selectedCustomer');
       setSelectedCustomer(customer);
+      setSelectedCustomerId(customerId);
+      setVendorIdToSave(parseInt(customerId));
 
       // Populate form fields with customer data
-      // setFormData(prev => ({
-      //   ...prev,
-      //   customer_name: customer.billing_name,
-      //   contact_number: customer.contact_no || '',
-      //   address: customer.billing_address || '',
-      //   city: customer.billing_city || '',
-      //   state: customer.billing_state?.toString() || '',
-      //   gst_number: customer.billing_gstin || '',
-      //   email_id: customer.email || ''
-      // }));
+      setFormData(prev => ({
+        ...prev,
+        customer_name: customer.billing_name,
+        contact_number: customer.contact_no || '',
+        address: customer.billing_address || '',
+        address_2: customer.billing_address_2 || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state?.toString() || '',
+        gst_number: customer.billing_gstin || '',
+        email_id: customer.email || ''
+      }));
 
       // No GST calculations needed for salex - all tax values remain 0
     } else {
       console.log('❌ handleCustomerSelect customer not found, setting selectedCustomer to null');
       console.log('📋 Available customer IDs for reference:', customers.map(c => c.id));
       setSelectedCustomer(null);
+      setSelectedCustomerId('');
+      setVendorIdToSave(null);
     }
   };
 
@@ -1153,8 +1187,11 @@ export default function InvoiceCCreate() {
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
-    if (!selectedCustomerId || !selectedCustomer) {
+    if (!selectedCustomerId || (!selectedCustomer && !isOtherCustomerSelected)) {
       newErrors.customer_name = 'Please select a customer';
+    }
+    if (isOtherCustomerSelected && !formData.customer_name.trim()) {
+      newErrors.customer_name = 'Customer name is required when "Other" is selected';
     }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
@@ -1457,6 +1494,7 @@ export default function InvoiceCCreate() {
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Customer' },
+                      { id: '0', name: 'Other' },
                       ...customers.map((customer) => ({
                         id: customer.id,
                         name: customer.billing_name
@@ -1471,39 +1509,51 @@ export default function InvoiceCCreate() {
                     }}
                     placeholder="Select Customer"
                   />
+                  {isOtherCustomerSelected && (
+                    <input
+                      type="text"
+                      value={formData.customer_name}
+                      onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                      className="input w-full mt-2"
+                      placeholder="Enter customer name"
+                    />
+                  )}
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.contact_no || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || '')}
+                    onChange={(e) => handleInputChange('contact_number', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={selectedCustomer?.email || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || '')}
+                    onChange={(e) => handleInputChange('email_id', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter email address" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_gstin || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || '')}
+                    onChange={(e) => handleInputChange('gst_number', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter GST number" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
 

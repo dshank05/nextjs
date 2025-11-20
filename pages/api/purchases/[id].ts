@@ -37,11 +37,34 @@ export default async function handler(
         })
         const productMap = new Map(products.map(p => [p.id, p.display_name]))
 
-        // ✅ Use direct vendor_id FK lookup
-        let vendorData = null;
-        if (purchase.vendor_id) {
+        // Get complete vendor data from vendor_details table or bill_to table for "Other" vendors
+        let vendorData = null
+        if (purchase.vendor_id === 0 || purchase.vendor_id === null) {
+          // "Other" vendor - get data from bill_to table
+          const billToData = await prisma.bill_to.findUnique({
+            where: { invoice_no: purchase.invoice_no }
+          })
+          if (billToData) {
+            vendorData = {
+              id: 0,
+              vendor_name: billToData.vendor_name || '',
+              address: billToData.address || '',
+              tax_id: billToData.gstin || '',
+              contact_no: billToData.contact_no || '',
+              email: billToData.email || ''
+            }
+          }
+        } else if (purchase.vendor_id) {
           vendorData = await prisma.vendor_details.findUnique({
             where: { id: purchase.vendor_id }
+          });
+        }
+
+        // ✅ Fetch bill_to data for inline editing
+        let billToData = null;
+        if (purchase.invoice_no) {
+          billToData = await prisma.bill_to.findUnique({
+            where: { invoice_no: purchase.invoice_no }
           });
         }
 
@@ -120,6 +143,7 @@ export default async function handler(
           // Keep original fields for backward compatibility
           formattedDate: purchase.invoice_date,
           vendor: vendorData,
+          bill_to: billToData,
           staff: staffData
         }
 

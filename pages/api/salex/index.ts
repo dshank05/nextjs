@@ -300,8 +300,23 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validate required fields
-    if (!invoice_date || !select_customer || !invoiceItems || invoiceItems.length === 0) {
+    // Allow select_customer to be 0 (Other)
+    if (!invoice_date || select_customer === undefined || select_customer === null || !invoiceItems || invoiceItems.length === 0) {
       return res.status(400).json({ message: 'Missing required fields' })
+    }
+
+    // ===== VALIDATE CUSTOMER EXISTS =====
+    let existingCustomer = null;
+    if (parseInt(select_customer) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(select_customer) }
+      })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
     }
 
     console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
@@ -318,33 +333,33 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     const invoice = await prisma.invoicex.create({
       data: {
-      invoice_no: nextInvoiceNo,
-      select_customer: parseInt(select_customer),
-      items_total: parseFloat(items_total) || 0,
-      freight: parseFloat(freight) || 0,
-      total_taxable_value: parseFloat(total_taxable_value),
-      taxrate: 0, // No tax for salex
-      total_cgst: 0,
-      total_sgst: 0,
-      total_igst: 0,
-      total_tax: 0,
-      total: parseFloat(total),
-      notes: finalNotes,                          // Separate notes field
-      descriptions: finalDescriptions,             // Separate descriptions field
-      bill_reference: bill_reference || '',        // Bill reference field
-      discount: parseFloat(discount) || 0,         // Invoice-level discount amount
-      invoice_date: invoiceDateTimestamp,
-      updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
-      payment_status: parseInt(payment_status),
-      payment_mode: parseInt(payment_mode),
-      fy: currentFy,
-      staff_details,                             // Optional string field for backward compatibility
-      staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
-      mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
-      commission: commission || 0,               // Optional commission amount
-      packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null, // Packing qty
-      packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null, // Packing rate
-      packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null // Packing total
+        invoice_no: nextInvoiceNo,
+        select_customer: parseInt(select_customer),
+        items_total: parseFloat(items_total) || 0,
+        freight: parseFloat(freight) || 0,
+        total_taxable_value: parseFloat(total_taxable_value),
+        taxrate: 0, // No tax for salex
+        total_cgst: 0,
+        total_sgst: 0,
+        total_igst: 0,
+        total_tax: 0,
+        total: parseFloat(total),
+        notes: finalNotes,                          // Separate notes field
+        descriptions: finalDescriptions,             // Separate descriptions field
+        bill_reference: bill_reference || '',        // Bill reference field
+        discount: parseFloat(discount) || 0,         // Invoice-level discount amount
+        invoice_date: invoiceDateTimestamp,
+        updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
+        payment_status: parseInt(payment_status),
+        payment_mode: parseInt(payment_mode),
+        fy: currentFy,
+        staff_details,                             // Optional string field for backward compatibility
+        staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
+        mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
+        commission: commission || 0,               // Optional commission amount
+        packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null, // Packing qty
+        packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null, // Packing rate
+        packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null // Packing total
       }
     })
 
@@ -427,25 +442,37 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // 3. Create customer reference in bill_tosalesx table
-      if (customer_id) {
-        await prisma.bill_tosalesx.create({
-          data: {
-            invoice_no: invoice.id,
-            customer_id: parseInt(customer_id)
-          }
-        })
-      }
+      await prisma.bill_tosalesx.create({
+        data: {
+          invoice_no: invoice.id,
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+        }
+      })
 
       // 4. Create shipping reference in shiptox table
-      if (customer_id) {
-        await prisma.shiptox.create({
-          data: {
-            invoice_no: invoice.id,
-            customer_id: parseInt(customer_id),
-            shipping: useShippingAddress
-          }
-        })
-      }
+      await prisma.shiptox.create({
+        data: {
+          invoice_no: invoice.id,
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+          shipping: useShippingAddress || true
+        }
+      })
 
       // 5. Create transport details in transport_detailsx table
       if (transportDetails) {
@@ -470,7 +497,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       salex: {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
-        total: invoice.total
+        total: invoice.total,
+        customer_name: existingCustomer?.billing_name || req.body.customer_name || 'Other'
       }
     })
   } catch (error) {
@@ -524,21 +552,24 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // ===== VALIDATION =====
-    if (!invoice_number || !customer_id) {
+    if (!invoice_number || customer_id === undefined || customer_id === null) {
       return res.status(400).json({
         message: 'Missing required fields: invoice_number or customer_id'
       })
     }
 
     // ===== VALIDATE CUSTOMER EXISTS =====
-    const existingCustomer = await prisma.customer_details.findUnique({
-      where: { id: parseInt(customer_id) }
-    })
-
-    if (!existingCustomer) {
-      return res.status(400).json({
-        message: 'Invalid customer selected - customer does not exist'
+    let existingCustomer = null;
+    if (parseInt(customer_id) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(customer_id) }
       })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
     }
 
     // ===== VALIDATE SALEX EXISTS =====
@@ -620,7 +651,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           packing_forwarding_qty: packing_forwarding_qty || null,
           packing_forwarding_rate: packing_forwarding_rate || null,
           packing_forwarding_total: packing_forwarding_total || null,
-        invoice_date: Math.floor(invoiceDate),
+          invoice_date: Math.floor(invoiceDate),
           payment_status: parsedPaymentStatus,
           payment_mode: parsedPaymentMode,
           fy: financialYear,
@@ -789,10 +820,58 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // Update customer relationship
       await tx.bill_tosalesx.upsert({
         where: { invoice_no: sale.id },
-        update: { customer_id: parseInt(customer_id) },
+        update: {
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+        },
         create: {
           invoice_no: sale.id,
-          customer_id: parseInt(customer_id)
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+        }
+      })
+
+      // Update shipping details
+      await tx.shiptox.upsert({
+        where: { invoice_no: sale.id },
+        update: {
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+          shipping: true
+        },
+        create: {
+          invoice_no: sale.id,
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+          shipping: true
         }
       })
 

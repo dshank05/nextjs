@@ -46,9 +46,24 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Get complete customer data from customer_details table
+    // Get complete customer data from customer_details table or bill_tosales table for "Other" customers
     let customerData = null
-    if (sale.select_customer) {
+    if (sale.select_customer === 0) {
+      // "Other" customer - get data from bill_tosales table
+      const billToData = await prisma.bill_tosales.findUnique({
+        where: { invoice_no: sale.id }
+      })
+      if (billToData) {
+        customerData = {
+          id: 0,
+          billing_name: billToData.billing_name || '',
+          billing_address: billToData.billing_address || '',
+          billing_gstin: billToData.billing_gstin || '',
+          contact_no: billToData.contact_no || '',
+          email: billToData.email || ''
+        }
+      }
+    } else if (sale.select_customer) {
       customerData = await prisma.customer_details.findUnique({
         where: { id: sale.select_customer },
         select: {
@@ -445,14 +460,38 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Update customer relationship
-      await tx.bill_tosales.upsert({
-        where: { invoice_no: sale.id },
-        update: { customer_id: parseInt(customer_id) },
-        create: {
-          invoice_no: sale.id,
-          customer_id: parseInt(customer_id)
-        }
-      })
+      if (parseInt(customer_id) === 0) {
+        // "Other" customer - data should already be in bill_tosales from POST
+        // No need to update here as PUT doesn't receive customer details
+      } else {
+        // Existing customer - update bill_tosales with customer data
+        await tx.bill_tosales.upsert({
+          where: { invoice_no: sale.id },
+          update: {
+            billing_name: existingCustomer.billing_name,
+            contact_no: existingCustomer.contact_no || '',
+            email: existingCustomer.email || '',
+            billing_address: existingCustomer.billing_address,
+            billing_address2: existingCustomer.billing_address_2 || '',
+            billing_city: existingCustomer.billing_city || '',
+            billing_state: existingCustomer.billing_state || '',
+            billing_state_code: existingCustomer.billing_state_code || null,
+            billing_gstin: existingCustomer.billing_gstin || ''
+          },
+          create: {
+            invoice_no: sale.id,
+            billing_name: existingCustomer.billing_name,
+            contact_no: existingCustomer.contact_no || '',
+            email: existingCustomer.email || '',
+            billing_address: existingCustomer.billing_address,
+            billing_address2: existingCustomer.billing_address_2 || '',
+            billing_city: existingCustomer.billing_city || '',
+            billing_state: existingCustomer.billing_state || '',
+            billing_state_code: existingCustomer.billing_state_code || null,
+            billing_gstin: existingCustomer.billing_gstin || ''
+          }
+        })
+      }
 
       return sale
     })

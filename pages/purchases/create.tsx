@@ -135,6 +135,7 @@ export default function PurchaseCreate() {
   const [vendorStateForTax, setVendorStateForTax] = useState<string>(''); // Separate state for tax calculations
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isOtherVendorSelected, setIsOtherVendorSelected] = useState(false);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -678,8 +679,23 @@ export default function PurchaseCreate() {
       notes: purchase.notes || '',
       total_tax: purchase.total_tax?.toString() || '0',
       payment_status: purchase.payment_status || purchase.status || 0,
-      payment_mode: purchase.payment_mode || 0,
+      payment_mode: purchase.payment_mode || 1,
     });
+
+    // Override with bill_to data if available (for inline editing)
+    if (purchase.bill_to) {
+      setFormData(prev => ({
+        ...prev,
+        vendor_name: purchase.bill_to.vendor_name || prev.vendor_name,
+        contact_number: purchase.bill_to.contact_no || prev.contact_number,
+        email_id: purchase.bill_to.email || prev.email_id,
+        address: purchase.bill_to.address || prev.address,
+        address_2: purchase.bill_to.address2 || prev.address_2,
+        city: purchase.bill_to.city || prev.city,
+        state: purchase.bill_to.state || prev.state,
+        gst_number: purchase.bill_to.gstin || prev.gst_number,
+      }));
+    }
 
     // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
     if (purchase.vendor_id) {
@@ -900,12 +916,48 @@ export default function PurchaseCreate() {
     }
 
     setFormData(prev => ({ ...prev, [field]: processedValue }));
+
+    // Update tax state if state field changes
+    if (field === 'state') {
+      setVendorStateForTax(value);
+    }
+
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
   const handleVendorSelect = (vendorId: string) => {
+    if (vendorId === '0') {
+      // "Other" selected
+      setVendorIdToSave(0);
+      setSelectedVendorId('0');
+      setSelectedVendor(null);
+      setIsOtherVendorSelected(true);
+
+      // Clear existing tax calculations and selected products
+      setSelectedProducts([]);
+      setSelectedRowProduct(null);
+
+      setFormData(prev => ({
+        ...prev,
+        vendor_name: '', // Clear name for manual entry
+        contact_number: '',
+        email_id: '',
+        address: '',
+        address_2: '',
+        city: '',
+        state: '',
+        gst_number: '',
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+      setVendorStateForTax('');
+      return;
+    }
+
+    setIsOtherVendorSelected(false);
     const vendor = vendors.find(v => v.id === vendorId);
     if (vendor) {
       setVendorIdToSave(parseInt(vendor.id)); // Store vendor ID for API
@@ -1049,12 +1101,12 @@ export default function PurchaseCreate() {
       companyName: '',
       partNo: ''
     });
-                                  setTemplateRow({
-                                    qty: '1',
-                                    rate: '',
-                                    gst: '0',
-                                    total: ''
-                                  });
+    setTemplateRow({
+      qty: '1',
+      rate: '',
+      gst: '0',
+      total: ''
+    });
   };
 
   const handleConfirmDelete = (item: PurchaseItem) => {
@@ -1112,8 +1164,11 @@ export default function PurchaseCreate() {
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
-    if (!selectedVendorId || !selectedVendor) {
+    if (!selectedVendorId) {
       newErrors.vendor_name = 'Please select a vendor';
+    }
+    if (isOtherVendorSelected && !formData.vendor_name.trim()) {
+      newErrors.vendor_name = 'Vendor name is required';
     }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
@@ -1398,6 +1453,7 @@ export default function PurchaseCreate() {
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Vendor' },
+                      { id: '0', name: 'Other' },
                       ...vendors.map((vendor) => ({
                         id: vendor.id.toString(),
                         name: vendor.vendor_name
@@ -1411,39 +1467,48 @@ export default function PurchaseCreate() {
                     }}
                     placeholder="Select Vendor"
                   />
+                  {isOtherVendorSelected && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL VENDOR NAME *</label>
+                      <input
+                        type="text"
+                        value={formData.vendor_name}
+                        onChange={(e) => handleInputChange('vendor_name', e.target.value)}
+                        className="input w-full"
+                        placeholder="Enter vendor name"
+                      />
+                    </div>
+                  )}
                   {errors.vendor_name && <p className="text-red-400 text-xs mt-1">{errors.vendor_name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
                     type="text"
-                    value={selectedVendor?.contact_no || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.contact_number || selectedVendor?.contact_no || ''}
+                    onChange={(e) => handleInputChange('contact_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter contact number"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={selectedVendor?.email || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.email_id || selectedVendor?.email || ''}
+                    onChange={(e) => handleInputChange('email_id', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={selectedVendor?.tax_id || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.gst_number || selectedVendor?.tax_id || ''}
+                    onChange={(e) => handleInputChange('gst_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter GST number"
                   />
                 </div>
               </div>
@@ -1452,44 +1517,40 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
-                    value={selectedVendor?.address || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.address || selectedVendor?.address || ''}
+                    onChange={(e) => handleInputChange('address', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter address line 1"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
                   <input
                     type="text"
-                    value={selectedVendor?.address_2 || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.address_2 || selectedVendor?.address_2 || ''}
+                    onChange={(e) => handleInputChange('address_2', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter address line 2"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={selectedVendor?.city || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.city || selectedVendor?.city || ''}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter city"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
                   <input
                     type="text"
-                    value={selectedVendor?.state || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from vendor"
-                    readOnly
-                    disabled
+                    value={formData.state || selectedVendor?.state || ''}
+                    onChange={(e) => handleInputChange('state', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter state"
                   />
                 </div>
               </div>
@@ -2082,43 +2143,43 @@ export default function PurchaseCreate() {
                         {editingRowId === product.id ? (
                           <>
                             {/* Editable fields when inline editing */}
-                      <td className="px-4 py-3 text-center w-24">
-                        <input
-                          type="number"
-                          min="1"
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="1"
-                          value={editingRowData?.qty || ''}
-                          onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
-                          onWheel={(e) => e.preventDefault()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault();
-                            }
-                          }}
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-center w-24">
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
-                          value={templateRow.rate}
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              rate: e.target.value
-                            }));
-                          }}
-                          onWheel={(e) => e.preventDefault()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault();
-                            }
-                          }}
-                        />
-                      </td>
+                            <td className="px-4 py-3 text-center w-24">
+                              <input
+                                type="number"
+                                min="1"
+                                className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                placeholder="1"
+                                value={editingRowData?.qty || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center w-24">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                placeholder="0.00"
+                                value={templateRow.rate}
+                                onChange={(e) => {
+                                  setTemplateRow(prev => ({
+                                    ...prev,
+                                    rate: e.target.value
+                                  }));
+                                }}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
+                              />
+                            </td>
                             {/* Save/Cancel buttons */}
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center space-x-1">

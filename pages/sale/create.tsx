@@ -130,6 +130,7 @@ interface InvoiceFormData {
   total_cgst: string;
   total_sgst: string;
   total_igst: string;
+  pin_code: string;
 }
 
 interface FilterOptions {
@@ -161,6 +162,7 @@ export default function InvoiceCreate() {
   const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isOtherCustomerSelected, setIsOtherCustomerSelected] = useState(false);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -364,7 +366,8 @@ export default function InvoiceCreate() {
     packing_forwarding_total: '',
     total_cgst: '',
     total_sgst: '',
-    total_igst: ''
+    total_igst: '',
+    pin_code: ''
   });
 
   // Check for edit mode immediately on mount
@@ -541,7 +544,8 @@ export default function InvoiceCreate() {
           packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
           total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
           total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
-          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0'
+          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0',
+          pin_code: billingDetails?.billing_pin_code || ''
         });
 
         // Set customer data from billingDetails
@@ -612,7 +616,8 @@ export default function InvoiceCreate() {
         city: customer.billing_city || '',
         state: customer.billing_state?.toString() || '',
         gst_number: customer.billing_gstin || '',
-        email_id: customer.email || ''
+        email_id: customer.email || '',
+        pin_code: '' // Reset pin code when selecting existing customer
       }));
 
       console.log('✅ selectCustomerById completed successfully');
@@ -876,7 +881,8 @@ export default function InvoiceCreate() {
           packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
           total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
           total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
-          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0'
+          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0',
+          pin_code: billingDetails?.billing_pin_code || ''
         };
 
         setFormData(formDataToSet);
@@ -973,7 +979,8 @@ export default function InvoiceCreate() {
           packing_forwarding_total: invoice.packing_forwarding_total || '0',
           total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
           total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
-          total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0'
+          total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0',
+          pin_code: data.billingDetails?.billing_pin_code || ''
         };
 
         console.log('📝 SETTING FORM DATA:', formDataToSet);
@@ -1051,6 +1058,35 @@ export default function InvoiceCreate() {
   };
 
   const handleCustomerSelect = (customerId: string) => {
+    if (customerId === '0') {
+      // "Other" selected
+      setSelectedCustomerId('0');
+      setVendorIdToSave(0);
+      setSelectedCustomer(null);
+      setIsOtherCustomerSelected(true);
+
+      // Clear tax calculations and selected products
+      setSelectedProducts([]);
+      setFormData(prev => ({
+        ...prev,
+        customer_name: '', // Clear for manual entry
+        contact_number: '',
+        email_id: '',
+        address: '',
+        city: '',
+        state: '',
+        gst_number: '',
+        pin_code: '',
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+      // Default to Intra-state (Business State) for "Other" to allow tax calculation
+      setCustomerStateForTax(BUSINESS_STATE_CODE);
+      return;
+    }
+
+    setIsOtherCustomerSelected(false);
     const customer = customers.find(c => c.id === customerId);
     if (customer) {
       setSelectedCustomer(customer);
@@ -1524,6 +1560,18 @@ export default function InvoiceCreate() {
         invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoice.invoice_date (convert to UNIX timestamp)
         select_customer: parseInt(selectedCustomerId),              // Invoice.select_customer
 
+        // ===== MANUAL CUSTOMER DETAILS (For "Other") =====
+        ...(isOtherCustomerSelected && {
+          customer_name: formData.customer_name,
+          contact_number: formData.contact_number,
+          email_id: formData.email_id,
+          address: formData.address,
+          city: formData.city,
+          state: formData.state,
+          gst_number: formData.gst_number,
+          pin_code: formData.pin_code
+        }),
+
         // ===== CALCULATED TOTALS =====
         items_total: subtotal,                                       // Invoice.items_total
         freight: 0,                                                  // Invoice.freight (not collected separately)
@@ -1763,6 +1811,7 @@ export default function InvoiceCreate() {
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Customer' },
+                      { id: '0', name: 'Other' },
                       ...customers.map((customer) => ({
                         id: customer.id,
                         name: customer.billing_name
@@ -1777,28 +1826,42 @@ export default function InvoiceCreate() {
                     }}
                     placeholder="Select Customer"
                   />
+                  {isOtherCustomerSelected && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
+                      <input
+                        type="text"
+                        value={formData.customer_name}
+                        onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                        className="input w-full"
+                        placeholder="Enter customer name"
+                      />
+                    </div>
+                  )}
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.contact_no || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || '')}
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('contact_number', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={selectedCustomer?.email || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || '')}
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('email_id', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter email" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
@@ -1808,14 +1871,17 @@ export default function InvoiceCreate() {
                   <input
                     type="text"
                     value={
-                      useShippingAddress
-                        ? selectedCustomer?.shipping_gstin || ''
-                        : selectedCustomer?.billing_gstin || ''
+                      isOtherCustomerSelected
+                        ? formData.gst_number
+                        : (useShippingAddress
+                          ? selectedCustomer?.shipping_gstin || ''
+                          : selectedCustomer?.billing_gstin || '')
                     }
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('gst_number', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter GSTIN" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
               </div>
@@ -1825,11 +1891,12 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_address || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || '')}
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('address', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter address" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
@@ -1847,24 +1914,38 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_city || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || '')}
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('city', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter city" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_state || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state || '')}
+                    onChange={(e) => isOtherCustomerSelected && handleInputChange('state', e.target.value)}
+                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
+                    placeholder={isOtherCustomerSelected ? "Enter state" : "Auto-filled from customer"}
+                    readOnly={!isOtherCustomerSelected}
+                    disabled={!isOtherCustomerSelected}
                   />
                 </div>
+                {isOtherCustomerSelected && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
+                    <input
+                      type="text"
+                      value={formData.pin_code}
+                      onChange={(e) => handleInputChange('pin_code', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter pin code"
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1916,7 +1997,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">COMMISSION</label>
                   <input
                     type="number"
-                    
+
                     value={formData.commission}
                     onChange={(e) => handleInputChange('commission', e.target.value)}
                     className="input w-full"
@@ -2134,7 +2215,7 @@ export default function InvoiceCreate() {
                         <input
                           type="number"
                           min="1"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -2155,7 +2236,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.rate}
@@ -2176,7 +2257,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.gst}
@@ -2198,7 +2279,7 @@ export default function InvoiceCreate() {
                         <td className="px-4 py-3 text-center w-20">
                           <input
                             type="number"
-                            
+
                             min="0"
                             max="100"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2222,7 +2303,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.total}
@@ -2513,7 +2594,7 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center w-32">
                               <input
                                 type="number"
-                                
+
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2522,7 +2603,7 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center w-32">
                               <input
                                 type="number"
-                                
+
                                 value={editingRowData?.gst_percentage || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2538,7 +2619,7 @@ export default function InvoiceCreate() {
                               <td className="px-3 py-2 text-center w-20">
                                 <input
                                   type="number"
-                                  
+
                                   min="0"
                                   max="100"
                                   value={editingRowData?.discount_percentage || ''}
@@ -2722,7 +2803,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                       <input
                         type="number"
-                        
+
                         value={formData.total_cgst}
                         readOnly
                         disabled
@@ -2734,7 +2815,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
                       <input
                         type="number"
-                        
+
                         value={formData.total_sgst}
                         readOnly
                         disabled
@@ -2746,7 +2827,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
                       <input
                         type="number"
-                        
+
                         value={formData.total_igst}
                         readOnly
                         disabled
@@ -2759,7 +2840,7 @@ export default function InvoiceCreate() {
                         <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                         <input
                           type="number"
-                          
+
                           value={totalDiscount.toFixed(2)}
                           readOnly
                           disabled
@@ -2776,7 +2857,7 @@ export default function InvoiceCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
                     <input
                       type="number"
-                      
+
                       value={subtotal.toFixed(2)}
                       readOnly
                       disabled
@@ -2787,7 +2868,7 @@ export default function InvoiceCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL TAX</label>
                     <input
                       type="number"
-                      
+
                       value={totalTax.toFixed(2)}
                       readOnly
                       disabled
@@ -2804,7 +2885,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                       <input
                         type="number"
-                        
+
                         value={formData.packing_forwarding_qty}
                         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                         className="input w-full"
@@ -2815,7 +2896,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                       <input
                         type="number"
-                        
+
                         value={formData.packing_forwarding_rate}
                         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
                         className="input w-full"
@@ -2826,7 +2907,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                       <input
                         type="number"
-                        
+
                         value={formData.packing_forwarding_total}
                         readOnly
                         disabled
@@ -2913,12 +2994,13 @@ export default function InvoiceCreate() {
             </div>
           </div>
         </div>
-      </form>
+      </form >
 
       {/* Product Selection Side Panel */}
-      <ProductSelectionPanel
+      < ProductSelectionPanel
         isOpen={isProductPanelOpen}
-        onClose={() => setIsProductPanelOpen(false)}
+        onClose={() => setIsProductPanelOpen(false)
+        }
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={memoizedFilterOptions}
@@ -2959,6 +3041,6 @@ export default function InvoiceCreate() {
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
       />
-    </div>
+    </div >
   );
 }

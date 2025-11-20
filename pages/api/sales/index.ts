@@ -60,21 +60,25 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     console.log('📝 API Received POST data for sale:', req.body);
 
     // ===== VALIDATION =====
-    if (!customer_id || !items || items.length === 0) {
+    // Allow customer_id to be 0 (Other)
+    if (customer_id === undefined || customer_id === null || !items || items.length === 0) {
       return res.status(400).json({
         message: 'Missing required fields: customer_id, or items'
       })
     }
 
     // ===== VALIDATE CUSTOMER EXISTS =====
-    const existingCustomer = await prisma.customer_details.findUnique({
-      where: { id: parseInt(customer_id) }
-    })
-
-    if (!existingCustomer) {
-      return res.status(400).json({
-        message: 'Invalid customer selected - customer does not exist'
+    let existingCustomer = null;
+    if (parseInt(customer_id) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(customer_id) }
       })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
     }
 
     // Validate payment_status and payment_mode
@@ -215,7 +219,32 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     await prisma.bill_tosales.create({
       data: {
         invoice_no: sale.id,
-        customer_id: parseInt(customer_id)
+        billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+        contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+        email: req.body.email_id || existingCustomer?.email || '',
+        billing_address: req.body.address || existingCustomer?.billing_address || '',
+        billing_address2: existingCustomer?.billing_address_2 || '',
+        billing_city: req.body.city || existingCustomer?.billing_city || '',
+        billing_state: req.body.state || existingCustomer?.billing_state || '',
+        billing_state_code: existingCustomer?.billing_state_code || null,
+        billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+        billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+      }
+    })
+
+    // Create shipping details
+    await prisma.shipto.create({
+      data: {
+        invoice_no: sale.id,
+        shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+        shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+        shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+        shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+        shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+        shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+        shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+        shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+        shipping: true
       }
     })
 
@@ -239,7 +268,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         id: sale.id,
         invoice_no: sale.invoice_no,
         total: sale.total,
-        customer_name: existingCustomer.billing_name
+        customer_name: existingCustomer?.billing_name || req.body.customer_name || 'Other'
       }
     })
 
@@ -294,21 +323,24 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // ===== VALIDATION =====
-    if (!invoice_number || !customer_id) {
+    if (!invoice_number || customer_id === undefined || customer_id === null) {
       return res.status(400).json({
         message: 'Missing required fields: invoice_number or customer_id'
       })
     }
 
     // ===== VALIDATE CUSTOMER EXISTS =====
-    const existingCustomer = await prisma.customer_details.findUnique({
-      where: { id: parseInt(customer_id) }
-    })
-
-    if (!existingCustomer) {
-      return res.status(400).json({
-        message: 'Invalid customer selected - customer does not exist'
+    let existingCustomer = null;
+    if (parseInt(customer_id) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(customer_id) }
       })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
     }
 
     // ===== VALIDATE SALE EXISTS =====
@@ -565,10 +597,58 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       // Update customer relationship
       await tx.bill_tosales.upsert({
         where: { invoice_no: sale.id },
-        update: { customer_id: parseInt(customer_id) },
+        update: {
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+        },
         create: {
           invoice_no: sale.id,
-          customer_id: parseInt(customer_id)
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
+          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+        }
+      })
+
+      // Update shipping details
+      await tx.shipto.upsert({
+        where: { invoice_no: sale.id },
+        update: {
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+          shipping: true
+        },
+        create: {
+          invoice_no: sale.id,
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
+          shipping: true
         }
       })
 
@@ -581,7 +661,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         id: result.id,
         invoice_no: result.invoice_no,
         total: result.total,
-        customer_name: existingCustomer.billing_name
+        customer_name: existingCustomer?.billing_name || req.body.customer_name || 'Other'
       }
     })
 

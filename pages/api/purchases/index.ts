@@ -158,7 +158,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             items_total: true,
             freight: true,
             total_taxable_value: true,
-            packing_forwarding_total:true,
+            packing_forwarding_total: true,
             taxrate: true,
             total_cgst: true,
             total_sgst: true,
@@ -276,47 +276,47 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         console.warn('Invalid date format for purchase:', invoice.invoice_date, error)
       }
 
-        const vendorInfo = vendorMap.get(invoice.vendor_id)
-        const staffInfo = staffMap.get(invoice.staff_id)
-        // ✅ Calculate taxrate as total_tax/total_taxable_value (invoice level)
-        const calculatedTaxrate = invoice.total_taxable_value > 0 ? invoice.total_tax / invoice.total_taxable_value : 0;
+      const vendorInfo = vendorMap.get(invoice.vendor_id)
+      const staffInfo = staffMap.get(invoice.staff_id)
+      // ✅ Calculate taxrate as total_tax/total_taxable_value (invoice level)
+      const calculatedTaxrate = invoice.total_taxable_value > 0 ? invoice.total_tax / invoice.total_taxable_value : 0;
 
-        return {
-          id: invoice.id,
-          invoice_no: invoice.invoice_no,
-          bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
-          vendor_id: invoice.vendor_id,
-          vendor_name: vendorInfo?.vendor_name,
-          vendor_address: vendorInfo?.address || '',
-          vendor_gstin: vendorInfo?.tax_id || '',
-          staff_name: staffInfo?.name,
-          staff_phone: staffInfo?.phone || '',
-          staff_email: staffInfo?.email || '',
-          taxrate: calculatedTaxrate, // ✅ Calculated taxrate
-          // OPTIMIZATION: Commented out fields only used in removed expanded details
-          // items_total: invoice.items_total || 0,
-          // freight: invoice.freight || 0,
-          // total_taxable_value: invoice.total_taxable_value,
-          // total_cgst: invoice.total_cgst || 0,
-          // total_sgst: invoice.total_sgst || 0,
-          // total_igst: invoice.total_igst || 0,
-          total_tax: invoice.total_tax || 0, // ✅ Include total_tax for display and filtering
-          packing_forwarding_total: invoice.packing_forwarding_total || 0, // ✅ Include packing/forwarding total
-          // notes: invoice.notes || '',
-          // transport: invoice.transport || '',
-          // items: [], // Never populated in GET response
-          total: invoice.total,
-          invoice_date: invoice.invoice_date, // Raw date - let frontend format it
-          payment_status: invoice.payment_status || 0,
-          payment_mode: invoice.payment_mode || 0,
-          fy: invoice.fy,
-          item_count: itemCountMap.get(invoice.invoice_no) || 0,
-          return_status: invoice.return_status || 0, // ✅ Include return status
-          // OPTIMIZATION: Commented out unused fields - uncomment if needed
-          // type: 'purchase',
-          // formattedDate: formattedDate, // Frontend handles formatting
-          // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
-        }
+      return {
+        id: invoice.id,
+        invoice_no: invoice.invoice_no,
+        bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
+        vendor_id: invoice.vendor_id,
+        vendor_name: vendorInfo?.vendor_name,
+        vendor_address: vendorInfo?.address || '',
+        vendor_gstin: vendorInfo?.tax_id || '',
+        staff_name: staffInfo?.name,
+        staff_phone: staffInfo?.phone || '',
+        staff_email: staffInfo?.email || '',
+        taxrate: calculatedTaxrate, // ✅ Calculated taxrate
+        // OPTIMIZATION: Commented out fields only used in removed expanded details
+        // items_total: invoice.items_total || 0,
+        // freight: invoice.freight || 0,
+        // total_taxable_value: invoice.total_taxable_value,
+        // total_cgst: invoice.total_cgst || 0,
+        // total_sgst: invoice.total_sgst || 0,
+        // total_igst: invoice.total_igst || 0,
+        total_tax: invoice.total_tax || 0, // ✅ Include total_tax for display and filtering
+        packing_forwarding_total: invoice.packing_forwarding_total || 0, // ✅ Include packing/forwarding total
+        // notes: invoice.notes || '',
+        // transport: invoice.transport || '',
+        // items: [], // Never populated in GET response
+        total: invoice.total,
+        invoice_date: invoice.invoice_date, // Raw date - let frontend format it
+        payment_status: invoice.payment_status || 0,
+        payment_mode: invoice.payment_mode || 0,
+        fy: invoice.fy,
+        item_count: itemCountMap.get(invoice.invoice_no) || 0,
+        return_status: invoice.return_status || 0, // ✅ Include return status
+        // OPTIMIZATION: Commented out unused fields - uncomment if needed
+        // type: 'purchase',
+        // formattedDate: formattedDate, // Frontend handles formatting
+        // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+      }
     })
 
     // Apply item count filtering if specified
@@ -434,7 +434,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // - internal_notes: String? (separate from customer-facing notes)
 
     // ===== VALIDATION =====
-    if (!vendor_id || !items || items.length === 0) {
+    // Allow vendor_id to be 0 (Other)
+    if (vendor_id === undefined || vendor_id === null || !items || items.length === 0) {
       return res.status(400).json({
         message: 'Missing required fields: vendor_id, or items'
       })
@@ -468,14 +469,18 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // ===== VALIDATE VENDOR EXISTS =====
     // Vendor must already exist - purchase only stores the relationship
-    const existingVendor = await prisma.vendor_details.findUnique({
-      where: { id: parseInt(vendor_id) }
-    })
-
-    if (!existingVendor) {
-      return res.status(400).json({
-        message: 'Invalid vendor selected - vendor does not exist'
+    // If vendor_id is 0, it's an "Other" vendor, so we skip lookup
+    let existingVendor = null;
+    if (parseInt(vendor_id) !== 0) {
+      existingVendor = await prisma.vendor_details.findUnique({
+        where: { id: parseInt(vendor_id) }
       })
+
+      if (!existingVendor) {
+        return res.status(400).json({
+          message: 'Invalid vendor selected - vendor does not exist'
+        })
+      }
     }
 
     // Convert date to Unix timestamp
@@ -486,7 +491,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
     // ===== CRITICAL FIX: Use database transaction for atomic operations =====
-    // This ensures purchase creation, item creation, and product updates all succeed or all fail together
+    // This ensures purchase creation, item creation, product updates, and bill_to creation all succeed or all fail together
     const purchase = await prisma.$transaction(async (tx) => {
       // Create purchase record within transaction
       const purchase = await tx.purchase.create({
@@ -495,7 +500,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           bill_reference: bill_reference, // Keep bill reference separate from vendor name
           bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
           staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
-          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
+          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK for backward compatibility
           items_total: itemsTotal,
           freight: transport_cost || 0,
           total_taxable_value: itemsTotal,
@@ -529,6 +534,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           // basic_value: basic_value || 0,
           // bill: bill,
           // tax: tax,
+        }
+      });
+
+      // ===== CREATE BILL_TO RECORD =====
+      // Save vendor details to bill_to table for inline editing
+      await tx.bill_to.create({
+        data: {
+          invoice_no: nextInvoiceNo,
+          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
+          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
+          email: req.body.email_id || existingVendor?.email || '',
+          address: req.body.address || existingVendor?.address || '',
+          address2: req.body.address_2 || existingVendor?.address_2 || '',
+          city: req.body.city || existingVendor?.city || '',
+          state: req.body.state || existingVendor?.state || '',
+          state_code: existingVendor?.state_code || null,
+          gstin: req.body.gst_number || existingVendor?.tax_id || '',
+          pin_code: req.body.pin_code || ''
         }
       });
 
@@ -612,7 +635,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         id: purchase.id,
         invoice_no: purchase.invoice_no,
         total: purchase.total,
-        vendor_name: existingVendor.vendor_name
+        vendor_name: existingVendor?.vendor_name || req.body.vendor_name || 'Other'
       }
     })
 
@@ -685,21 +708,24 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
 
     // ===== VALIDATION =====
-    if (!invoice_number || !vendor_id) {
+    if (!invoice_number || vendor_id === undefined || vendor_id === null) {
       return res.status(400).json({
         message: 'Missing required fields: invoice_number or vendor_id'
       })
     }
 
     // ===== VALIDATE VENDOR EXISTS =====
-    const existingVendor = await prisma.vendor_details.findUnique({
-      where: { id: parseInt(vendor_id) }
-    })
-
-    if (!existingVendor) {
-      return res.status(400).json({
-        message: 'Invalid vendor selected - vendor does not exist'
+    let existingVendor = null;
+    if (parseInt(vendor_id) !== 0) {
+      existingVendor = await prisma.vendor_details.findUnique({
+        where: { id: parseInt(vendor_id) }
       })
+
+      if (!existingVendor) {
+        return res.status(400).json({
+          message: 'Invalid vendor selected - vendor does not exist'
+        })
+      }
     }
 
     // ===== VALIDATE PURCHASE EXISTS =====
@@ -762,6 +788,37 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           transport: transport_name || '',
           transport_name: transport_name,
           vehicle_number: vehicle_number
+        }
+      })
+
+      // ===== UPDATE OR CREATE BILL_TO RECORD =====
+      // Update bill_to record for inline editing, or create if it doesn't exist
+      await tx.bill_to.upsert({
+        where: { invoice_no: existingPurchase.invoice_no },
+        update: {
+          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
+          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
+          email: req.body.email_id || existingVendor?.email || '',
+          address: req.body.address || existingVendor?.address || '',
+          address2: req.body.address_2 || existingVendor?.address_2 || '',
+          city: req.body.city || existingVendor?.city || '',
+          state: req.body.state || existingVendor?.state || '',
+          state_code: existingVendor?.state_code || null,
+          gstin: req.body.gst_number || existingVendor?.tax_id || '',
+          pin_code: req.body.pin_code || ''
+        },
+        create: {
+          invoice_no: existingPurchase.invoice_no,
+          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
+          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
+          email: req.body.email_id || existingVendor?.email || '',
+          address: req.body.address || existingVendor?.address || '',
+          address2: req.body.address_2 || existingVendor?.address_2 || '',
+          city: req.body.city || existingVendor?.city || '',
+          state: req.body.state || existingVendor?.state || '',
+          state_code: existingVendor?.state_code || null,
+          gstin: req.body.gst_number || existingVendor?.tax_id || '',
+          pin_code: req.body.pin_code || ''
         }
       })
 

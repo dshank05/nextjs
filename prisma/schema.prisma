@@ -274,32 +274,46 @@ model bank_details {
 }
 
 model bill_to {
-  id         Int     @id @default(autoincrement())
-  invoice_no Int?
-  user_name  String  @db.VarChar(255)
-  address    String  @db.VarChar(255)
-  address2   String? @db.VarChar(255)
-  state      Int?
-  state_code Int?
-  gstin      String? @db.VarChar(50)
+  id          Int     @id @default(autoincrement())
+  invoice_no  Int?    @unique
+  vendor_name String  @db.VarChar(255)
+  contact_no  String? @db.VarChar(20)
+  email       String? @db.VarChar(100)
+  address     String  @db.VarChar(255)
+  address2    String? @db.VarChar(255)
+  city        String? @db.VarChar(100)
+  state       String? @db.VarChar(100)
+  state_code  Int?
+  pin_code    String? @db.VarChar(20)
+  gstin       String? @db.VarChar(50)
 }
 
 model bill_tosales {
-  id          Int               @id @default(autoincrement())
-  invoice_no  Int?              @unique
-  customer_id Int?
-  customer    customer_details? @relation(fields: [customer_id], references: [id])
-
-  @@index([customer_id], map: "bill_tosales_customer_id_fkey")
+  id                 Int     @id @default(autoincrement())
+  invoice_no         Int?    @unique
+  billing_name       String  @db.VarChar(200)
+  contact_no         String? @db.VarChar(20)
+  email              String? @db.VarChar(100)
+  billing_address    String  @db.VarChar(255)
+  billing_address2   String? @db.VarChar(255)
+  billing_city       String? @db.VarChar(100)
+  billing_state      String? @db.VarChar(100)
+  billing_state_code Int?
+  billing_gstin      String? @db.VarChar(30)
 }
 
 model bill_tosalesx {
-  id          Int               @id @default(autoincrement())
-  invoice_no  Int?              @unique
-  customer_id Int?
-  customer    customer_details? @relation(fields: [customer_id], references: [id])
-
-  @@index([customer_id], map: "bill_tosalesx_customer_id_fkey")
+  id                 Int     @id @default(autoincrement())
+  invoice_no         Int?    @unique
+  billing_name       String  @db.VarChar(200)
+  contact_no         String? @db.VarChar(20)
+  email              String? @db.VarChar(100)
+  billing_address    String  @db.VarChar(255)
+  billing_address2   String? @db.VarChar(255)
+  billing_city       String? @db.VarChar(100)
+  billing_state      String? @db.VarChar(100)
+  billing_state_code Int?
+  billing_gstin      String? @db.VarChar(30)
 }
 
 model business_details {
@@ -318,32 +332,28 @@ model business_details {
 }
 
 model customer_details {
-  id                  Int             @id @default(autoincrement())
-  billing_name        String          @db.VarChar(200)
-  billing_address     String          @db.VarChar(255)
-  billing_address_2   String?         @db.VarChar(255)
-  billing_city        String?         @db.VarChar(100)
-  billing_pin_code    String?         @db.VarChar(20)
-  billing_state       String?         @db.VarChar(100)
+  id                  Int     @id @default(autoincrement())
+  billing_name        String  @db.VarChar(200)
+  billing_address     String  @db.VarChar(255)
+  billing_address_2   String? @db.VarChar(255)
+  billing_city        String? @db.VarChar(100)
+  billing_pin_code    String? @db.VarChar(20)
+  billing_state       String? @db.VarChar(100)
   billing_state_code  Int?
-  billing_gstin       String?         @db.VarChar(30)
-  contact_no          String?         @db.VarChar(20)
-  contact_no_2        String?         @db.VarChar(20)
-  contact_no_3        String?         @db.VarChar(20)
-  email               String?         @db.VarChar(100)
-  status              String          @default("Active") @db.VarChar(20)
-  shipping_name       String?         @db.VarChar(200)
-  shipping_address    String          @db.VarChar(255)
-  shipping_address_2  String?         @db.VarChar(255)
-  shipping_city       String?         @db.VarChar(100)
-  shipping_pin_code   String?         @db.VarChar(20)
-  shipping_state      String?         @db.VarChar(100)
+  billing_gstin       String? @db.VarChar(30)
+  contact_no          String? @db.VarChar(20)
+  contact_no_2        String? @db.VarChar(20)
+  contact_no_3        String? @db.VarChar(20)
+  email               String? @db.VarChar(100)
+  status              String  @default("Active") @db.VarChar(20)
+  shipping_name       String? @db.VarChar(200)
+  shipping_address    String  @db.VarChar(255)
+  shipping_address_2  String? @db.VarChar(255)
+  shipping_city       String? @db.VarChar(100)
+  shipping_pin_code   String? @db.VarChar(20)
+  shipping_state      String? @db.VarChar(100)
   shipping_state_code Int?
-  shipping_gstin      String?         @db.VarChar(30)
-  bill_tosales        bill_tosales[]
-  bill_tosalesx       bill_tosalesx[]
-  shiptos             shipto[]
-  shiptoxs            shiptox[]
+  shipping_gstin      String? @db.VarChar(30)
 }
 
 model financial_year {
@@ -486,23 +496,29 @@ model product_company {
 }
 
 model shipto {
-  id          Int               @id @default(autoincrement())
-  invoice_no  Int?              @unique
-  customer_id Int?
-  shipping    Boolean           @default(false)
-  customer    customer_details? @relation(fields: [customer_id], references: [id])
-
-  @@index([customer_id], map: "shipto_customer_id_fkey")
+  id                  Int     @id @default(autoincrement())
+  invoice_no          Int?    @unique
+  shipping_name       String? @db.VarChar(200)
+  shipping_address    String  @db.VarChar(255)
+  shipping_address2   String? @db.VarChar(255)
+  shipping_city       String? @db.VarChar(100)
+  shipping_state      String? @db.VarChar(100)
+  shipping_state_code Int?
+  shipping_gstin      String? @db.VarChar(30)
+  shipping            Boolean @default(false)
 }
 
 model shiptox {
-  id          Int               @id @default(autoincrement())
-  invoice_no  Int?              @unique
-  customer_id Int?
-  shipping    Boolean           @default(false)
-  customer    customer_details? @relation(fields: [customer_id], references: [id])
-
-  @@index([customer_id], map: "shiptox_customer_id_fkey")
+  id                  Int     @id @default(autoincrement())
+  invoice_no          Int?    @unique
+  shipping_name       String? @db.VarChar(200)
+  shipping_address    String  @db.VarChar(255)
+  shipping_address2   String? @db.VarChar(255)
+  shipping_city       String? @db.VarChar(100)
+  shipping_state      String? @db.VarChar(100)
+  shipping_state_code Int?
+  shipping_gstin      String? @db.VarChar(30)
+  shipping            Boolean @default(false)
 }
 
 model transport_details {
@@ -632,7 +648,7 @@ model mechanic {
   id         Int        @id @default(autoincrement())
   name       String     @db.VarChar(255)
   phone      String     @db.VarChar(20)
-  city      String?    @db.VarChar(50)
+  city       String?    @db.VarChar(50)
   status     String     @default("Active") @db.VarChar(20)
   created_at DateTime   @default(now())
   updated_at DateTime   @updatedAt

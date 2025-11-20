@@ -52,22 +52,35 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       }
     })
 
-    // Get customer data via bill_tosalesx relationship
+    // Get complete customer data from customer_details table or bill_tosalesx table for "Other" customers
     let customerData = null
-    const billToSalex = await prisma.bill_tosalesx.findFirst({
-      where: { invoice_no: salex.id },
-      include: { customer: true }
-    })
-
-    if (billToSalex?.customer) {
-      customerData = {
-        id: billToSalex.customer.id,
-        billing_name: billToSalex.customer.billing_name,
-        billing_address: billToSalex.customer.billing_address,
-        billing_gstin: billToSalex.customer.billing_gstin,
-        contact_no: billToSalex.customer.contact_no || '',
-        email: billToSalex.customer.email || ''
+    if (salex.select_customer === 0 || salex.select_customer === null) {
+      // "Other" customer - get data from bill_tosalesx table
+      const billToData = await prisma.bill_tosalesx.findUnique({
+        where: { invoice_no: salex.id }
+      })
+      if (billToData) {
+        customerData = {
+          id: 0,
+          billing_name: billToData.billing_name || '',
+          billing_address: billToData.billing_address || '',
+          billing_gstin: billToData.billing_gstin || '',
+          contact_no: billToData.contact_no || '',
+          email: billToData.email || ''
+        }
       }
+    } else if (salex.select_customer) {
+      customerData = await prisma.customer_details.findUnique({
+        where: { id: salex.select_customer },
+        select: {
+          id: true,
+          billing_name: true,
+          billing_address: true,
+          billing_gstin: true,
+          contact_no: true,
+          email: true
+        }
+      })
     }
 
     // Get transport details
@@ -103,7 +116,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       mechanic_id: salex.mechanic_id || null,
       commission: salex.commission || 0,
       date: salex.invoice_date,  // Keep as number for proper formatting
-      customer_id: billToSalex?.customer_id || null,
+      customer_id: salex.select_customer || null,
       transport_cost: salex.freight || 0,
 
       // Financial summary fields - ensure these are populated
@@ -156,7 +169,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       item_count: salexItems.length,
 
       // Backward compatibility
-      select_customer: billToSalex?.customer_id || null,
+      select_customer: salex.select_customer || null,
       customer: customerData,
       staff: staffData,
       mechanic: mechanicData,
