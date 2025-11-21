@@ -26,6 +26,8 @@ export interface Product {
     selling_price?: number;
     latest_selling_price?: number;
     gst_rate_percentage?: number;
+    latest_purchase_rate?: number; // Latest purchase rate from database
+    opening_rate?: number; // Opening rate from database
 }
 
 export interface FilterOptions {

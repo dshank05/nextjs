@@ -492,6 +492,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // ===== CRITICAL FIX: Use database transaction for atomic operations =====
     // This ensures purchase creation, item creation, product updates, and bill_to creation all succeed or all fail together
+    // Increased timeout to 30 seconds to handle large purchases with many items
     const purchase = await prisma.$transaction(async (tx) => {
       // Create purchase record within transaction
       const purchase = await tx.purchase.create({
@@ -555,20 +556,38 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       });
 
+      // ===== PERFORMANCE FIX: Batch load all products at once =====
+      // Instead of N separate product.findUnique queries, do 1 batch query
+      const productIds = items.map(item => parseInt(item.product_id));
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          product_name: true,
+          product_category_id: true,
+          product_subcategory_id: true,
+          company_id: true,
+          hsn: true
+        }
+      });
+
+      // Create product lookup map for O(1) access
+      const productMap = new Map(products.map(product => [product.id, product]));
+
+      // Validate all products exist
+      for (const item of items) {
+        const productId = parseInt(item.product_id);
+        if (!productMap.has(productId)) {
+          throw new Error(`Product with ID ${productId} not found`);
+        }
+      }
+
       // Create purchase items and update products within the same transaction
       for (const item of items) {
         const productId = parseInt(item.product_id);
+        const product = productMap.get(productId)!;
 
-        // ===== VALIDATION: Ensure product exists =====
-        const product = await tx.product.findUnique({
-          where: { id: productId }
-        });
-
-        if (!product) {
-          throw new Error(`Product with ID ${productId} not found`);
-        }
-
-        // Get product details from database
+        // Get product details from pre-loaded data
         const productName = product.product_name || '';
         const categoryId = product.product_category_id || 0;
         const subcategoryId = product.product_subcategory_id || 0;
@@ -627,6 +646,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       return purchase;
+    }, {
+      timeout: 30000 // 30 second timeout for large purchases
     });
 
     res.status(201).json({
@@ -986,6 +1007,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
 
       return purchase
+    }, {
+      timeout: 30000 // 30 second timeout for large purchases
     })
 
     res.status(200).json({

@@ -115,48 +115,53 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
-    // Create sale record
-    const saleData: any = {
-      invoice_no: nextInvoiceNo,
-      bill_reference: bill_reference || '',
-      commission: commission || 0,
-      items_total: itemsTotal,
-      freight: transport_cost || 0,
-      total_taxable_value: itemsTotal,
-      total_cgst: total_cgst || 0,
-      total_sgst: total_sgst || 0,
-      total_igst: total_igst || 0,
-      total_tax: total_tax || 0,
-      total: calculatedGrandTotal,
-      notes: notes || '',
-      descriptions: descriptions || '',
-      packing_forwarding_qty: packing_forwarding_qty || 0,
-      packing_forwarding_rate: packing_forwarding_rate || 0,
-      packing_forwarding_total: packing_forwarding_total || 0,
-      invoice_date: Math.floor(invoiceDate),
-      payment_status: parsedPaymentStatus,
-      payment_mode: parsedPaymentMode,
-      fy: currentFy
-    };
+    // ===== CRITICAL FIX: Use database transaction for atomic operations =====
+    // This ensures sale creation, item creation, stock updates, and related records all succeed or all fail together
+    // Increased timeout to 30 seconds to handle large sales with many items
+    const sale = await prisma.$transaction(async (tx) => {
+      // Create sale record within transaction
+      const saleData: any = {
+        invoice_no: nextInvoiceNo,
+        bill_reference: bill_reference || '',
+        commission: commission || 0,
+        items_total: itemsTotal,
+        freight: transport_cost || 0,
+        total_taxable_value: itemsTotal,
+        total_cgst: total_cgst || 0,
+        total_sgst: total_sgst || 0,
+        total_igst: total_igst || 0,
+        total_tax: total_tax || 0,
+        total: calculatedGrandTotal,
+        notes: notes || '',
+        descriptions: descriptions || '',
+        packing_forwarding_qty: packing_forwarding_qty || 0,
+        packing_forwarding_rate: packing_forwarding_rate || 0,
+        packing_forwarding_total: packing_forwarding_total || 0,
+        invoice_date: Math.floor(invoiceDate),
+        payment_status: parsedPaymentStatus,
+        payment_mode: parsedPaymentMode,
+        fy: currentFy
+      };
 
-    // Add staff and mechanic relations if provided
-    if (staff_id) {
-      saleData.staff = { connect: { id: parseInt(staff_id) } };
-    }
-    if (mechanic_id) {
-      saleData.mechanic = { connect: { id: parseInt(mechanic_id) } };
-    }
+      // Add staff and mechanic relations if provided
+      if (staff_id) {
+        saleData.staff = { connect: { id: parseInt(staff_id) } };
+      }
+      if (mechanic_id) {
+        saleData.mechanic = { connect: { id: parseInt(mechanic_id) } };
+      }
 
-    const sale = await prisma.invoice.create({
-      data: saleData
-    })
+      const sale = await tx.invoice.create({
+        data: saleData
+      })
 
-    // Create sale items
-    for (const item of items) {
-      // Fetch product details from database
-      const product = await prisma.product.findUnique({
-        where: { id: parseInt(item.product_id) },
+      // ===== PERFORMANCE FIX: Batch load all products at once =====
+      // Instead of N separate product.findUnique queries, do 1 batch query
+      const productIds = items.map(item => parseInt(item.product_id));
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
         select: {
+          id: true,
           product_name: true,
           hsn: true,
           product_category_id: true,
@@ -164,101 +169,120 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           company_id: true,
           stock: true
         }
-      })
+      });
 
-      if (!product) {
-        throw new Error(`Product with ID ${item.product_id} not found`)
+      // Create product lookup map for O(1) access
+      const productMap = new Map(products.map(product => [product.id, product]));
+
+      // Validate all products exist and check stock
+      for (const item of items) {
+        const productId = parseInt(item.product_id);
+        const product = productMap.get(productId);
+
+        if (!product) {
+          throw new Error(`Product with ID ${productId} not found`);
+        }
+
+        // Check stock availability
+        if (product.stock < item.qty) {
+          throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${item.qty}`);
+        }
       }
 
-      // Check stock availability
-      if (product.stock < item.qty) {
-        throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${item.qty}`)
+      // Create sale items and update stock within the same transaction
+      for (const item of items) {
+        const productId = parseInt(item.product_id);
+        const product = productMap.get(productId)!;
+
+        const modelId = item.model_id ? parseInt(item.model_id) : null;
+
+        await tx.invoiceitems.create({
+          data: {
+            invoice_no: sale.id,
+            product_id: productId,
+            name_of_product: item.product_name || product.product_name || '',
+            category_id: product.product_category_id,
+            subcategory_id: product.product_subcategory_id,
+            model_id: modelId,
+            company_id: product.company_id,
+            hsn: product.hsn,
+            part: item.part || '',
+            qty: item.qty,
+            rate: item.rate,
+            subtotal: item.qty * item.rate,
+            gst_percentage: item.gst_percentage || 0,
+            cgst: item.cgst || 0,
+            sgst: item.sgst || 0,
+            igst: item.igst || 0,
+            tax: item.tax || 0,
+            fy: currentFy,
+            invoice_date: invoiceDate
+          }
+        })
+
+        // Validate and convert quantity to number to prevent null/undefined/0 issues
+        const validatedQty = Number(item.qty) || 0;
+
+        // Decrease product stock within transaction
+        await tx.product.update({
+          where: { id: productId },
+          data: {
+            stock: {
+              decrement: validatedQty
+            }
+          }
+        })
       }
 
-      const modelId = item.model_id ? parseInt(item.model_id) : null;
-
-      await prisma.invoiceitems.create({
+      // Create customer relationship within transaction
+      await tx.bill_tosales.create({
         data: {
           invoice_no: sale.id,
-          product_id: parseInt(item.product_id),
-          name_of_product: item.product_name || product.product_name || '',
-          category_id: product.product_category_id,
-          subcategory_id: product.product_subcategory_id,
-          model_id: modelId,
-          company_id: product.company_id,
-          hsn: product.hsn,
-          part: item.part || '',
-          qty: item.qty,
-          rate: item.rate,
-          subtotal: item.qty * item.rate,
-          gst_percentage: item.gst_percentage || 0,
-          cgst: item.cgst || 0,
-          sgst: item.sgst || 0,
-          igst: item.igst || 0,
-          tax: item.tax || 0,
-          fy: currentFy,
-          invoice_date: invoiceDate
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
         }
       })
 
-      // Validate and convert quantity to number to prevent null/undefined/0 issues
-      const validatedQty = Number(item.qty) || 0;
-
-      // Decrease product stock
-      await prisma.product.update({
-        where: { id: parseInt(item.product_id) },
+      // Create shipping details within transaction
+      await tx.shipto.create({
         data: {
-          stock: {
-            decrement: validatedQty
-          }
+          invoice_no: sale.id,
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping: true
         }
       })
-    }
 
-    // Create customer relationship
-    await prisma.bill_tosales.create({
-      data: {
-        invoice_no: sale.id,
-        billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
-        contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
-        email: req.body.email_id || existingCustomer?.email || '',
-        billing_address: req.body.address || existingCustomer?.billing_address || '',
-        billing_address2: existingCustomer?.billing_address_2 || '',
-        billing_city: req.body.city || existingCustomer?.billing_city || '',
-        billing_state: req.body.state || existingCustomer?.billing_state || '',
-        billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
-        billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
-      }
-    })
+      // Create income transaction within transaction
+      await tx.incexp.create({
+        data: {
+          invoice_id: sale.id,
+          user_id: 1, // TODO: Get from authentication context
+          amt: sale.total,
+          payment_mode: sale.payment_mode,
+          type: 0, // 0 = Income
+          incexp_date: new Date().toISOString().split('T')[0],
+          fy: sale.fy,
+          notes: sale.notes || `Sale invoice #${sale.invoice_no}`
+        }
+      })
 
-    // Create shipping details
-    await prisma.shipto.create({
-      data: {
-        invoice_no: sale.id,
-        shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
-        shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
-        shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
-        shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
-        shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
-        shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
-        shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
-        shipping: true
-      }
-    })
-
-    // Create income transaction
-    await prisma.incexp.create({
-      data: {
-        invoice_id: sale.id,
-        user_id: 1, // TODO: Get from authentication context
-        amt: sale.total,
-        payment_mode: sale.payment_mode,
-        type: 0, // 0 = Income
-        incexp_date: new Date().toISOString().split('T')[0],
-        fy: sale.fy,
-        notes: sale.notes || `Sale invoice #${sale.invoice_no}`
-      }
-    })
+      return sale;
+    }, {
+      timeout: 30000 // 30 second timeout for large sales
+    });
 
     res.status(201).json({
       message: 'Sale created successfully',

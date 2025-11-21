@@ -46,6 +46,8 @@ interface Product {
   gst_rate?: number;
   selling_price?: number; // SP from MRP - discount + margin
   gst_rate_percentage?: number; // Actual GST percentage
+  latest_purchase_rate?: number; // Latest purchase rate from database
+  opening_rate?: number; // Opening rate from database
 }
 
 interface PurchaseItem {
@@ -900,7 +902,7 @@ export default function PurchaseCreate() {
               product_name: item.product_name || item.name_of_product || '',
               car_model: item.car_model || '', // Keep as string - mapping to IDs would need complex logic
               category: item.category_id?.toString() || item.category || '', // Store category_id as string for dropdown
-              sub_category: item.subcategory_id?.toString() || null, // Store subcategory_id as string for dropdown
+              sub_category: (item.subcategory_id && item.subcategory_id !== 0) ? item.subcategory_id.toString() : null, // Store subcategory_id as string for dropdown, but treat 0 as null
               company: item.company_id?.toString() || item.company || '', // Store company_id as string for dropdown
               part_number: item.part_number || item.part || '',
               qty: qty,
@@ -1099,13 +1101,17 @@ export default function PurchaseCreate() {
         return;
       }
 
-      // Recalculate tax and total
+      // Calculate tax based on qty × rate (for tax breakdown purposes)
       const subtotal = editingRowData.qty * editingRowData.rate;
       const taxAmount = enableTax ? (subtotal * editingRowData.gst_percentage) / 100 : 0;
+
+      // Use the manually entered total value, don't recalculate it
+      const finalTotal = editingRowData.total || (subtotal + taxAmount);
+
       const updatedItem = {
         ...editingRowData,
         tax: taxAmount,
-        total: subtotal + taxAmount,
+        total: finalTotal, // Preserve manually entered total value
         cgst: enableTax && vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
         sgst: enableTax && vendorStateForTax === 'Uttar Pradesh' ? taxAmount / 2 : 0,
         igst: enableTax && vendorStateForTax !== 'Uttar Pradesh' ? taxAmount : 0
@@ -2233,7 +2239,15 @@ export default function PurchaseCreate() {
                                 className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                                 placeholder="1"
                                 value={editingRowData?.qty || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                onChange={(e) => {
+                                  const newQty = parseInt(e.target.value) || 1;
+                                  setEditingRowData(prev => {
+                                    if (!prev) return null;
+                                    const subtotal = newQty * prev.rate;
+                                    const taxAmount = enableTax ? (subtotal * prev.gst_percentage) / 100 : 0;
+                                    return { ...prev, qty: newQty, total: subtotal + taxAmount };
+                                  });
+                                }}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2248,13 +2262,56 @@ export default function PurchaseCreate() {
                                 inputMode="numeric"
                                 className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                                 placeholder="0.00"
-                                value={templateRow.rate}
+                                value={editingRowData?.rate || ''}
                                 onChange={(e) => {
-                                  setTemplateRow(prev => ({
-                                    ...prev,
-                                    rate: e.target.value
-                                  }));
+                                  const newRate = parseFloat(e.target.value) || 0;
+                                  setEditingRowData(prev => {
+                                    if (!prev) return null;
+                                    const subtotal = prev.qty * newRate;
+                                    const taxAmount = enableTax ? (subtotal * prev.gst_percentage) / 100 : 0;
+                                    return { ...prev, rate: newRate, total: subtotal + taxAmount };
+                                  });
                                 }}
+                                onWheel={(e) => e.preventDefault()}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                  }
+                                }}
+                              />
+                            </td>
+                            {enableTax && (
+                              <td className="px-4 py-3 text-center w-20">
+                                <input
+                                  type="number"
+                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                  placeholder="0%"
+                                  value={editingRowData?.gst_percentage || ''}
+                                  onChange={(e) => {
+                                    const newGst = parseFloat(e.target.value) || 0;
+                                    setEditingRowData(prev => {
+                                      if (!prev) return null;
+                                      const subtotal = prev.qty * prev.rate;
+                                      const taxAmount = enableTax ? (subtotal * newGst) / 100 : 0;
+                                      return { ...prev, gst_percentage: newGst, total: subtotal + taxAmount };
+                                    });
+                                  }}
+                                  onWheel={(e) => e.preventDefault()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                />
+                              </td>
+                            )}
+                            <td className="px-4 py-3 text-center w-20">
+                              <input
+                                type="number"
+                                className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                placeholder="0.00"
+                                value={editingRowData?.total || ''}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, total: parseFloat(e.target.value) || 0 } : null)}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2582,7 +2639,7 @@ export default function PurchaseCreate() {
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
-            rate: product.latest_selling_price?.toString() || '',
+            rate: product.latest_purchase_rate?.toString() || product.opening_rate?.toString() || '',
             gst: product.gst_rate_percentage?.toString() || '0',
             total: ''
           });

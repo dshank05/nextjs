@@ -282,8 +282,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         display_rate: displayRate,
         latest_selling_price: latestSelling,
         calculated_selling_price: calcSelling,
-        latest_purchase_rate: latestPurchase?.rate || null,
-        last_purchase_date: latestPurchase?.date || null,
+        latest_purchase_rate: p.latest_purchase_rate || latestPurchase?.rate || null,
+        last_purchase_date: p.last_purchase_date || latestPurchase?.date || null,
         selling_price: calcSelling,
         gst_rate_percentage: p.gst_rate?.rate || 0,
       };

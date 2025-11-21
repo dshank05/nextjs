@@ -336,47 +336,49 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
       : Math.floor(new Date(invoice_date).getTime() / 1000); // Convert date string to timestamp
 
-    // Process operations sequentially to avoid transaction timeout
-    // 1. Create main invoice record in invoicex table
-    const finalNotes = notes || '';
-    const finalDescriptions = descriptions || '';
+    // ===== CRITICAL FIX: Use database transaction for atomic operations =====
+    // This ensures salex creation, item creation, stock updates, and related records all succeed or all fail together
+    // Increased timeout to 30 seconds to handle large salex with many items
+    const invoice = await prisma.$transaction(async (tx) => {
+      // Create main invoice record in invoicex table within transaction
+      const finalNotes = notes || '';
+      const finalDescriptions = descriptions || '';
 
-    const invoice = await prisma.invoicex.create({
-      data: {
-        invoice_no: nextInvoiceNo,
-        select_customer: parseInt(select_customer),
-        items_total: parseFloat(items_total) || 0,
-        freight: parseFloat(freight) || 0,
-        total_taxable_value: parseFloat(total_taxable_value),
-        taxrate: 0, // No tax for salex
-        total_cgst: 0,
-        total_sgst: 0,
-        total_igst: 0,
-        total_tax: 0,
-        total: parseFloat(total),
-        notes: finalNotes,                          // Separate notes field
-        descriptions: finalDescriptions,             // Separate descriptions field
-        bill_reference: bill_reference || '',        // Bill reference field
-        discount: parseFloat(discount) || 0,         // Invoice-level discount amount
-        invoice_date: invoiceDateTimestamp,
-        updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
-        payment_status: parseInt(payment_status),
-        payment_mode: parseInt(payment_mode),
-        fy: currentFy,
-        staff_details,                             // Optional string field for backward compatibility
-        staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
-        mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
-        commission: commission || 0,               // Optional commission amount
-        packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null, // Packing qty
-        packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null, // Packing rate
-        packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null // Packing total
-      }
-    })
+      const invoice = await tx.invoicex.create({
+        data: {
+          invoice_no: nextInvoiceNo,
+          select_customer: parseInt(select_customer),
+          items_total: parseFloat(items_total) || 0,
+          freight: parseFloat(freight) || 0,
+          total_taxable_value: parseFloat(total_taxable_value),
+          taxrate: 0, // No tax for salex
+          total_cgst: 0,
+          total_sgst: 0,
+          total_igst: 0,
+          total_tax: 0,
+          total: parseFloat(total),
+          notes: finalNotes,                          // Separate notes field
+          descriptions: finalDescriptions,             // Separate descriptions field
+          bill_reference: bill_reference || '',        // Bill reference field
+          discount: parseFloat(discount) || 0,         // Invoice-level discount amount
+          invoice_date: invoiceDateTimestamp,
+          updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '), // Format: YYYY-MM-DD HH:MM:SS
+          payment_status: parseInt(payment_status),
+          payment_mode: parseInt(payment_mode),
+          fy: currentFy,
+          staff_details,                             // Optional string field for backward compatibility
+          staff_id: staff_id ? parseInt(staff_id) : null, // Optional FK to staff table
+          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null, // Optional FK to mechanic table
+          commission: commission || 0,               // Optional commission amount
+          packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null, // Packing qty
+          packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null, // Packing rate
+          packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null // Packing total
+        }
+      })
 
-    try {
       // ===== PHASE 1: TRANSACTION RECORDING =====
-      // Record income transaction in incexpx table
-      await prisma.incexpx.create({
+      // Record income transaction in incexpx table within transaction
+      await tx.incexpx.create({
         data: {
           invoice_id: invoice.id,
           user_id: 1, // TODO: Get from authentication context
@@ -389,35 +391,50 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 2. Create invoice items in invoice_itemsx table and update stock
+      // ===== PERFORMANCE FIX: Batch load all products at once =====
+      // Instead of N separate product.findUnique queries, do 1 batch query
+      const productIds = invoiceItems.map(item => parseInt(item.product_id));
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        select: {
+          id: true,
+          product_name: true,
+          hsn: true,
+          product_category_id: true,
+          product_subcategory_id: true,
+          company_id: true,
+          stock: true
+        }
+      });
+
+      // Create product lookup map for O(1) access
+      const productMap = new Map(products.map(product => [product.id, product]));
+
+      // Validate all products exist and check stock
+      for (const item of invoiceItems) {
+        const productId = parseInt(item.product_id);
+        const product = productMap.get(productId);
+
+        if (!product) {
+          throw new Error(`Product with ID ${productId} not found`);
+        }
+
+        // Check stock availability
+        if (product.stock < item.qty) {
+          throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${item.qty}`);
+        }
+      }
+
+      // Create invoice items in invoice_itemsx table and update stock within transaction
       if (invoiceItems && invoiceItems.length > 0) {
         for (const item of invoiceItems) {
-          // Fetch product details from database
-          const product = await prisma.product.findUnique({
-            where: { id: parseInt(item.product_id) },
-            select: {
-              product_name: true,
-              hsn: true,
-              product_category_id: true,
-              product_subcategory_id: true,
-              company_id: true,
-              stock: true
-            }
-          })
+          const productId = parseInt(item.product_id);
+          const product = productMap.get(productId)!;
 
-          if (!product) {
-            throw new Error(`Product with ID ${item.product_id} not found`)
-          }
-
-          // Check stock availability
-          if (product.stock < item.qty) {
-            throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${item.qty}`)
-          }
-
-          // Create invoice item
-          await prisma.invoice_itemsx.create({
+          // Create invoice item within transaction
+          await tx.invoice_itemsx.create({
             data: {
-              product_id: item.product_id, // Required foreign key to Product table
+              product_id: productId, // Required foreign key to Product table
               invoice_no: invoice.id, // Use the created invoice ID
               name_of_product: item.name_of_product,
               qty: parseFloat(item.qty),
@@ -439,9 +456,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           // Validate and convert quantity to number to prevent null/undefined/0 issues
           const validatedQty = Number(item.qty) || 0;
 
-          // Decrease product stock for salex sales
-          await prisma.product.update({
-            where: { id: parseInt(item.product_id) },
+          // Decrease product stock for salex sales within transaction
+          await tx.product.update({
+            where: { id: productId },
             data: {
               stock: {
                 decrement: validatedQty
@@ -451,8 +468,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // 3. Create customer reference in bill_tosalesx table
-      await prisma.bill_tosalesx.create({
+      // Create customer reference in bill_tosalesx table within transaction
+      await tx.bill_tosalesx.create({
         data: {
           invoice_no: invoice.id,
           billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
@@ -467,8 +484,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 4. Create shipping reference in shiptox table
-      await prisma.shiptox.create({
+      // Create shipping reference in shiptox table within transaction
+      await tx.shiptox.create({
         data: {
           invoice_no: invoice.id,
           shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
@@ -482,9 +499,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 5. Create transport details in transport_detailsx table
+      // Create transport details in transport_detailsx table within transaction
       if (transportDetails) {
-        await prisma.transport_detailsx.create({
+        await tx.transport_detailsx.create({
           data: {
             invoice_id: invoice.id,
             trans_mode: transportDetails.trans_mode || null,
@@ -493,12 +510,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         })
       }
-    } catch (subError) {
-      console.error('Error in dependent operations, invoice created but related records may be incomplete:', subError)
-      // Invoice was created, but some related records failed
-      // You might want to delete the invoice or flag it for review
-      throw subError
-    }
+
+      return invoice;
+    }, {
+      timeout: 30000 // 30 second timeout for large salex
+    });
 
     res.status(201).json({
       message: 'Salex invoice created successfully',
