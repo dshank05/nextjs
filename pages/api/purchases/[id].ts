@@ -37,34 +37,31 @@ export default async function handler(
         })
         const productMap = new Map(products.map(p => [p.id, p.display_name]))
 
-        // Get complete vendor data from vendor_details table or bill_to table for "Other" vendors
-        let vendorData = null
-        if (purchase.vendor_id === 0 || purchase.vendor_id === null) {
-          // "Other" vendor - get data from bill_to table
-          const billToData = await prisma.bill_to.findUnique({
-            where: { invoice_no: purchase.invoice_no }
-          })
-          if (billToData) {
-            vendorData = {
-              id: 0,
-              vendor_name: billToData.vendor_name || '',
-              address: billToData.address || '',
-              tax_id: billToData.gstin || '',
-              contact_no: billToData.contact_no || '',
-              email: billToData.email || ''
-            }
-          }
-        } else if (purchase.vendor_id) {
-          vendorData = await prisma.vendor_details.findUnique({
-            where: { id: purchase.vendor_id }
-          });
-        }
-
-        // ✅ Fetch bill_to data for inline editing
+        // ✅ CRITICAL FIX: Always fetch bill_to data first (contains inline-edited vendor details)
         let billToData = null;
         if (purchase.invoice_no) {
           billToData = await prisma.bill_to.findUnique({
             where: { invoice_no: purchase.invoice_no }
+          });
+        }
+
+        // Get complete vendor data - ALWAYS prioritize bill_to over vendor_details
+        // The bill_to table contains the vendor details specific to THIS purchase (may be edited inline)
+        let vendorData = null
+        if (billToData) {
+          // Use bill_to data (inline-edited vendor details for this specific purchase)
+          vendorData = {
+            id: purchase.vendor_id || 0,
+            vendor_name: billToData.vendor_name || '',
+            address: billToData.address || '',
+            tax_id: billToData.gstin || '',
+            contact_no: billToData.contact_no || '',
+            email: billToData.email || ''
+          }
+        } else if (purchase.vendor_id && purchase.vendor_id !== 0) {
+          // Fallback to vendor_details only if bill_to doesn't exist (backward compatibility)
+          vendorData = await prisma.vendor_details.findUnique({
+            where: { id: purchase.vendor_id }
           });
         }
 
@@ -215,6 +212,45 @@ export default async function handler(
 
         // Start transaction for purchase and item updates
         const result = await prisma.$transaction(async (tx) => {
+          // ===== CRITICAL FIX: Update bill_to table with vendor details =====
+          // Get existing vendor data for fallback
+          let existingVendor = null;
+          if (existingPurchase.vendor_id && existingPurchase.vendor_id !== 0) {
+            existingVendor = await tx.vendor_details.findUnique({
+              where: { id: existingPurchase.vendor_id }
+            });
+          }
+
+          // Update or create bill_to record with vendor details from req.body
+          await tx.bill_to.upsert({
+            where: { invoice_no: existingPurchase.invoice_no },
+            update: {
+              vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
+              contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
+              email: req.body.email_id ?? existingVendor?.email ?? '',
+              address: req.body.address ?? existingVendor?.address ?? '',
+              address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
+              city: req.body.city ?? existingVendor?.city ?? '',
+              state: req.body.state ?? existingVendor?.state ?? '',
+              state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+              gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
+              pin_code: req.body.pin_code ?? ''
+            },
+            create: {
+              invoice_no: existingPurchase.invoice_no,
+              vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? 'Other',
+              contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
+              email: req.body.email_id ?? existingVendor?.email ?? '',
+              address: req.body.address ?? existingVendor?.address ?? '',
+              address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
+              city: req.body.city ?? existingVendor?.city ?? '',
+              state: req.body.state ?? existingVendor?.state ?? '',
+              state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+              gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
+              pin_code: req.body.pin_code ?? ''
+            }
+          });
+
           // Calculate totals from items if provided
           let calculatedItemsTotal = 0;
           let calculatedPackingTotal = 0;

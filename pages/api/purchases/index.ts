@@ -567,16 +567,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await tx.bill_to.create({
         data: {
           invoice_no: nextInvoiceNo,
-          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
-          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
-          email: req.body.email_id || existingVendor?.email || '',
-          address: req.body.address || existingVendor?.address || '',
-          address2: req.body.address_2 || existingVendor?.address_2 || '',
-          city: req.body.city || existingVendor?.city || '',
-          state: req.body.state || existingVendor?.state || '',
-          state_code: req.body.state_code || existingVendor?.state_code || null,
-          gstin: req.body.gst_number || existingVendor?.tax_id || '',
-          pin_code: req.body.pin_code || ''
+
+          vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
+          contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
+          email: req.body.email_id ?? existingVendor?.email ?? '',
+          address: req.body.address ?? existingVendor?.address ?? '',
+          address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
+          city: req.body.city ?? existingVendor?.city ?? '',
+          state: req.body.state ?? existingVendor?.state ?? '',
+          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+          gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
+          pin_code: req.body.pin_code ?? existingVendor?.pin_code ?? ''
         }
       });
 
@@ -838,35 +839,35 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
       // ===== UPDATE OR CREATE BILL_TO RECORD =====
       // Update bill_to record for inline editing, or create if it doesn't exist
+      // ALWAYS save the data from req.body - this represents the vendor details for THIS specific purchase
       await tx.bill_to.upsert({
         where: { invoice_no: existingPurchase.invoice_no },
         update: {
-          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
-          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
-          email: req.body.email_id || existingVendor?.email || '',
-          address: req.body.address || existingVendor?.address || '',
-          address2: req.body.address_2 || existingVendor?.address_2 || '',
-          city: req.body.city || existingVendor?.city || '',
-          state: req.body.state || existingVendor?.state || '',
-          state_code: req.body.state_code || existingVendor?.state_code || null,
-          gstin: req.body.gst_number || existingVendor?.tax_id || '',
-          pin_code: req.body.pin_code || ''
+          vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
+          contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
+          email: req.body.email_id ?? existingVendor?.email ?? '',
+          address: req.body.address ?? existingVendor?.address ?? '',
+          address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
+          city: req.body.city ?? existingVendor?.city ?? '',
+          state: req.body.state ?? existingVendor?.state ?? '',
+          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+          gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
+          pin_code: req.body.pin_code ?? ''
         },
         create: {
           invoice_no: existingPurchase.invoice_no,
-          vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
-          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
-          email: req.body.email_id || existingVendor?.email || '',
-          address: req.body.address || existingVendor?.address || '',
-          address2: req.body.address_2 || existingVendor?.address_2 || '',
-          city: req.body.city || existingVendor?.city || '',
-          state: req.body.state || existingVendor?.state || '',
-          state_code: req.body.state_code || existingVendor?.state_code || null,
-          gstin: req.body.gst_number || existingVendor?.tax_id || '',
-          pin_code: req.body.pin_code || ''
+          vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? 'Other',
+          contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
+          email: req.body.email_id ?? existingVendor?.email ?? '',
+          address: req.body.address ?? existingVendor?.address ?? '',
+          address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
+          city: req.body.city ?? existingVendor?.city ?? '',
+          state: req.body.state ?? existingVendor?.state ?? '',
+          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+          gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
+          pin_code: req.body.pin_code ?? ''
         }
-      })
-
+      });
       // Handle item-level updates using product_id matching
       if (items) {
         // Get existing purchase items for comparison

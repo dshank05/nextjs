@@ -21,11 +21,11 @@ async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { 
-      page = '1', 
-      limit = '50', 
-      search = '', 
-      startDate = '', 
+    const {
+      page = '1',
+      limit = '50',
+      search = '',
+      startDate = '',
       endDate = '',
       fy = ''
     } = req.query
@@ -36,7 +36,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Build where clause
     const where: any = {}
-    
+
     if (search) {
       where.OR = [
         { invoice_no: { contains: search as string } },
@@ -143,7 +143,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     })
   } catch (error) {
     console.error('Invoices fetch error:', error)
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to fetch invoices',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
@@ -305,8 +305,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           tx.bill_to.create({
             data: {
               invoice_no: invoice_no,
-              vendor_name: req.body.customer_name || 'Other',
-              contact_no: req.body.contact_number || '',
+              vendor_name: req.body.customer_name,
+              contact_no: req.body.contact_number,
               email: req.body.email_id || '',
               address: req.body.address || '',
               address2: req.body.address_2 || '',
@@ -375,7 +375,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       if (invoiceItems && invoiceItems.length > 0) {
         // Prepare batch data for invoice items
         const invoiceItemData = invoiceItems.map(item => ({
-          product_id : item.product_id,
+          product_id: item.product_id,
           invoice_no: invoice.id,                     // InvoiceItems.invoice_no (FK to invoice)
           name_of_product: item.name_of_product, // InvoiceItems.name_of_product (product name/ID)
           qty: item.qty,                              // InvoiceItems.qty
@@ -424,7 +424,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       return invoice
-    },{ timeout: 15000 })
+    }, { timeout: 15000 })
 
     console.log('✅ INVOICE CREATED SUCCESSFULLY:', { id: result.id, invoice_no: result.invoice_no, total: result.total });
 
