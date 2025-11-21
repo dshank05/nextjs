@@ -60,7 +60,7 @@ export function SearchableSelect({
   }, [isDropdownOpen]);
 
   const filteredOptions = options.filter(option =>
-    option.name.toLowerCase().includes(searchQuery.toLowerCase())
+    option?.name?.toLowerCase().includes(searchQuery.toLowerCase()) 
   );
 
   const handleOptionSelect = (optionId: string) => {

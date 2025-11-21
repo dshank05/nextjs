@@ -132,16 +132,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
     }
 
     // Check if rack number already exists for this warehouse
-    const existingRack = await (prisma as any).warehouse_racks.findFirst({
+    const rackNumberConflict = await (prisma as any).warehouse_racks.findFirst({
       where: {
         warehouse_id: warehouseId,
         rack_number: rack_number.trim()
       }
     })
 
-    if (existingRack) {
+    if (rackNumberConflict) {
       return res.status(400).json({
-        message: 'A rack with this number already exists in this warehouse'
+        message: 'Rack number already exists in this warehouse'
       })
     }
 
@@ -169,7 +169,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
 
 async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId: number) {
   try {
-    const { id, rack_number, description, status } = req.body
+    const { id, warehouse_id, rack_number, description, status } = req.body
 
     // Validation - require ID
     if (!id) {
@@ -178,23 +178,41 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       })
     }
 
-    // Check if rack exists and belongs to this warehouse
-    const existingRack = await (prisma as any).warehouse_racks.findFirst({
-      where: {
-        id: parseInt(id),
-        warehouse_id: warehouseId
-      }
+    // Determine target warehouse (from body or URL)
+    const targetWarehouseId = warehouse_id ? parseInt(warehouse_id) : warehouseId
+
+    // Check if rack exists (may belong to different warehouse if being moved)
+    const existingRack = await (prisma as any).warehouse_racks.findUnique({
+      where: { id: parseInt(id) }
     })
 
     if (!existingRack) {
       return res.status(404).json({
-        message: 'Rack not found in this warehouse'
+        message: 'Rack not found'
       })
+    }
+
+    // Check if target warehouse exists (if warehouse is being changed)
+    if (warehouse_id && warehouse_id !== warehouseId) {
+      const targetWarehouse = await prisma.warehouse.findUnique({
+        where: { id: targetWarehouseId }
+      })
+
+      if (!targetWarehouse) {
+        return res.status(404).json({
+          message: 'Target warehouse not found'
+        })
+      }
     }
 
     const updateData: any = {}
 
-    // Handle rack_number and description updates (full edit)
+    // Handle warehouse change
+    if (warehouse_id && warehouse_id !== existingRack.warehouse_id) {
+      updateData.warehouse_id = targetWarehouseId
+    }
+
+    // Handle rack_number updates
     if (rack_number !== undefined) {
       if (!rack_number || !rack_number.trim()) {
         return res.status(400).json({
@@ -202,18 +220,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
         })
       }
 
-      // Check for duplicates only if rack_number is being updated
-      const duplicateRack = await (prisma as any).warehouse_racks.findFirst({
+      // Check for rack number conflicts in target warehouse
+      const rackNumberConflict = await (prisma as any).warehouse_racks.findFirst({
         where: {
-          warehouse_id: warehouseId,
+          warehouse_id: targetWarehouseId,
           rack_number: rack_number.trim(),
           id: { not: parseInt(id) }
         }
       })
 
-      if (duplicateRack) {
+      if (rackNumberConflict) {
         return res.status(400).json({
-          message: 'Another rack with this number already exists in this warehouse'
+          message: 'Rack number already exists in this warehouse'
         })
       }
 

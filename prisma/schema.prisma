@@ -236,11 +236,9 @@ model Purchaseitems {
   igst                  Float?
   sgst                  Float?
   tax                   Float?
-  vendor                vendor_details?         @relation(fields: [vendor_id], references: [id])
   purchase_return_items purchase_return_items[]
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
-  @@index([vendor_id], map: "purchase_items_vendor_id_fkey")
   @@map("purchase_items")
 }
 
@@ -554,21 +552,20 @@ model user {
 }
 
 model vendor_details {
-  id            Int             @id @default(autoincrement())
-  vendor_name   String          @db.VarChar(255)
-  address       String?         @db.VarChar(255)
-  address_2     String?         @db.VarChar(255)
-  city          String?         @db.VarChar(100)
-  pin_code      String?         @db.VarChar(20)
-  state         String?
-  state_code    Int?
-  contact_no    String?         @db.VarChar(20)
-  contact_no_2  String?         @db.VarChar(20)
-  contact_no_3  String?         @db.VarChar(20)
-  email         String?         @db.VarChar(100)
-  status        String          @default("Active") @db.VarChar(20)
-  tax_id        String?         @db.VarChar(50)
-  purchaseItems Purchaseitems[]
+  id          Int     @id @default(autoincrement())
+  vendor_name String  @db.VarChar(255)
+  address     String? @db.VarChar(255)
+  address_2   String? @db.VarChar(255)
+  city        String? @db.VarChar(100)
+  pin_code    String? @db.VarChar(20)
+  state       String?
+  state_code  Int?
+  contact_no  String? @db.VarChar(20)
+  contact_no_2 String? @db.VarChar(20)
+  contact_no_3 String? @db.VarChar(20)
+  email       String? @db.VarChar(100)
+  status      String  @default("Active") @db.VarChar(20)
+  tax_id      String? @db.VarChar(50)
 
   @@index([vendor_name], map: "idx_vendor_name")
   @@index([contact_no], map: "idx_vendor_contact_no")

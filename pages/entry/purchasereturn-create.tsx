@@ -746,6 +746,7 @@ export default function PurchaseReturnCreatePage() {
                     value={selectedVendor?.contact_no || ''}
                     className="input w-full bg-slate-700"
                     disabled
+                    maxLength={10}
                   />
                 </div>
                 <div>

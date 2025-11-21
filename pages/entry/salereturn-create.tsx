@@ -907,6 +907,7 @@ export default function SaleReturnCreatePage() {
                     className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     readOnly
                     disabled
+                    maxLength={10}
                   />
                 </div>
                 <div>

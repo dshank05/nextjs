@@ -185,7 +185,7 @@ export default function PurchaseCreate() {
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
   // State for tax toggle
-  const [enableTax, setEnableTax] = useState(true);
+  const [enableTax, setEnableTax] = useState(false);
 
   // State for editing existing products
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -208,6 +208,28 @@ export default function PurchaseCreate() {
   // State for states data
   const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
 
+  // Auto-calculate total when qty, rate, or gst changes
+  useEffect(() => {
+    const qty = parseFloat(templateRow.qty) || 0;
+    const rate = parseFloat(templateRow.rate) || 0;
+    const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+
+    if (qty > 0 && rate > 0) {
+      const subtotal = qty * rate;
+      const taxAmount = (subtotal * gstPercent) / 100;
+      const total = subtotal + taxAmount;
+
+      setTemplateRow(prev => ({
+        ...prev,
+        total: total.toFixed(2)
+      }));
+    } else {
+      setTemplateRow(prev => ({
+        ...prev,
+        total: ''
+      }));
+    }
+  }, [templateRow.qty, templateRow.rate, templateRow.gst, enableTax]);
 
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
@@ -310,11 +332,6 @@ export default function PurchaseCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
-
-  // Refetch products when car model filter changes
-  useEffect(() => {
-    fetchProducts(selectedPanelCarModel);
-  }, [selectedPanelCarModel]);
 
   // Function to generate dynamic product name in new format: UID CAR MODEL CATEGORY [SUBCATEGORY] COMPANY [PARTNUMBER]
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[], partNumber?: string): string => {
@@ -419,30 +436,10 @@ export default function PurchaseCreate() {
     });
   };
 
-
-
-  // Handle product search with normalized text
+  // Handle product search and car model filtering via API calls
   useEffect(() => {
-    if (productSearchTerm.trim()) {
-      const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-      const filtered = products.filter(product => {
-        const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
-        const productIdString = product.id.toString();
-        const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const partNoNormalized = product.part_no?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        // Also search by product UID (ID)
-        return productNameNormalized.includes(searchTermNormalized) ||
-          productIdString.includes(searchTermNormalized) ||
-          displayNameNormalized.includes(searchTermNormalized) ||
-          partNoNormalized.includes(searchTermNormalized) ||
-          companyNameNormalized.includes(searchTermNormalized);
-      });
-      setSearchedProducts(filtered);
-    } else {
-      setSearchedProducts(products);
-    }
-  }, [productSearchTerm, products]);
+    fetchProducts(selectedPanelCarModel, productSearchTerm);
+  }, [productSearchTerm, selectedPanelCarModel]);
 
   // Auto-product selection (simplified version - removed as per user request)
   // The user wanted to remove complex auto-selection logic, so this effect is now simplified
@@ -571,10 +568,11 @@ export default function PurchaseCreate() {
     }
   };
 
-  const fetchProducts = async (modelFilter: string = '') => {
+  const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
+      if (searchTerm) params.append('search', searchTerm);
       const url = `/api/products?${params.toString()}`;
       const response = await fetch(url);
       if (response.ok) {
@@ -625,7 +623,7 @@ export default function PurchaseCreate() {
         // Transform states data to match SearchableSelect format
         const formattedStates = data.states.map((state: any) => ({
           id: state.id.toString(),
-          name: `${state.state_name} (${state.code})`,
+          name: state.state_name || state.name,
           code: state.code
         }));
         setStates(formattedStates);
@@ -724,14 +722,25 @@ export default function PurchaseCreate() {
         address_2: purchase.bill_to.address2 || prev.address_2,
         city: purchase.bill_to.city || prev.city,
         state: purchase.bill_to.state || prev.state,
+        state_code: purchase.bill_to.state_code || prev.state_code,
         gst_number: purchase.bill_to.gstin || prev.gst_number,
+        pin_code: purchase.bill_to.pin_code || prev.pin_code,
       }));
     }
 
-    // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
-    if (purchase.vendor_id) {
-      setSelectedVendorId(purchase.vendor_id.toString());
-      setVendorIdToSave(purchase.vendor_id);
+    // Set vendor data - handle both regular vendors and "Other" vendor (vendor_id = 0)
+    if (purchase.vendor_id !== undefined && purchase.vendor_id !== null) {
+      if (purchase.vendor_id === 0) {
+        // "Other" vendor selected
+        setSelectedVendorId('0');
+        setVendorIdToSave(0);
+        setIsOtherVendorSelected(true);
+      } else {
+        // Regular vendor
+        setSelectedVendorId(purchase.vendor_id.toString());
+        setVendorIdToSave(purchase.vendor_id);
+        setIsOtherVendorSelected(false);
+      }
     }
 
     // Convert purchase items to local format
@@ -1217,6 +1226,12 @@ export default function PurchaseCreate() {
     if (isOtherVendorSelected && !formData.vendor_name.trim()) {
       newErrors.vendor_name = 'Vendor name is required';
     }
+    if (isOtherVendorSelected && !formData.state.trim()) {
+      newErrors.state = 'State is required';
+    }
+    if (isOtherVendorSelected && !formData.contact_number.trim()) {
+      newErrors.contact_number = 'Phone number is required';
+    }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
     }
@@ -1525,28 +1540,17 @@ export default function PurchaseCreate() {
                     }}
                     placeholder="Select Vendor"
                   />
-                  {isOtherVendorSelected && (
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL VENDOR NAME *</label>
-                      <input
-                        type="text"
-                        value={formData.vendor_name}
-                        onChange={(e) => handleInputChange('vendor_name', e.target.value)}
-                        className="input w-full"
-                        placeholder="Enter vendor name"
-                      />
-                    </div>
-                  )}
                   {errors.vendor_name && <p className="text-red-400 text-xs mt-1">{errors.vendor_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER{isOtherVendorSelected ? ' *' : ''}</label>
                   <input
                     type="text"
                     value={formData.contact_number || selectedVendor?.contact_no || ''}
                     onChange={(e) => handleInputChange('contact_number', e.target.value)}
                     className="input w-full"
                     placeholder="Enter contact number"
+                    maxLength={10}
                   />
                 </div>
                 <div>
@@ -1570,7 +1574,19 @@ export default function PurchaseCreate() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className={`grid grid-cols-1 ${isOtherVendorSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
+                {isOtherVendorSelected && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL VENDOR NAME *</label>
+                    <input
+                      type="text"
+                      value={formData.vendor_name}
+                      onChange={(e) => handleInputChange('vendor_name', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter vendor name"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
@@ -1602,16 +1618,12 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE{isOtherVendorSelected ? ' *' : ''}</label>
                   <SearchableSelect
-                  
-                    options={[
-                      { id: '', name: 'Select State' },
-                      ...states.map((state) => ({
-                        id: state.id,
-                        name: state.name
-                      }))
-                    ]}
+                    options={states.map((state) => ({
+                      id: state.id,
+                      name: state.name
+                    }))}
                     selectedValue={(() => {
                       // Find the state ID that matches the current state code
                       if (selectedVendor?.state_code) {
@@ -2386,7 +2398,7 @@ export default function PurchaseCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      <tr>
+                      {/* <tr>
                         <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
@@ -2394,7 +2406,7 @@ export default function PurchaseCreate() {
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
-                      </tr>
+                      </tr> */}
                       <tr className="border-t border-slate-600">
                         <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
@@ -2488,9 +2500,14 @@ export default function PurchaseCreate() {
                   <input
                     type="number"
                     value={formData.packing_forwarding_total}
-                    readOnly
-                    disabled
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                    onWheel={(e) => e.preventDefault()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="input w-full"
                     placeholder="0.00"
                   />
                 </div>
@@ -2632,7 +2649,7 @@ export default function PurchaseCreate() {
         filterOptions={filterOptions}
         selectedCarModel={selectedPanelCarModel}
         onCarModelSelection={setSelectedPanelCarModel}
-        searchedProducts={searchedProducts}
+        searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
         onProductSelect={(product) => {

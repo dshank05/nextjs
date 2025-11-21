@@ -496,6 +496,7 @@ export default function SalexReturnCreatePage() {
                     value={formData.contact_number}
                     className="input w-full bg-slate-700"
                     disabled
+                    maxLength={10}
                   />
                 </div>
                 <div>

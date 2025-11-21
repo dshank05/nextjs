@@ -305,6 +305,32 @@ export default function InvoiceCreate() {
   // State for discount toggle
   const [enableDiscount, setEnableDiscount] = useState(false);
 
+  // Auto-calculate total when qty, rate, gst, or discount changes
+  useEffect(() => {
+    const qty = parseFloat(templateRow.qty) || 0;
+    const rate = parseFloat(templateRow.rate) || 0;
+    const gstPercent = parseFloat(templateRow.gst) || 0;
+    const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+
+    if (qty > 0 && rate > 0) {
+      const subtotal = qty * rate;
+      const discountAmount = (subtotal * discountPercent) / 100;
+      const taxableAmount = subtotal - discountAmount;
+      const taxAmount = (taxableAmount * gstPercent) / 100;
+      const total = taxableAmount + taxAmount;
+
+      setTemplateRow(prev => ({
+        ...prev,
+        total: total.toFixed(2)
+      }));
+    } else {
+      setTemplateRow(prev => ({
+        ...prev,
+        total: ''
+      }));
+    }
+  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount]);
+
   // State for selected customer details (fetched on-demand, not stored in formData)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -657,39 +683,7 @@ export default function InvoiceCreate() {
 
 
 
-  // Filter products based on car model selection and search term
-  useEffect(() => {
-    let filtered = products;
 
-    // Apply car model filter if any selected
-    if (selectedPanelCarModel) {
-      filtered = filtered.filter(product => {
-        if (!product.car_model_ids) return false;
-        const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
-        return productModelIds.includes(selectedPanelCarModel);
-      });
-    }
-
-    // Apply text search filter
-    if (productSearchTerm.trim()) {
-      const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-      filtered = filtered.filter(product => {
-        const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
-        const productIdString = product.id.toString();
-        const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const partNoNormalized = product.part_no?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        // Also search by product UID (ID)
-        return productNameNormalized.includes(searchTermNormalized) ||
-          productIdString.includes(searchTermNormalized) ||
-          displayNameNormalized.includes(searchTermNormalized) ||
-          partNoNormalized.includes(searchTermNormalized) ||
-          companyNameNormalized.includes(searchTermNormalized);
-      });
-    }
-
-    setSearchedProducts(filtered);
-  }, [productSearchTerm, products, selectedPanelCarModel]);
 
   // Calculate and update GST totals whenever selectedProducts change
   useEffect(() => {
@@ -772,10 +766,11 @@ export default function InvoiceCreate() {
     }
   };
 
-  const fetchProducts = async (modelFilter: string = '') => {
+  const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
+      if (searchTerm) params.append('search', searchTerm);
       const url = `/api/products?${params.toString()}`;
       const response = await fetch(url);
       if (response.ok) {
@@ -812,7 +807,7 @@ export default function InvoiceCreate() {
         // Transform states data to match SearchableSelect format
         const formattedStates = data.states.map((state: any) => ({
           id: state.id.toString(),
-          name: `${state.state_name} (${state.code})`,
+          name: state.state_name || state.name,
           code: state.code
         }));
         setStates(formattedStates);
@@ -1011,6 +1006,21 @@ export default function InvoiceCreate() {
 
         console.log('📝 SETTING FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
+
+        // Override with bill_to data if available (for inline editing of "Other" customers)
+        if (data.billingDetails) {
+          setFormData(prev => ({
+            ...prev,
+            customer_name: data.billingDetails.customer_name || prev.customer_name,
+            contact_number: data.billingDetails.contact_number || prev.contact_number,
+            email_id: data.billingDetails.email_id || prev.email_id,
+            address: data.billingDetails.address || prev.address,
+            city: data.billingDetails.city || prev.city,
+            state: data.billingDetails.state || prev.state,
+            gst_number: data.billingDetails.gst_number || prev.gst_number,
+            pin_code: data.billingDetails.pin_code || prev.pin_code,
+          }));
+        }
 
         // Set customer data - find customer in loaded customers list for proper state codes
         if (invoice.select_customer || invoice.customer_id) {  // API field is select_customer, not customer_id
@@ -1489,6 +1499,15 @@ export default function InvoiceCreate() {
       newErrors.customer_name = 'Please select a customer';
       console.log('❌ NO CUSTOMER SELECTED');
     }
+    if (isOtherCustomerSelected && !formData.customer_name.trim()) {
+      newErrors.customer_name = 'Customer name is required when "Other" is selected';
+    }
+    if (isOtherCustomerSelected && !formData.state.trim()) {
+      newErrors.state = 'State is required';
+    }
+    if (isOtherCustomerSelected && !formData.contact_number.trim()) {
+      newErrors.contact_number = 'Phone number is required';
+    }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
       console.log('❌ NO PRODUCTS SELECTED');
@@ -1885,6 +1904,7 @@ export default function InvoiceCreate() {
                     placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
                     readOnly={!isOtherCustomerSelected}
                     disabled={!isOtherCustomerSelected}
+                    maxLength={10}
                   />
                 </div>
                 <div>
@@ -2773,7 +2793,7 @@ export default function InvoiceCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      <tr>
+                      {/* <tr>
                         <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
@@ -2781,7 +2801,7 @@ export default function InvoiceCreate() {
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
-                      </tr>
+                      </tr> */}
                       {totalDiscount > 0 && (
                         <tr>
                           <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
@@ -2970,9 +2990,14 @@ export default function InvoiceCreate() {
                         type="number"
 
                         value={formData.packing_forwarding_total}
-                        readOnly
-                        disabled
-                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="input w-full"
                         placeholder="0.00"
                       />
                     </div>
@@ -3067,7 +3092,7 @@ export default function InvoiceCreate() {
         filterOptions={memoizedFilterOptions}
         selectedCarModel={selectedPanelCarModel}
         onCarModelSelection={setSelectedPanelCarModel}
-        searchedProducts={searchedProducts}
+        searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
         onProductSelect={(product) => {

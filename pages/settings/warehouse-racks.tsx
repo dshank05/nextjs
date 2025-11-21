@@ -5,6 +5,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
 
 interface WarehouseRack {
   id: number;
@@ -237,12 +238,14 @@ export default function WarehouseRacks() {
         url = `/api/warehouses/${pendingData.warehouse_id}/racks`;
       }
 
+      const requestBody = editingRack ? { ...pendingData, warehouse_id: pendingData.warehouse_id } : pendingData;
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(pendingData),
+        body: JSON.stringify(requestBody),
       });
 
       if (response.ok) {
@@ -478,20 +481,18 @@ export default function WarehouseRacks() {
             <form onSubmit={handleSubmit}>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Warehouse *</label>
-                <select
-                  value={formData.warehouse_id}
-                  onChange={(e) => handleWarehouseChange(e.target.value)}
-                  className="select w-full"
-                  style={editingRack ? { pointerEvents: 'none', opacity: 0.6 } : {}}
-                  required
-                >
-                  <option value="">Select Warehouse</option>
-                  {warehouses.map((warehouse) => (
-                    <option key={warehouse.id} value={warehouse.id}>
-                      {warehouse.name} - {warehouse.location}
-                    </option>
-                  ))}
-                </select>
+                <SearchableSelect
+                  options={[
+                    { id: '', name: 'Select Warehouse' },
+                    ...warehouses.map((warehouse) => ({
+                      id: warehouse.id.toString(),
+                      name: `${warehouse.name} - ${warehouse.location}`
+                    }))
+                  ]}
+                  selectedValue={formData.warehouse_id || null}
+                  onSelectionChange={(value) => handleWarehouseChange(value || '')}
+                  placeholder="Select Warehouse"
+                />
               </div>
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Rack Number *</label>

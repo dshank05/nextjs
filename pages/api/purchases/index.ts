@@ -450,6 +450,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // ===== VALIDATE "OTHER" VENDOR FIELDS =====
+    // When vendor_id is 0 (Other), state and contact_number are mandatory
+    if (parseInt(vendor_id) === 0) {
+      if (!req.body.state || req.body.state.trim() === '') {
+        return res.status(400).json({
+          message: 'State is required for "Other" vendor selection'
+        })
+      }
+      if (!req.body.contact_number || req.body.contact_number.trim() === '') {
+        return res.status(400).json({
+          message: 'Phone number is required for "Other" vendor selection'
+        })
+      }
+    }
+
     // ===== RATE VALIDATION =====
     // Validate all purchase items have valid rates > 0
     for (const item of items) {
@@ -553,15 +568,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: {
           invoice_no: nextInvoiceNo,
           vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
-          contact_no: req.body.contact_no || existingVendor?.contact_no || '',
-          email: req.body.email || existingVendor?.email || '',
+          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
+          email: req.body.email_id || existingVendor?.email || '',
           address: req.body.address || existingVendor?.address || '',
-          address2: req.body.address2 || existingVendor?.address_2 || '',
+          address2: req.body.address_2 || existingVendor?.address_2 || '',
           city: req.body.city || existingVendor?.city || '',
           state: req.body.state || existingVendor?.state || '',
           state_code: req.body.state_code || existingVendor?.state_code || null,
           gstin: req.body.gst_number || existingVendor?.tax_id || '',
-          pin_code: req.body.pin_code || existingVendor?.pin_code || ''
+          pin_code: req.body.pin_code || ''
         }
       });
 
@@ -833,7 +848,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           address2: req.body.address_2 || existingVendor?.address_2 || '',
           city: req.body.city || existingVendor?.city || '',
           state: req.body.state || existingVendor?.state || '',
-          state_code: existingVendor?.state_code || null,
+          state_code: req.body.state_code || existingVendor?.state_code || null,
           gstin: req.body.gst_number || existingVendor?.tax_id || '',
           pin_code: req.body.pin_code || ''
         },
@@ -846,7 +861,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           address2: req.body.address_2 || existingVendor?.address_2 || '',
           city: req.body.city || existingVendor?.city || '',
           state: req.body.state || existingVendor?.state || '',
-          state_code: existingVendor?.state_code || null,
+          state_code: req.body.state_code || existingVendor?.state_code || null,
           gstin: req.body.gst_number || existingVendor?.tax_id || '',
           pin_code: req.body.pin_code || ''
         }

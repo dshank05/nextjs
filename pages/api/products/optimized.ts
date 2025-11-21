@@ -191,16 +191,16 @@ async function handler(
     }
 
     // Handle single car model selection
+    let hasModelFilter = false;
     if (model && model !== '') {
       const selectedModelId = (model as string).trim();
       if (selectedModelId) {
-        // Use raw SQL for array contains check
+        hasModelFilter = true;
       }
     }
 
     // Determine if we need special handling for complex filters
-    // TEMPORARILY DISABLE MODEL FILTERING FOR DEBUGGING
-    const needsSpecialHandling = lowStock === 'true' || false || carModelId;
+    const needsSpecialHandling = lowStock === 'true' || carModelId || hasModelFilter;
 
     console.log('[PRODUCTS OPTIMIZED API] Query setup complete:', {
       where,

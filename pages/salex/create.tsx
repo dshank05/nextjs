@@ -285,6 +285,30 @@ export default function InvoiceCCreate() {
   // State for discount toggle
   const [enableDiscount, setEnableDiscount] = useState(false);
 
+  // Auto-calculate total when qty, rate, gst, or discount changes
+  useEffect(() => {
+    const qty = parseFloat(templateRow.qty) || 0;
+    const rate = parseFloat(templateRow.rate) || 0;
+    const gstPercent = parseFloat(templateRow.gst) || 0; // Always 0 for salex but kept for consistency
+    const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+
+    if (qty > 0 && rate > 0) {
+      const subtotal = qty * rate;
+      const discountAmount = (subtotal * discountPercent) / 100;
+      const total = subtotal - discountAmount; // No tax added for salex
+
+      setTemplateRow(prev => ({
+        ...prev,
+        total: total.toFixed(2)
+      }));
+    } else {
+      setTemplateRow(prev => ({
+        ...prev,
+        total: ''
+      }));
+    }
+  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount]);
+
   // State for selected customer details (fetched on-demand, not stored in formData)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
@@ -559,40 +583,10 @@ export default function InvoiceCCreate() {
     fetchSubcategoriesForTable(productRowFilters.category);
   }, [productRowFilters.category]);
 
-  // Handle product search with normalized text and filter by car models
+  // Handle product search and car model filtering via API calls
   useEffect(() => {
-    let filtered = products.filter(product => {
-      // Car model filter
-      if (selectedPanelCarModel) {
-        if (!product.car_model_ids || !product.car_model_ids.trim()) {
-          return false; // If no car models and filter is active, exclude product
-        }
-        const productModelIds = product.car_model_ids.split(',').map(id => id.trim());
-        const hasMatchingModel = productModelIds.includes(selectedPanelCarModel);
-        if (!hasMatchingModel) return false;
-      }
-
-      // Text search filter
-      if (productSearchTerm.trim()) {
-        const searchTermNormalized = productSearchTerm.replace(/[\s\-\_]/g, '').toLowerCase();
-        const productNameNormalized = product.product_name.replace(/[\s\-\_]/g, '').toLowerCase();
-        const productIdString = product.id.toString();
-        const displayNameNormalized = product.display_name?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const partNoNormalized = product.part_no?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        const companyNameNormalized = product.company?.replace(/[\s\-\_]/g, '').toLowerCase() || '';
-        // Also search by product UID (ID)
-        return productNameNormalized.includes(searchTermNormalized) ||
-          productIdString.includes(searchTermNormalized) ||
-          displayNameNormalized.includes(searchTermNormalized) ||
-          partNoNormalized.includes(searchTermNormalized) ||
-          companyNameNormalized.includes(searchTermNormalized);
-      }
-
-      return true;
-    });
-
-    setSearchedProducts(filtered);
-  }, [productSearchTerm, products, selectedPanelCarModel, filterOptions.models]);
+    fetchProducts(selectedPanelCarModel, productSearchTerm);
+  }, [productSearchTerm, selectedPanelCarModel]);
 
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
@@ -658,10 +652,7 @@ export default function InvoiceCCreate() {
     }
   }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
 
-  // Refetch products when car model filter changes
-  useEffect(() => {
-    fetchProducts(selectedPanelCarModel);
-  }, [selectedPanelCarModel]);
+
 
   // Auto-calculate packing and forwarding total
   useEffect(() => {
@@ -730,10 +721,11 @@ export default function InvoiceCCreate() {
     }
   };
 
-  const fetchProducts = async (modelFilter: string = '') => {
+  const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
+      if (searchTerm) params.append('search', searchTerm);
       const url = `/api/products?${params.toString()}`;
       const response = await fetch(url);
       if (response.ok) {
@@ -770,9 +762,20 @@ export default function InvoiceCCreate() {
       const response = await fetch('/api/states');
       if (response.ok) {
         const data = await response.json();
-        setStates(data.states || []);
+        // Transform states data to match SearchableSelect format
+        const formattedStates = data.states.map((state: any) => ({
+          id: state.id.toString(),
+          name: state.state_name || state.name,
+          code: state.code
+        }));
+        setStates(formattedStates);
+      } else {
+        showSnackbar('error', 'Failed to load states. Please try again.');
       }
-    } catch (error) { console.error('Error fetching states:', error); }
+    } catch (error) {
+      console.error('Error fetching states:', error);
+      showSnackbar('error', 'Failed to load states. Please try again.');
+    }
   };
 
   const fetchLastInvoiceNumber = async () => {
@@ -1217,6 +1220,12 @@ export default function InvoiceCCreate() {
     if (isOtherCustomerSelected && !formData.customer_name.trim()) {
       newErrors.customer_name = 'Customer name is required when "Other" is selected';
     }
+    if (isOtherCustomerSelected && !formData.state.trim()) {
+      newErrors.state = 'State is required';
+    }
+    if (isOtherCustomerSelected && !formData.contact_number.trim()) {
+      newErrors.contact_number = 'Phone number is required';
+    }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
     }
@@ -1554,6 +1563,7 @@ export default function InvoiceCCreate() {
                     placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
                     readOnly={!isOtherCustomerSelected}
                     disabled={!isOtherCustomerSelected}
+                    maxLength={10}
                   />
                 </div>
                 <div>
@@ -1621,7 +1631,7 @@ export default function InvoiceCCreate() {
                       { id: '', name: 'Select State' },
                       ...states.map((state) => ({
                         id: state.id,
-                        name: `${state.state_name} (${state.code})`
+                        name: state.name
                       }))
                     ]}
                     selectedValue={(() => {
@@ -1633,7 +1643,7 @@ export default function InvoiceCCreate() {
                       // Fallback to state name matching if no state code
                       if (formData.state || selectedCustomer?.billing_state) {
                         const currentStateName = formData.state || selectedCustomer?.billing_state || '';
-                        const matchingState = states.find(state => state.state_name === currentStateName);
+                        const matchingState = states.find(state => state.name === currentStateName);
                         return matchingState ? matchingState.id : '';
                       }
                       return '';
@@ -1643,12 +1653,10 @@ export default function InvoiceCCreate() {
                         // Find the state name from the selected ID
                         const selectedState = states.find(state => state.id === value);
                         if (selectedState) {
-                          handleInputChange('state', selectedState.state_name);
-                          handleInputChange('state_code', selectedState.code.toString());
+                          handleInputChange('state', selectedState.name);
                         }
                       } else {
                         handleInputChange('state', '');
-                        handleInputChange('state_code', undefined);
                       }
                     }}
                     placeholder="Select State"
@@ -2394,7 +2402,7 @@ export default function InvoiceCCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      <tr>
+                      {/* <tr>
                         <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
@@ -2402,8 +2410,8 @@ export default function InvoiceCCreate() {
                         <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
-                      </tr>
-                      <tr className="border-t border-slate-600">
+                      </tr> */}
+                      {/* <tr className="border-t border-slate-600">
                         <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
                           GRAND TOTAL
@@ -2411,7 +2419,7 @@ export default function InvoiceCCreate() {
                         <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
                           ₹{grandTotal.toFixed(2)}
                         </td>
-                      </tr>
+                      </tr> */}
                       <tr className="border-t border-slate-600">
                         <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
@@ -2545,11 +2553,16 @@ export default function InvoiceCCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                       <input
                         type="number"
-                        
+
                         value={formData.packing_forwarding_total}
-                        readOnly
-                        disabled
-                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="input w-full"
                         placeholder="0.00"
                       />
                     </div>
@@ -2639,7 +2652,7 @@ export default function InvoiceCCreate() {
         filterOptions={memoizedFilterOptions}
         selectedCarModel={selectedPanelCarModel}
         onCarModelSelection={setSelectedPanelCarModel}
-        searchedProducts={searchedProducts}
+        searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
         onProductSelect={(product) => {

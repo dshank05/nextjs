@@ -71,12 +71,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // OPTIMIZED: Get customer names and item counts in batch queries
     const invoiceIds = invoices.map((inv: { id: any }) => inv.id)
-    
-    const [customerData, itemCounts] = await Promise.all([
-      // Get all customer names by joining with customer_details
-      prisma.bill_tosales.findMany({
+    const customerIds = Array.from(new Set(invoices.map((inv: any) => inv.select_customer).filter(Boolean)))
+
+    const [customerData, billToData, itemCounts] = await Promise.all([
+      // Get customer names for regular customers
+      customerIds.length > 0 ? prisma.customer_details.findMany({
+        where: { id: { in: customerIds } },
+        select: { id: true, billing_name: true }
+      }) : Promise.resolve([]),
+
+      // Get bill_to data for "Other" customers (customer_id = 0)
+      prisma.bill_to.findMany({
         where: { invoice_no: { in: invoiceIds } },
-        include: { customer: { select: { billing_name: true } } }
+        select: { invoice_no: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
       }),
 
       // Get all item counts in one query
@@ -88,17 +95,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, { customer_id: c.customer_id, customer: c.customer }]))
+    const customerMap = new Map(customerData.map(customer => [customer.id, customer]))
+    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
     const enhancedInvoices = invoices.map((invoice: any) => {
-      const customerData = customerMap.get(invoice.id)
+      // Get customer data - check both regular customers and "Other" customers
+      const customerData = customerMap.get(invoice.select_customer)
+      const billToData = billToMap.get(invoice.id)
+
       return {
         ...invoice,
-        customerName: customerData?.customer?.billing_name || 'N/A',
-        customer_id: customerData?.customer_id || null,
-        customer: customerData?.customer || null,
+        customerName: customerData?.billing_name || billToData?.vendor_name || 'Other',
+        customer_id: invoice.select_customer || null,
+        customer: customerData || null,
         itemCount: itemCountMap.get(invoice.id) || 0,
         formattedDate: new Date(invoice.invoice_date * 1000).toLocaleDateString('en-IN'),
         formattedTotal: invoice.total.toLocaleString('en-IN', {
@@ -284,6 +295,31 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       console.log('🎯 FINAL CUSTOMER ID FOR CREATION:', customerId);
 
+      // ===== CREATE BILL_TO RECORD FOR "OTHER" CUSTOMERS =====
+      // Save customer details to bill_to table for inline editing (similar to purchase API)
+      const billToOperations = [];
+
+      // For "Other" customers (customer_id = 0), create bill_to record with manual details
+      if (customerId === 0) {
+        billToOperations.push(
+          tx.bill_to.create({
+            data: {
+              invoice_no: invoice_no,
+              vendor_name: req.body.customer_name || 'Other',
+              contact_no: req.body.contact_number || '',
+              email: req.body.email_id || '',
+              address: req.body.address || '',
+              address2: req.body.address_2 || '',
+              city: req.body.city || '',
+              state: req.body.state || '',
+              state_code: req.body.state_code || null,
+              gstin: req.body.gst_number || '',
+              pin_code: req.body.pin_code || ''
+            }
+          })
+        );
+      }
+
       // Create incexp, billing, shipping, and transport details in parallel
       const parallelOperations = [
         // Record income transaction in incexp table (MANDATORY - invoice creation fails if this fails)
@@ -325,7 +361,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             vehicle_no: transportDetails.vehicle_no || ''  // TransportDetails.vehicle_no
             // supply_date and place_of_supply are optional and not provided in current payload
           }
-        }) : Promise.resolve(null)
+        }) : Promise.resolve(null),
+
+        // Bill_to record for "Other" customers
+        ...billToOperations
       ];
 
       // Execute all parallel operations

@@ -150,7 +150,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.OR = [
         { product_name: { contains: term, mode: 'insensitive' } },
         { part_no: { contains: term, mode: 'insensitive' } },
-      ];
+        { id: isNaN(parseInt(term)) ? undefined : parseInt(term) }, // Search by UID (exact match)
+        { product_category: { name: { contains: term, mode: 'insensitive' } } }, // Search by category name
+        { product_subcategory: { name: { contains: term, mode: 'insensitive' } } }, // Search by subcategory name
+        { company: { name: { contains: term, mode: 'insensitive' } } }, // Search by company name
+      ].filter(Boolean); // Remove undefined entries
     }
 
     // Handle category filter (legacy support)
