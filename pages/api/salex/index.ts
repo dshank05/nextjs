@@ -151,10 +151,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get customer names and item counts in batch queries
+    // Get customer names, bill_to data, and item counts in batch queries
     const invoiceIds = salexInvoices.map((inv: { id: any }) => inv.id)
+    // Get bill_to data for "Other" customers (select_customer = 0)
+    const otherCustomerInvoices = salexInvoices.filter((inv: any) => inv.select_customer === 0).map((inv: any) => inv.id)
 
-    const [customerData, itemCounts] = await Promise.all([
+    const [customerData, itemCounts, billToData] = await Promise.all([
       // Get customer IDs from invoices first
       prisma.invoicex.findMany({
         where: { id: { in: invoiceIds } },
@@ -166,7 +168,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         by: ['invoice_no'],
         where: { invoice_no: { in: invoiceIds } },
         _count: { id: true }
-      })
+      }),
+
+      // Get bill_to data for "Other" customers
+      otherCustomerInvoices.length > 0 ? prisma.bill_tosalesx.findMany({
+        where: { invoice_no: { in: otherCustomerInvoices } },
+        select: { invoice_no: true, billing_name: true, contact_no: true, email: true, billing_address: true, billing_address2: true, billing_city: true, billing_state: true, billing_gstin: true }
+      }) : Promise.resolve([])
     ])
 
     // Get customer details separately
@@ -180,8 +188,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }) : []
 
     // Create lookup maps for fast access
-    const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name]))
-    const gstinMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_gstin || '']))
+    const customerMap = new Map()
+    const gstinMap = new Map()
+    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
+
+    // Create customer lookup map
+    const customerLookupMap = new Map(customerDetails.map(cust => [cust.id, cust]))
+
+    customerData.forEach(invoice => {
+      const customer = customerLookupMap.get(invoice.select_customer)
+      if (customer) {
+        customerMap.set(invoice.id, customer.billing_name)
+        gstinMap.set(invoice.id, customer.billing_gstin)
+      }
+    })
+
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced salex invoices using maps
@@ -205,7 +226,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_no: invoice.invoice_no,
         // OPTIMIZATION: Commented out unused customer ID field
         // select_customer: invoice.select_customer,
-        customer_name: customerMap.get(invoice.id),
+        customer_name: customerMap.get(invoice.id) || billToMap.get(invoice.id)?.billing_name || 'Other',
         // OPTIMIZATION: Removed customer_gstin as it's always empty
         // OPTIMIZATION: Commented out fields only used in removed expanded details
         // items_total: invoice.items_total || 0,

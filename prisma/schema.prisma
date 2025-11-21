@@ -204,14 +204,12 @@ model Purchase {
   staff_id                 Int?
   return_status            Int?               @default(0)
   staff                    staff?             @relation(fields: [staff_id], references: [id])
-  vendor                   vendor_details?    @relation(fields: [vendor_id], references: [id])
   purchase_returns         purchase_returns[]
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
   @@index([payment_status], map: "idx_purchase_payment_status")
   @@index([payment_status, fy, invoice_date], map: "idx_purchase_payment_status_fy_date")
   @@index([staff_id], map: "purchase_staff_id_fkey")
-  @@index([vendor_id], map: "purchase_vendor_id_fkey")
   @@map("purchase")
 }
 
@@ -570,7 +568,6 @@ model vendor_details {
   email         String?         @db.VarChar(100)
   status        String          @default("Active") @db.VarChar(20)
   tax_id        String?         @db.VarChar(50)
-  purchases     Purchase[]
   purchaseItems Purchaseitems[]
 
   @@index([vendor_name], map: "idx_vendor_name")

@@ -216,12 +216,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get item counts, vendor info, and staff info in batch queries
+    // Get item counts, vendor info, staff info, and bill_to info in batch queries
     const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
     const vendorIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.vendor_id).filter(Boolean)))
     const staffIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.staff_id).filter(Boolean)))
+    // Get bill_to data for "Other" vendors (vendor_id = 0)
+    const otherVendorInvoices = purchaseInvoices.filter((inv: any) => inv.vendor_id === 0).map((inv: any) => inv.invoice_no)
 
-    const [itemCounts, vendorData, staffData] = await Promise.all([
+    const [itemCounts, vendorData, staffData, billToData] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
@@ -237,6 +239,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       staffIds.length > 0 ? prisma.staff.findMany({
         where: { id: { in: staffIds } },
         select: { id: true, name: true, phone: true, email: true }
+      }) : Promise.resolve([]),
+      // Get bill_to data for "Other" vendors
+      otherVendorInvoices.length > 0 ? prisma.bill_to.findMany({
+        where: { invoice_no: { in: otherVendorInvoices } },
+        select: { invoice_no: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
       }) : Promise.resolve([])
     ])
 
@@ -244,6 +251,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
     const vendorMap = new Map(vendorData.map(vendor => [vendor.id, vendor]))
     const staffMap = new Map(staffData.map(staff => [staff.id, staff]))
+    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
 
     // Enhanced purchase invoices using maps
     let enhancedPurchases = purchaseInvoices.map((invoice: any) => {
@@ -277,6 +285,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
 
       const vendorInfo = vendorMap.get(invoice.vendor_id)
+      const billToInfo = billToMap.get(invoice.invoice_no)
       const staffInfo = staffMap.get(invoice.staff_id)
       // ✅ Calculate taxrate as total_tax/total_taxable_value (invoice level)
       const calculatedTaxrate = invoice.total_taxable_value > 0 ? invoice.total_tax / invoice.total_taxable_value : 0;
@@ -286,9 +295,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_no: invoice.invoice_no,
         bill_reference: invoice.bill_reference, // Bill reference (separate from vendor)
         vendor_id: invoice.vendor_id,
-        vendor_name: vendorInfo?.vendor_name,
-        vendor_address: vendorInfo?.address || '',
-        vendor_gstin: vendorInfo?.tax_id || '',
+        vendor_name: vendorInfo?.vendor_name || billToInfo?.vendor_name || 'Other',
+        vendor_address: vendorInfo?.address || billToInfo?.address || '',
+        vendor_gstin: vendorInfo?.tax_id || billToInfo?.gstin || '',
         staff_name: staffInfo?.name,
         staff_phone: staffInfo?.phone || '',
         staff_email: staffInfo?.email || '',
