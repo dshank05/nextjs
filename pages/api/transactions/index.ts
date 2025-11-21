@@ -125,98 +125,69 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const invoiceIds = incexpResults.filter(tx => tx.invoice_id).map(tx => tx.invoice_id!)
     const invoiceXIds = incexpxResults.filter(tx => tx.invoice_id).map(tx => tx.invoice_id!)
 
-    const [invoices, invoicesx, billToSales, billToSalesX] = await Promise.all([
+    // Get invoices and billing data
+    const [invoices, invoicesx, billToSalesData, billToSalesXData] = await Promise.all([
       prisma.invoice.findMany({
         where: { id: { in: invoiceIds } },
-        select: { id: true, invoice_no: true }
+        select: { id: true, invoice_no: true, select_customer: true }
       }),
       prisma.invoicex.findMany({
         where: { id: { in: invoiceXIds } },
-        select: { id: true, invoice_no: true }
+        select: { id: true, invoice_no: true, select_customer: true }
       }),
-      prisma.customer_details.findMany({
-        where: {
-          bill_tosales: {
-            some: {
-              invoice_no: { in: invoiceIds }
-            }
-          }
-        },
-        select: {
-          id: true,
-          billing_name: true,
-          billing_gstin: true,
-          bill_tosales: {
-            select: {
-              invoice_no: true
-            }
-          }
-        }
+      prisma.bill_tosales.findMany({
+        where: { invoice_no: { in: invoiceIds } },
+        select: { invoice_no: true }
       }),
-      prisma.customer_details.findMany({
-        where: {
-          bill_tosalesx: {
-            some: {
-              invoice_no: { in: invoiceXIds }
-            }
-          }
-        },
-        select: {
-          id: true,
-          billing_name: true,
-          billing_gstin: true,
-          bill_tosalesx: {
-            select: {
-              invoice_no: true
-            }
-          }
-        }
+      prisma.bill_tosalesx.findMany({
+        where: { invoice_no: { in: invoiceXIds } },
+        select: { invoice_no: true }
       })
     ])
 
+    // Get unique customer IDs from invoices
+    const regularCustomerIds = Array.from(new Set(invoices.map(inv => inv.select_customer).filter(Boolean)))
+    const exemptCustomerIds = Array.from(new Set(invoicesx.map(inv => inv.select_customer).filter(Boolean)))
+    const allCustomerIds = Array.from(new Set([...regularCustomerIds, ...exemptCustomerIds]))
+
+    // Fetch customer details
+    const customers = await prisma.customer_details.findMany({
+      where: { id: { in: allCustomerIds } },
+      select: {
+        id: true,
+        billing_name: true,
+        billing_gstin: true
+      }
+    })
+
     // Create lookup maps
-    const invoiceMap = new Map(invoices.map(inv => [inv.id, inv.invoice_no]))
-    const invoiceXMap = new Map(invoicesx.map(inv => [inv.id, inv.invoice_no]))
-
-    const billToMap = new Map()
-    billToSales.forEach(customer => {
-      customer.bill_tosales.forEach(billToRecord => {
-        const invoiceNo = billToRecord.invoice_no
-        billToMap.set(invoiceNo, customer)
-      })
-    })
-
-    const billToXMap = new Map()
-    billToSalesX.forEach(customer => {
-      customer.bill_tosalesx.forEach(billToRecord => {
-        const invoiceNo = billToRecord.invoice_no
-        billToXMap.set(invoiceNo, customer)
-      })
-    })
+    const invoiceMap = new Map(invoices.map(inv => [inv.id, { invoice_no: inv.invoice_no, customer_id: inv.select_customer }]))
+    const invoiceXMap = new Map(invoicesx.map(inv => [inv.id, { invoice_no: inv.invoice_no, customer_id: inv.select_customer }]))
+    const customerMap = new Map(customers.map(c => [c.id, c]))
 
     // Combine results from both tables
     const allTransactions = [
       ...incexpResults.map(tx => {
-        const invoice_no = tx.invoice_id ? invoiceMap.get(tx.invoice_id) : null
-        const billing = invoice_no ? billToMap.get(invoice_no) : null
+        const invoiceData = tx.invoice_id ? invoiceMap.get(tx.invoice_id) : null
+        const customer = invoiceData?.customer_id ? customerMap.get(invoiceData.customer_id) : null
         return {
           ...tx,
           transaction_type: 'regular_sale' as const,
-          customer_name: billing?.billing_name,
-          customer_gstin: billing?.billing_gstin || '',
-          invoice_no: invoice_no,
+          customer_name: customer?.billing_name || '',
+          customer_gstin: customer?.billing_gstin || '',
+          invoice_no: invoiceData?.invoice_no || null,
           invoice_id: tx.invoice_id
         }
       }),
       ...incexpxResults.map(tx => {
-        const invoice_no = tx.invoice_id ? invoiceXMap.get(tx.invoice_id) : null
-        const billing = invoice_no ? billToXMap.get(invoice_no) : null
+        const invoiceData = tx.invoice_id ? invoiceXMap.get(tx.invoice_id) : null
+        const customer = invoiceData?.customer_id ? customerMap.get(invoiceData.customer_id) : null
         return {
           ...tx,
           transaction_type: 'tax_exempt_sale' as const,
-          customer_name: billing?.billing_name,
-          customer_gstin: billing?.billing_gstin || '',
-          invoice_no: invoice_no,
+          customer_name: customer?.billing_name || '',
+          customer_gstin: customer?.billing_gstin || '',
+          invoice_no: invoiceData?.invoice_no || null,
           invoice_id: tx.invoice_id
         }
       })

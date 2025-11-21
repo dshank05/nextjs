@@ -23,40 +23,45 @@ export default async function handler(
         product_id: productId,
         qty: { gt: 0 } // Only consider valid purchases
       },
-      include: {
-        vendor: {
-          select: {
-            vendor_name: true,
-            address: true
-          }
-        }
-      },
       orderBy: { invoice_date: 'desc' },
       take: 5
     })
 
-    // Get purchase invoice details
+    // Get purchase invoice details and vendor IDs
     const invoiceNos = purchaseItems.map(item => item.invoice_no)
-    const purchaseInvoices = await prisma.purchase.findMany({
-      where: {
-        invoice_no: { in: invoiceNos }
-      },
-      select: {
-        invoice_no: true,
-        bill_reference: true,
-        invoice_date: true,
-        total: true
-      }
-    })
+    const vendorIds = Array.from(new Set(purchaseItems.map(item => item.vendor_id).filter(Boolean)))
 
-    // Create lookup map for invoice details
+    const [purchaseInvoices, vendors] = await Promise.all([
+      prisma.purchase.findMany({
+        where: {
+          invoice_no: { in: invoiceNos }
+        },
+        select: {
+          invoice_no: true,
+          bill_reference: true,
+          invoice_date: true,
+          total: true,
+          vendor_id: true
+        }
+      }),
+      vendorIds.length > 0 ? prisma.vendor_details.findMany({
+        where: { id: { in: vendorIds } },
+        select: { id: true, vendor_name: true, address: true }
+      }) : Promise.resolve([])
+    ])
+
+    // Create lookup maps for invoice details and vendors
     const invoiceMap = new Map(
       purchaseInvoices.map(inv => [inv.invoice_no, inv])
+    )
+    const vendorMap = new Map(
+      vendors.map(vendor => [vendor.id, vendor])
     )
 
     // Format the results for display
     const results = purchaseItems.map((item, index) => {
       const invoice = invoiceMap.get(item.invoice_no)
+      const vendor = vendorMap.get(item.vendor_id)
 
       // Format date
       let formattedDate = '-'
@@ -81,7 +86,7 @@ export default async function handler(
       return {
         sn: index + 1,
         invoice_number: item.invoice_no?.toString() || '-',
-        vendor: item.vendor?.vendor_name || '-',
+        vendor: vendor?.vendor_name || '-',
         qty: item.qty || 0,
         rate: item.rate || 0,
         amount: (item.qty || 0) * (item.rate || 0),

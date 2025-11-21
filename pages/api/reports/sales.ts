@@ -211,100 +211,52 @@ async function generateProductReport(dateFilter: any) {
 }
 
 async function generateDetailedReport(dateFilter: any) {
-  // Get detailed invoice list - use separate queries for billing info
-  const [regularInvoices, regularBilling, exemptInvoices, exemptBilling] = await Promise.all([
+  // Get detailed invoice lists
+  const [regularInvoices, exemptInvoices] = await Promise.all([
     prisma.invoice.findMany({
       where: dateFilter,
       orderBy: { invoice_date: 'desc' }
     }),
-    prisma.bill_tosales.findMany({
-      where: {
-        invoice_no: {
-          in: [] // Will be populated based on invoices
-        }
-      },
-      select: {
-        invoice_no: true,
-        customer: {
-          select: {
-            billing_name: true,
-            billing_gstin: true
-          }
-        }
-      }
-    }),
     prisma.invoicex.findMany({
       where: dateFilter,
       orderBy: { invoice_date: 'desc' }
-    }),
-    prisma.bill_tosalesx.findMany({
-      where: {
-        invoice_no: {
-          in: [] // Will be populated based on invoices
-        }
-      },
-      select: {
-        invoice_no: true,
-        customer: {
-          select: {
-            billing_name: true,
-            billing_gstin: true
-          }
-        }
-      }
     })
   ])
 
-  // Get actual invoice IDs
-  const regularIds = regularInvoices.map(inv => inv.id)
-  const exemptIds = exemptInvoices.map(inv => inv.id)
+  // Get unique customer IDs from invoices
+  const regularCustomerIds = Array.from(new Set(regularInvoices.map(inv => inv.select_customer).filter(Boolean)))
+  const exemptCustomerIds = Array.from(new Set(exemptInvoices.map(inv => inv.select_customer).filter(Boolean)))
+  const allCustomerIds = Array.from(new Set([...regularCustomerIds, ...exemptCustomerIds]))
 
-  const [regularBillingData, exemptBillingData] = await Promise.all([
-    prisma.bill_tosales.findMany({
-      where: { invoice_no: { in: regularIds } },
-      select: {
-        invoice_no: true,
-        customer: {
-          select: {
-            billing_name: true,
-            billing_gstin: true
-          }
-        }
-      }
-    }),
-    prisma.bill_tosalesx.findMany({
-      where: { invoice_no: { in: exemptIds } },
-      select: {
-        invoice_no: true,
-        customer: {
-          select: {
-            billing_name: true,
-            billing_gstin: true
-          }
-        }
-      }
-    })
-  ])
+  // Fetch customer details in one query
+  const customers = await prisma.customer_details.findMany({
+    where: { id: { in: allCustomerIds } },
+    select: {
+      id: true,
+      billing_name: true,
+      billing_gstin: true
+    }
+  })
 
-  const billingMap = new Map(regularBillingData.map(b => [b.invoice_no, b]))
-  const billingXMap = new Map(exemptBillingData.map(b => [b.invoice_no, b]))
+  // Create customer lookup map
+  const customerMap = new Map(customers.map(c => [c.id, c]))
 
   return {
     regularInvoices: regularInvoices.map(inv => {
-      const billing = billingMap.get(inv.id)
+      const customer = inv.select_customer ? customerMap.get(inv.select_customer) : null
       return {
         ...inv,
-        customer_name: billing?.customer?.billing_name,
-        customer_gstin: billing?.customer?.billing_gstin || '',
+        customer_name: customer?.billing_name || '',
+        customer_gstin: customer?.billing_gstin || '',
         type: 'regular'
       }
     }),
     taxExemptInvoices: exemptInvoices.map(inv => {
-      const billing = billingXMap.get(inv.id)
+      const customer = inv.select_customer ? customerMap.get(inv.select_customer) : null
       return {
         ...inv,
-        customer_name: billing?.customer?.billing_name,
-        customer_gstin: billing?.customer?.billing_gstin || '',
+        customer_name: customer?.billing_name || '',
+        customer_gstin: customer?.billing_gstin || '',
         type: 'tax_exempt'
       }
     })

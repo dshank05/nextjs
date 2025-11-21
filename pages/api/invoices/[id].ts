@@ -41,12 +41,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     // Get related data
     const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, customerDetails, staffDetails, mechanicDetails] = await Promise.all([
       prisma.bill_tosales.findFirst({
-        where: { invoice_no: invoice.id },
-        include: { customer: true }
+        where: { invoice_no: invoice.id }
       }),
       prisma.shipto.findFirst({
-        where: { invoice_no: invoice.id },
-        include: { customer: true }
+        where: { invoice_no: invoice.id }
       }),
       prisma.transport_details.findFirst({ where: { invoice_id: invoice.id } }),
       prisma.invoiceitems.findMany({
@@ -171,7 +169,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       shippingDetails: shippingDetails ? {
         id: shippingDetails.id,
         invoice_no: shippingDetails.invoice_no,
-        customer_id: shippingDetails.customer_id,
         shipping: shippingDetails.shipping
       } : null,
       transportDetails,
@@ -427,12 +424,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         tx.shipto.upsert({
           where: { invoice_no: parseInt(invoiceId) },
           update: {
-            customer_id: customerId,
             shipping: !!shippingDetails
           },
           create: {
             invoice_no: parseInt(invoiceId),
-            customer_id: customerId,
             shipping: !!shippingDetails
           }
         })
