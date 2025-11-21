@@ -172,6 +172,7 @@ export default function PurchaseCreate() {
   const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -569,6 +570,7 @@ export default function PurchaseCreate() {
   };
 
   const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
+    setProductsLoading(true);
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
@@ -584,6 +586,8 @@ export default function PurchaseCreate() {
     } catch (error) {
       console.error('Error fetching products:', error);
       showSnackbar('error', 'Failed to load products. Please try again.');
+    } finally {
+      setProductsLoading(false);
     }
   };
   const fetchFilterOptions = async () => {
@@ -2652,6 +2656,7 @@ export default function PurchaseCreate() {
         searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
+        isLoading={productsLoading}
         onProductSelect={(product) => {
           handleProductSelection(product);
           setTemplateRow({

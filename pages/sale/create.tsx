@@ -292,6 +292,7 @@ export default function InvoiceCreate() {
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -767,6 +768,7 @@ export default function InvoiceCreate() {
   };
 
   const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
+    setProductsLoading(true);
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
@@ -779,6 +781,8 @@ export default function InvoiceCreate() {
       }
     } catch (error) {
       console.error('Error fetching products:', error);
+    } finally {
+      setProductsLoading(false);
     }
   };
 
@@ -3095,6 +3099,7 @@ export default function InvoiceCreate() {
         searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
+        isLoading={productsLoading}
         onProductSelect={(product) => {
           console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
             product: product.product_name,

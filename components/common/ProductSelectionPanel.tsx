@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { Search, Filter } from 'lucide-react';
+import { Search, Filter, Loader } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
 export interface Product {
@@ -49,6 +49,7 @@ export interface ProductSelectionPanelProps {
     productSearchTerm: string;
     onSearchTermChange: (value: string) => void;
     onProductSelect: (product: Product) => void;
+    isLoading?: boolean; // New prop for loading state
 }
 
 export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
@@ -63,6 +64,7 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     productSearchTerm,
     onSearchTermChange,
     onProductSelect,
+    isLoading = false, // Default to false
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -127,7 +129,12 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
 
                 {/* Product List */}
                 <div className="flex-1 overflow-y-auto">
-                    {searchedProducts.length > 0 ? (
+                    {isLoading ? (
+                        <div className="p-8 flex flex-col items-center justify-center">
+                            <Loader className="w-8 h-8 text-blue-500 animate-spin mb-3" />
+                            <p className="text-slate-400 text-sm">Loading products...</p>
+                        </div>
+                    ) : searchedProducts.length > 0 ? (
                         <div className="p-4 space-y-2">
                             {searchedProducts.map((product) => (
                                 <div
@@ -173,7 +180,7 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                     ) : (
                         <div className="p-8 text-center">
                             <p className="text-slate-400 text-sm">
-                                {productSearchTerm ? 'No products found' : 'Loading products...'}
+                                {productSearchTerm ? 'No products found' : 'Start typing to search products...'}
                             </p>
                         </div>
                     )}

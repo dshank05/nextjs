@@ -144,17 +144,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const where: any = {};
     if (includeInactive !== 'true') where.is_active = true;
 
-    // Handle search term (from search input)
+    // Handle search term using display_name (contains all product info)
+    // MySQL's default collation is case-insensitive, so this will work automatically
     if (search) {
       const term = (search as string).trim();
-      where.OR = [
-        { product_name: { contains: term, mode: 'insensitive' } },
-        { part_no: { contains: term, mode: 'insensitive' } },
-        { id: isNaN(parseInt(term)) ? undefined : parseInt(term) }, // Search by UID (exact match)
-        { product_category: { name: { contains: term, mode: 'insensitive' } } }, // Search by category name
-        { product_subcategory: { name: { contains: term, mode: 'insensitive' } } }, // Search by subcategory name
-        { company: { name: { contains: term, mode: 'insensitive' } } }, // Search by company name
-      ].filter(Boolean); // Remove undefined entries
+      // Search on display_name which includes: UID, car model, category, subcategory, company, part_no
+      where.display_name = { contains: term };
     }
 
     // Handle category filter (legacy support)
@@ -164,7 +159,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     if (categoryFilter) where.product_category_id = parseInt(categoryFilter as string);
     if (subcategoryFilter) where.product_subcategory_id = parseInt(subcategoryFilter as string);
     if (companyFilter) where.company_id = parseInt(companyFilter as string);
-    if (partNoFilter) where.part_no = { contains: partNoFilter as string, mode: 'insensitive' };
+    if (partNoFilter) where.part_no = { contains: partNoFilter as string };
     if (uidFilter) where.id = parseInt(uidFilter as string);
 
     // Handle quantity filter (stock filtering)

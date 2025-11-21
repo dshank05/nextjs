@@ -272,6 +272,7 @@ export default function InvoiceCCreate() {
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -722,6 +723,7 @@ export default function InvoiceCCreate() {
   };
 
   const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
+    setProductsLoading(true);
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
@@ -737,6 +739,8 @@ export default function InvoiceCCreate() {
     } catch (error) {
       console.error('Error fetching products:', error);
       setProducts([]); // Set empty array on error
+    } finally {
+      setProductsLoading(false);
     }
   };
 
@@ -2655,6 +2659,7 @@ export default function InvoiceCCreate() {
         searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
+        isLoading={productsLoading}
         onProductSelect={(product) => {
           handleProductSelection(product);
           setTemplateRow({
