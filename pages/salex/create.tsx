@@ -114,6 +114,7 @@ interface InvoiceFormData {
   email_id: string;
   discount: string;
   state: string;
+  state_code?: number;
   gst_number: string;
   tax: string;
   notes: string;
@@ -301,6 +302,9 @@ export default function InvoiceCCreate() {
     models: []
   });
 
+  // State for states data
+  const [states, setStates] = useState<{ id: string; name: string; state_name: string; code: number }[]>([]);
+
   // Memoize the filterOptions to prevent unnecessary re-renders
   const memoizedFilterOptions = useMemo(() => filterOptions, [
     filterOptions.categories,
@@ -368,7 +372,8 @@ export default function InvoiceCCreate() {
           fetchMechanics(),
           fetchProducts(),
           fetchFilterOptions(),
-          fetchGstRates()
+          fetchGstRates(),
+          fetchStates()
         ]);
 
       } catch (error) {
@@ -760,6 +765,16 @@ export default function InvoiceCCreate() {
     } catch (error) { console.error('Error fetching GST rates:', error); }
   };
 
+  const fetchStates = async () => {
+    try {
+      const response = await fetch('/api/states');
+      if (response.ok) {
+        const data = await response.json();
+        setStates(data.states || []);
+      }
+    } catch (error) { console.error('Error fetching states:', error); }
+  };
+
   const fetchLastInvoiceNumber = async () => {
     try {
       const response = await fetch('/api/salex?limit=1&sort=-invoice_no');
@@ -947,6 +962,8 @@ export default function InvoiceCCreate() {
       processedValue = parseInt(value) || 0;
     } else if (field === 'staff_id') {
       processedValue = value ? parseInt(value) : null;
+    } else if (field === 'state_code') {
+      processedValue = value ? parseInt(value) : undefined;
     }
 
     setFormData(prev => ({ ...prev, [field]: processedValue }));
@@ -976,6 +993,7 @@ export default function InvoiceCCreate() {
         address_2: '',
         city: '',
         state: '',
+        state_code: undefined,
         gst_number: '',
         email_id: ''
       }));
@@ -1002,9 +1020,15 @@ export default function InvoiceCCreate() {
         address_2: customer.billing_address_2 || '',
         city: customer.billing_city || '',
         state: customer.billing_state?.toString() || '',
+        state_code: customer.billing_state_code,
         gst_number: customer.billing_gstin || '',
         email_id: customer.email || ''
       }));
+
+      // Update state dropdown selection
+      if (customer.billing_state_code) {
+        handleInputChange('state_code', customer.billing_state_code.toString());
+      }
 
       // No GST calculations needed for salex - all tax values remain 0
     } else {
@@ -1592,13 +1616,42 @@ export default function InvoiceCCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                  <input
-                    type="text"
-                    value={selectedCustomer?.billing_state || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select State' },
+                      ...states.map((state) => ({
+                        id: state.id,
+                        name: `${state.state_name} (${state.code})`
+                      }))
+                    ]}
+                    selectedValue={(() => {
+                      // Find the state ID that matches the current state code
+                      if (selectedCustomer?.billing_state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      // Fallback to state name matching if no state code
+                      if (formData.state || selectedCustomer?.billing_state) {
+                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
+                        const matchingState = states.find(state => state.state_name === currentStateName);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      return '';
+                    })()}
+                    onSelectionChange={(value) => {
+                      if (value) {
+                        // Find the state name from the selected ID
+                        const selectedState = states.find(state => state.id === value);
+                        if (selectedState) {
+                          handleInputChange('state', selectedState.state_name);
+                          handleInputChange('state_code', selectedState.code.toString());
+                        }
+                      } else {
+                        handleInputChange('state', '');
+                        handleInputChange('state_code', undefined);
+                      }
+                    }}
+                    placeholder="Select State"
                   />
                 </div>
               </div>

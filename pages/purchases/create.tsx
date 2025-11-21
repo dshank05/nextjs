@@ -89,7 +89,9 @@ interface PurchaseFormData {
   address_2: string;
   city: string;
   state: string;
+  state_code?: number;
   gst_number: string;
+  pin_code: string;
   transport_name: string;
   vehicle_number: string;
   transport_cost: string;
@@ -201,6 +203,9 @@ export default function PurchaseCreate() {
     models: []
   });
 
+  // State for states data
+  const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
+
 
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
@@ -216,6 +221,7 @@ export default function PurchaseCreate() {
     city: '',
     state: '',
     gst_number: '',
+    pin_code: '',
     transport_name: '',
     vehicle_number: '',
     transport_cost: '',
@@ -277,6 +283,7 @@ export default function PurchaseCreate() {
     fetchStaff();
     fetchProducts();
     fetchFilterOptions();
+    fetchStates();
     // Only fetch last invoice number in create mode, not edit mode
     if (!isEditMode) {
       fetchLastInvoiceNumber();
@@ -608,6 +615,27 @@ export default function PurchaseCreate() {
     }
   };
 
+  const fetchStates = async () => {
+    try {
+      const response = await fetch('/api/states');
+      if (response.ok) {
+        const data = await response.json();
+        // Transform states data to match SearchableSelect format
+        const formattedStates = data.states.map((state: any) => ({
+          id: state.id.toString(),
+          name: `${state.state_name} (${state.code})`,
+          code: state.code
+        }));
+        setStates(formattedStates);
+      } else {
+        showSnackbar('error', 'Failed to load states. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error fetching states:', error);
+      showSnackbar('error', 'Failed to load states. Please try again.');
+    }
+  };
+
   const fetchLastInvoiceNumber = async () => {
     if (isEditMode) return;
 
@@ -662,6 +690,7 @@ export default function PurchaseCreate() {
       city: purchase.vendor?.city || '',
       state: purchase.vendor?.state || '',
       gst_number: purchase.vendor?.tax_id || '',
+      pin_code: '',
       transport_name: purchase.transport_name || purchase.transport || '',
       vehicle_number: purchase.vehicle_number || '',
       transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
@@ -781,6 +810,7 @@ export default function PurchaseCreate() {
           city: purchase.vendor?.city || '',
           state: purchase.vendor?.state || '',
           gst_number: purchase.vendor?.tax_id || '',
+          pin_code: '',
           transport_name: purchase.transport_name || purchase.transport || '',
           vehicle_number: purchase.vehicle_number || '',
           transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
@@ -948,6 +978,7 @@ export default function PurchaseCreate() {
         address_2: '',
         city: '',
         state: '',
+        state_code: undefined,
         gst_number: '',
         total_cgst: '',
         total_sgst: '',
@@ -972,7 +1003,17 @@ export default function PurchaseCreate() {
         ...prev,
         total_cgst: '',
         total_sgst: '',
-        total_igst: ''
+        total_igst: '',
+        // Auto-populate vendor details including state
+        vendor_name: vendor.vendor_name,
+        contact_number: vendor.contact_no || '',
+        email_id: vendor.email || '',
+        address: vendor.address || '',
+        address_2: vendor.address_2 || '',
+        city: vendor.city || '',
+        state: vendor.state || '',
+        state_code: vendor.state_code,
+        gst_number: vendor.tax_id || ''
       }));
       setVendorStateForTax(vendor.state || ''); // Set separate state for tax calculations
     } else {
@@ -1230,7 +1271,18 @@ export default function PurchaseCreate() {
         bill_reference: formData.bill_reference,
         staff_id: formData.staff_id,
         date: formData.date,
-        vendor_id: vendorIdToSave, // Only send vendor relationship ID
+        vendor_id: vendorIdToSave,
+        // ===== VENDOR DETAILS - ALWAYS INCLUDE FOR bill_to TABLE =====
+        vendor_name: formData.vendor_name,
+        contact_number: formData.contact_number,
+        email_id: formData.email_id,
+        address: formData.address,
+        address_2: formData.address_2,
+        city: formData.city,
+        state: formData.state,
+        state_code: formData.state_code,
+        gst_number: formData.gst_number,
+        pin_code: formData.pin_code || '',
         transport_name: formData.transport_name,
         vehicle_number: formData.vehicle_number,
         transport_cost: parseFloat(formData.transport_cost) || 0,
@@ -1368,7 +1420,7 @@ export default function PurchaseCreate() {
             {/* Invoice Information */}
             <div className="mb-5">
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Invoice Information</h3> */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">INVOICE NUMBER *</label>
                   {invoiceNumberLoading ? (
@@ -1545,12 +1597,43 @@ export default function PurchaseCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                  <input
-                    type="text"
-                    value={formData.state || selectedVendor?.state || ''}
-                    onChange={(e) => handleInputChange('state', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter state"
+                  <SearchableSelect
+                  
+                    options={[
+                      { id: '', name: 'Select State' },
+                      ...states.map((state) => ({
+                        id: state.id,
+                        name: state.name
+                      }))
+                    ]}
+                    selectedValue={(() => {
+                      // Find the state ID that matches the current state code
+                      if (selectedVendor?.state_code) {
+                        const matchingState = states.find(state => state.code === selectedVendor.state_code);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      // Fallback to state name matching if no state code
+                      if (formData.state || selectedVendor?.state) {
+                        const currentStateName = formData.state || selectedVendor?.state || '';
+                        const matchingState = states.find(state => state.name === currentStateName);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      return '';
+                    })()}
+                    onSelectionChange={(value) => {
+                      if (value) {
+                        // Find the state name and code from the selected ID
+                        const selectedState = states.find(state => state.id === value);
+                        if (selectedState) {
+                          handleInputChange('state', selectedState.name);
+                          setFormData(prev => ({ ...prev, state_code: selectedState.code }));
+                        }
+                      } else {
+                        handleInputChange('state', '');
+                        setFormData(prev => ({ ...prev, state_code: undefined }));
+                      }
+                    }}
+                    placeholder="Select State"
                   />
                 </div>
               </div>

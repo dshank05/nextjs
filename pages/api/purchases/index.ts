@@ -543,15 +543,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: {
           invoice_no: nextInvoiceNo,
           vendor_name: req.body.vendor_name || existingVendor?.vendor_name || 'Other',
-          contact_no: req.body.contact_number || existingVendor?.contact_no || '',
-          email: req.body.email_id || existingVendor?.email || '',
+          contact_no: req.body.contact_no || existingVendor?.contact_no || '',
+          email: req.body.email || existingVendor?.email || '',
           address: req.body.address || existingVendor?.address || '',
-          address2: req.body.address_2 || existingVendor?.address_2 || '',
+          address2: req.body.address2 || existingVendor?.address_2 || '',
           city: req.body.city || existingVendor?.city || '',
           state: req.body.state || existingVendor?.state || '',
-          state_code: existingVendor?.state_code || null,
+          state_code: req.body.state_code || existingVendor?.state_code || null,
           gstin: req.body.gst_number || existingVendor?.tax_id || '',
-          pin_code: req.body.pin_code || ''
+          pin_code: req.body.pin_code || existingVendor?.pin_code || ''
         }
       });
 

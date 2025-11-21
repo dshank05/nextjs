@@ -155,10 +155,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const invoiceIds = salexInvoices.map((inv: { id: any }) => inv.id)
 
     const [customerData, itemCounts] = await Promise.all([
-      // Get all customer names by joining with customer_details
-      prisma.bill_tosalesx.findMany({
-        where: { invoice_no: { in: invoiceIds } },
-        include: { customer: { select: { billing_name: true, billing_gstin: true } } }
+      // Get customer IDs from invoices first
+      prisma.invoicex.findMany({
+        where: { id: { in: invoiceIds } },
+        select: { id: true, select_customer: true }
       }),
 
       // Get all item counts in one query
@@ -168,6 +168,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         _count: { id: true }
       })
     ])
+
+    // Get customer details separately
+    const customerIds = customerData
+      .map(inv => inv.select_customer)
+      .filter(id => id !== null && id !== 0)
+
+    const customerDetails = customerIds.length > 0 ? await prisma.customer_details.findMany({
+      where: { id: { in: customerIds } },
+      select: { id: true, billing_name: true, billing_gstin: true }
+    }) : []
 
     // Create lookup maps for fast access
     const customerMap = new Map(customerData.map((c: any) => [c.invoice_no, c.customer?.billing_name]))
@@ -452,9 +462,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           billing_address2: existingCustomer?.billing_address_2 || '',
           billing_city: req.body.city || existingCustomer?.billing_city || '',
           billing_state: req.body.state || existingCustomer?.billing_state || '',
-          billing_state_code: existingCustomer?.billing_state_code || null,
-          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
-          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
         }
       })
 
@@ -469,7 +478,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
           shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
           shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
-          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
           shipping: useShippingAddress || true
         }
       })
@@ -828,9 +836,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           billing_address2: existingCustomer?.billing_address_2 || '',
           billing_city: req.body.city || existingCustomer?.billing_city || '',
           billing_state: req.body.state || existingCustomer?.billing_state || '',
-          billing_state_code: existingCustomer?.billing_state_code || null,
-          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
-          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
         },
         create: {
           invoice_no: sale.id,
@@ -841,9 +848,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           billing_address2: existingCustomer?.billing_address_2 || '',
           billing_city: req.body.city || existingCustomer?.billing_city || '',
           billing_state: req.body.state || existingCustomer?.billing_state || '',
-          billing_state_code: existingCustomer?.billing_state_code || null,
-          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || '',
-          billing_pin_code: req.body.pin_code || existingCustomer?.billing_pin_code || ''
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
         }
       })
 
@@ -856,9 +862,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
           shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
           shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
-          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_state_code: req.body.state_code || existingCustomer?.shipping_state_code || null,
           shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
-          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
           shipping: true
         },
         create: {
@@ -868,9 +873,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
           shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
           shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
-          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_state_code: req.body.state_code || existingCustomer?.shipping_state_code || null,
           shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
-          shipping_pin_code: req.body.pin_code || existingCustomer?.shipping_pin_code || existingCustomer?.billing_pin_code || '',
           shipping: true
         }
       })

@@ -114,6 +114,7 @@ interface InvoiceFormData {
   email_id: string;
   discount: string;
   state: string;
+  state_code?: number;
   gst_number: string;
   tax: string;
   notes: string;
@@ -324,6 +325,9 @@ export default function InvoiceCreate() {
     models: []
   });
 
+  // State for states data
+  const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
+
   // Initialize snackbar hook
   const { showSnackbar } = useSnackbar();
 
@@ -392,7 +396,8 @@ export default function InvoiceCreate() {
           fetchMechanics(),
           fetchProducts(),
           fetchFilterOptions(),
-          fetchGstRates()
+          fetchGstRates(),
+          fetchStates()
         ]);
 
 
@@ -799,6 +804,27 @@ export default function InvoiceCreate() {
     } catch (error) { console.error('Error fetching GST rates:', error); }
   };
 
+  const fetchStates = async () => {
+    try {
+      const response = await fetch('/api/states');
+      if (response.ok) {
+        const data = await response.json();
+        // Transform states data to match SearchableSelect format
+        const formattedStates = data.states.map((state: any) => ({
+          id: state.id.toString(),
+          name: `${state.state_name} (${state.code})`,
+          code: state.code
+        }));
+        setStates(formattedStates);
+      } else {
+        showSnackbar('error', 'Failed to load states. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error fetching states:', error);
+      showSnackbar('error', 'Failed to load states. Please try again.');
+    }
+  };
+
   const fetchLastInvoiceNumber = async () => {
     try {
       // Implement similar to purchase creation - get last invoice number + 1
@@ -1075,6 +1101,7 @@ export default function InvoiceCreate() {
         address: '',
         city: '',
         state: '',
+        state_code: undefined,
         gst_number: '',
         pin_code: '',
         total_cgst: '',
@@ -1098,11 +1125,19 @@ export default function InvoiceCreate() {
         ...prev,
         total_cgst: '',
         total_sgst: '',
-        total_igst: ''
+        total_igst: '',
+        // Auto-populate customer details including state
+        customer_name: customer.billing_name,
+        contact_number: customer.contact_no || '',
+        address: customer.billing_address || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state?.toString() || '',
+        state_code: customer.billing_state_code,
+        gst_number: customer.billing_gstin || '',
+        email_id: customer.email || ''
       }));
     } else {
       setSelectedCustomer(null);
-
     }
   };
 
@@ -1924,14 +1959,40 @@ export default function InvoiceCreate() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
-                  <input
-                    type="text"
-                    value={isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state || '')}
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('state', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter state" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select State' },
+                      ...states.map((state) => ({
+                        id: state.id,
+                        name: state.name
+                      }))
+                    ]}
+                    selectedValue={(() => {
+                      // Find the state ID that matches the current state code
+                      if (selectedCustomer?.billing_state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      // Fallback to state name matching if no state code
+                      if (formData.state || selectedCustomer?.billing_state) {
+                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
+                        const matchingState = states.find(state => state.name === currentStateName);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      return '';
+                    })()}
+                    onSelectionChange={(value) => {
+                      if (value) {
+                        // Find the state name from the selected ID
+                        const selectedState = states.find(state => state.id === value);
+                        if (selectedState) {
+                          handleInputChange('state', selectedState.name);
+                        }
+                      } else {
+                        handleInputChange('state', '');
+                      }
+                    }}
+                    placeholder="Select State"
                   />
                 </div>
                 {isOtherCustomerSelected && (
