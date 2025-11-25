@@ -85,7 +85,7 @@ export default function PurchasesPage() {
       total: '',
       totalTax: '',
       sortBy: 'invoice_no',
-      sortOrder: 'desc'
+      sortOrder: 'asc'
     },
     storage: "session"
   });
