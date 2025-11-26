@@ -570,19 +570,20 @@ export default function PurchaseCreate() {
     }));
   }, [selectedProducts, isEditMode, isInitialDataLoaded]);
 
-  // Auto-calculate packing and forwarding total
-  useEffect(() => {
-    const qty = parseFloat(formData.packing_forwarding_qty) || 0;
-    const rate = parseFloat(formData.packing_forwarding_rate) || 0;
-    const total = qty * rate;
+  // Auto-calculate packing and forwarding total - DISABLED
+  // Calculations are now done directly in onChange handlers to prevent cursor jumping
+  // useEffect(() => {
+  //   const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+  //   const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+  //   const total = qty * rate;
 
-    if (total !== parseFloat(formData.packing_forwarding_total)) {
-      setFormData(prev => ({
-        ...prev,
-        packing_forwarding_total: total.toFixed(2)
-      }));
-    }
-  }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
+  //   if (total !== parseFloat(formData.packing_forwarding_total)) {
+  //     setFormData(prev => ({
+  //       ...prev,
+  //       packing_forwarding_total: total.toFixed(2)
+  //     }));
+  //   }
+  // }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
   const fetchVendors = async () => {
     try {
@@ -1650,7 +1651,7 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE{isOtherVendorSelected ? ' *' : ''}</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
                   <SearchableSelect
                     options={states.map((state) => ({
                       id: state.id,
@@ -2008,30 +2009,28 @@ export default function PurchaseCreate() {
                           value={templateRow.qty}
                           onChange={(e) => {
                             const newQty = e.target.value;
-                            setTemplateRow(prev => {
-                              const updated = { ...prev, qty: newQty };
+                            const qty = parseFloat(newQty) || 0;
+                            const rate = parseFloat(templateRow.rate) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
-                              // If qty is entered and rate exists, recalculate total = qty * rate
-                              const qty = parseFloat(newQty) || 0;
-                              const rate = parseFloat(prev.rate) || 0;
-                              const gstPercent = enableTax ? (parseFloat(prev.gst) || 0) : 0;
+                            if (qty > 0 && rate > 0) {
+                              // Calculate total = qty * rate
+                              const subtotal = qty * rate;
+                              const taxAmount = (subtotal * gstPercent) / 100;
+                              const total = subtotal + taxAmount;
 
-                              if (qty > 0 && rate > 0) {
-                                const subtotal = qty * rate;
-                                const taxAmount = (subtotal * gstPercent) / 100;
-                                const total = subtotal + taxAmount;
-
-                                // Only auto-calculate if total field is empty (user hasn't manually entered anything)
-                                if (!prev.total.trim()) {
-                                  updated.total = total.toFixed(2);
-                                }
-                              } else {
-                                // Clear total if no valid qty or rate
-                                updated.total = '';
-                              }
-
-                              return updated;
-                            });
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: newQty,
+                                total: total.toFixed(2)
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: newQty,
+                                total: ''
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2048,10 +2047,29 @@ export default function PurchaseCreate() {
                           placeholder="0.00"
                           value={templateRow.rate}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              rate: e.target.value
-                            }));
+                            const newRate = e.target.value;
+                            const qty = parseFloat(templateRow.qty) || 0;
+                            const rate = parseFloat(newRate) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+
+                            if (qty > 0 && rate > 0) {
+                              // Calculate total = qty * rate
+                              const subtotal = qty * rate;
+                              const taxAmount = (subtotal * gstPercent) / 100;
+                              const total = subtotal + taxAmount;
+
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: newRate,
+                                total: total.toFixed(2)
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: newRate,
+                                total: ''
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2091,24 +2109,24 @@ export default function PurchaseCreate() {
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
-                            setTemplateRow(prev => {
-                              const updated = { ...prev, total: newTotal };
+                            const qty = parseFloat(templateRow.qty) || 0;
+                            const enteredTotal = parseFloat(newTotal) || 0;
 
-                              // If total is entered and qty > 0, recalculate rate = total/qty
-                              const qty = parseFloat(prev.qty) || 0;
-                              const enteredTotal = parseFloat(newTotal) || 0;
-
-                              if (qty > 0 && enteredTotal > 0) {
-                                // Simple calculation: rate = total / qty
-                                const rate = enteredTotal / qty;
-                                updated.rate = rate.toString();
-                              } else {
-                                // Clear rate if no valid total or qty
-                                updated.rate = '';
-                              }
-
-                              return updated;
-                            });
+                            if (qty > 0 && enteredTotal > 0) {
+                              // Calculate rate = total / qty
+                              const rate = enteredTotal / qty;
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: newTotal,
+                                rate: rate.toFixed(2)
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: newTotal,
+                                rate: ''
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2365,13 +2383,27 @@ export default function PurchaseCreate() {
                                 placeholder="1"
                                 value={editingRowData?.qty || ''}
                                 onChange={(e) => {
-                                  const newQty = parseInt(e.target.value) || 1;
-                                  setEditingRowData(prev => {
-                                    if (!prev) return null;
-                                    const subtotal = newQty * prev.rate;
-                                    const taxAmount = enableTax ? (subtotal * prev.gst_percentage) / 100 : 0;
-                                    return { ...prev, qty: newQty, total: subtotal + taxAmount };
-                                  });
+                                  const newQty = e.target.value;
+                                  const qty = parseFloat(newQty) || 0;
+                                  const rate = editingRowData?.rate || 0;
+                                  const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
+
+                                  if (qty > 0 && rate > 0) {
+                                    const subtotal = qty * rate;
+                                    const taxAmount = (subtotal * gstPercent) / 100;
+                                    const total = subtotal + taxAmount;
+                                    
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      qty: parseFloat(newQty) || 1,
+                                      total: total
+                                    } : null);
+                                  } else {
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      qty: parseFloat(newQty) || 1
+                                    } : null);
+                                  }
                                 }}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
@@ -2389,13 +2421,27 @@ export default function PurchaseCreate() {
                                 placeholder="0.00"
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => {
-                                  const newRate = parseFloat(e.target.value) || 0;
-                                  setEditingRowData(prev => {
-                                    if (!prev) return null;
-                                    const subtotal = prev.qty * newRate;
-                                    const taxAmount = enableTax ? (subtotal * prev.gst_percentage) / 100 : 0;
-                                    return { ...prev, rate: newRate, total: subtotal + taxAmount };
-                                  });
+                                  const newRate = e.target.value;
+                                  const qty = editingRowData?.qty || 0;
+                                  const rate = parseFloat(newRate) || 0;
+                                  const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
+
+                                  if (qty > 0 && rate > 0) {
+                                    const subtotal = qty * rate;
+                                    const taxAmount = (subtotal * gstPercent) / 100;
+                                    const total = subtotal + taxAmount;
+                                    
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      rate: parseFloat(newRate) || 0,
+                                      total: total
+                                    } : null);
+                                  } else {
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      rate: parseFloat(newRate) || 0
+                                    } : null);
+                                  }
                                 }}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
@@ -2413,13 +2459,27 @@ export default function PurchaseCreate() {
                                   placeholder="0%"
                                   value={editingRowData?.gst_percentage || ''}
                                   onChange={(e) => {
-                                    const newGst = parseFloat(e.target.value) || 0;
-                                    setEditingRowData(prev => {
-                                      if (!prev) return null;
-                                      const subtotal = prev.qty * prev.rate;
-                                      const taxAmount = enableTax ? (subtotal * newGst) / 100 : 0;
-                                      return { ...prev, gst_percentage: newGst, total: subtotal + taxAmount };
-                                    });
+                                    const newGst = e.target.value;
+                                    const qty = editingRowData?.qty || 0;
+                                    const rate = editingRowData?.rate || 0;
+                                    const gstPercent = parseFloat(newGst) || 0;
+
+                                    if (qty > 0 && rate > 0) {
+                                      const subtotal = qty * rate;
+                                      const taxAmount = (subtotal * gstPercent) / 100;
+                                      const total = subtotal + taxAmount;
+                                      
+                                      setEditingRowData(prev => prev ? {
+                                        ...prev,
+                                        gst_percentage: parseFloat(newGst) || 0,
+                                        total: total
+                                      } : null);
+                                    } else {
+                                      setEditingRowData(prev => prev ? {
+                                        ...prev,
+                                        gst_percentage: parseFloat(newGst) || 0
+                                      } : null);
+                                    }
                                   }}
                                   onWheel={(e) => e.preventDefault()}
                                   onKeyDown={(e) => {
@@ -2436,7 +2496,25 @@ export default function PurchaseCreate() {
                                 className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                                 placeholder="0.00"
                                 value={editingRowData?.total || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, total: parseFloat(e.target.value) || 0 } : null)}
+                                onChange={(e) => {
+                                  const newTotal = e.target.value;
+                                  const qty = editingRowData?.qty || 0;
+                                  const enteredTotal = parseFloat(newTotal) || 0;
+
+                                  if (qty > 0 && enteredTotal > 0) {
+                                    const rate = enteredTotal / qty;
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      total: parseFloat(newTotal) || 0,
+                                      rate: rate
+                                    } : null);
+                                  } else {
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      total: parseFloat(newTotal) || 0
+                                    } : null);
+                                  }
+                                }}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2580,7 +2658,26 @@ export default function PurchaseCreate() {
                     type="number"
                     inputMode="numeric"
                     value={formData.packing_forwarding_qty}
-                    onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                    onChange={(e) => {
+                      const newQty = e.target.value;
+                      const qty = parseFloat(newQty) || 0;
+                      const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+
+                      if (qty > 0 && rate > 0) {
+                        const total = qty * rate;
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_qty: newQty,
+                          packing_forwarding_total: total.toFixed(2)
+                        }));
+                      } else {
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_qty: newQty,
+                          packing_forwarding_total: ''
+                        }));
+                      }
+                    }}
                     onWheel={(e) => e.preventDefault()}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2597,7 +2694,26 @@ export default function PurchaseCreate() {
                     type="number"
                     inputMode="numeric"
                     value={formData.packing_forwarding_rate}
-                    onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                    onChange={(e) => {
+                      const newRate = e.target.value;
+                      const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+                      const rate = parseFloat(newRate) || 0;
+
+                      if (qty > 0 && rate > 0) {
+                        const total = qty * rate;
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_rate: newRate,
+                          packing_forwarding_total: total.toFixed(2)
+                        }));
+                      } else {
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_rate: newRate,
+                          packing_forwarding_total: ''
+                        }));
+                      }
+                    }}
                     onWheel={(e) => e.preventDefault()}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2619,7 +2735,6 @@ export default function PurchaseCreate() {
                       const enteredTotal = parseFloat(newTotal) || 0;
 
                       if (qty > 0 && enteredTotal > 0) {
-                        // Calculate rate = total / qty
                         const rate = enteredTotal / qty;
                         setFormData(prev => ({
                           ...prev,
@@ -2629,7 +2744,8 @@ export default function PurchaseCreate() {
                       } else {
                         setFormData(prev => ({
                           ...prev,
-                          packing_forwarding_total: newTotal
+                          packing_forwarding_total: newTotal,
+                          packing_forwarding_rate: ''
                         }));
                       }
                     }}
