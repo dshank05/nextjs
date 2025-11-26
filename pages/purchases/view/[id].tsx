@@ -1008,10 +1008,13 @@ export default function PurchaseView() {
               {purchase.items && purchase.items.length > 0 && (
                 <tfoot>
                   <tr className="border-t border-slate-700 bg-slate-800/30">
-                    <td colSpan={4} className="text-right text-slate-300 font-semibold py-3 pr-4 text-sm">TOTALS</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
                     <td className="text-white font-bold text-center py-3 bg-slate-700/20">{purchase.items?.reduce((sum, item) => sum + (item.qty || 0), 0)}</td>
-                    <td className="text-slate-400 py-3 text-center">-</td>
-                    <td className="text-slate-400 py-3 text-center">-</td>
+                    <td></td>
+                    <td></td>
                     <td className="text-white font-bold text-center py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>
                     <td className="text-white font-bold text-center py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
                   </tr>
