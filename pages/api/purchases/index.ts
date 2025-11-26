@@ -451,13 +451,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // ===== VALIDATE "OTHER" VENDOR FIELDS =====
-    // When vendor_id is 0 (Other), state and contact_number are mandatory
+    // When vendor_id is 0 (Other),contact_number are mandatory
     if (parseInt(vendor_id) === 0) {
-      if (!req.body.state || req.body.state.trim() === '') {
-        return res.status(400).json({
-          message: 'State is required for "Other" vendor selection'
-        })
-      }
       if (!req.body.contact_number || req.body.contact_number.trim() === '') {
         return res.status(400).json({
           message: 'Phone number is required for "Other" vendor selection'
