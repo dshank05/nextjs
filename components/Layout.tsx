@@ -73,7 +73,7 @@ const Layout = ({ children }: LayoutProps) => {
       icon: '📝',
       subpages: [
         { name: 'SALE RETURN', href: '/entry/salereturn' },
-        // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
+        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor' },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
         { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },

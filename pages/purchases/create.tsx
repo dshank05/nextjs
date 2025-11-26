@@ -186,8 +186,8 @@ export default function PurchaseCreate() {
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
-  // State for tax toggle
-  const [enableTax, setEnableTax] = useState(false);
+  // Tax is now always disabled
+  const enableTax = false;
 
   // State for barcode scanning toggle
   const [enableBarcodeScanning, setEnableBarcodeScanning] = useState(false);
@@ -213,7 +213,7 @@ export default function PurchaseCreate() {
   // State for states data
   const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
 
-  // Auto-calculate total when qty, rate, or gst changes
+  // Auto-calculate total when qty, rate, or gst changes (only if total is empty)
   useEffect(() => {
     const qty = parseFloat(templateRow.qty) || 0;
     const rate = parseFloat(templateRow.rate) || 0;
@@ -224,14 +224,21 @@ export default function PurchaseCreate() {
       const taxAmount = (subtotal * gstPercent) / 100;
       const total = subtotal + taxAmount;
 
-      setTemplateRow(prev => ({
-        ...prev,
-        total: total.toFixed(2)
-      }));
+      setTemplateRow(prev => {
+        // Only auto-calculate if total field is empty (user hasn't manually entered anything)
+        if (!prev.total.trim()) {
+          return {
+            ...prev,
+            total: total.toFixed(2)
+          };
+        }
+        // If user has entered something, leave it as-is
+        return prev;
+      });
     } else {
       setTemplateRow(prev => ({
         ...prev,
-        total: ''
+        total: prev.total || '' // Keep manual total if it exists
       }));
     }
   }, [templateRow.qty, templateRow.rate, templateRow.gst, enableTax]);
@@ -1253,9 +1260,7 @@ export default function PurchaseCreate() {
     if (isOtherVendorSelected && !formData.vendor_name.trim()) {
       newErrors.vendor_name = 'Vendor name is required';
     }
-    if (isOtherVendorSelected && !formData.state.trim()) {
-      newErrors.state = 'State is required';
-    }
+    // State is now optional for "Other" vendor
     if (isOtherVendorSelected && !formData.contact_number.trim()) {
       newErrors.contact_number = 'Phone number is required';
     }
@@ -1729,23 +1734,8 @@ export default function PurchaseCreate() {
             <div className="mb-5 border-t border-slate-600 pt-4">
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
-              {/* Tax Toggle & Barcode Test */}
+              {/* Barcode Scanning Toggle */}
               <div className="mb-4 space-y-3">
-                <div className="flex items-center space-x-6">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={enableTax}
-                      onChange={(e) => setEnableTax(e.target.checked)}
-                      className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
-                    />
-                    <span className="text-sm font-medium text-slate-300">Enable Tax Calculation</span>
-                  </label>
-                  <span className="text-xs text-slate-500">
-                    {enableTax ? 'Tax will be calculated and included' : 'Tax will be disabled (values set to 0)'}
-                  </span>
-                </div>
-
                 <div className="flex items-center space-x-6">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
@@ -1829,7 +1819,7 @@ export default function PurchaseCreate() {
                 <table className="w-full">
                   <thead className="bg-slate-700">
                     <tr>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-12">
+                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-16">
                         SN
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
@@ -1872,8 +1862,8 @@ export default function PurchaseCreate() {
                   <tbody>
                     {/* Input Row (Template) */}
                     <tr className="bg-slate-800 border-b-2 border-slate-600">
-                      <td className="px-4 py-3 text-center text-xs text-slate-300 w-12">
-                        {selectedProducts.length > 0 ? selectedProducts.length + 1 : 1}
+                      <td className="px-4 py-3 text-center w-16">
+                        {/* Hidden SN column to maintain alignment */}
                       </td>
                       <td className="px-4 py-3">
                         <button
@@ -2017,10 +2007,31 @@ export default function PurchaseCreate() {
                           placeholder="1"
                           value={templateRow.qty}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              qty: e.target.value
-                            }));
+                            const newQty = e.target.value;
+                            setTemplateRow(prev => {
+                              const updated = { ...prev, qty: newQty };
+
+                              // If qty is entered and rate exists, recalculate total = qty * rate
+                              const qty = parseFloat(newQty) || 0;
+                              const rate = parseFloat(prev.rate) || 0;
+                              const gstPercent = enableTax ? (parseFloat(prev.gst) || 0) : 0;
+
+                              if (qty > 0 && rate > 0) {
+                                const subtotal = qty * rate;
+                                const taxAmount = (subtotal * gstPercent) / 100;
+                                const total = subtotal + taxAmount;
+
+                                // Only auto-calculate if total field is empty (user hasn't manually entered anything)
+                                if (!prev.total.trim()) {
+                                  updated.total = total.toFixed(2);
+                                }
+                              } else {
+                                // Clear total if no valid qty or rate
+                                updated.total = '';
+                              }
+
+                              return updated;
+                            });
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2083,21 +2094,17 @@ export default function PurchaseCreate() {
                             setTemplateRow(prev => {
                               const updated = { ...prev, total: newTotal };
 
-                              // If total is entered and qty > 0, recalculate rate
+                              // If total is entered and qty > 0, recalculate rate = total/qty
                               const qty = parseFloat(prev.qty) || 0;
-                              const gstPercent = parseFloat(prev.gst) || 0;
                               const enteredTotal = parseFloat(newTotal) || 0;
 
                               if (qty > 0 && enteredTotal > 0) {
-                                // Reverse calculation: rate = (total - tax) / qty
-                                // But we need to account for GST
-                                // So: total = qty * rate * (1 + gst/100)
-                                // Therefore: rate = total / (qty * (1 + gst/100))
-
-                                const gstFactor = 1 + (gstPercent / 100);
-                                const rate = enteredTotal / (qty * gstFactor);
-
-                                updated.rate = rate.toFixed(2);
+                                // Simple calculation: rate = total / qty
+                                const rate = enteredTotal / qty;
+                                updated.rate = rate.toString();
+                              } else {
+                                // Clear rate if no valid total or qty
+                                updated.rate = '';
                               }
 
                               return updated;
@@ -2606,7 +2613,26 @@ export default function PurchaseCreate() {
                   <input
                     type="number"
                     value={formData.packing_forwarding_total}
-                    onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                    onChange={(e) => {
+                      const newTotal = e.target.value;
+                      const qty = parseFloat(formData.packing_forwarding_qty) || 0;
+                      const enteredTotal = parseFloat(newTotal) || 0;
+
+                      if (qty > 0 && enteredTotal > 0) {
+                        // Calculate rate = total / qty
+                        const rate = enteredTotal / qty;
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_total: newTotal,
+                          packing_forwarding_rate: rate.toFixed(2)
+                        }));
+                      } else {
+                        setFormData(prev => ({
+                          ...prev,
+                          packing_forwarding_total: newTotal
+                        }));
+                      }
+                    }}
                     onWheel={(e) => e.preventDefault()}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {

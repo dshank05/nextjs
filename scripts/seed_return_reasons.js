@@ -1,29 +1,42 @@
 const { PrismaClient } = require('@prisma/client');
 
-async function seedReturnReasons() {
-  const prisma = new PrismaClient();
+const prisma = new PrismaClient();
 
-  try {
-    console.log('Seeding return reasons...\n');
+const returnReasons = [
+  // Purchase return reasons
+  { reason_name: 'Manufacturing Defect', type: 'purchase' },
+  { reason_name: 'Wrong Item Shipped', type: 'purchase' },
+  { reason_name: 'Poor Quality', type: 'purchase' },
+  { reason_name: 'Damaged in Transit', type: 'purchase' },
+  { reason_name: 'Expired Product', type: 'purchase' },
+  { reason_name: 'Incorrect Quantity', type: 'purchase' },
+  { reason_name: 'Not as Described', type: 'purchase' },
+  { reason_name: 'Packaging Issues', type: 'purchase' },
 
-    const returnReasons = [
-      // Sale return reasons
-      { reason_name: 'Damaged Product', type: 'sale' },
-      { reason_name: 'Wrong Item Delivered', type: 'sale' },
-      { reason_name: 'Customer Dissatisfaction', type: 'sale' },
-      { reason_name: 'Size/Color Issue', type: 'sale' },
-      { reason_name: 'Defective Product', type: 'sale' },
+  // Sale return reasons
+  { reason_name: 'Customer Dissatisfaction', type: 'sale' },
+  { reason_name: 'Wrong Item Delivered', type: 'sale' },
+  { reason_name: 'Defective Product', type: 'sale' },
+  { reason_name: 'Size/Color Issue', type: 'sale' },
+  { reason_name: 'Changed Mind', type: 'sale' },
+  { reason_name: 'Damaged in Transit', type: 'sale' },
+  { reason_name: 'Late Delivery', type: 'sale' },
 
-      // Purchase return reasons
-      { reason_name: 'Damaged during shipping', type: 'purchase' },
-      { reason_name: 'Wrong item received', type: 'purchase' },
-      { reason_name: 'Quality not as expected', type: 'purchase' },
-      { reason_name: 'Excess inventory', type: 'purchase' },
-      { reason_name: 'Defective product', type: 'purchase' },
-    ];
+  // SaleX return reasons (same as sale)
+  { reason_name: 'Customer Dissatisfaction', type: 'salex' },
+  { reason_name: 'Wrong Item Delivered', type: 'salex' },
+  { reason_name: 'Defective Product', type: 'salex' },
+  { reason_name: 'Size/Color Issue', type: 'salex' },
+  { reason_name: 'Changed Mind', type: 'salex' },
+  { reason_name: 'Damaged in Transit', type: 'salex' },
+  { reason_name: 'Late Delivery', type: 'salex' }
+];
 
-    for (const reason of returnReasons) {
-      // Check if reason already exists
+async function main() {
+  console.log('Seeding return reasons...');
+
+  for (const reason of returnReasons) {
+    try {
       const existing = await prisma.return_reasons.findFirst({
         where: {
           reason_name: reason.reason_name,
@@ -33,28 +46,29 @@ async function seedReturnReasons() {
 
       if (!existing) {
         await prisma.return_reasons.create({
-          data: reason
+          data: {
+            reason_name: reason.reason_name,
+            type: reason.type,
+            status: 'Active'
+          }
         });
-        console.log(`✅ Created: ${reason.reason_name} (${reason.type})`);
+        console.log(`✓ Created: ${reason.reason_name} (${reason.type})`);
       } else {
-        console.log(`⚠️  Already exists: ${reason.reason_name} (${reason.type})`);
+        console.log(`- Skipped: ${reason.reason_name} (${reason.type}) - already exists`);
       }
+    } catch (error) {
+      console.error(`✗ Error creating ${reason.reason_name}:`, error.message);
     }
-
-    // Verify seeding
-    const count = await prisma.return_reasons.count();
-    console.log(`\nTotal return reasons: ${count}`);
-
-  } catch (error) {
-    console.error('Error seeding return reasons:', error);
-  } finally {
-    await prisma.$disconnect();
   }
+
+  console.log('Return reasons seeding completed!');
 }
 
-// Check if script is run directly
-if (require.main === module) {
-  seedReturnReasons();
-}
-
-module.exports = { seedReturnReasons };
+main()
+  .catch((e) => {
+    console.error('Seeding failed:', e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

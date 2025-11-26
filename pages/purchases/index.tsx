@@ -1,9 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/router';
 import useStorageState from 'use-storage-state';
 import { PurchaseTable } from '../../components/transactions/PurchaseTable';
-import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
@@ -48,7 +46,6 @@ interface Pagination {
 }
 
 export default function PurchasesPage() {
-  const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
   // Define filter type
@@ -95,10 +92,7 @@ export default function PurchasesPage() {
   // Debounce timeout ref
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Modal states for return confirmation
-  const [showReturnModal, setShowReturnModal] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
-  const [processingReturn, setProcessingReturn] = useState(false);
+
 
   // Data states
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -276,75 +270,7 @@ export default function PurchasesPage() {
 
 
 
-  // Handle return actions
-  const handlePartialReturn = (transaction: Purchase) => {
-    const returnStatus = transaction.return_status || 0;
-    if (returnStatus === 0 || returnStatus === 1) {
-      console.log('Starting partial return for purchase:', transaction.id);
-      router.push(`/entry/purchasereturn-create?purchase=${transaction.id}&type=partial`);
-    } else {
-      alert('Full returns cannot be modified with partial returns. Use full return for fully returned purchases.');
-    }
-  };
 
-  const handleReturnWholeOrder = (transaction: Purchase) => {
-    console.log('Return whole order for purchase:', transaction);
-    setSelectedTransaction(transaction);
-    setShowReturnModal(true);
-  };
-
-  const confirmReturnWholeOrder = async () => {
-    if (!selectedTransaction) return;
-
-    setProcessingReturn(true);
-    try {
-      // Call the purchase returns API to create a full return
-      const response = await fetch('/api/purchase-returns', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          purchase_id: selectedTransaction.id,
-          return_type: 'purchase',
-          full_return: true, // Flag for full return
-          return_date: Math.floor(Date.now() / 1000), // Current timestamp
-          notes: 'Full order return processed automatically'
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        showSnackbar('success', `Successfully processed full return for invoice #${selectedTransaction.invoice_no}`);
-        // Refresh the data to update the table
-        fetchPurchases();
-      } else {
-        const error = await response.json();
-        showSnackbar('error', `Failed to process return: ${error.message || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Error processing return:', error);
-      showSnackbar('error', 'Network error occurred while processing return');
-    } finally {
-      setProcessingReturn(false);
-      setShowReturnModal(false);
-      setSelectedTransaction(null);
-    }
-  };
-
-  const cancelReturnWholeOrder = () => {
-    setShowReturnModal(false);
-    setSelectedTransaction(null);
-  };
-
-  const handleFullReturn = (transaction: Purchase) => {
-    const returnStatus = transaction.return_status || 0;
-    if (returnStatus === 0) {
-      handleReturnWholeOrder(transaction);
-    } else {
-      alert('Full returns are only available for purchases with no previous returns.');
-    }
-  };
 
   // Print individual purchase
   const handlePrintPurchase = (transaction: Purchase) => {
@@ -424,8 +350,7 @@ export default function PurchasesPage() {
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}} // Handled by Link in component
         onPrintDetails={handlePrintPurchase}
-        onPartialReturn={handlePartialReturn}
-        onFullReturn={handleFullReturn}
+
         sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         initialFilters={{
@@ -452,20 +377,7 @@ export default function PurchasesPage() {
         )}
       />
 
-      {/* Confirmation Modal for Full Order Return */}
-      <ConfirmationModal
-        isOpen={showReturnModal}
-        title="Confirm Full Order Return"
-        message={`Are you sure you want to process a full return for invoice #${selectedTransaction?.invoice_no} (${selectedTransaction?.customer_vendor_name})?
 
-This will return all items in the purchase order and cannot be undone.`}
-        confirmText="Process Return"
-        cancelText="Cancel"
-        showLoading={processingReturn}
-        loadingText="Processing Return..."
-        onConfirm={confirmReturnWholeOrder}
-        onCancel={cancelReturnWholeOrder}
-      />
     </div>
   );
 }
