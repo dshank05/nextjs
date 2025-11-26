@@ -144,12 +144,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const where: any = {};
     if (includeInactive !== 'true') where.is_active = true;
 
-    // Handle search term using display_name (contains all product info)
+    // Handle search term - search across multiple fields for comprehensive results
     // MySQL's default collation is case-insensitive, so this will work automatically
     if (search) {
       const term = (search as string).trim();
-      // Search on display_name which includes: UID, car model, category, subcategory, company, part_no
-      where.display_name = { contains: term };
+      // Search across display_name, product_name, and part_no for maximum coverage
+      where.OR = [
+        { display_name: { contains: term } }, // UID + car model + category + subcategory + company + part_no
+        { product_name: { contains: term } }, // Direct product name search
+        { part_no: { contains: term } }       // Direc  t part number search
+      ];
     }
 
     // Handle category filter (legacy support)
@@ -221,6 +225,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Handle low stock filter with raw SQL since Prisma doesn't support field-to-field comparisons
     if (stockFilter === 'low_stock') {
+      // Build search conditions for raw SQL
+      let searchConditions = '';
+      if (search) {
+        const term = (search as string).trim();
+        searchConditions = `AND (p.display_name LIKE '%${term}%' OR p.product_name LIKE '%${term}%' OR p.part_no LIKE '%${term}%')`;
+      }
+
+      // Build car model conditions for raw SQL
+      let modelConditions = '';
+      if (modelFilter && (modelFilter as string).trim()) {
+        const modelId = (modelFilter as string).trim();
+        modelConditions = `AND (p.car_model_ids LIKE '%,${modelId},%' OR p.car_model_ids LIKE '${modelId},%' OR p.car_model_ids LIKE '%,${modelId}' OR p.car_model_ids = '${modelId}')`;
+      }
+
       // Use raw SQL only for low stock filter
       const lowStockProducts = await prisma.$queryRaw`
         SELECT p.*, g.rate as gst_rate_value
@@ -230,8 +248,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
           ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
           ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
-          ${where.part_no ? `AND p.part_no ILIKE '%${where.part_no?.contains}%'` : ''}
+          ${where.part_no ? `AND p.part_no LIKE '%${where.part_no?.contains}%'` : ''}
           ${where.id ? `AND p.id = ${where.id}` : ''}
+          ${searchConditions}
+          ${modelConditions}
           ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
         ORDER BY p.id DESC
         LIMIT ${limitNum} OFFSET ${skip}
@@ -245,8 +265,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
           ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
           ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
-          ${where.part_no ? `AND p.part_no ILIKE '%${where.part_no?.contains}%'` : ''}
+          ${where.part_no ? `AND p.part_no LIKE '%${where.part_no?.contains}%'` : ''}
           ${where.id ? `AND p.id = ${where.id}` : ''}
+          ${searchConditions}
+          ${modelConditions}
           ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
       ` as any[];
 

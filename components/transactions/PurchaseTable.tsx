@@ -697,7 +697,14 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 <td className="font-medium text-white">
                   {purchase.invoice_no}
                 </td>
-                <td className="text-slate-300">{purchase.bill_reference || 'N/A'}</td>
+                <td className="text-slate-300">
+                  <div className="flex flex-col">
+                    <span className="text-white font-medium">{purchase.bill_reference || 'N/A'}</span>
+                    {(purchase as any).bill_reference_date && (purchase as any).bill_reference_date !== '-' && (
+                      <span className="text-slate-400 text-xs">{(purchase as any).bill_reference_date}</span>
+                    )}
+                  </div>
+                </td>
                 <td className="text-slate-300">
                   <div className="font-medium">{purchase.customer_vendor_name || purchase.vendor_name || 'N/A'}</div>
                 </td>

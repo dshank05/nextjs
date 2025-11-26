@@ -831,6 +831,10 @@ export default function PurchaseView() {
               <span className="text-slate-400">Bill Reference:</span>
               <span className="text-white font-medium">{purchase.bill_reference || 'N/A'}</span>
             </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Bill Reference Date:</span>
+              <span className="text-white font-medium">{(purchase as any).bill_reference_date || 'N/A'}</span>
+            </div>
           </div>
 
           {/* Column 2: Vendor & Staff Info */}

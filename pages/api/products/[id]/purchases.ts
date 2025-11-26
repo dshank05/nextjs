@@ -39,6 +39,7 @@ export default async function handler(
         select: {
           invoice_no: true,
           bill_reference: true,
+          bill_reference_date: true,
           invoice_date: true,
           total: true,
           vendor_id: true
@@ -63,7 +64,7 @@ export default async function handler(
       const invoice = invoiceMap.get(item.invoice_no)
       const vendor = vendorMap.get(item.vendor_id)
 
-      // Format date
+      // Format invoice date
       let formattedDate = '-'
       if (invoice?.invoice_date) {
         try {
@@ -83,9 +84,24 @@ export default async function handler(
         }
       }
 
+      // Format bill reference date
+      let formattedBillRefDate = '-'
+      if (invoice?.bill_reference_date) {
+        try {
+          const dateObj = new Date(invoice.bill_reference_date)
+          if (!isNaN(dateObj.getTime())) {
+            formattedBillRefDate = dateObj.toLocaleDateString('en-IN')
+          }
+        } catch (error) {
+          console.warn('Error formatting bill reference date:', error)
+        }
+      }
+
       return {
         sn: index + 1,
         invoice_number: item.invoice_no?.toString() || '-',
+        bill_reference: invoice?.bill_reference || '-',
+        bill_reference_date: formattedBillRefDate,
         vendor: vendor?.vendor_name || '-',
         qty: item.qty || 0,
         rate: item.rate || 0,
