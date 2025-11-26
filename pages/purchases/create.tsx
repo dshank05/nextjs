@@ -189,6 +189,9 @@ export default function PurchaseCreate() {
   // State for tax toggle
   const [enableTax, setEnableTax] = useState(false);
 
+  // State for barcode scanning toggle
+  const [enableBarcodeScanning, setEnableBarcodeScanning] = useState(false);
+
   // State for editing existing products
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
@@ -339,6 +342,7 @@ export default function PurchaseCreate() {
   useBarcodeScanner({
     context: 'purchase',
     vendorState: vendorStateForTax,
+    enabled: enableBarcodeScanning,
     onProductFound: (productData) => {
       const purchaseItem: PurchaseItem = {
         id: Date.now().toString(),
@@ -1727,7 +1731,7 @@ export default function PurchaseCreate() {
 
               {/* Tax Toggle & Barcode Test */}
               <div className="mb-4 space-y-3">
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-6">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1739,6 +1743,21 @@ export default function PurchaseCreate() {
                   </label>
                   <span className="text-xs text-slate-500">
                     {enableTax ? 'Tax will be calculated and included' : 'Tax will be disabled (values set to 0)'}
+                  </span>
+                </div>
+
+                <div className="flex items-center space-x-6">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableBarcodeScanning}
+                      onChange={(e) => setEnableBarcodeScanning(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <span className="text-sm font-medium text-slate-300">Enable Barcode Scanning</span>
+                  </label>
+                  <span className="text-xs text-slate-500">
+                    {enableBarcodeScanning ? 'Barcode scanner is active - scan barcodes to add products' : 'Barcode scanner is disabled - normal typing in inputs'}
                   </span>
                 </div>
 

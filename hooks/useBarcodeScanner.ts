@@ -6,6 +6,7 @@ interface UseBarcodeScannerOptions {
   onProductFound: (product: any) => void;
   onError?: (error: string) => void;
   enabled?: boolean;
+  requireFocus?: boolean; // Only scan when no input is focused
 }
 
 export const useBarcodeScanner = ({
@@ -27,6 +28,11 @@ export const useBarcodeScanner = ({
       const currentTime = Date.now();
       const timeDiff = currentTime - lastKeyTime;
 
+      // Check if user is currently typing in an input field
+      const isInInputField = e.target instanceof HTMLElement &&
+        (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' ||
+         e.target.contentEditable === 'true' || e.target.closest('[contenteditable="true"]'));
+
       console.log('🔍 Key event detected:', {
         key: e.key,
         code: e.code,
@@ -34,8 +40,15 @@ export const useBarcodeScanner = ({
         bufferLength: buffer.length,
         isScanning,
         target: e.target instanceof HTMLElement ? e.target.tagName : 'unknown',
+        isInInputField,
         type: e.type
       });
+
+      // Skip barcode scanning if user is actively typing in an input field
+      if (isInInputField && !isScanning) {
+        console.log('⏭️ Skipping barcode scan - user is typing in input field');
+        return;
+      }
 
       // Detect scanner input (very fast, or starts with numbers)
       const isScannerInput = timeDiff < 50 || buffer.length > 0 || /^\d/.test(e.key);

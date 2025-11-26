@@ -16,9 +16,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   console.log(`🔍 ${contextStr.toUpperCase()} barcode lookup:`, code);
 
   try {
+    // Search by product ID (assuming barcode scanner reads product ID)
+    const productId = parseInt(code);
+    if (isNaN(productId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid product ID format',
+        barcode: code
+      });
+    }
+
     // Get product with all relations
     const product = await prisma.product.findFirst({
-      where: { barcode: code, is_active: true },
+      where: { id: productId, is_active: true },
       include: {
         category_ref: true,
         subcategory_ref: true,
