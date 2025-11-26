@@ -8,6 +8,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
+import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 
 
 interface Vendor {
@@ -333,6 +334,24 @@ export default function PurchaseCreate() {
       setErrors({});
     }
   }, [isProductPanelOpen]);
+
+  // Passive barcode scanning for purchase items
+  useBarcodeScanner({
+    context: 'purchase',
+    vendorState: vendorStateForTax,
+    onProductFound: (productData) => {
+      const purchaseItem: PurchaseItem = {
+        id: Date.now().toString(),
+        ...productData
+      };
+
+      setSelectedProducts(prev => [...prev, purchaseItem]);
+      showSnackbar('success', `${productData.product_name} added via barcode scan!`);
+    },
+    onError: (error) => {
+      showSnackbar('warning', `Barcode scan error: ${error}`);
+    }
+  });
 
   // Function to generate dynamic product name in new format: UID CAR MODEL CATEGORY [SUBCATEGORY] COMPANY [PARTNUMBER]
   const generateDynamicProductName = (product: Product, selectedCarModelIds: string[], partNumber?: string): string => {
@@ -1706,20 +1725,84 @@ export default function PurchaseCreate() {
             <div className="mb-5 border-t border-slate-600 pt-4">
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
-              {/* Tax Toggle */}
-              <div className="mb-4 flex items-center space-x-3">
-                <label className="flex items-center space-x-2 cursor-pointer">
+              {/* Tax Toggle & Barcode Test */}
+              <div className="mb-4 space-y-3">
+                <div className="flex items-center space-x-3">
+                  <label className="flex items-center space-x-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enableTax}
+                      onChange={(e) => setEnableTax(e.target.checked)}
+                      className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                    />
+                    <span className="text-sm font-medium text-slate-300">Enable Tax Calculation</span>
+                  </label>
+                  <span className="text-xs text-slate-500">
+                    {enableTax ? 'Tax will be calculated and included' : 'Tax will be disabled (values set to 0)'}
+                  </span>
+                </div>
+
+                {/* Barcode Test Input */}
+                <div className="flex items-center space-x-3 p-3 bg-slate-800 rounded border border-slate-600">
+                  <label className="text-sm font-medium text-slate-300">Test Barcode:</label>
                   <input
-                    type="checkbox"
-                    checked={enableTax}
-                    onChange={(e) => setEnableTax(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                    type="text"
+                    placeholder="Enter barcode to test..."
+                    className="input flex-1 text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const testBarcode = (e.target as HTMLInputElement).value.trim();
+                        if (testBarcode) {
+                          console.log('🧪 Manual barcode test:', testBarcode);
+                          // Simulate barcode scanning by calling the same logic
+                          const mockEvent = {
+                            key: 'Enter',
+                            preventDefault: () => {},
+                            stopPropagation: () => {}
+                          };
+
+                          // Manually trigger the barcode lookup
+                          (async () => {
+                            try {
+                              const params = new URLSearchParams({
+                                code: testBarcode,
+                                context: 'purchase',
+                                ...(vendorStateForTax && { vendorState: vendorStateForTax })
+                              });
+
+                              console.log('🧪 Test API request:', `/api/barcode/lookup?${params}`);
+
+                              const response = await fetch(`/api/barcode/lookup?${params}`);
+                              const data = await response.json();
+
+                              console.log('🧪 Test API response:', data);
+
+                              if (data.success && data.product) {
+                                console.log('✅ Test product found:', data.product.product_name);
+                                const purchaseItem: PurchaseItem = {
+                                  id: Date.now().toString(),
+                                  ...data.product
+                                };
+                                setSelectedProducts(prev => [...prev, purchaseItem]);
+                                showSnackbar('success', `${data.product.product_name} added via test barcode!`);
+                              } else {
+                                console.error('❌ Test product lookup failed:', data.error);
+                                showSnackbar('warning', `Test barcode error: ${data.error || 'Product not found'}`);
+                              }
+                            } catch (error) {
+                              console.error('💥 Test barcode lookup error:', error);
+                              showSnackbar('error', 'Test barcode lookup failed');
+                            }
+                          })();
+
+                          (e.target as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
                   />
-                  <span className="text-sm font-medium text-slate-300">Enable Tax Calculation</span>
-                </label>
-                <span className="text-xs text-slate-500">
-                  {enableTax ? 'Tax will be calculated and included' : 'Tax will be disabled (values set to 0)'}
-                </span>
+                  <span className="text-xs text-slate-500">Press Enter to test</span>
+                </div>
               </div>
 
               {/* Product Selection & Display Table */}

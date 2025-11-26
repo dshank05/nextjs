@@ -228,7 +228,7 @@ export const exportToExcelGeneric = async (
     sheet.columns = headers.map(header => ({
       header: showHeaders ? header : '',
       key: header,
-      width: Math.max(10, header.length)
+      width: Math.max(25, header.length * 1.5) // Increased from 10 to 25, with 1.5x multiplier
     }));
 
     // Add data rows (starting from row 1 if no headers, row 2 if headers)
@@ -300,4 +300,68 @@ export const getAllVisibleData = async (transactions: Transaction[]): Promise<Tr
   // For now, just return all transactions (assuming all data is visible)
   // In future implementations, this could handle pagination and loading all pages
   return transactions;
+};
+
+// Print section types
+export interface PrintSection {
+  type: 'header' | 'info-grid' | 'table' | 'notes';
+  title?: string;
+  data: any;
+  columns?: string[] | Array<{key: string, label: string, format?: 'currency' | 'date' | 'number' | 'text'}>;
+  layout?: '1-column' | '2-column' | '3-column' | '4-column';
+}
+
+// Universal print function for any page - uses templates
+export const printPage = async (config: {
+  title: string;
+  businessDetails?: any;
+  output?: 'print' | 'pdf';
+  pageType: 'purchase-view' | 'sale-view' | 'product-view' | 'index-table';
+  data: any; // Page-specific data
+}): Promise<void> => {
+  try {
+    // Import template generator
+    const { generatePageTemplate } = await import('./pdf-templates');
+
+    // Generate HTML using appropriate template
+    const htmlContent = generatePageTemplate(config);
+
+    if (config.output === 'pdf') {
+      // Generate PDF using html2pdf
+      const html2pdf = (await import('html2pdf.js')).default;
+
+      const options = {
+        margin: 0.5,
+        filename: `${config.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: {
+          scale: 1,
+          useCORS: true,
+          backgroundColor: '#ffffff'
+        },
+        jsPDF: { unit: 'in' as const, format: 'a4' as const, orientation: 'portrait' as const }
+      };
+
+      await html2pdf().set(options).from(htmlContent.outerHTML).save();
+    } else {
+      // Open in print window
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(htmlContent.outerHTML);
+        printWindow.document.close();
+        printWindow.focus();
+
+        // Wait for content to load then print
+        printWindow.onload = () => {
+          printWindow.print();
+          printWindow.close();
+        };
+      } else {
+        alert('Please allow popups for this site to use the print function.');
+      }
+    }
+  } catch (error) {
+    console.error('Print/PDF error:', error);
+    alert('Error generating print/PDF. Please try again.');
+  }
 };
