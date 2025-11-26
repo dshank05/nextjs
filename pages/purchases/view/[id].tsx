@@ -963,7 +963,7 @@ export default function PurchaseView() {
           </div>
         </div>
 
-        {/* Purchase Items Table - Integrated into same card */}
+        {/* Purchase Items Table - Enhanced with more details */}
         <div className="border-t border-slate-700 mt-6 pt-6">
           <div className="overflow-x-auto">
             <table className="table">
@@ -975,23 +975,31 @@ export default function PurchaseView() {
                   <th>HSN</th>
                   <th>Qty</th>
                   <th>Rate</th>
+                  <th>Tax %</th>
+                  <th>Tax Amount</th>
                   <th>Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                {purchase.items?.map((item, index) => (
-                  <tr key={item.id}>
-                    <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.display_name || item.product_name}</td>
-                    <td className="text-slate-300">{item.part || 'N/A'}</td>
-                    <td className="text-slate-300">{item.hsn || 'N/A'}</td>
-                    <td className="text-slate-300 font-medium">{item.qty}</td>
-                    <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
-                    <td className="text-slate-300 font-semibold">₹{(item.total || item.subtotal)?.toLocaleString('en-IN')}</td>
-                  </tr>
-                )) || (
+                {purchase.items?.map((item, index) => {
+                  const taxAmount = (item.total || item.subtotal || 0) - ((item.qty * (item.rate || 0)) / (1 + (item.gst_percentage || 0) / 100));
+
+                  return (
+                    <tr key={item.id}>
+                      <td>{index + 1}</td>
+                      <td className="font-medium text-white">{item.display_name || item.product_name}</td>
+                      <td className="text-slate-300">{item.part || 'N/A'}</td>
+                      <td className="text-slate-300">{item.hsn || 'N/A'}</td>
+                      <td className="text-slate-300 font-medium">{item.qty}</td>
+                      <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300">{item.gst_percentage || item.tax || 0}%</td>
+                      <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300 font-semibold">₹{(item.total || item.subtotal)?.toLocaleString('en-IN')}</td>
+                    </tr>
+                  );
+                }) || (
                   <tr>
-                    <td colSpan={7} className="text-center text-slate-400 py-4">
+                    <td colSpan={9} className="text-center text-slate-400 py-4">
                       No items found for this purchase
                     </td>
                   </tr>
@@ -999,9 +1007,13 @@ export default function PurchaseView() {
               </tbody>
               {purchase.items && purchase.items.length > 0 && (
                 <tfoot>
-                  <tr className="border-t border-slate-700">
-                    <td colSpan={5} className="text-right text-slate-300 font-semibold py-2">Items Total:</td>
-                    <td className="text-white font-bold pl-6">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
+                  <tr className="border-t border-slate-700 bg-slate-800/30">
+                    <td colSpan={4} className="text-right text-slate-300 font-semibold py-3 pr-4 text-sm">TOTALS</td>
+                    <td className="text-white font-bold text-center py-3 bg-slate-700/20">{purchase.items?.reduce((sum, item) => sum + (item.qty || 0), 0)}</td>
+                    <td className="text-slate-400 py-3 text-center">-</td>
+                    <td className="text-slate-400 py-3 text-center">-</td>
+                    <td className="text-white font-bold text-center py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>
+                    <td className="text-white font-bold text-center py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               )}
