@@ -2552,15 +2552,15 @@ export default function PurchaseCreate() {
                               {product.qty}
                             </td>
                             <td className="px-4 py-3 text-center text-xs text-slate-200">
-                              ₹{product.rate.toFixed(2)}
+                              ₹{Math.round(product.rate)}
                             </td>
                             {enableTax && (
                               <td className="px-4 py-3 text-center text-xs text-slate-200">
-                                ₹{product.tax.toFixed(2)}
+                                ₹{Math.round(product.tax)}
                               </td>
                             )}
                             <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
-                              ₹{product.total.toFixed(2)}
+                              ₹{Math.round(product.total)}
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center space-x-1">
@@ -2846,7 +2846,7 @@ export default function PurchaseCreate() {
                       <div className="flex items-center space-x-2">
                         <Calculator className="w-4 h-4 text-slate-400" />
                         <span className="text-white font-semibold text-lg">
-                          ₹{grandTotal.toFixed(2)}
+                          ₹{Math.round(grandTotal)}
                         </span>
                       </div>
                     </div>
@@ -2918,7 +2918,7 @@ export default function PurchaseCreate() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title={isEditMode ? "Update Purchase?" : "Create Purchase?"}
-        message={`Are you sure you want to ${isEditMode ? 'update' : 'create'} this purchase for ₹${grandTotal.toFixed(2)}? ${isEditMode ? 'This will update the existing purchase.' : 'This action cannot be undone.'}`}
+        message={`Are you sure you want to ${isEditMode ? 'update' : 'create'} this purchase for ₹${Math.round(grandTotal)}? ${isEditMode ? 'This will update the existing purchase.' : 'This action cannot be undone.'}`}
         confirmText={isEditMode ? "Update Purchase" : "Create Purchase"}
         cancelText="Cancel"
         showLoading={loading}
