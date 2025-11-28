@@ -1439,7 +1439,7 @@ export default function PurchaseCreate() {
           router.push(`/purchases/view/${purchaseId}`);
         } else {
           // Fallback to purchases list if no purchase ID
-          router.push('/purchases');
+          router.push(`/purchases/view/${purchaseId + 1}`);
         }
 
         // Show success snackbar after navigation
@@ -1768,8 +1768,8 @@ export default function PurchaseCreate() {
                           // Simulate barcode scanning by calling the same logic
                           const mockEvent = {
                             key: 'Enter',
-                            preventDefault: () => {},
-                            stopPropagation: () => {}
+                            preventDefault: () => { },
+                            stopPropagation: () => { }
                           };
 
                           // Manually trigger the barcode lookup
@@ -2392,7 +2392,7 @@ export default function PurchaseCreate() {
                                     const subtotal = qty * rate;
                                     const taxAmount = (subtotal * gstPercent) / 100;
                                     const total = subtotal + taxAmount;
-                                    
+
                                     setEditingRowData(prev => prev ? {
                                       ...prev,
                                       qty: parseFloat(newQty) || 1,
@@ -2430,7 +2430,7 @@ export default function PurchaseCreate() {
                                     const subtotal = qty * rate;
                                     const taxAmount = (subtotal * gstPercent) / 100;
                                     const total = subtotal + taxAmount;
-                                    
+
                                     setEditingRowData(prev => prev ? {
                                       ...prev,
                                       rate: parseFloat(newRate) || 0,
@@ -2468,7 +2468,7 @@ export default function PurchaseCreate() {
                                       const subtotal = qty * rate;
                                       const taxAmount = (subtotal * gstPercent) / 100;
                                       const total = subtotal + taxAmount;
-                                      
+
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
                                         gst_percentage: parseFloat(newGst) || 0,
