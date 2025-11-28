@@ -2812,18 +2812,18 @@ export default function InvoiceCreate() {
                               {product.qty}
                             </td>
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ₹{product.rate.toFixed(2)}
+                              ₹{Math.round(product.rate)}
                             </td>
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ₹{product.tax.toFixed(2)}
+                              ₹{Math.round(product.tax)}
                             </td>
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ₹{product.discount_amount.toFixed(2)}
+                                ₹{Math.round(product.discount_amount)}
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                              ₹{product.total.toFixed(2)}
+                              ₹{Math.round(product.total)}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
