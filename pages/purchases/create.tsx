@@ -1421,13 +1421,20 @@ export default function PurchaseCreate() {
       setShowConfirmationModal(false);
 
       if (response.ok) {
+        const responseData = await response.json();
+
         // Clean up sessionStorage on successful update
         if (isEditMode && editPurchaseId) {
           SessionStorageService.remove('purchases', editPurchaseId.toString());
         }
 
+        // Extract purchase ID from response
+        const purchaseId = isEditMode ? editPurchaseId : responseData.purchase?.id || responseData.id;
+
+        console.log('Purchase creation response:', responseData);
+        console.log('Extracted purchaseId:', purchaseId);
+
         // Broadcast the creation/update event
-        const purchaseId = isEditMode ? editPurchaseId : (response as any).purchase?.id || (response as any).id;
         broadcast({
           type: isEditMode ? 'updated' : 'created',
           resource: 'purchases',
@@ -1435,11 +1442,12 @@ export default function PurchaseCreate() {
         });
 
         // Navigate to purchase view page for both create and update
-        if (purchaseId) {
+        if (purchaseId && !isNaN(purchaseId)) {
           router.push(`/purchases/view/${purchaseId}`);
         } else {
-          // Fallback to purchases list if no purchase ID
-          router.push(`/purchases/view/${purchaseId + 1}`);
+          console.error('Invalid purchase ID received:', purchaseId);
+          showSnackbar('error', 'Purchase created but navigation failed. Redirecting to purchases list.');
+          router.push('/purchases');
         }
 
         // Show success snackbar after navigation
