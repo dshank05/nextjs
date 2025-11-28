@@ -472,12 +472,72 @@ export default function PurchaseCreate() {
     fetchProducts(selectedPanelCarModel, productSearchTerm);
   }, [productSearchTerm, selectedPanelCarModel]);
 
-  // Auto-product selection (simplified version - removed as per user request)
-  // The user wanted to remove complex auto-selection logic, so this effect is now simplified
+  // Auto-product selection based on filters (category + car model + company)
   useEffect(() => {
-    // Removed complex auto-selection logic - now only side panel autofills filters
-    // Manual filter selection doesn't auto-select products anymore
-  }, []);
+    // Only run if we have all required filters
+    if (productRowFilters.category > 0 &&
+        productRowFilters.carModels.length > 0 &&
+        productRowFilters.company > 0) {
+
+      // Find products that match all criteria
+      const matchingProducts = products.filter(product => {
+        // Check category match
+        const categoryMatch = product.product_category_id === productRowFilters.category;
+
+        // Check company match
+        const companyMatch = product.company_id === productRowFilters.company;
+
+        // Check car model compatibility
+        const carModelMatch = product.car_model_ids &&
+          product.car_model_ids.split(',').some(modelId =>
+            productRowFilters.carModels.includes(modelId.trim())
+          );
+
+        return categoryMatch && companyMatch && carModelMatch;
+      });
+
+      // Handle auto-selection logic
+      if (matchingProducts.length === 1) {
+        // Exactly one match - auto-select it
+        const autoSelectedProduct = matchingProducts[0];
+        console.log('🎯 Auto-selected product based on filters:', autoSelectedProduct.product_name);
+
+        // Auto-select the product
+        setSelectedRowProduct(autoSelectedProduct);
+
+        // Update template row with product rates
+        setTemplateRow(prev => ({
+          ...prev,
+          rate: autoSelectedProduct.latest_purchase_rate?.toString() ||
+                autoSelectedProduct.opening_rate?.toString() ||
+                autoSelectedProduct.rate?.toString() || '',
+          gst: autoSelectedProduct.gst_rate_percentage?.toString() || '0'
+        }));
+
+        // Show success message
+        showSnackbar('success', `Auto-selected: ${autoSelectedProduct.product_name}`);
+      } else if (matchingProducts.length === 0 && selectedRowProduct) {
+        // No products match current filters - clear the incompatible selection
+        console.log('🗑️ Clearing incompatible product selection - no matches for current filters');
+        setSelectedRowProduct(null);
+
+        // Clear template row rates since product is no longer valid
+        setTemplateRow(prev => ({
+          ...prev,
+          rate: '',
+          gst: '0'
+        }));
+
+        // Show warning message
+        // showSnackbar('warning', 'Selected product is not compatible with current filters');
+      } else if (matchingProducts.length > 1) {
+
+        // Multiple matches - let user choose manually
+        console.log('⚠️ Multiple products match filters, user needs to choose manually');
+      }
+    }
+  }, [productRowFilters.category, productRowFilters.carModels, productRowFilters.company,productRowFilters.subcategory, products, selectedRowProduct, showSnackbar]);
+
 
   // Auto-calculate tax totals when products change or vendor state changes
   useEffect(() => {
@@ -1432,7 +1492,11 @@ export default function PurchaseCreate() {
         const purchaseId = isEditMode ? editPurchaseId : responseData.purchase?.id || responseData.id;
 
         console.log('Purchase creation response:', responseData);
+        console.log('responseData.purchase:', responseData.purchase);
+        console.log('responseData.purchase?.id:', responseData.purchase?.id);
+        console.log('responseData.id:', responseData.id);
         console.log('Extracted purchaseId:', purchaseId);
+        console.log('isNaN(purchaseId):', isNaN(purchaseId));
 
         // Broadcast the creation/update event
         broadcast({
@@ -1828,42 +1892,42 @@ export default function PurchaseCreate() {
                 <table className="w-full">
                   <thead className="bg-slate-700">
                     <tr>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-16">
+                      <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-16">
                         SN
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PRODUCT NAME
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CATEGORY
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         SUB CATEGORY
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CAR MODELS
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         COMPANY
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PART NO
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
+                      <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         QTY
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
+                      <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-24">
                         RATE
                       </th>
                       {enableTax && (
-                        <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                        <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                           TAX (%)
                         </th>
                       )}
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                      <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                         TOTAL
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
+                      <th className="px-2 py-2 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                         ACTION
                       </th>
                     </tr>
@@ -1871,34 +1935,77 @@ export default function PurchaseCreate() {
                   <tbody>
                     {/* Input Row (Template) */}
                     <tr className="bg-slate-800 border-b-2 border-slate-600">
-                      <td className="px-4 py-3 text-center w-16">
+                      <td className="px-2 py-2 text-center w-16">
                         {/* Hidden SN column to maintain alignment */}
                       </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            // Clear any existing validation errors when opening panel
-                            setErrors({});
-                            setProductSearchTerm(''); // Clear search when opening panel
-                            setIsProductPanelOpen(true);
-                          }}
-                          disabled={!selectedVendorId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedVendorId
-                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                            }`}
-                          title={!selectedVendorId ? 'Please select a vendor first' : ''}
-                        >
-                          {selectedRowProduct ? (
-                            selectedRowProduct.product_name || 'Select Product'
-                          ) : (
-                            <span className="text-slate-400">Select Product</span>
-                          )}
-                        </button>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center space-x-2">
+                          <div className="flex-1">
+                            <SearchableSelect
+                              options={[
+                                { id: '', name: 'Select Product' },
+                                // Show products filtered by selected car models
+                                ...products
+                                  .filter(product => {
+                                    // If no car models selected, show all products
+                                    if (productRowFilters.carModels.length === 0) {
+                                      return true;
+                                    }
+                                    // Show only products compatible with selected car models
+                                    return product.car_model_ids &&
+                                      product.car_model_ids.split(',').some(modelId =>
+                                        productRowFilters.carModels.includes(modelId.trim())
+                                      );
+                                  })
+                                  .map(product => ({
+                                    id: product.id.toString(),
+                                    name: product.product_name
+                                  }))
+                              ]}
+                              selectedValue={selectedRowProduct?.id?.toString() || ''}
+                              onSelectionChange={(value) => {
+                                if (!value) {
+                                  // Clear selection
+                                  setSelectedRowProduct(null);
+                                  return;
+                                }
 
+                                if (value && selectedRowProduct?.id?.toString() === value) {
+                                  // Already selected, no change needed
+                                  return;
+                                }
+
+                                // Find and select the product
+                                const selectedProduct = products.find(p => p.id.toString() === value);
+                                if (selectedProduct) {
+                                  handleProductSelection(selectedProduct);
+                                }
+                              }}
+                              placeholder={selectedRowProduct ? selectedRowProduct.product_name : "Select Product"}
+                              disabled={!selectedVendorId}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Clear any existing validation errors when opening panel
+                              setErrors({});
+                              setProductSearchTerm(''); // Clear search when opening panel
+                              setIsProductPanelOpen(true);
+                            }}
+                            disabled={!selectedVendorId}
+                            className={`p-3 rounded text-xs transition-colors ${
+                              selectedVendorId
+                                ? 'bg-slate-600 hover:bg-slate-500 text-white'
+                                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
+                            title={!selectedVendorId ? 'Please select a vendor first' : 'Browse products'}
+                          >
+                            <Search className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Category' },
@@ -1920,7 +2027,7 @@ export default function PurchaseCreate() {
                           placeholder="Select Category"
                         />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Sub Category' },
@@ -1942,10 +2049,10 @@ export default function PurchaseCreate() {
                           placeholder="Select Sub Category"
                         />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <SearchableMultiSelect
                           mode="single"
-                          options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                          options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name })) || []}
                           selectedValue={productRowFilters.carModels.length > 0 ? productRowFilters.carModels[0] : null}
                           onSelectionChange={(value) => {
                             const newSelection = value ? [value] : [];
@@ -1956,23 +2063,15 @@ export default function PurchaseCreate() {
                               carModels: newSelection
                             }));
 
-                            // Update the product name directly when car models change
+                            // Clear selected product when car model changes (will be auto-selected later)
                             if (selectedRowProduct) {
-                              if (value) {
-                                const updatedProductName = generateDynamicProductName(selectedRowProduct, [value], productRowFilters.partNo);
-
-                                // Update the product's name directly
-                                setSelectedRowProduct(prev => prev ? {
-                                  ...prev,
-                                  product_name: updatedProductName
-                                } : null);
-                              }
+                              setSelectedRowProduct(null);
                             }
                           }}
                           placeholder="Select car model..."
                         />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Company' },
@@ -1994,7 +2093,7 @@ export default function PurchaseCreate() {
                           placeholder="Select Company"
                         />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <input
                           type="text"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white placeholder-slate-400"
@@ -2008,7 +2107,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-24">
+                      <td className="px-2 py-2 text-center w-24">
                         <input
                           type="number"
                           min="1"
@@ -2048,7 +2147,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-24">
+                      <td className="px-2 py-2 text-center w-24">
                         <input
                           type="number"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2088,7 +2187,7 @@ export default function PurchaseCreate() {
                         />
                       </td>
                       {enableTax && (
-                        <td className="px-4 py-3 text-center w-20">
+                        <td className="px-2 py-2 text-center w-20">
                           <input
                             type="number"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2109,7 +2208,7 @@ export default function PurchaseCreate() {
                           />
                         </td>
                       )}
-                      <td className="px-4 py-3 text-center w-20">
+                      <td className="px-2 py-2 text-center w-20">
                         <input
                           type="number"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2144,7 +2243,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-20">
+                      <td className="px-2 py-2 text-center w-20">
                         <div className="flex items-center justify-center space-x-2">
                           <button
                             type="button"
@@ -2302,26 +2401,26 @@ export default function PurchaseCreate() {
                     {/* Added Products Rows */}
                     {selectedProducts.map((product, index) => (
                       <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
-                        <td className="px-4 py-3 text-center text-xs text-slate-300">
+                        <td className="px-2 py-2 text-center text-xs text-slate-300">
                           {index + 1}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-200">
+                        <td className="px-2 py-2 text-xs text-slate-200">
                           {editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-200">
+                        <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const catOption = filterOptions.categories.find(cat => cat.id.toString() === product.category);
                             return catOption?.name || product.category;
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-200">
+                        <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const subCatOption = filterOptions.subcategories.find(sub => sub.id.toString() === product.sub_category);
                             return subCatOption?.name || product.sub_category;
                           })()}
                         </td>
                         {editingRowId === product.id ? (
-                          <td className="px-4 py-3">
+                          <td className="px-2 py-2">
                             {(() => {
                               // Find the product being edited
                               const editingProduct = products.find(p => p.id === product.product_id);
@@ -2367,23 +2466,23 @@ export default function PurchaseCreate() {
                             })()}
                           </td>
                         ) : (
-                          <td className="px-4 py-3 text-xs text-slate-200">
+                          <td className="px-2 py-2 text-xs text-slate-200">
                             {product.car_model}
                           </td>
                         )}
-                        <td className="px-4 py-3 text-xs text-slate-200">
+                        <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const compOption = filterOptions.companies.find(comp => comp.id.toString() === product.company);
                             return compOption?.name || product.company;
                           })()}
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-200">
+                        <td className="px-2 py-2 text-xs text-slate-200">
                           {product.part_number || 'N/A'}
                         </td>
                         {editingRowId === product.id ? (
                           <>
                             {/* Editable fields when inline editing */}
-                            <td className="px-4 py-3 text-center w-24">
+                            <td className="px-2 py-2 text-center w-24">
                               <input
                                 type="number"
                                 min="1"
@@ -2421,7 +2520,7 @@ export default function PurchaseCreate() {
                                 }}
                               />
                             </td>
-                            <td className="px-4 py-3 text-center w-24">
+                            <td className="px-2 py-2 text-center w-24">
                               <input
                                 type="number"
                                 inputMode="numeric"
@@ -2460,7 +2559,7 @@ export default function PurchaseCreate() {
                               />
                             </td>
                             {enableTax && (
-                              <td className="px-4 py-3 text-center w-20">
+                              <td className="px-2 py-2 text-center w-20">
                                 <input
                                   type="number"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2498,7 +2597,7 @@ export default function PurchaseCreate() {
                                 />
                               </td>
                             )}
-                            <td className="px-4 py-3 text-center w-20">
+                            <td className="px-2 py-2 text-center w-20">
                               <input
                                 type="number"
                                 className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2532,7 +2631,7 @@ export default function PurchaseCreate() {
                               />
                             </td>
                             {/* Save/Cancel buttons */}
-                            <td className="px-4 py-3 text-center">
+                            <td className="px-2 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
                                 <button
                                   type="button"
@@ -2556,21 +2655,21 @@ export default function PurchaseCreate() {
                         ) : (
                           <>
                             {/* Read-only display */}
-                            <td className="px-4 py-3 text-center text-xs text-slate-200">
+                            <td className="px-2 py-2 text-center text-xs text-slate-200">
                               {product.qty}
                             </td>
-                            <td className="px-4 py-3 text-center text-xs text-slate-200">
+                            <td className="px-2 py-2 text-center text-xs text-slate-200">
                               ₹{Math.round(product.rate)}
                             </td>
                             {enableTax && (
-                              <td className="px-4 py-3 text-center text-xs text-slate-200">
+                              <td className="px-2 py-2 text-center text-xs text-slate-200">
                                 ₹{Math.round(product.tax)}
                               </td>
                             )}
-                            <td className="px-4 py-3 text-center text-xs font-medium text-slate-200">
+                            <td className="px-2 py-2 text-center text-xs font-medium text-slate-200">
                               ₹{Math.round(product.total)}
                             </td>
-                            <td className="px-4 py-3 text-center">
+                            <td className="px-2 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
                                 <button
                                   type="button"
@@ -2598,17 +2697,17 @@ export default function PurchaseCreate() {
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
                       {/* <tr>
-                        <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
+                        <td colSpan={enableTax ? 10 : 9} className="px-2 py-2"></td>
+                        <td className="px-2 py-2 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                           SUBTOTAL
                         </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
+                        <td className="px-2 py-2 text-center text-sm font-semibold text-slate-200">
                           ₹{subtotal.toFixed(2)}
                         </td>
                       </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableTax ? 10 : 9} className="px-4 py-3"></td>
-                        <td colSpan={2} className="px-4 py-3 text-center">
+                        <td colSpan={enableTax ? 10 : 9} className="px-2 py-2"></td>
+                        <td colSpan={2} className="px-2 py-2 text-center">
                           <button
                             type="button"
                             onClick={() => setSelectedProducts([])}

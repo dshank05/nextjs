@@ -589,6 +589,61 @@ export default function InvoiceCCreate() {
     fetchProducts(selectedPanelCarModel, productSearchTerm);
   }, [productSearchTerm, selectedPanelCarModel]);
 
+  // Auto-select product when filters match exactly one product
+  useEffect(() => {
+    if (productRowFilters.category || productRowFilters.subcategory || productRowFilters.carModels.length > 0 || productRowFilters.company || productRowFilters.partNo) {
+      const matchingProducts = products.filter(product => {
+        // Category filter
+        if (productRowFilters.category && parseInt(productRowFilters.category) > 0 && product.product_category_id !== parseInt(productRowFilters.category)) {
+          return false;
+        }
+
+        // Subcategory filter
+        if (productRowFilters.subcategory && parseInt(productRowFilters.subcategory) > 0 && product.product_subcategory_id !== parseInt(productRowFilters.subcategory)) {
+          return false;
+        }
+
+        // Car model filter
+        if (productRowFilters.carModels.length > 0) {
+          const productCarModels = product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [];
+          const hasMatchingModel = productRowFilters.carModels.some(filterModel =>
+            productCarModels.includes(filterModel)
+          );
+          if (!hasMatchingModel) {
+            return false;
+          }
+        }
+
+        // Company filter
+        const productCompanyId = product.company_id || (product.company ? parseInt(product.company) : null);
+        if (productRowFilters.company && parseInt(productRowFilters.company) > 0 && productCompanyId !== parseInt(productRowFilters.company)) {
+          return false;
+        }
+
+        // Part number filter
+        if (productRowFilters.partNo && product.part_no && !product.part_no.toLowerCase().includes(productRowFilters.partNo.toLowerCase())) {
+          return false;
+        }
+
+        return true;
+      });
+
+      console.log('🔍 SALEX FILTER MATCHES:', {
+        filters: productRowFilters,
+        matchingProducts: matchingProducts.length,
+        products: matchingProducts.map(p => ({ id: p.id, name: p.product_name }))
+      });
+
+      if (matchingProducts.length === 1) {
+        console.log('🎯 AUTO-SELECTING PRODUCT:', matchingProducts[0].product_name);
+        handleProductSelection(matchingProducts[0]);
+      } else if (matchingProducts.length === 0) {
+        console.log('🧹 CLEARING PRODUCT SELECTION - no matches');
+        setSelectedRowProduct(null);
+      }
+    }
+  }, [productRowFilters, products]);
+
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
