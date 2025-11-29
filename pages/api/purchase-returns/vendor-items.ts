@@ -19,7 +19,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const {
       vendor_id,
       page = '1',
-      limit = '10',
+      limit = '50', // Increased default for bulk returns
       search = '',
       from_date = '',
       to_date = ''

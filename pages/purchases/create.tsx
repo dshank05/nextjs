@@ -473,70 +473,75 @@ export default function PurchaseCreate() {
   }, [productSearchTerm, selectedPanelCarModel]);
 
   // Auto-product selection based on filters (category + car model + company)
-  useEffect(() => {
-    // Only run if we have all required filters
-    if (productRowFilters.category > 0 &&
-        productRowFilters.carModels.length > 0 &&
-        productRowFilters.company > 0) {
+  // useEffect(() => {
+  //   // Only run if we have all required filters
+  //   if (productRowFilters.category > 0 &&
+  //       productRowFilters.carModels.length > 0 &&
+  //       productRowFilters.company > 0) {
 
-      // Find products that match all criteria
-      const matchingProducts = products.filter(product => {
-        // Check category match
-        const categoryMatch = product.product_category_id === productRowFilters.category;
+  //     // Find products that match all criteria
+  //     const matchingProducts = products.filter(product => {
+  //       // Check category match
+  //       const categoryMatch = product.product_category_id === productRowFilters.category;
 
-        // Check company match
-        const companyMatch = product.company_id === productRowFilters.company;
+  //       // Check company match
+  //       const companyMatch = product.company_id === productRowFilters.company;
 
-        // Check car model compatibility
-        const carModelMatch = product.car_model_ids &&
-          product.car_model_ids.split(',').some(modelId =>
-            productRowFilters.carModels.includes(modelId.trim())
-          );
+  //       // Check car model compatibility
+  //       const carModelMatch = product.car_model_ids &&
+  //         product.car_model_ids.split(',').some(modelId =>
+  //           productRowFilters.carModels.includes(modelId.trim())
+  //         );
 
-        return categoryMatch && companyMatch && carModelMatch;
-      });
+  //       return categoryMatch && companyMatch && carModelMatch;
+  //     });
 
-      // Handle auto-selection logic
-      if (matchingProducts.length === 1) {
-        // Exactly one match - auto-select it
-        const autoSelectedProduct = matchingProducts[0];
-        console.log('🎯 Auto-selected product based on filters:', autoSelectedProduct.product_name);
+  //     // Handle auto-selection logic
+  //     if (matchingProducts.length === 1) {
+  //       // Exactly one match - auto-select it
+  //       const autoSelectedProduct = matchingProducts[0];
+  //       console.log('🎯 Auto-selected product based on filters:', autoSelectedProduct.product_name);
 
-        // Auto-select the product
-        setSelectedRowProduct(autoSelectedProduct);
+  //       // Check if this product is already selected (to avoid showing snackbar when just changing car model)
+  //       const isAlreadySelected = selectedRowProduct?.id === autoSelectedProduct.id;
 
-        // Update template row with product rates
-        setTemplateRow(prev => ({
-          ...prev,
-          rate: autoSelectedProduct.latest_purchase_rate?.toString() ||
-                autoSelectedProduct.opening_rate?.toString() ||
-                autoSelectedProduct.rate?.toString() || '',
-          gst: autoSelectedProduct.gst_rate_percentage?.toString() || '0'
-        }));
+  //       // Auto-select the product
+  //       setSelectedRowProduct(autoSelectedProduct);
 
-        // Show success message
-        showSnackbar('success', `Auto-selected: ${autoSelectedProduct.product_name}`);
-      } else if (matchingProducts.length === 0 && selectedRowProduct) {
-        // No products match current filters - clear the incompatible selection
-        console.log('🗑️ Clearing incompatible product selection - no matches for current filters');
-        setSelectedRowProduct(null);
+  //       // Update template row with product rates
+  //       setTemplateRow(prev => ({
+  //         ...prev,
+  //         rate: autoSelectedProduct.latest_purchase_rate?.toString() ||
+  //               autoSelectedProduct.opening_rate?.toString() ||
+  //               autoSelectedProduct.rate?.toString() || '',
+  //         gst: autoSelectedProduct.gst_rate_percentage?.toString() || '0'
+  //       }));
 
-        // Clear template row rates since product is no longer valid
-        setTemplateRow(prev => ({
-          ...prev,
-          rate: '',
-          gst: '0'
-        }));
+  //       // Only show success message if this is a new auto-selection (not just changing car model for already selected product)
+  //       if (!isAlreadySelected) {
+  //         showSnackbar('success', `Auto-selected: ${autoSelectedProduct.product_name}`);
+  //       }
+  //     } else if (matchingProducts.length === 0 && selectedRowProduct) {
+  //       // No products match current filters - clear the incompatible selection
+  //       console.log('🗑️ Clearing incompatible product selection - no matches for current filters');
+  //       setSelectedRowProduct(null);
 
-        // Show warning message
-        // showSnackbar('warning', 'Selected product is not compatible with current filters');
-      } else if (matchingProducts.length > 1) {
+  //       // Clear template row rates since product is no longer valid
+  //       setTemplateRow(prev => ({
+  //         ...prev,
+  //         rate: '',
+  //         gst: '0'
+  //       }));
 
-        // Multiple matches - let user choose manually
-        console.log('⚠️ Multiple products match filters, user needs to choose manually');
-      }
-    }
-  }, [productRowFilters.category, productRowFilters.carModels, productRowFilters.company,productRowFilters.subcategory, products, selectedRowProduct, showSnackbar]);
+  //       // Show warning message
+  //       // showSnackbar('warning', 'Selected product is not compatible with current filters');
+  //     } else if (matchingProducts.length > 1) {
+
+  //       // Multiple matches - let user choose manually
+  //       console.log('⚠️ Multiple products match filters, user needs to choose manually');
+  //     }
+  //   }
+  // }, [productRowFilters.category, productRowFilters.carModels, productRowFilters.company,productRowFilters.subcategory, products, selectedRowProduct, showSnackbar]);
 
 
   // Auto-calculate tax totals when products change or vendor state changes
@@ -1941,49 +1946,39 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2">
                         <div className="flex items-center space-x-2">
                           <div className="flex-1">
-                            <SearchableSelect
-                              options={[
-                                { id: '', name: 'Select Product' },
-                                // Show products filtered by selected car models
-                                ...products
-                                  .filter(product => {
-                                    // If no car models selected, show all products
-                                    if (productRowFilters.carModels.length === 0) {
-                                      return true;
-                                    }
-                                    // Show only products compatible with selected car models
-                                    return product.car_model_ids &&
-                                      product.car_model_ids.split(',').some(modelId =>
-                                        productRowFilters.carModels.includes(modelId.trim())
-                                      );
-                                  })
-                                  .map(product => ({
-                                    id: product.id.toString(),
-                                    name: product.product_name
-                                  }))
-                              ]}
-                              selectedValue={selectedRowProduct?.id?.toString() || ''}
-                              onSelectionChange={(value) => {
-                                if (!value) {
-                                  // Clear selection
-                                  setSelectedRowProduct(null);
-                                  return;
-                                }
-
-                                if (value && selectedRowProduct?.id?.toString() === value) {
-                                  // Already selected, no change needed
-                                  return;
-                                }
-
-                                // Find and select the product
-                                const selectedProduct = products.find(p => p.id.toString() === value);
-                                if (selectedProduct) {
-                                  handleProductSelection(selectedProduct);
-                                }
-                              }}
-                              placeholder={selectedRowProduct ? selectedRowProduct.product_name : "Select Product"}
-                              disabled={!selectedVendorId}
-                            />
+                            <div className="flex items-center justify-between px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-slate-300">
+                              <span className="truncate">
+                                {selectedRowProduct ? (selectedRowProduct.display_name || selectedRowProduct.product_name) : 'No product selected'}
+                              </span>
+                              {selectedRowProduct && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedRowProduct(null);
+                                    setProductRowFilters({
+                                      category: 0,
+                                      categoryName: '',
+                                      subcategory: null,
+                                      subcategoryName: '',
+                                      carModels: [],
+                                      company: 0,
+                                      companyName: '',
+                                      partNo: ''
+                                    });
+                                    setTemplateRow({
+                                      qty: '1',
+                                      rate: '',
+                                      gst: '0',
+                                      total: ''
+                                    });
+                                  }}
+                                  className="text-slate-400 hover:text-white ml-2"
+                                  title="Clear selection"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
                           </div>
                           <button
                             type="button"
@@ -2052,7 +2047,11 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2">
                         <SearchableMultiSelect
                           mode="single"
-                          options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                          options={
+                            selectedRowProduct
+                              ? filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []
+                              : filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name })) || []
+                          }
                           selectedValue={productRowFilters.carModels.length > 0 ? productRowFilters.carModels[0] : null}
                           onSelectionChange={(value) => {
                             const newSelection = value ? [value] : [];
@@ -2063,9 +2062,20 @@ export default function PurchaseCreate() {
                               carModels: newSelection
                             }));
 
-                            // Clear selected product when car model changes (will be auto-selected later)
-                            if (selectedRowProduct) {
-                              setSelectedRowProduct(null);
+                            // If we have a selected product and a new car model, update the display name
+                            if (selectedRowProduct && newSelection.length > 0) {
+                              const newCarModelId = newSelection[0];
+                              const newDisplayName = generateDynamicProductName(
+                                selectedRowProduct,
+                                [newCarModelId],
+                                productRowFilters.partNo
+                              );
+
+                              // Update the product with new display name
+                              setSelectedRowProduct(prev => prev ? {
+                                ...prev,
+                                display_name: newDisplayName
+                              } : null);
                             }
                           }}
                           placeholder="Select car model..."
@@ -2457,7 +2467,8 @@ export default function PurchaseCreate() {
                                     setEditingRowData(prev => prev ? {
                                       ...prev,
                                       car_model: newCarModel,
-                                      product_name: updatedProductName
+                                      product_name: updatedProductName,
+                                      display_name : updatedProductName
                                     } : null);
                                   }}
                                   placeholder="Select car model..."

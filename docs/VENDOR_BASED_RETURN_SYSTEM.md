@@ -1,7 +1,7 @@
 # Vendor-Based Purchase Return System
 
 ## Overview
-A new return system that allows returning items from multiple purchase invoices of the same vendor simultaneously, independent of specific bills. This replaces the current per-invoice return system with a more flexible vendor-centric approach.
+A simplified return system following the same pattern as purchases: List page → Create page → View page. Allows returning items from multiple purchase invoices of the same vendor simultaneously. Returns happen infrequently (every 2-3 months) but involve multiple items from multiple bills when they occur.
 
 ## Current System Problems
 - Returns are tied to specific purchase invoices
@@ -11,98 +11,76 @@ A new return system that allows returning items from multiple purchase invoices 
 
 ## New System Benefits
 - Return any items from any vendor's invoices in one operation
-- Bill-independent returns for collective processing
-- Simplified workflow for bulk returns
+- Simplified 3-page workflow: List → Create → View
+- Optimized for bulk returns with smart data loading
 - Better inventory management across multiple purchases
 
 ---
 
 ## UI Workflow & Screens
 
-### 1. Entry Point - Purchase Return Listing
-**URL:** `/entry/purchasereturn`
+### 1. Return List Page
+**URL:** `/entry/purchasereturn-vendor`
 
-**Current UI Changes:**
-- Replace "Process Return" button with "Create Vendor Return"
-- Remove "Return Whole Order" button (handled by new system)
-- Add "Vendor Returns" tab/section
+**Purpose:** Shows all purchase returns with filtering and search
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │ 🛒 Purchase Returns                                        │
 │                                                             │
 │ ┌─────────────────┬─────────────────┬─────────────────┐     │
-│ │ Invoice #      │ Vendor          │ Actions          │     │
+│ │ Return #       │ Vendor          │ Status │ Actions │     │
 │ ├─────────────────┼─────────────────┼─────────────────┤     │
-│ │ INV-001        │ ABC Auto Parts  │ [Create Vendor   │     │
-│ │ ₹50,000        │                 │  Return]         │     │
+│ │ PR-001         │ ABC Auto Parts  │ Completed       │     │
+│ │ ₹25,000        │ 15 Jan 2025     │ [View] [Edit]   │     │
 │ ├─────────────────┼─────────────────┼─────────────────┤     │
-│ │ INV-002        │ XYZ Motors      │ [Create Vendor   │     │
-│ │ ₹75,000        │                 │  Return]         │     │
+│ │ PR-002         │ XYZ Motors      │ Completed       │     │
+│ │ ₹45,000        │ 20 Feb 2025     │ [View] [Edit]   │     │
 │ └─────────────────┴─────────────────┴─────────────────┘     │
+│                                                             │
+│ [+ Create Return]                                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 2. Vendor Selection Screen
-**URL:** `/entry/purchasereturn-vendor`
+### 2. Create Return Page (Main UI)
+**URL:** `/entry/purchasereturn-vendor-create`
 
-**Purpose:** Select vendor to return items from
+**Purpose:** Combined vendor selection + item selection from multiple bills
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 🏪 Select Vendor for Return                                │
+│ 📦 Create Purchase Return                                  │
 │                                                             │
 │ Vendor: [ABC Auto Parts ▼]                           [+Add] │
 │                                                             │
-│ 📊 Vendor Summary:                                          │
-│ • Total Purchase Invoices: 15                               │
-│ • Total Items Purchased: 234                                │
-│ • Total Purchase Value: ₹12,45,000                          │
-│ • Pending Returns: ₹0                                       │
+│ 🔍 Search Items/Bills: [brake pads___________________]     │
+│ 📅 Date Range: [2025-09-01] to [2025-11-28]          [Load More] │
+│ 👁️ [Focus View: Hide bills with no selections]             │
 │                                                             │
-│ [Continue to Item Selection]                                │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 3. Bill-Wise Item Selection (Main UI)
-**URL:** `/entry/purchasereturn-vendor-create`
-
-**Purpose:** Select items from multiple bills with accordion layout
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 📦 Return Items from ABC Auto Parts                        │
+│ Loaded: 3 months (15 bills, 234 items)                     │
 │                                                             │
-│ 🔍 Search: [___________________________]                   │
-│ 📅 Date Range: [2025-01-01] to [2025-12-31]                 │
-│                                                             │
-│ ┌─ 📄 Bill #INV-001 (2025-01-15) - ₹50,000 ──────────────┐ │
-│ │ ▶ Expand/Collapse                                        │
-│ │ Items: 12 | Available for Return: 8                     │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                             │
-│ ┌─ 📄 Bill #INV-002 (2025-02-10) - ₹75,000 ──────────────┐ │
-│ │ ▼ Expanded                                              │
+│ ┌─ 📄 Bill #INV-015 (2025-11-15) - ₹45,000 ──────────────┐ │
+│ │ ▼ Expanded (contains "brake pads")                      │
 │ │                                                         │
 │ │ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ │Product│Bill Ref│Qty Avail│Return│Unit│Tax│Tax│Return│Total│ │
-│ │ │Name   │        │         │Qty   │Price│%  │Amt │Reason│     │ │
+│ │ │Product│Part#│Qty Avail│Return│Unit│Tax│Tax│Return│Total│ │
+│ │ │Name   │     │         │Qty   │Price│%  │Amt │Reason│     │ │
 │ │ ├─────────────────────────────────────────────────────────────┤ │
-│ │ │Brake  │INV-002 │10      │[5]  │₹100│18%│₹90│[Defect▼]│₹590│ │
-│ │ │Pads   │        │        │      │    │   │   │        │     │ │
-│ │ ├─────────────────────────────────────────────────────────────┤ │
-│ │ │Oil    │INV-002 │8       │[3]  │₹200│0% │₹0 │[Wrong ▼]│₹600│ │
-│ │ │Filter │        │        │      │    │   │   │Item    │     │ │
+│ │ │Brake  │BP-001│10     │[5]  │₹100│18%│₹90│[Defect▼]│₹590│ │
+│ │ │Pads   │     │        │      │    │   │   │        │     │ │
 │ │ └─────────────────────────────────────────────────────────────┘ │
 │ └─────────────────────────────────────────────────────────┘ │
 │                                                             │
-│ ┌─ 📄 Bill #INV-003 (2025-03-05) - ₹30,000 ──────────────┐ │
-│ │ ▶ Expand/Collapse                                        │
-│ │ Items: 6 | Available for Return: 6                      │
+│ ┌─ 📄 Bill #INV-012 (2025-10-20) - ₹35,000 ──────────────┐ │
+│ │ ▶ Collapsed                                              │
+│ │ Items: 8 | Available: 6 | No matching items            │
+│ └─────────────────────────────────────────────────────────┘ │
+│                                                             │
+│ ┌─ 📄 Bill #INV-008 (2025-09-10) - ₹55,000 ──────────────┐ │
+│ │ ▼ Expanded (contains matching items)                   │
+│ │ [Item table with brake pads...]                        │
 │ └─────────────────────────────────────────────────────────┘ │
 │                                                             │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -112,8 +90,7 @@ A new return system that allows returning items from multiple purchase invoices 
 │ │ Total Tax Credit: ₹90                                    │
 │ │                                                         │
 │ │ Tax Breakdown:                                           │
-│ │ • 18% GST: ₹90 (₹45 CGST + ₹45 SGST)                    │
-│ │ • 0% GST: ₹0                                             │
+│ │ • CGST: ₹45 | SGST: ₹45 | IGST: ₹0                      │
 │ └─────────────────────────────────────────────────────────┘ │
 │                                                             │
 │ Return Notes: [________________________________________]   │
@@ -122,14 +99,29 @@ A new return system that allows returning items from multiple purchase invoices 
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**Smart Data Loading:**
+- **Default:** Loads last 3 months of bills initially
+- **Load More:** Adds previous 3 months cumulatively
+- **No Data Loss:** Existing bills preserved when loading more
+- **Progressive:** Start with recent, expand backward as needed
+
+**Item-Centric Search:**
+- **Local Search:** Searches within loaded bills (no API calls)
+- **Smart Filtering:** Shows only bills containing matching items
+- **Auto-Expand:** Bills with matches expand automatically
+- **Bill Context:** Still shows bill info for each item
+
+**Focus View:**
+- **Toggle Option:** Hide bills with no item selections
+- **Clean Interface:** Focus on bills being used for return
+- **Dynamic:** Updates as user selects/deselects items
+
 **Key UI Features:**
-- **Accordion Layout:** Bills collapsed by default, expandable
-- **Bill Headers:** Show bill number, date, total, item counts
-- **Item Table:** Product details with return quantity inputs
-- **Tax Column:** Shows tax percentage and calculated amount
-- **Real-time Totals:** Update as user selects items
-- **Search/Filter:** Find specific products or bills
-- **Validation:** Prevent returning more than available
+- **Combined Flow:** Vendor selection + item selection in one page
+- **Accordion Layout:** Bills collapsed by default, smart expansion
+- **Real-time Search:** Instant filtering without API calls
+- **Progressive Loading:** Load more data without losing current work
+- **Focus Mode:** Hide irrelevant bills for cleaner workflow
 
 ---
 
@@ -389,12 +381,40 @@ ADD COLUMN original_purchase_id INT;
 
 ---
 
-## Questions for Implementation
+## Implementation Details
 
-1. **Bill Loading:** Load all bills at once or paginate?
-2. **Search Performance:** How to handle vendors with 100+ bills?
-3. **Return Numbering:** Format for return references (RTN-001, etc.)?
-4. **Status Tracking:** Return statuses needed (Draft, Processing, Completed)?
-5. **Report Integration:** How to integrate with existing return reports?
+### ✅ **Decided Approaches:**
 
-This design provides a much more efficient system for your collective return process while maintaining full tax compliance and audit capabilities.
+1. **Bill Loading:** Progressive loading with 3-month defaults
+   - Initial: Load last 3 months of bills
+   - Load More: Add previous 3 months cumulatively
+   - No data loss when expanding date range
+
+2. **Search Strategy:** Local item-centric search
+   - Search within loaded bills (no API calls)
+   - Filter to show only bills containing matching items
+   - Auto-expand bills with matches
+   - Preserve all loaded data during search
+
+3. **Performance Optimization:** Smart data management
+   - Start with reasonable dataset (3 months)
+   - Expand as needed without losing work
+   - Local search prevents API overhead
+   - Focus view reduces visual clutter
+
+4. **Return Numbering:** PR-XXX format (PR-001, PR-002, etc.)
+
+5. **Status Tracking:** Completed (single status for simplicity)
+
+6. **Report Integration:** Compatible with existing return reports
+
+### **Key Technical Features:**
+
+- **Combined UI:** Vendor selection + item selection in one page
+- **Smart Defaults:** 3-month date range, local search, focus view
+- **Progressive Loading:** Load more data without losing current selections
+- **Item-Centric UX:** Search items first, discover bills containing them
+- **Tax Compliance:** Proper CGST/SGST/IGST calculations
+- **Audit Trail:** Track original bills for each returned item
+
+This implementation provides an efficient, user-friendly system for bulk returns while maintaining full tax compliance and audit capabilities.

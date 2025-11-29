@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { ChevronDown, ChevronRight, Search, Calendar, Calculator, Package, FileText, Target } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -36,6 +35,8 @@ interface PurchaseItem {
   tax_rate: number;
   bill_reference: string;
   invoice_date: string;
+  return_qty?: number; // Added for edit mode
+  return_reason_id?: number; // Added for edit mode
 }
 
 interface ReturnReasons {
@@ -99,6 +100,12 @@ export default function PurchaseReturnVendorCreatePage() {
   const [returnNotes, setReturnNotes] = useState('');
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
 
+  // New state for enhanced features
+  const [loadedDateRange, setLoadedDateRange] = useState({ from: '', to: '' });
+  const [allLoadedBills, setAllLoadedBills] = useState<PurchaseBill[]>([]);
+  const [focusViewEnabled, setFocusViewEnabled] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
   // Selected items for return
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedReturnItem>>(new Map());
 
@@ -117,7 +124,13 @@ export default function PurchaseReturnVendorCreatePage() {
   useEffect(() => {
     loadReturnReasons();
     loadVendors();
-  }, []);
+
+    // Check if we're in edit mode
+    if (returnIdParam) {
+      setIsEditMode(true);
+      loadReturnForEdit(returnIdParam as string);
+    }
+  }, [returnIdParam]);
 
   const loadVendors = async () => {
     setLoadingVendors(true);
@@ -138,13 +151,18 @@ export default function PurchaseReturnVendorCreatePage() {
     }
   };
 
-  const loadVendorBills = async (vendorId: string, page = 1, search = '', fromDate = '', toDate = '') => {
-    setLoading(true);
+  const loadVendorBills = async (vendorId: string, page = 1, search = '', fromDate = '', toDate = '', isLoadMore = false) => {
+    if (isLoadMore) {
+      setIsLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
       const params = new URLSearchParams({
         vendor_id: vendorId,
         page: page.toString(),
-        limit: '10',
+        limit: '50', // Increased for bulk returns
         ...(search && { search }),
         ...(fromDate && { from_date: fromDate }),
         ...(toDate && { to_date: toDate })
@@ -154,11 +172,34 @@ export default function PurchaseReturnVendorCreatePage() {
       if (billsResponse.ok) {
         const billsData = await billsResponse.json();
         const data = billsData.data;
+        const newBills = data?.bills || [];
 
-        setBills(data?.bills || []);
+        if (isLoadMore) {
+          // Append new bills to existing ones
+          setAllLoadedBills(prev => {
+            const combined = [...prev, ...newBills];
+            // Remove duplicates based on bill id
+            const unique = combined.filter((bill, index, self) =>
+              index === self.findIndex(b => b.id === bill.id)
+            );
+            setBills(unique); // Update display bills
+            return unique;
+          });
+
+          // Update loaded date range
+          if (fromDate && (!loadedDateRange.from || fromDate < loadedDateRange.from)) {
+            setLoadedDateRange(prev => ({ ...prev, from: fromDate }));
+          }
+        } else {
+          // Replace all bills
+          setAllLoadedBills(newBills);
+          setBills(newBills);
+          setLoadedDateRange({ from: fromDate, to: toDate });
+        }
+
         setPagination({
           page: data?.pagination?.page || 1,
-          limit: data?.pagination?.limit || 10,
+          limit: data?.pagination?.limit || 50,
           total: data?.pagination?.total || 0,
           totalPages: data?.pagination?.totalPages || 0,
           hasNext: data?.pagination?.hasNext || false,
@@ -175,9 +216,13 @@ export default function PurchaseReturnVendorCreatePage() {
     } catch (error) {
       console.error('Error loading vendor data:', error);
       showSnackbar('error', 'Failed to load vendor data');
-      setBills([]);
+      if (!isLoadMore) {
+        setBills([]);
+        setAllLoadedBills([]);
+      }
     } finally {
       setLoading(false);
+      setIsLoadingMore(false);
     }
   };
 
@@ -185,10 +230,12 @@ export default function PurchaseReturnVendorCreatePage() {
     if (!vendorId) {
       setVendor(null);
       setBills([]);
+      setAllLoadedBills([]);
       setSelectedItems(new Map());
+      setLoadedDateRange({ from: '', to: '' });
       setPagination({
         page: 1,
-        limit: 10,
+        limit: 50,
         total: 0,
         totalPages: 0,
         hasNext: false,
@@ -205,11 +252,27 @@ export default function PurchaseReturnVendorCreatePage() {
     const selectedVendor = vendors.find(v => v.id === vendorId);
     if (selectedVendor) {
       setVendor(selectedVendor);
-      // Reset search and date filters when selecting new vendor
+
+      // Set default 3-month date range
+      const today = new Date();
+      const threeMonthsAgo = new Date(today);
+      threeMonthsAgo.setMonth(today.getMonth() - 3);
+
+      const fromDate = threeMonthsAgo.toISOString().split('T')[0];
+      const toDate = today.toISOString().split('T')[0];
+
+      setDateFrom(fromDate);
+      setDateTo(toDate);
+      setLoadedDateRange({ from: fromDate, to: toDate });
+
+      // Reset search and other state
       setSearchTerm('');
-      setDateFrom('');
-      setDateTo('');
-      await loadVendorBills(vendorId, 1, '', '', '');
+      setAllLoadedBills([]);
+      setExpandedBills(new Set());
+      setSelectedItems(new Map());
+
+      // Load initial 3 months of data
+      await loadVendorBills(vendorId, 1, '', fromDate, toDate, false);
     }
   };
 
@@ -226,6 +289,60 @@ export default function PurchaseReturnVendorCreatePage() {
       console.error('Error loading return reasons:', error);
       showSnackbar('error', 'Failed to load return reasons');
       setReturnReasons([]);
+    }
+  };
+
+  const loadReturnForEdit = async (returnId: string) => {
+    try {
+      const response = await fetch(`/api/purchase-returns/${returnId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const returnData = data.data;
+
+        // Set return data
+        setReturnDate(returnData.return.return_date);
+        setReturnNotes(returnData.return.notes || '');
+
+        // Set vendor
+        const vendorData = returnData.vendor;
+        setVendor({
+          id: vendorData.id.toString(),
+          vendor_name: vendorData.vendor_name,
+          state: vendorData.state,
+          state_code: vendorData.state_code
+        });
+
+        // Set bills and items
+        setBills(returnData.bills);
+        setAllLoadedBills(returnData.bills);
+
+        // Pre-select the returned items
+        const selectedItemsMap = new Map();
+        returnData.bills.forEach((bill: PurchaseBill) => {
+          bill.items.forEach((item: PurchaseItem) => {
+            if (item.return_qty && item.return_qty > 0) {
+              selectedItemsMap.set(item.id, item as SelectedReturnItem);
+            }
+          });
+        });
+        setSelectedItems(selectedItemsMap);
+
+        // Expand bills that have selected items
+        const billsToExpand = new Set<string>();
+        returnData.bills.forEach((bill: PurchaseBill) => {
+          if (bill.items.some((item: PurchaseItem) => selectedItemsMap.has(item.id))) {
+            billsToExpand.add(bill.id);
+          }
+        });
+        setExpandedBills(billsToExpand);
+
+        showSnackbar('success', 'Return data loaded for editing');
+      } else {
+        throw new Error('Failed to load return data');
+      }
+    } catch (error) {
+      console.error('Error loading return for edit:', error);
+      showSnackbar('error', 'Failed to load return data for editing');
     }
   };
 
@@ -296,28 +413,61 @@ export default function PurchaseReturnVendorCreatePage() {
     });
   };
 
-  // Filter bills based on search and date
+  // Filter bills based on search, date, and focus view
   const filteredBills = useMemo(() => {
-    return bills.filter(bill => {
-      // Date filter
-      if (dateFrom && new Date(bill.invoice_date) < new Date(dateFrom)) return false;
-      if (dateTo && new Date(bill.invoice_date) > new Date(dateTo)) return false;
+    let filtered = bills;
 
-      // Search filter
-      if (searchTerm) {
-        const searchLower = searchTerm.toLowerCase();
-        const matchesBill = bill.invoice_no.toLowerCase().includes(searchLower) ||
+    // Date filter (only if explicitly set by user, not auto-loaded range)
+    if (dateFrom && dateFrom !== loadedDateRange.from) {
+      filtered = filtered.filter(bill => new Date(bill.invoice_date) >= new Date(dateFrom));
+    }
+    if (dateTo && dateTo !== loadedDateRange.to) {
+      filtered = filtered.filter(bill => new Date(bill.invoice_date) <= new Date(dateTo));
+    }
+
+    // Item-centric search: Show bills containing matching items
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(bill => {
+        // Check if bill metadata matches
+        const billMatches = bill.invoice_no.toLowerCase().includes(searchLower) ||
                            bill.bill_reference.toLowerCase().includes(searchLower);
-        const matchesItems = bill.items.some(item =>
-          item.product_name.toLowerCase().includes(searchLower) ||
-          (item.part_number && item.part_number.toLowerCase().includes(searchLower))
-        );
-        if (!matchesBill && !matchesItems) return false;
-      }
 
-      return true;
-    });
-  }, [bills, searchTerm, dateFrom, dateTo]);
+        // Check if any items in the bill match
+        const itemMatches = bill.items.some(item =>
+          item.product_name.toLowerCase().includes(searchLower) ||
+          (item.part_number && item.part_number.toLowerCase().includes(searchLower)) ||
+          (item.display_name && item.display_name.toLowerCase().includes(searchLower))
+        );
+
+        return billMatches || itemMatches;
+      });
+
+      // Auto-expand bills that contain matching items
+      const billsToExpand = new Set(expandedBills);
+      filtered.forEach(bill => {
+        const hasMatchingItems = bill.items.some(item =>
+          item.product_name.toLowerCase().includes(searchLower) ||
+          (item.part_number && item.part_number.toLowerCase().includes(searchLower)) ||
+          (item.display_name && item.display_name.toLowerCase().includes(searchLower))
+        );
+        if (hasMatchingItems) {
+          billsToExpand.add(bill.id);
+        }
+      });
+      setExpandedBills(billsToExpand);
+    }
+
+    // Focus view: Hide bills with no selected items
+    if (focusViewEnabled) {
+      const selectedItemIds = new Set(Array.from(selectedItems.keys()));
+      filtered = filtered.filter(bill =>
+        bill.items.some(item => selectedItemIds.has(item.id))
+      );
+    }
+
+    return filtered;
+  }, [bills, searchTerm, dateFrom, dateTo, loadedDateRange, focusViewEnabled, selectedItems, expandedBills]);
 
   // Calculate return summary
   const returnSummary = useMemo(() => {
@@ -343,9 +493,8 @@ export default function PurchaseReturnVendorCreatePage() {
     setProcessingReturn(true);
     try {
       const returnData = {
-        vendor_id: vendorIdParam,
         return_date: returnDate,
-        return_notes: returnNotes,
+        notes: returnNotes,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: parseInt(item.id),
           return_qty: item.return_qty,
@@ -356,19 +505,36 @@ export default function PurchaseReturnVendorCreatePage() {
         }))
       };
 
-      const response = await fetch('/api/purchase-returns/vendor-return', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(returnData)
-      });
+      let response;
+      if (isEditMode && returnIdParam) {
+        // Edit mode - update existing return
+        response = await fetch(`/api/purchase-returns/${returnIdParam}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(returnData)
+        });
+      } else {
+        // Create mode - create new return
+        const createData = {
+          vendor_id: vendorIdParam,
+          ...returnData
+        };
+        response = await fetch('/api/purchase-returns/vendor-return', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(createData)
+        });
+      }
 
       if (response.ok) {
         const result = await response.json();
-        showSnackbar('success', `Return processed successfully! Return #${result.data.return.id} created.`);
+        const action = isEditMode ? 'updated' : 'created';
+        const returnId = isEditMode ? returnIdParam : result.data.return.id;
+        showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
         router.push('/entry/purchasereturn');
       } else {
         const error = await response.json();
-        showSnackbar('error', error.message || 'Failed to process return');
+        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);
       }
     } catch (error) {
       console.error('Error processing return:', error);
@@ -442,25 +608,85 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Bill Search</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Search Items/Bills</label>
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search bills..."
+                  placeholder="Search brake pads, bill numbers..."
                   className="input w-full"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="input w-full"
-                />
+                <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="input flex-1"
+                  />
+                  <span className="text-slate-400">to</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="input flex-1"
+                  />
+                </div>
               </div>
             </div>
+
+            {/* Enhanced Controls Row */}
+            {vendor && (
+              <div className="mt-4 flex items-center justify-between bg-slate-800/50 rounded-lg p-4">
+                <div className="flex items-center gap-4">
+                  <div className="text-sm text-slate-300">
+                    Loaded: {loadedDateRange.from ? new Date(loadedDateRange.from).toLocaleDateString() : ''} - {loadedDateRange.to ? new Date(loadedDateRange.to).toLocaleDateString() : ''} ({allLoadedBills.length} bills, {allLoadedBills.reduce((sum, bill) => sum + bill.items.length, 0)} items)
+                  </div>
+                  <button
+                    onClick={async () => {
+                      if (!vendor?.id || !loadedDateRange.from) return;
+
+                      // Calculate 3 months earlier
+                      const currentFrom = new Date(loadedDateRange.from);
+                      const newFrom = new Date(currentFrom);
+                      newFrom.setMonth(currentFrom.getMonth() - 3);
+                      const newFromStr = newFrom.toISOString().split('T')[0];
+
+                      await loadVendorBills(vendor.id, 1, '', newFromStr, loadedDateRange.from, true);
+                    }}
+                    disabled={isLoadingMore}
+                    className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded flex items-center gap-2"
+                  >
+                    {isLoadingMore ? (
+                      <>
+                        <div className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin"></div>
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="w-3 h-3" />
+                        Load More Bills
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={focusViewEnabled}
+                      onChange={(e) => setFocusViewEnabled(e.target.checked)}
+                      className="rounded border-slate-600 bg-slate-700 text-blue-600 focus:ring-blue-500"
+                    />
+                    <Target className="w-4 h-4" />
+                    Focus View
+                  </label>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Loading state for vendor data */}
@@ -718,7 +944,7 @@ export default function PurchaseReturnVendorCreatePage() {
                   disabled={selectedItems.size === 0}
                   className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded font-medium transition-colors"
                 >
-                  Process Return
+                  {isEditMode ? 'Update Return' : 'Process Return'}
                 </button>
               </div>
             </>

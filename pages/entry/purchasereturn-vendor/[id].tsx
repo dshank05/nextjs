@@ -57,100 +57,59 @@ export default function PurchaseReturnDetailPage() {
   const fetchReturnDetails = async (returnId: string) => {
     setLoading(true);
     try {
-      // For now, use mock data since API endpoints don't exist yet
-      await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API delay
+      const response = await fetch(`/api/purchase-returns/${returnId}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch return details: ${response.status}`);
+      }
 
-      // Mock return data
-      const mockReturn: PurchaseReturn = {
-        id: parseInt(returnId),
-        return_no: 'PR-001',
-        return_date: '2025-01-15',
-        vendor_id: 1,
-        vendor_name: 'ABC Auto Parts',
-        vendor_address: '123 Industrial Area, Delhi',
-        vendor_gstin: '07AABCU9603R1ZN',
-        total_amount: 25000,
-        total_tax: 2250,
-        status: 1,
-        fy: 2025,
-        notes: 'Damaged parts return - brake pads were defective',
-        formattedDate: '15 Jan 2025',
-        statusText: 'Completed'
+      const data = await response.json();
+      const returnInfo = data.data.return;
+      const vendorInfo = data.data.vendor;
+      const billsInfo = data.data.bills;
+
+      // Transform API data to match our interface
+      const returnData: PurchaseReturn = {
+        id: returnInfo.id,
+        return_no: returnInfo.return_no,
+        return_date: returnInfo.return_date,
+        vendor_id: vendorInfo.id,
+        vendor_name: vendorInfo.vendor_name,
+        vendor_address: vendorInfo.address || '',
+        vendor_gstin: vendorInfo.gstin || '',
+        total_amount: returnInfo.total_amount,
+        total_tax: returnInfo.total_tax,
+        status: returnInfo.status === 'Completed' ? 1 : 0,
+        fy: returnInfo.fy,
+        notes: returnInfo.notes,
+        formattedDate: returnInfo.return_date ? new Date(returnInfo.return_date).toLocaleDateString('en-IN') : '',
+        statusText: returnInfo.status
       };
 
-      // Mock return items - grouped by bill
-      const mockItems: ReturnItem[] = [
-        // Bill INV-001 items
-        {
-          id: 1,
-          product_name: 'Brake Pads Front',
-          part_number: 'BP-001-FRONT',
-          return_qty: 4,
-          unit_price: 500,
-          tax_rate: 18,
-          tax_amount: 360,
-          subtotal: 2000,
-          total: 2360,
-          return_reason: 'Manufacturing Defect',
-          notes: 'Pads were cracking after installation',
-          bill_reference: 'BILL-001',
-          bill_date: '2025-01-15',
-          invoice_no: 'INV-001'
-        },
-        {
-          id: 2,
-          product_name: 'Brake Pads Rear',
-          part_number: 'BP-001-REAR',
-          return_qty: 4,
-          unit_price: 400,
-          tax_rate: 18,
-          tax_amount: 288,
-          subtotal: 1600,
-          total: 1888,
-          return_reason: 'Manufacturing Defect',
-          notes: 'Poor quality material',
-          bill_reference: 'BILL-001',
-          bill_date: '2025-01-15',
-          invoice_no: 'INV-001'
-        },
-        // Bill INV-002 items
-        {
-          id: 3,
-          product_name: 'Brake Discs',
-          part_number: 'BD-001',
-          return_qty: 2,
-          unit_price: 1500,
-          tax_rate: 18,
-          tax_amount: 540,
-          subtotal: 3000,
-          total: 3540,
-          return_reason: 'Wrong Item Shipped',
-          notes: 'Received wrong size discs',
-          bill_reference: 'BILL-002',
-          bill_date: '2025-02-10',
-          invoice_no: 'INV-002'
-        },
-        // Bill INV-003 items
-        {
-          id: 4,
-          product_name: 'Oil Filter',
-          part_number: 'OF-001',
-          return_qty: 5,
-          unit_price: 200,
-          tax_rate: 0,
-          tax_amount: 0,
-          subtotal: 1000,
-          total: 1000,
-          return_reason: 'Expired Product',
-          notes: 'Product past expiry date',
-          bill_reference: 'BILL-003',
-          bill_date: '2025-03-05',
-          invoice_no: 'INV-003'
-        }
-      ];
+      // Transform return items from bills
+      const returnItems: ReturnItem[] = [];
+      billsInfo.forEach((bill: any) => {
+        bill.items.forEach((item: any, index: number) => {
+          returnItems.push({
+            id: item.id || (bill.id + index), // Fallback ID if not provided
+            product_name: item.product_name,
+            part_number: item.part_number,
+            return_qty: item.return_qty,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate,
+            tax_amount: item.tax_amount,
+            subtotal: item.return_qty * item.unit_price,
+            total: item.total,
+            return_reason: 'Return', // API doesn't provide reason name, just use generic
+            notes: item.notes || '',
+            bill_reference: bill.invoice_no,
+            bill_date: bill.invoice_date,
+            invoice_no: bill.invoice_no
+          });
+        });
+      });
 
-      setReturnData(mockReturn);
-      setReturnItems(mockItems);
+      setReturnData(returnData);
+      setReturnItems(returnItems);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load return details');
       console.error('Error fetching return details:', err);
