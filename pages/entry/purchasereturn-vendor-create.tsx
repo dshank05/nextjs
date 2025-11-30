@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { ClearableInput } from '../../components/common/ClearableInput';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
@@ -68,6 +69,9 @@ export default function PurchaseReturnVendorCreatePage() {
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
+  // Tax is now always disabled
+  const enableTax = false;
+
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [bills, setBills] = useState<PurchaseBill[]>([]);
@@ -94,7 +98,8 @@ export default function PurchaseReturnVendorCreatePage() {
 
   // UI state
   const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
-  const [searchTerm, setSearchTerm] = useState('');
+  const [billSearchTerm, setBillSearchTerm] = useState('');
+  const [itemSearchTerm, setItemSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
@@ -109,16 +114,16 @@ export default function PurchaseReturnVendorCreatePage() {
   // Selected items for return
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedReturnItem>>(new Map());
 
-  // Debounced search effect
+  // Debounced bill search effect (API call)
   useEffect(() => {
     if (!vendor?.id) return;
 
     const timer = setTimeout(() => {
-      loadVendorBills(vendor.id, 1, searchTerm, dateFrom, dateTo);
+      loadVendorBills(vendor.id, 1, billSearchTerm, dateFrom, dateTo);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchTerm, dateFrom, dateTo, vendor?.id]);
+  }, [billSearchTerm, dateFrom, dateTo, vendor?.id]);
 
   // Load data on mount
   useEffect(() => {
@@ -266,7 +271,8 @@ export default function PurchaseReturnVendorCreatePage() {
       setLoadedDateRange({ from: fromDate, to: toDate });
 
       // Reset search and other state
-      setSearchTerm('');
+      setBillSearchTerm('');
+      setItemSearchTerm('');
       setAllLoadedBills([]);
       setExpandedBills(new Set());
       setSelectedItems(new Map());
@@ -425,37 +431,17 @@ export default function PurchaseReturnVendorCreatePage() {
       filtered = filtered.filter(bill => new Date(bill.invoice_date) <= new Date(dateTo));
     }
 
-    // Item-centric search: Show bills containing matching items
-    if (searchTerm) {
-      const searchLower = searchTerm.toLowerCase();
+    // Item search: Show bills containing matching items
+    if (itemSearchTerm) {
+      const searchLower = itemSearchTerm.toLowerCase();
       filtered = filtered.filter(bill => {
-        // Check if bill metadata matches
-        const billMatches = bill.invoice_no.toLowerCase().includes(searchLower) ||
-                           bill.bill_reference.toLowerCase().includes(searchLower);
-
         // Check if any items in the bill match
-        const itemMatches = bill.items.some(item =>
+        return bill.items.some(item =>
           item.product_name.toLowerCase().includes(searchLower) ||
           (item.part_number && item.part_number.toLowerCase().includes(searchLower)) ||
           (item.display_name && item.display_name.toLowerCase().includes(searchLower))
         );
-
-        return billMatches || itemMatches;
       });
-
-      // Auto-expand bills that contain matching items
-      const billsToExpand = new Set(expandedBills);
-      filtered.forEach(bill => {
-        const hasMatchingItems = bill.items.some(item =>
-          item.product_name.toLowerCase().includes(searchLower) ||
-          (item.part_number && item.part_number.toLowerCase().includes(searchLower)) ||
-          (item.display_name && item.display_name.toLowerCase().includes(searchLower))
-        );
-        if (hasMatchingItems) {
-          billsToExpand.add(bill.id);
-        }
-      });
-      setExpandedBills(billsToExpand);
     }
 
     // Focus view: Hide bills with no selected items
@@ -467,7 +453,7 @@ export default function PurchaseReturnVendorCreatePage() {
     }
 
     return filtered;
-  }, [bills, searchTerm, dateFrom, dateTo, loadedDateRange, focusViewEnabled, selectedItems, expandedBills]);
+  }, [bills, itemSearchTerm, dateFrom, dateTo, loadedDateRange, focusViewEnabled, selectedItems]);
 
   // Calculate return summary
   const returnSummary = useMemo(() => {
@@ -584,7 +570,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
           {/* Return Information */}
           <div className="mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Vendor *</label>
                 <SearchableSelect
@@ -608,13 +594,21 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Search Items/Bills</label>
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search brake pads, bill numbers..."
-                  className="input w-full"
+                <label className="block text-sm font-medium text-slate-300 mb-2">Search Bills</label>
+                <ClearableInput
+                  value={billSearchTerm}
+                  onChange={(e) => setBillSearchTerm(e.target.value)}
+                  placeholder="Search by invoice number..."
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Search Items</label>
+                <ClearableInput
+                  value={itemSearchTerm}
+                  onChange={(e) => setItemSearchTerm(e.target.value)}
+                  placeholder="Search products, part numbers..."
+                  className="w-full"
                 />
               </div>
               <div>
@@ -714,10 +708,10 @@ export default function PurchaseReturnVendorCreatePage() {
 
                 <div className="space-y-3">
                   {filteredBills.map((bill) => (
-                    <div key={bill.id} className="border border-slate-600 rounded-lg overflow-hidden">
+                    <div key={bill.id} className="border border-slate-600 rounded-lg">
                       {/* Bill Header */}
                       <div
-                        className="p-4 bg-slate-700 hover:bg-slate-650 cursor-pointer transition-colors"
+                        className="p-2 bg-slate-700 hover:bg-slate-650 cursor-pointer transition-colors"
                         onClick={() => toggleBillExpansion(bill.id)}
                       >
                         <div className="flex items-center justify-between">
@@ -749,15 +743,17 @@ export default function PurchaseReturnVendorCreatePage() {
                       {/* Bill Items */}
                       {expandedBills.has(bill.id) && (
                         <div className="p-4 bg-slate-800">
-                          <div className="overflow-x-auto">
+                          <div>
                             <table className="w-full">
                               <thead className="bg-slate-700">
                                 <tr>
-                                  <th className="px-4 py-3 text-left text-sm font-medium text-slate-300">Product</th>
+                                  <th className="px-4 py-3 text-left text-sm font-medium text-slate-300 w-32">Product</th>
                                   <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Available</th>
                                   <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Return Qty</th>
                                   <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Price</th>
-                                  <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Tax %</th>
+                                  {enableTax && (
+                                    <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Tax %</th>
+                                  )}
                                   <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-32">Reason</th>
                                   <th className="px-4 py-3 text-center text-sm font-medium text-slate-300 w-24">Total</th>
                                 </tr>
@@ -792,21 +788,22 @@ export default function PurchaseReturnVendorCreatePage() {
                                       <td className="px-4 py-3 text-center text-sm text-slate-300">
                                         ₹{item.unit_price.toFixed(0)}
                                       </td>
-                                      <td className="px-4 py-3 text-center text-sm text-slate-300">
-                                        {item.tax_rate}%
-                                      </td>
+                                      {enableTax && (
+                                        <td className="px-4 py-3 text-center text-sm text-slate-300">
+                                          {item.tax_rate}%
+                                        </td>
+                                      )}
                                       <td className="px-4 py-3 text-center">
-                                        <select
-                                          value={selectedItem?.return_reason_id || 1}
-                                          onChange={(e) => updateReturnReason(item.id, parseInt(e.target.value))}
-                                          className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm"
-                                        >
-                                          {returnReasons.map((reason) => (
-                                            <option key={reason.id} value={reason.id}>
-                                              {reason.reason_name}
-                                            </option>
-                                          ))}
-                                        </select>
+                                        <SearchableSelect
+                                          options={returnReasons.map(reason => ({
+                                            id: reason.id.toString(),
+                                            name: reason.reason_name
+                                          }))}
+                                          selectedValue={selectedItem?.return_reason_id?.toString() || '1'}
+                                          onSelectionChange={(value) => updateReturnReason(item.id, parseInt(value || '1'))}
+                                          placeholder="Select reason..."
+                                          className="w-full"
+                                        />
                                       </td>
                                       <td className="px-4 py-3 text-center text-sm font-medium text-green-400">
                                         ₹{selectedItem?.total.toFixed(0) || '0'}
@@ -863,7 +860,7 @@ export default function PurchaseReturnVendorCreatePage() {
                 <h3 className="text-lg font-medium text-slate-200 mb-4">Return Summary</h3>
 
                 {selectedItems.size > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                  <div className={`grid grid-cols-1 ${enableTax ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6 mb-6`}>
                     <div className="bg-slate-700 rounded-lg p-4 text-center">
                       <p className="text-slate-400 text-sm mb-1">Items</p>
                       <p className="text-white text-xl font-semibold">{returnSummary.totalItems}</p>
@@ -876,10 +873,12 @@ export default function PurchaseReturnVendorCreatePage() {
                       <p className="text-slate-400 text-sm mb-1">Value</p>
                       <p className="text-green-400 text-xl font-semibold">₹{returnSummary.totalAmount.toFixed(0)}</p>
                     </div>
-                    <div className="bg-slate-700 rounded-lg p-4 text-center">
-                      <p className="text-slate-400 text-sm mb-1">Tax Credit</p>
-                      <p className="text-yellow-400 text-xl font-semibold">₹{returnSummary.totalTax.toFixed(0)}</p>
-                    </div>
+                    {enableTax && (
+                      <div className="bg-slate-700 rounded-lg p-4 text-center">
+                        <p className="text-slate-400 text-sm mb-1">Tax Credit</p>
+                        <p className="text-yellow-400 text-xl font-semibold">₹{returnSummary.totalTax.toFixed(0)}</p>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-8 text-slate-400">
@@ -888,7 +887,7 @@ export default function PurchaseReturnVendorCreatePage() {
                 )}
 
                 {/* Tax Breakdown */}
-                {selectedItems.size > 0 && (
+                {selectedItems.size > 0 && enableTax && (
                   <div className="mb-6">
                     <h4 className="text-sm font-medium text-slate-400 mb-3">Tax Breakdown</h4>
                     <div className="grid grid-cols-3 gap-4">

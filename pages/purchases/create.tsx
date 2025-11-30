@@ -69,6 +69,32 @@ interface PurchaseItem {
   sgst: number;
   igst: number;
   total: number;
+  // Return status fields
+  original_qty?: number;
+  returned_qty?: number;
+  available_qty?: number;
+  is_fully_returned?: boolean;
+  return_history?: Array<{
+    return_id: string;
+    return_no: string;
+    qty: number;
+    date: number;
+    unit_price: number;
+    tax_amount: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    reason_id: number;
+    notes: string;
+  }>;
+}
+
+interface PurchaseReturnStatus {
+  has_returns: boolean;
+  fully_returned_items: number;
+  total_items: number;
+  is_fully_returned: boolean;
+  status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
 }
 
 interface Staff {
@@ -843,7 +869,7 @@ export default function PurchaseCreate() {
       }
     }
 
-    // Convert purchase items to local format
+        // Convert purchase items to local format
     if (purchase.items && purchase.items.length > 0) {
       const convertedItems: PurchaseItem[] = purchase.items.map((item: any, index: number) => {
         const qty = item.qty || 1;
@@ -874,7 +900,13 @@ export default function PurchaseCreate() {
           cgst: cgst,
           sgst: sgst,
           igst: igst,
-          total: total
+          total: total,
+          // Include return status fields
+          original_qty: item.original_qty,
+          returned_qty: item.returned_qty,
+          available_qty: item.available_qty,
+          is_fully_returned: item.is_fully_returned,
+          return_history: item.return_history
         };
       });
 
@@ -2409,14 +2441,32 @@ export default function PurchaseCreate() {
                     </tr>
 
                     {/* Added Products Rows */}
-                    {selectedProducts.map((product, index) => (
-                      <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
-                        <td className="px-2 py-2 text-center text-xs text-slate-300">
-                          {index + 1}
-                        </td>
-                        <td className="px-2 py-2 text-xs text-slate-200">
-                          {editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}
-                        </td>
+                    {selectedProducts.map((product, index) => {
+                      const isFullyReturned = product.is_fully_returned;
+                      const hasReturns = product.returned_qty && product.returned_qty > 0;
+                      const availableQty = product.available_qty || product.qty;
+
+                      return (
+                        <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : isFullyReturned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
+                          <td className="px-2 py-2 text-center text-xs text-slate-300">
+                            {index + 1}
+                            {isFullyReturned && (
+                              <div className="text-red-400 text-xs font-bold">🔒</div>
+                            )}
+                            {hasReturns && !isFullyReturned && (
+                              <div className="text-orange-400 text-xs">⚠️</div>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 text-xs text-slate-200">
+                            <div className="space-y-1">
+                              <div>{editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}</div>
+                              {hasReturns && (
+                                <div className="text-xs text-slate-400">
+                                  Original: {product.original_qty || product.qty} | Returned: {product.returned_qty} | Available: {availableQty}
+                                </div>
+                              )}
+                            </div>
+                          </td>
                         <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const catOption = filterOptions.categories.find(cat => cat.id.toString() === product.category);
@@ -3063,3 +3113,4 @@ export default function PurchaseCreate() {
 
   );
 }
+

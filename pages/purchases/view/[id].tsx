@@ -30,6 +30,24 @@ interface PurchaseItem {
   cgst?: number; // Added from API
   sgst?: number; // Added from API
   igst?: number; // Added from API
+  // Return status fields
+  original_qty?: number;
+  returned_qty?: number;
+  available_qty?: number;
+  is_fully_returned?: boolean;
+  return_history?: Array<{
+    return_id: string;
+    return_no: string;
+    qty: number;
+    date: number;
+    unit_price: number;
+    tax_amount: number;
+    cgst: number;
+    sgst: number;
+    igst: number;
+    reason_id: number;
+    notes: string;
+  }>;
 }
 
 interface Vendor {
@@ -87,6 +105,15 @@ interface Purchase {
   // Payment fields
   payment_status?: number;
   payment_mode?: number;
+
+  // Return status
+  return_status?: {
+    has_returns: boolean;
+    fully_returned_items: number;
+    total_items: number;
+    is_fully_returned: boolean;
+    status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
+  };
 
   // Legacy fields for compatibility
   invoice_no?: number;  // May still be used in some places
@@ -290,6 +317,19 @@ export default function PurchaseView() {
     }
   };
 
+  const getReturnStatusBadge = (status: string) => {
+    switch (status) {
+      case 'NO_RETURNS':
+        return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">No Returns</span>;
+      case 'PARTIAL_RETURN':
+        return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial Return</span>;
+      case 'FULLY_RETURNED':
+        return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>;
+      default:
+        return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
+    }
+  };
+
   const getPaymentModeText = (mode?: number) => {
     switch (mode) {
       case 0: return 'Cash';
@@ -324,10 +364,20 @@ export default function PurchaseView() {
       <div className="card">
         {/* Purchase Banner Inside Card */}
         <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4 mb-6">
-          <div className="text-center">
+          <div className="text-center space-y-2">
             <h1 className="text-xl font-bold text-blue-100">
               Purchase #{purchase.invoice_number || purchase.invoice_no} • {purchase.vendor?.vendor_name}
             </h1>
+            {purchase.return_status && (
+              <div className="flex justify-center gap-2">
+                {getReturnStatusBadge(purchase.return_status.status)}
+                {purchase.return_status.has_returns && (
+                  <span className="text-xs text-blue-200 bg-blue-800/50 px-2 py-1 rounded-full">
+                    {purchase.return_status.fully_returned_items}/{purchase.return_status.total_items} items returned
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -497,15 +547,26 @@ export default function PurchaseView() {
                 }
               }}
             />
-            <Link
-              href={`/purchases/create?edit=${id}`}
-              onClick={handleEditPurchase}
-              className="btn-primary flex items-center gap-2"
-              title="Edit Purchase"
-            >
-              <Edit className="w-4 h-4" />
-              Edit Purchase
-            </Link>
+            {purchase.return_status?.is_fully_returned ? (
+              <button
+                disabled
+                className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed"
+                title="Cannot edit purchase - fully returned"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Disabled (Fully Returned)
+              </button>
+            ) : (
+              <Link
+                href={`/purchases/create?edit=${id}`}
+                onClick={handleEditPurchase}
+                className="btn-primary flex items-center gap-2"
+                title="Edit Purchase"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Purchase
+              </Link>
+            )}
           </div>
         </div>
 

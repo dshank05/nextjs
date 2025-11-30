@@ -37,6 +37,61 @@ export default async function handler(
         })
         const productMap = new Map(products.map(p => [p.id, p.display_name]))
 
+        // Get return status for each purchase item
+        const purchaseItemIds = purchaseItems.map(item => item.id)
+        const returnItems = await prisma.purchase_return_items.findMany({
+          where: { purchase_item_id: { in: purchaseItemIds } },
+          include: {
+            purchase_return: {
+              select: {
+                id: true,
+                return_date: true,
+                status: true
+              }
+            }
+          }
+        })
+
+        // Group return items by purchase_item_id and calculate totals
+        const returnSummaryMap = new Map<number, {
+          returned_qty: number
+          return_history: Array<{
+            return_id: string
+            return_no: string
+            qty: number
+            date: number
+            unit_price: number
+            tax_amount: number
+            cgst: number
+            sgst: number
+            igst: number
+            reason_id: number
+            notes: string
+          }>
+        }>()
+
+        returnItems.forEach(returnItem => {
+          const itemId = returnItem.purchase_item_id
+          const existing = returnSummaryMap.get(itemId) || { returned_qty: 0, return_history: [] }
+
+          existing.returned_qty += returnItem.return_qty
+          existing.return_history.push({
+            return_id: returnItem.purchase_return.id.toString(),
+            return_no: `PR-${returnItem.purchase_return.id.toString().padStart(3, '0')}`,
+            qty: returnItem.return_qty,
+            date: returnItem.purchase_return.return_date,
+            unit_price: returnItem.unit_price,
+            tax_amount: returnItem.tax_amount,
+            cgst: returnItem.cgst || 0,
+            sgst: returnItem.sgst || 0,
+            igst: returnItem.igst || 0,
+            reason_id: returnItem.return_reason_id,
+            notes: returnItem.notes || ''
+          })
+
+          returnSummaryMap.set(itemId, existing)
+        })
+
         // ✅ CRITICAL FIX: Always fetch bill_to data first (contains inline-edited vendor details)
         let billToData = null;
         if (purchase.invoice_no) {
@@ -73,6 +128,55 @@ export default async function handler(
           });
         }
 
+        // Calculate return status for items and purchase
+        let fullyReturnedItems = 0
+        const itemsWithReturnStatus = purchaseItems.map(item => {
+          const returnData = returnSummaryMap.get(item.id) || { returned_qty: 0, return_history: [] }
+          const originalQty = item.qty || 0
+          const returnedQty = returnData.returned_qty
+          const availableQty = Math.max(0, originalQty - returnedQty)
+          const isFullyReturned = returnedQty >= originalQty
+
+          if (isFullyReturned) {
+            fullyReturnedItems++
+          }
+
+          return {
+            id: item.id,  // ✅ CRITICAL FIX: Include real database ID
+            product_id: item.product_id,
+            product_name: item.name_of_product || 'Unknown Product',  // Use name_of_product as product_name
+            display_name: item.product_id ? productMap.get(item.product_id) || item.name_of_product : item.name_of_product,
+            category_id: item.category_id,
+            subcategory_id: item.subcategory_id,
+            company_id: item.company_id,
+            model_id: item.model_id,
+            car_model: item.car_model || '',  // Keep as string for now
+            part: item.part || '',  // Use part field
+            qty: item.qty,
+            rate: item.rate,
+            gst_percentage: item.gst_percentage || 0,  // GST percentage applied to item
+            cgst: item.cgst || 0,  // CGST amount for item
+            sgst: item.sgst || 0,  // SGST amount for item
+            igst: item.igst || 0,  // IGST amount for item
+            tax: item.tax || 0,  // Total tax amount for item
+            total: item.subtotal || (item.qty * item.rate),  // Use subtotal as total
+            subtotal: item.subtotal || (item.qty * item.rate),  // Also include subtotal for compatibility
+            hsn: item.hsn || '',
+            // Return status fields
+            original_qty: originalQty,
+            returned_qty: returnedQty,
+            available_qty: availableQty,
+            is_fully_returned: isFullyReturned,
+            return_history: returnData.return_history
+          }
+        })
+
+        // Calculate overall purchase return status
+        const hasReturns = fullyReturnedItems > 0 || returnItems.length > 0
+        const isFullyReturned = fullyReturnedItems === purchaseItems.length
+        const returnStatus = isFullyReturned ? 'FULLY_RETURNED' :
+                           hasReturns ? 'PARTIAL_RETURN' : 'NO_RETURNS'
+
         // ✅ Transform to POST/PUT compatible structure
         const transformedPurchase = {
           // Main purchase fields - ensure all required fields are populated
@@ -93,29 +197,8 @@ export default async function handler(
           total: purchase.total || (purchase.items_total + (purchase.total_tax || 0)),
           freight: purchase.freight || 0,
 
-          // Transform items to POST structure
-          items: purchaseItems.map(item => ({
-            id: item.id,  // ✅ CRITICAL FIX: Include real database ID
-            product_id: item.product_id,
-            product_name: item.name_of_product || 'Unknown Product',  // Use name_of_product as product_name
-            display_name: item.product_id ? productMap.get(item.product_id) || item.name_of_product : item.name_of_product,
-            category_id: item.category_id,
-            subcategory_id: item.subcategory_id,
-            company_id: item.company_id,
-            model_id: item.model_id,
-            car_model: item.car_model || '',  // Keep as string for now
-            part: item.part || '',  // Use part field
-            qty: item.qty,
-            rate: item.rate,
-            gst_percentage: item.gst_percentage || 0,  // GST percentage applied to item
-            cgst: item.cgst || 0,  // CGST amount for item
-            sgst: item.sgst || 0,  // SGST amount for item
-            igst: item.igst || 0,  // IGST amount for item
-            tax: item.tax || 0,  // Total tax amount for item
-            total: item.subtotal || (item.qty * item.rate),  // Use subtotal as total
-            subtotal: item.subtotal || (item.qty * item.rate),  // Also include subtotal for compatibility
-            hsn: item.hsn || ''
-          })),
+          // Transform items to POST structure with return status
+          items: itemsWithReturnStatus,
 
           // Additional fields
           descriptions: purchase.descriptions || '',
@@ -132,6 +215,15 @@ export default async function handler(
           // Payment fields
           payment_status: purchase.payment_status || 0,
           payment_mode: purchase.payment_mode || 1,
+
+          // Return status summary
+          return_status: {
+            has_returns: hasReturns,
+            fully_returned_items: fullyReturnedItems,
+            total_items: purchaseItems.length,
+            is_fully_returned: isFullyReturned,
+            status: returnStatus
+          },
 
           // Metadata
           fy: purchase.fy,

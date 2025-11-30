@@ -108,6 +108,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           where,
           select: {
             id: true,
+            vendor_id: true,
             purchase_id: true,
             return_date: true,
             total_amount: true,
@@ -133,6 +134,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           orderBy: { [sortField]: sortDirection },
           select: {
             id: true,
+            vendor_id: true,
             purchase_id: true,
             return_date: true,
             total_amount: true,
@@ -150,42 +152,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get purchase details, vendor info, and item counts in batch queries
-    const purchaseIds = Array.from(new Set(returns.map(r => r.purchase_id).filter(Boolean)))
+    // Get vendor info and item counts in batch queries
+    const vendorIds = Array.from(new Set(returns.map(r => r.vendor_id).filter(Boolean)))
     const returnIds = returns.map(r => r.id)
 
-    // Get purchase details first
-    const purchaseData = purchaseIds.length > 0 ? await prisma.purchase.findMany({
-      where: { id: { in: purchaseIds } },
-      select: {
-        id: true,
-        invoice_no: true,
-        vendor_id: true,
-        invoice_date: true
-      }
-    }) : []
-
-    // Now get vendor and bill_to data using the purchase data
-    const [vendorData, billToData, itemCounts] = await Promise.all([
-      // Get vendor details
-      prisma.vendor_details.findMany({
-        where: {
-          id: {
-            in: purchaseData.map(p => p.vendor_id).filter(Boolean)
-          }
-        },
+    // Get vendor details directly from returns
+    const [vendorData, itemCounts] = await Promise.all([
+      // Get vendor details using vendor_ids from returns
+      vendorIds.length > 0 ? prisma.vendor_details.findMany({
+        where: { id: { in: vendorIds } },
         select: { id: true, vendor_name: true, tax_id: true, address: true }
-      }),
-
-      // Get bill_to data for "Other" vendors
-      prisma.bill_to.findMany({
-        where: {
-          invoice_no: {
-            in: purchaseData.map(p => p.invoice_no).filter(Boolean)
-          }
-        },
-        select: { invoice_no: true, vendor_name: true, gstin: true, address: true }
-      }),
+      }) : Promise.resolve([]),
 
       // Get item counts for each return
       returnIds.length > 0 ? prisma.purchase_return_items.groupBy({
@@ -196,16 +173,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps
-    const purchaseMap = new Map(purchaseData.map(p => [p.id, p]))
     const vendorMap = new Map(vendorData.map(v => [v.id, v]))
-    const billToMap = new Map(billToData.map(bt => [bt.invoice_no, bt]))
     const itemCountMap = new Map(itemCounts.map(ic => [ic.purchase_return_id, ic._count.id]))
 
-    // Enhanced returns with vendor and purchase info
+    // Enhanced returns with vendor info (direct relationship)
     let enhancedReturns = returns.map((returnRecord) => {
-      const purchase = purchaseMap.get(returnRecord.purchase_id)
-      const vendor = purchase ? vendorMap.get(purchase.vendor_id) : null
-      const billTo = purchase ? billToMap.get(purchase.invoice_no) : null
+      const vendor = vendorMap.get(returnRecord.vendor_id)
 
       // Format date
       let formattedDate: string | null = null
@@ -223,19 +196,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return {
         id: returnRecord.id,
         return_no: `PR-${String(returnRecord.id).padStart(3, '0')}`, // Generate return number
-        vendor_name: vendor?.vendor_name || billTo?.vendor_name || 'Unknown Vendor',
-        vendor_gstin: vendor?.tax_id || billTo?.gstin || '',
-        vendor_address: vendor?.address || billTo?.address || '',
+        vendor_name: vendor?.vendor_name || 'Unknown Vendor',
+        vendor_gstin: vendor?.tax_id || '',
+        vendor_address: vendor?.address || '',
         total_amount: returnRecord.total_amount || 0,
         total_tax: returnRecord.total_tax || 0,
-        status: returnRecord.status || 'Pending',
+        status: returnRecord.status || 'Completed',
         return_date: returnRecord.return_date,
         formattedDate: formattedDate,
         item_count: itemCountMap.get(returnRecord.id) || 0,
         notes: returnRecord.notes || '',
         fy: returnRecord.fy,
-        purchase_invoice_no: purchase?.invoice_no || '',
-        purchase_date: purchase?.invoice_date || null,
         created_at: returnRecord.created_at,
         updated_at: returnRecord.updated_at
       }

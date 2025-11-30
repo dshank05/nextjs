@@ -204,12 +204,14 @@ model Purchase {
   staff_id                 Int?
   return_status            Int?               @default(0)
   staff                    staff?             @relation(fields: [staff_id], references: [id])
+  vendor                   vendor_details?    @relation(fields: [vendor_id], references: [id], map: "purchase_vendor_fkey")
   purchase_returns         purchase_returns[]
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
   @@index([payment_status], map: "idx_purchase_payment_status")
   @@index([payment_status, fy, invoice_date], map: "idx_purchase_payment_status_fy_date")
   @@index([staff_id], map: "purchase_staff_id_fkey")
+  @@index([vendor_id], map: "purchase_vendor_fkey")
   @@map("purchase")
 }
 
@@ -566,6 +568,8 @@ model vendor_details {
   email       String? @db.VarChar(100)
   status      String  @default("Active") @db.VarChar(20)
   tax_id      String? @db.VarChar(50)
+  purchases   Purchase[]         // NEW: One-to-many with purchases
+  returns     purchase_returns[] // NEW: One-to-many with returns
 
   @@index([vendor_name], map: "idx_vendor_name")
   @@index([contact_no], map: "idx_vendor_contact_no")
@@ -730,18 +734,21 @@ model sale_return_items {
 
 model purchase_returns {
   id           Int                     @id @default(autoincrement())
-  purchase_id  Int
+  vendor_id    Int                     // Vendor-based returns
+  purchase_id  Int?                    // Nullable for vendor-based returns
   return_date  Int
   total_amount Float
   total_tax    Float
-  status       String                  @default("Pending") @db.VarChar(20)
+  status       String                  @default("Completed") @db.VarChar(20)
   notes        String?                 @db.Text
   fy           Int
   created_at   DateTime                @default(now())
   updated_at   DateTime                @updatedAt
   items        purchase_return_items[]
-  purchase     Purchase                @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
+  vendor       vendor_details          @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
+  purchase     Purchase?               @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
 
+  @@index([vendor_id], map: "purchase_returns_vendor_fkey")
   @@index([purchase_id], map: "purchase_returns_purchase_fkey")
   @@index([status], map: "idx_purchase_returns_status")
   @@index([fy], map: "idx_purchase_returns_fy")
@@ -756,6 +763,9 @@ model purchase_return_items {
   return_reason_id   Int
   unit_price         Float
   tax_amount         Float
+  cgst               Float?           // Tax breakdown for GST compliance
+  sgst               Float?           // Tax breakdown for GST compliance
+  igst               Float?           // Tax breakdown for GST compliance
   notes              String?          @db.VarChar(255)
   purchase_item      Purchaseitems    @relation(fields: [purchase_item_id], references: [id], map: "purchase_return_items_purchase_item_fkey")
   reason             return_reasons   @relation(fields: [return_reason_id], references: [id], map: "purchase_return_items_reason_fkey")

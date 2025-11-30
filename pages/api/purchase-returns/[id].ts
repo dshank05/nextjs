@@ -269,6 +269,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
+      // Get current return items to restore stock first
+      const currentReturnItems = await tx.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: { purchase_item_id: true, return_qty: true }
+      })
+
+      // Restore stock for current return items (reverse the decrement)
+      for (const currentItem of currentReturnItems) {
+        const purchaseItem = await tx.purchaseitems.findUnique({
+          where: { id: currentItem.purchase_item_id },
+          select: { product_id: true }
+        })
+
+        if (purchaseItem?.product_id) {
+          await tx.product.update({
+            where: { id: purchaseItem.product_id },
+            data: {
+              stock: { increment: currentItem.return_qty } // Restore stock
+            }
+          })
+        }
+      }
+
       // Get current return
       const currentReturn = await tx.purchase_returns.findUnique({
         where: { id: returnId },
@@ -331,7 +354,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         where: { purchase_return_id: returnId }
       })
 
-      // Create new return items
+      // Create new return items and apply new stock decrements
       for (const item of processedItems) {
         await tx.purchase_return_items.create({
           data: {
@@ -339,6 +362,21 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             ...item
           }
         })
+
+        // Apply new stock decrement
+        const purchaseItem = await tx.purchaseitems.findUnique({
+          where: { id: item.purchase_item_id },
+          select: { product_id: true }
+        })
+
+        if (purchaseItem?.product_id) {
+          await tx.product.update({
+            where: { id: purchaseItem.product_id },
+            data: {
+              stock: { decrement: item.return_qty } // Apply new return
+            }
+          })
+        }
       }
 
       return updatedReturn
@@ -381,6 +419,30 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
 
     // Delete return items first, then return record
     await prisma.$transaction(async (tx) => {
+      // Get return items to restore stock before deleting
+      const returnItems = await tx.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: { purchase_item_id: true, return_qty: true }
+      })
+
+      // Restore stock for all return items
+      for (const returnItem of returnItems) {
+        const purchaseItem = await tx.purchaseitems.findUnique({
+          where: { id: returnItem.purchase_item_id },
+          select: { product_id: true }
+        })
+
+        if (purchaseItem?.product_id) {
+          await tx.product.update({
+            where: { id: purchaseItem.product_id },
+            data: {
+              stock: { increment: returnItem.return_qty } // Restore stock when return is cancelled
+            }
+          })
+        }
+      }
+
+      // Delete return items and return record
       await tx.purchase_return_items.deleteMany({
         where: { purchase_return_id: returnId }
       })

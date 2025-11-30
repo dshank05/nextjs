@@ -42,11 +42,29 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     let totalAmount = 0
     let totalTax = 0
 
+    // Get vendor details for tax calculations
+    const vendor = await prisma.vendor_details.findUnique({
+      where: { id: parseInt(vendor_id) },
+      select: { state_code: true }
+    })
+
     // Process items and calculate totals
     const processedItems = []
     for (const item of items) {
       const subtotal = item.return_qty * item.unit_price
       const taxAmount = (subtotal * item.tax_rate) / 100
+
+      // Calculate CGST/SGST/IGST breakdown based on vendor state
+      const BUSINESS_STATE_CODE = 9 // Uttar Pradesh
+      let cgst = 0, sgst = 0, igst = 0
+      if (vendor?.state_code === BUSINESS_STATE_CODE) {
+        // Intra-state: CGST + SGST
+        cgst = taxAmount / 2
+        sgst = taxAmount / 2
+      } else {
+        // Inter-state: IGST only
+        igst = taxAmount
+      }
 
       totalAmount += subtotal
       totalTax += taxAmount
@@ -57,6 +75,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         return_reason_id: parseInt(item.return_reason_id),
         unit_price: item.unit_price,
         tax_amount: taxAmount,
+        cgst: cgst,
+        sgst: sgst,
+        igst: igst,
         subtotal: subtotal,
         notes: item.notes || ''
       })
@@ -67,7 +88,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // Create the main return record
       const returnRecord = await tx.purchase_returns.create({
         data: {
-          purchase_id: parseInt(vendor_id), // For now, we'll use vendor_id as purchase_id (this might need adjustment)
+          vendor_id: parseInt(vendor_id), // CORRECT: Use vendor_id for vendor-based returns
           return_date: returnDateTimestamp,
           total_amount: totalAmount,
           total_tax: totalTax,
@@ -88,11 +109,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             return_reason_id: item.return_reason_id,
             unit_price: item.unit_price,
             tax_amount: item.tax_amount,
+            cgst: item.cgst,
+            sgst: item.sgst,
+            igst: item.igst,
             notes: item.notes
           }
         })
 
-        // Update product stock (increase stock since we're returning items)
+        // Update product stock (DECREASE stock since we're returning items to vendor)
         // First get the product_id from purchase_item
         const purchaseItem = await tx.purchaseitems.findUnique({
           where: { id: item.purchase_item_id },
@@ -104,7 +128,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             where: { id: purchaseItem.product_id },
             data: {
               stock: {
-                increment: item.return_qty
+                decrement: item.return_qty  // ✅ FIXED: Decrement stock when returning to vendor
               }
             }
           })
