@@ -570,7 +570,7 @@ export default function PurchaseView() {
           </div>
         </div>
 
-        {/* Purchase Items Table - Enhanced with more details */}
+        {/* Purchase Items Table - Enhanced with return information */}
         <div className="border-t border-slate-700 mt-6 pt-6">
           <div className="overflow-x-auto">
             <table className="table">
@@ -579,37 +579,46 @@ export default function PurchaseView() {
                   <th className="w-16">SN</th>
                   <th>Product Name</th>
                   <th>Part No</th>
-                  <th>HSN</th>
-                  <th>Qty</th>
+                  <th>Bought</th>
+                  <th>Returned</th>
+                  <th>Available</th>
                   <th>Rate</th>
-                  <th>Total (Qty × Rate)</th>
+                  <th>Total (Avail × Rate)</th>
                   <th>Tax %</th>
                   <th>Tax Amount</th>
-                  <th>Subtotal (Total + Tax)</th>
+                  <th>Subtotal</th>
                 </tr>
               </thead>
               <tbody>
                 {purchase.items?.map((item, index) => {
-                  const qtyRateTotal = (item.qty || 0) * (item.rate || 0);
-                  const taxAmount = (item.total || item.subtotal || 0) - ((item.qty * (item.rate || 0)) / (1 + (item.gst_percentage || 0) / 100));
+                  const boughtQty = item.original_qty || item.qty || 0;
+                  const returnedQty = item.returned_qty || 0;
+                  const availableQty = item.available_qty !== undefined ? item.available_qty : boughtQty;
+                  const isFullyReturned = item.is_fully_returned || false;
+
+                  // Calculate based on AVAILABLE quantity
+                  const qtyRateTotal = availableQty * (item.rate || 0);
+                  const taxAmount = (qtyRateTotal * (item.gst_percentage || 0)) / 100;
+                  const subtotal = qtyRateTotal + taxAmount;
 
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={isFullyReturned ? 'bg-red-900/20' : returnedQty > 0 ? 'bg-orange-900/20' : ''}>
                       <td>{index + 1}</td>
                       <td className="font-medium text-white">{item.display_name || item.product_name}</td>
                       <td className="text-slate-300">{item.part || 'N/A'}</td>
-                      <td className="text-slate-300">{item.hsn || 'N/A'}</td>
-                      <td className="text-slate-300 font-medium">{item.qty}</td>
+                      <td className="text-slate-300 font-medium">{boughtQty}</td>
+                      <td className="text-red-400 font-medium">{returnedQty > 0 ? returnedQty : '-'}</td>
+                      <td className="text-green-400 font-medium">{availableQty}</td>
                       <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
                       <td className="text-slate-300">₹{qtyRateTotal?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300">{item.gst_percentage || item.tax || 0}%</td>
+                      <td className="text-slate-300">{item.gst_percentage || 0}%</td>
                       <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300 font-semibold">₹{(item.total || item.subtotal)?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300 font-semibold">₹{subtotal?.toLocaleString('en-IN')}</td>
                     </tr>
                   );
                 }) || (
                   <tr>
-                    <td colSpan={10} className="text-center text-slate-400 py-4">
+                    <td colSpan={11} className="text-center text-slate-400 py-4">
                       No items found for this purchase
                     </td>
                   </tr>
@@ -621,10 +630,22 @@ export default function PurchaseView() {
                     <td></td>
                     <td></td>
                     <td></td>
+                    <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
+                      {purchase.items?.reduce((sum, item) => sum + (item.original_qty || item.qty || 0), 0)}
+                    </td>
+                    <td className="text-red-400 font-bold text-left px-1 py-3 bg-slate-700/20">
+                      {purchase.items?.reduce((sum, item) => sum + (item.returned_qty || 0), 0)}
+                    </td>
+                    <td className="text-green-400 font-bold text-left px-1 py-3 bg-slate-700/20">
+                      {purchase.items?.reduce((sum, item) => sum + (item.available_qty !== undefined ? item.available_qty : (item.original_qty || item.qty || 0)), 0)}
+                    </td>
                     <td></td>
-                    <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">{purchase.items?.reduce((sum, item) => sum + (item.qty || 0), 0)}</td>
-                    <td></td>
-                    <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.items?.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0).toLocaleString('en-IN')}</td>
+                    <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
+                      ₹{purchase.items?.reduce((sum, item) => {
+                        const availQty = item.available_qty !== undefined ? item.available_qty : (item.original_qty || item.qty || 0);
+                        return sum + (availQty * (item.rate || 0));
+                      }, 0).toLocaleString('en-IN')}
+                    </td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items_total?.toLocaleString('en-IN')}</td>

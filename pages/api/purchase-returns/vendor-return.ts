@@ -83,12 +83,34 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Use database transaction for atomic operations
+    // Use database transaction with increased timeout for return processing
     const result = await prisma.$transaction(async (tx) => {
-      // Create the main return record
+      // Get affected purchase IDs from items
+      const purchaseItems = await tx.purchaseitems.findMany({
+        where: {
+          id: { in: items.map((item: any) => parseInt(item.purchase_item_id)) }
+        },
+        select: {
+          id: true,
+          invoice_no: true,
+          product_id: true
+        }
+      })
+
+      // Get unique purchase IDs
+      const purchaseInvoiceNos = Array.from(new Set(purchaseItems.map(pi => pi.invoice_no)))
+      const affectedPurchases = await tx.purchase.findMany({
+        where: {
+          invoice_no: { in: purchaseInvoiceNos }
+        },
+        select: { id: true }
+      })
+
+      // Create the main return record (link to first affected purchase if available)
       const returnRecord = await tx.purchase_returns.create({
         data: {
-          vendor_id: parseInt(vendor_id), // CORRECT: Use vendor_id for vendor-based returns
+          vendor_id: parseInt(vendor_id),
+          purchase_id: affectedPurchases.length > 0 ? affectedPurchases[0].id : null,
           return_date: returnDateTimestamp,
           total_amount: totalAmount,
           total_tax: totalTax,
@@ -117,25 +139,108 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
 
         // Update product stock (DECREASE stock since we're returning items to vendor)
-        // First get the product_id from purchase_item
-        const purchaseItem = await tx.purchaseitems.findUnique({
-          where: { id: item.purchase_item_id },
-          select: { product_id: true }
-        })
-
+        const purchaseItem = purchaseItems.find(pi => pi.id === item.purchase_item_id)
         if (purchaseItem?.product_id) {
           await tx.product.update({
             where: { id: purchaseItem.product_id },
             data: {
               stock: {
-                decrement: item.return_qty  // ✅ FIXED: Decrement stock when returning to vendor
+                decrement: item.return_qty
               }
             }
           })
         }
       }
 
+      // Update return_status and recalculate totals for all affected purchases (OPTIMIZED)
+      for (const purchase of affectedPurchases) {
+        // Get purchase details in one query
+        const purchaseRecord = await tx.purchase.findUnique({
+          where: { id: purchase.id },
+          select: { 
+            invoice_no: true, 
+            packing_forwarding_total: true,
+            items_total: true,
+            total_tax: true
+          }
+        })
+
+        // Get all items for this purchase
+        const allPurchaseItems = await tx.purchaseitems.findMany({
+          where: { invoice_no: purchaseRecord?.invoice_no },
+          select: { id: true, qty: true, rate: true, tax: true, cgst: true, sgst: true, igst: true }
+        })
+
+        // Get all returns for these items in one query
+        const allReturns = await tx.purchase_return_items.findMany({
+          where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
+          select: { purchase_item_id: true, return_qty: true, unit_price: true, tax_amount: true, cgst: true, sgst: true, igst: true }
+        })
+
+        // Calculate return totals
+        const returnMap = new Map()
+        allReturns.forEach(r => {
+          const existing = returnMap.get(r.purchase_item_id) || { qty: 0, amount: 0, tax: 0, cgst: 0, sgst: 0, igst: 0 }
+          existing.qty += r.return_qty
+          existing.amount += r.return_qty * r.unit_price
+          existing.tax += r.tax_amount
+          existing.cgst += r.cgst || 0
+          existing.sgst += r.sgst || 0
+          existing.igst += r.igst || 0
+          returnMap.set(r.purchase_item_id, existing)
+        })
+
+        let fullyReturnedCount = 0
+        let totalReturnedAmount = 0
+        let totalReturnedTax = 0
+        let totalReturnedCgst = 0
+        let totalReturnedSgst = 0
+        let totalReturnedIgst = 0
+
+        for (const item of allPurchaseItems) {
+          const returnData = returnMap.get(item.id)
+          if (returnData) {
+            totalReturnedAmount += returnData.amount
+            totalReturnedTax += returnData.tax
+            totalReturnedCgst += returnData.cgst
+            totalReturnedSgst += returnData.sgst
+            totalReturnedIgst += returnData.igst
+            if (returnData.qty >= (item.qty || 0)) fullyReturnedCount++
+          }
+        }
+
+        // Calculate return_status
+        const returnStatus = fullyReturnedCount === 0 ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
+
+        // Calculate new totals
+        const originalItemsTotal = allPurchaseItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0)
+        const newItemsTotal = originalItemsTotal - totalReturnedAmount
+        const newTotalTax = allPurchaseItems.reduce((sum, item) => sum + (item.tax || 0), 0) - totalReturnedTax
+        const newTotalCgst = allPurchaseItems.reduce((sum, item) => sum + (item.cgst || 0), 0) - totalReturnedCgst
+        const newTotalSgst = allPurchaseItems.reduce((sum, item) => sum + (item.sgst || 0), 0) - totalReturnedSgst
+        const newTotalIgst = allPurchaseItems.reduce((sum, item) => sum + (item.igst || 0), 0) - totalReturnedIgst
+        const packingTotal = purchaseRecord?.packing_forwarding_total || 0
+        const newGrandTotal = newItemsTotal + newTotalTax + packingTotal
+
+        // Update purchase
+        await tx.purchase.update({
+          where: { id: purchase.id },
+          data: { 
+            return_status: returnStatus,
+            items_total: newItemsTotal,
+            total_taxable_value: newItemsTotal,
+            total_tax: newTotalTax,
+            total_cgst: newTotalCgst,
+            total_sgst: newTotalSgst,
+            total_igst: newTotalIgst,
+            total: newGrandTotal
+          }
+        })
+      }
+
       return returnRecord
+    }, {
+      timeout: 15000 // 15 seconds timeout for complex return processing
     })
 
     res.status(201).json({

@@ -31,11 +31,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // Get the return record
+    // Get the return record with vendor
     const returnRecord = await prisma.purchase_returns.findUnique({
       where: { id: returnId },
       select: {
         id: true,
+        vendor_id: true,
         purchase_id: true,
         return_date: true,
         total_amount: true,
@@ -52,24 +53,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Return not found' })
     }
 
-    // Get purchase details
-    const purchase = await prisma.purchase.findUnique({
-      where: { id: returnRecord.purchase_id },
-      select: {
-        id: true,
-        invoice_no: true,
-        vendor_id: true,
-        invoice_date: true
-      }
-    })
-
-    if (!purchase) {
-      return res.status(404).json({ message: 'Associated purchase not found' })
-    }
-
-    // Get vendor details
-    const vendor = await prisma.vendor_details.findUnique({
-      where: { id: purchase.vendor_id },
+    // Get vendor details directly from return (vendor-based returns)
+    const vendor = returnRecord.vendor_id ? await prisma.vendor_details.findUnique({
+      where: { id: returnRecord.vendor_id },
       select: {
         id: true,
         vendor_name: true,
@@ -78,7 +64,25 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         tax_id: true,
         address: true
       }
-    })
+    }) : null
+
+    if (!vendor) {
+      return res.status(404).json({ message: 'Associated vendor not found' })
+    }
+
+    // Get purchase details if available (optional for vendor-based returns)
+    let purchase = null
+    if (returnRecord.purchase_id) {
+      purchase = await prisma.purchase.findUnique({
+        where: { id: returnRecord.purchase_id },
+        select: {
+          id: true,
+          invoice_no: true,
+          vendor_id: true,
+          invoice_date: true
+        }
+      })
+    }
 
     // Get return items with product details
     const returnItems = await prisma.purchase_return_items.findMany({
@@ -195,17 +199,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         igst,
         return_reason_id: item.return_reason_id,
         notes: item.notes,
-        bill_reference: purchase.invoice_no,
-        invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : ''
+        bill_reference: purchase?.invoice_no?.toString() || 'N/A',
+        invoice_date: purchase?.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : ''
       }
     })
 
-    // Group items by bill (in this case, just one bill since it's a single return)
+    // Group items by bill (for vendor-based returns without specific purchase)
     const bills = [{
-      id: purchase.id.toString(),
-      invoice_no: purchase.invoice_no.toString(),
-      bill_reference: purchase.invoice_no.toString(),
-      invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
+      id: purchase?.id?.toString() || returnRecord.id.toString(),
+      invoice_no: purchase?.invoice_no?.toString() || 'N/A',
+      bill_reference: purchase?.invoice_no?.toString() || 'Vendor Return',
+      invoice_date: purchase?.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
       total_amount: returnRecord.total_amount,
       has_tax: (returnRecord.total_tax || 0) > 0,
       available_items: returnItemsWithDetails.length,

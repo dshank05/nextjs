@@ -480,7 +480,7 @@ export default function PurchaseReturnVendorCreatePage() {
     try {
       const returnData = {
         return_date: returnDate,
-        notes: returnNotes,
+        return_notes: returnNotes,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: parseInt(item.id),
           return_qty: item.return_qty,
@@ -502,7 +502,7 @@ export default function PurchaseReturnVendorCreatePage() {
       } else {
         // Create mode - create new return
         const createData = {
-          vendor_id: vendorIdParam,
+          vendor_id: vendor?.id,
           ...returnData
         };
         response = await fetch('/api/purchase-returns/vendor-return', {
@@ -517,7 +517,7 @@ export default function PurchaseReturnVendorCreatePage() {
         const action = isEditMode ? 'updated' : 'created';
         const returnId = isEditMode ? returnIdParam : result.data.return.id;
         showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
-        router.push('/entry/purchasereturn');
+        router.push('/entry/purchasereturn-vendor');
       } else {
         const error = await response.json();
         showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);

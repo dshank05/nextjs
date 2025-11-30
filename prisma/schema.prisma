@@ -734,7 +734,7 @@ model sale_return_items {
 
 model purchase_returns {
   id           Int                     @id @default(autoincrement())
-  vendor_id    Int                     // Vendor-based returns
+  vendor_id    Int?                    // Vendor-based returns (nullable for existing data)
   purchase_id  Int?                    // Nullable for vendor-based returns
   return_date  Int
   total_amount Float
@@ -745,7 +745,7 @@ model purchase_returns {
   created_at   DateTime                @default(now())
   updated_at   DateTime                @updatedAt
   items        purchase_return_items[]
-  vendor       vendor_details          @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
+  vendor       vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
   purchase     Purchase?               @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
 
   @@index([vendor_id], map: "purchase_returns_vendor_fkey")

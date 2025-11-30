@@ -2868,16 +2868,18 @@ export default function PurchaseCreate() {
                                   <button
                                     type="button"
                                     onClick={() => handleEditProduct(product)}
-                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                                    title="Edit product"
+                                    disabled={isFullyReturned}
+                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                    title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
                                   >
                                     <Edit2 className="w-3 h-3" />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleConfirmDelete(product)}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                                    title="Remove product"
+                                    disabled={isFullyReturned}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                    title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>
@@ -2901,16 +2903,18 @@ export default function PurchaseCreate() {
                                   <button
                                     type="button"
                                     onClick={() => handleEditProduct(product)}
-                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors"
-                                    title="Edit product"
+                                    disabled={isFullyReturned}
+                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                    title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
                                   >
                                     <Edit2 className="w-3 h-3" />
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleConfirmDelete(product)}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
-                                    title="Remove product"
+                                    disabled={isFullyReturned}
+                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                    title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
                                   >
                                     <Trash2 className="w-3 h-3" />
                                   </button>
@@ -2921,7 +2925,7 @@ export default function PurchaseCreate() {
                         )}
                       </tr>
                     );
-                    })}
+                  })}
 
                   </tbody>
                   {selectedProducts.length > 0 && (
