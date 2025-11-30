@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput } from '../../components/common/ClearableInput';
+import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
@@ -581,7 +582,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
           {/* Return Information */}
           <div className="mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Vendor *</label>
                 <SearchableSelect
@@ -606,26 +607,30 @@ export default function PurchaseReturnVendorCreatePage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Payment Status</label>
-                <select
-                  value={paymentStatus}
-                  onChange={(e) => setPaymentStatus(parseInt(e.target.value))}
-                  className="input w-full"
-                >
-                  <option value={0}>Unpaid (Pending Refund)</option>
-                  <option value={1}>Paid (Refunded)</option>
-                </select>
+                <SearchableSelect
+                  options={[
+                    { id: '0', name: 'Unpaid (Pending Refund)' },
+                    { id: '1', name: 'Paid (Refunded)' }
+                  ]}
+                  selectedValue={paymentStatus.toString()}
+                  onSelectionChange={(value) => setPaymentStatus(parseInt(value || '0'))}
+                  placeholder="Select status..."
+                  className="w-full"
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
-                <select
-                  value={paymentMode}
-                  onChange={(e) => setPaymentMode(parseInt(e.target.value))}
-                  className="input w-full"
+                <SearchableSelect
+                  options={[
+                    { id: '0', name: 'Cash' },
+                    { id: '1', name: 'Bank' }
+                  ]}
+                  selectedValue={paymentMode.toString()}
+                  onSelectionChange={(value) => setPaymentMode(parseInt(value || '1'))}
+                  placeholder="Select mode..."
+                  className="w-full"
                   disabled={paymentStatus === 0}
-                >
-                  <option value={0}>Cash</option>
-                  <option value={1}>Bank</option>
-                </select>
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Payment Date</label>
@@ -637,6 +642,8 @@ export default function PurchaseReturnVendorCreatePage() {
                   disabled={paymentStatus === 0}
                 />
               </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Search Bills</label>
                 <ClearableInput
@@ -646,8 +653,6 @@ export default function PurchaseReturnVendorCreatePage() {
                   className="w-full"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Search Items</label>
                 <ClearableInput
@@ -657,23 +662,16 @@ export default function PurchaseReturnVendorCreatePage() {
                   className="w-full"
                 />
               </div>
-              <div className="md:col-span-2">
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    className="input flex-1"
-                  />
-                  <span className="text-slate-400">to</span>
-                  <input
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    className="input flex-1"
-                  />
-                </div>
+                <DateRangeFilter
+                  startDate={dateFrom}
+                  endDate={dateTo}
+                  onDateChange={(start, end) => {
+                    setDateFrom(start);
+                    setDateTo(end);
+                  }}
+                />
               </div>
             </div>
 

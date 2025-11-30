@@ -177,6 +177,39 @@ export default async function handler(
         const returnStatus = isFullyReturned ? 'FULLY_RETURNED' :
                            hasReturns ? 'PARTIAL_RETURN' : 'NO_RETURNS'
 
+        // Get return transaction details with payment info
+        const uniqueReturnIds = new Set<number>()
+        returnItems.forEach(item => {
+          uniqueReturnIds.add(item.purchase_return.id)
+        })
+
+        const returnTransactions = await prisma.purchase_returns.findMany({
+          where: { id: { in: Array.from(uniqueReturnIds) } },
+          select: {
+            id: true,
+            return_date: true,
+            total_amount: true,
+            refund_amount: true,
+            payment_status: true,
+            payment_mode: true,
+            payment_date: true,
+            notes: true
+          }
+        })
+
+        const returnsWithDetails = returnTransactions.map(ret => ({
+          id: ret.id,
+          return_no: `PR-${ret.id.toString().padStart(3, '0')}`,
+          return_date: ret.return_date,
+          total_amount: ret.total_amount,
+          refund_amount: ret.refund_amount,
+          payment_status: ret.payment_status,
+          payment_mode: ret.payment_mode,
+          payment_date: ret.payment_date,
+          notes: ret.notes || '',
+          items_count: returnItems.filter(item => item.purchase_return.id === ret.id).length
+        }))
+
         // ✅ Transform to POST/PUT compatible structure
         const transformedPurchase = {
           // Main purchase fields - ensure all required fields are populated
@@ -224,6 +257,9 @@ export default async function handler(
             is_fully_returned: isFullyReturned,
             status: returnStatus
           },
+
+          // Return transactions with payment details
+          returns: returnsWithDetails,
 
           // Metadata
           fy: purchase.fy,

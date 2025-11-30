@@ -312,7 +312,8 @@ export default function PurchaseReturnDetailPage() {
                 <tr>
                   <th className="w-16">SN</th>
                   <th>Product Name</th>
-                  <th>Bill</th>
+                  <th>Bill No</th>
+                  <th>Bill Ref</th>
                   <th>Qty</th>
                   <th>Rate</th>
                   <th>Tax %</th>
@@ -331,10 +332,8 @@ export default function PurchaseReturnDetailPage() {
                         <div className="text-slate-400 text-xs">Part: {item.part_number}</div>
                       )}
                     </td>
-                    <td className="text-slate-300">
-                      <div className="font-medium">{item.invoice_no}</div>
-                      <div className="text-xs text-slate-400">{item.bill_reference}</div>
-                    </td>
+                    <td className="text-slate-300 font-medium">{item.invoice_no}</td>
+                    <td className="text-slate-300">{item.bill_reference}</td>
                     <td className="text-slate-300 font-medium">{item.return_qty}</td>
                     <td className="text-slate-300">₹{item.unit_price.toFixed(2)}</td>
                     <td className="text-slate-300">{item.tax_rate}%</td>
@@ -351,6 +350,8 @@ export default function PurchaseReturnDetailPage() {
               </tbody>
               <tfoot>
                 <tr className="border-t border-slate-700 bg-slate-800/30">
+                  <td></td>
+                  <td></td>
                   <td></td>
                   <td></td>
                   <td className="text-white font-bold text-center py-3 bg-slate-700/20">

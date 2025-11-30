@@ -115,6 +115,20 @@ interface Purchase {
     status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
   };
 
+  // Return transactions
+  returns?: Array<{
+    id: number;
+    return_no: string;
+    return_date: number;
+    total_amount: number;
+    refund_amount: number;
+    payment_status: number;
+    payment_mode: number;
+    payment_date: number | null;
+    notes: string;
+    items_count: number;
+  }>;
+
   // Legacy fields for compatibility
   invoice_no?: number;  // May still be used in some places
   invoice_date?: number | string;  // May still be used
@@ -570,7 +584,7 @@ export default function PurchaseView() {
           </div>
         </div>
 
-        {/* Purchase Items Table - Enhanced with return information */}
+        {/* Purchase Items Table - Showing original purchase only */}
         <div className="border-t border-slate-700 mt-6 pt-6">
           <div className="overflow-x-auto">
             <table className="table">
@@ -579,46 +593,40 @@ export default function PurchaseView() {
                   <th className="w-16">SN</th>
                   <th>Product Name</th>
                   <th>Part No</th>
-                  <th>Bought</th>
-                  <th>Returned</th>
-                  <th>Available</th>
+                  <th>Qty</th>
                   <th>Rate</th>
-                  <th>Total (Avail × Rate)</th>
+                  <th>Taxable Value</th>
                   <th>Tax %</th>
                   <th>Tax Amount</th>
-                  <th>Subtotal</th>
+                  <th>Total Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {purchase.items?.map((item, index) => {
-                  const boughtQty = item.original_qty || item.qty || 0;
-                  const returnedQty = item.returned_qty || 0;
-                  const availableQty = item.available_qty !== undefined ? item.available_qty : boughtQty;
                   const isFullyReturned = item.is_fully_returned || false;
+                  const hasReturns = item.returned_qty && item.returned_qty > 0;
 
-                  // Calculate based on AVAILABLE quantity
-                  const qtyRateTotal = availableQty * (item.rate || 0);
-                  const taxAmount = (qtyRateTotal * (item.gst_percentage || 0)) / 100;
-                  const subtotal = qtyRateTotal + taxAmount;
+                  // Calculate based on ORIGINAL quantity
+                  const taxableValue = item.qty * (item.rate || 0); // Qty × Rate
+                  const taxAmount = (taxableValue * (item.gst_percentage || 0)) / 100;
+                  const totalAmount = taxableValue + taxAmount;
 
                   return (
-                    <tr key={item.id} className={isFullyReturned ? 'bg-red-900/20' : returnedQty > 0 ? 'bg-orange-900/20' : ''}>
+                    <tr key={item.id} className={isFullyReturned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : ''}>
                       <td>{index + 1}</td>
                       <td className="font-medium text-white">{item.display_name || item.product_name}</td>
                       <td className="text-slate-300">{item.part || 'N/A'}</td>
-                      <td className="text-slate-300 font-medium">{boughtQty}</td>
-                      <td className="text-red-400 font-medium">{returnedQty > 0 ? returnedQty : '-'}</td>
-                      <td className="text-green-400 font-medium">{availableQty}</td>
+                      <td className="text-slate-300 font-medium">{item.qty}</td>
                       <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300">₹{qtyRateTotal?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>
                       <td className="text-slate-300">{item.gst_percentage || 0}%</td>
                       <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300 font-semibold">₹{subtotal?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300 font-semibold">₹{totalAmount?.toLocaleString('en-IN')}</td>
                     </tr>
                   );
                 }) || (
                   <tr>
-                    <td colSpan={11} className="text-center text-slate-400 py-4">
+                    <td colSpan={9} className="text-center text-slate-400 py-4">
                       No items found for this purchase
                     </td>
                   </tr>
@@ -631,20 +639,11 @@ export default function PurchaseView() {
                     <td></td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
-                      {purchase.items?.reduce((sum, item) => sum + (item.original_qty || item.qty || 0), 0)}
-                    </td>
-                    <td className="text-red-400 font-bold text-left px-1 py-3 bg-slate-700/20">
-                      {purchase.items?.reduce((sum, item) => sum + (item.returned_qty || 0), 0)}
-                    </td>
-                    <td className="text-green-400 font-bold text-left px-1 py-3 bg-slate-700/20">
-                      {purchase.items?.reduce((sum, item) => sum + (item.available_qty !== undefined ? item.available_qty : (item.original_qty || item.qty || 0)), 0)}
+                      {purchase.items?.reduce((sum, item) => sum + (item.qty || 0), 0)}
                     </td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
-                      ₹{purchase.items?.reduce((sum, item) => {
-                        const availQty = item.available_qty !== undefined ? item.available_qty : (item.original_qty || item.qty || 0);
-                        return sum + (availQty * (item.rate || 0));
-                      }, 0).toLocaleString('en-IN')}
+                      ₹{purchase.items?.reduce((sum, item) => sum + (item.qty * (item.rate || 0)), 0).toLocaleString('en-IN')}
                     </td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>
@@ -655,6 +654,69 @@ export default function PurchaseView() {
             </table>
           </div>
         </div>
+
+        {/* Purchase Returns Section */}
+        {purchase.returns && purchase.returns.length > 0 && (
+          <div className="border-t border-slate-700 mt-6 pt-6">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              📦 Purchase Returns
+            </h3>
+            <div className="space-y-4">
+              {purchase.returns.map((ret: any) => (
+                <div key={ret.id} className="bg-slate-800 border border-slate-700 rounded p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <span className="text-slate-400 text-sm">Return Number:</span>
+                      <div className="text-white font-medium">{ret.return_no}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Date:</span>
+                      <div className="text-white font-medium">{formatDate(ret.return_date)}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Total Amount:</span>
+                      <div className="text-white font-medium">₹{ret.total_amount?.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Refund Amount:</span>
+                      <div className="text-white font-medium">₹{ret.refund_amount?.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Payment Status:</span>
+                      <div>{getStatusBadge(ret.payment_status)}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Payment Mode:</span>
+                      <div className="text-white font-medium">{getPaymentModeText(ret.payment_mode)}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Payment Date:</span>
+                      <div className="text-white font-medium">{ret.payment_date ? formatDate(ret.payment_date) : 'N/A'}</div>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 text-sm">Items:</span>
+                      <div className="text-white font-medium">{ret.items_count} item(s)</div>
+                    </div>
+                  </div>
+                  {ret.notes && (
+                    <div className="mt-3 pt-3 border-t border-slate-700">
+                      <span className="text-slate-400 text-sm">Notes:</span>
+                      <div className="text-white text-sm mt-1">{ret.notes}</div>
+                    </div>
+                  )}
+                  <div className="mt-3 pt-3 border-t border-slate-700 flex justify-end">
+                    <Link
+                      href={`/entry/purchasereturn-vendor/${ret.id}`}
+                      className="btn-secondary text-sm"
+                    >
+                      View Return Details
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1726,9 +1726,10 @@ export default function PurchaseCreate() {
                     type="text"
                     value={formData.contact_number || selectedVendor?.contact_no || ''}
                     onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter contact number"
                     maxLength={10}
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
                 <div>
@@ -1737,8 +1738,9 @@ export default function PurchaseCreate() {
                     type="email"
                     value={formData.email_id || selectedVendor?.email || ''}
                     onChange={(e) => handleInputChange('email_id', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter email address"
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
                 <div>
@@ -1747,8 +1749,9 @@ export default function PurchaseCreate() {
                     type="text"
                     value={formData.gst_number || selectedVendor?.tax_id || ''}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter GST number"
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
               </div>
@@ -1771,8 +1774,9 @@ export default function PurchaseCreate() {
                     type="text"
                     value={formData.address || selectedVendor?.address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 1"
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
                 <div>
@@ -1781,8 +1785,9 @@ export default function PurchaseCreate() {
                     type="text"
                     value={formData.address_2 || selectedVendor?.address_2 || ''}
                     onChange={(e) => handleInputChange('address_2', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 2"
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
                 <div>
@@ -1791,8 +1796,9 @@ export default function PurchaseCreate() {
                     type="text"
                     value={formData.city || selectedVendor?.city || ''}
                     onChange={(e) => handleInputChange('city', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherVendorSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter city"
+                    readOnly={!isOtherVendorSelected}
                   />
                 </div>
                 <div>
@@ -1817,19 +1823,22 @@ export default function PurchaseCreate() {
                       return '';
                     })()}
                     onSelectionChange={(value) => {
-                      if (value) {
-                        // Find the state name and code from the selected ID
-                        const selectedState = states.find(state => state.id === value);
-                        if (selectedState) {
-                          handleInputChange('state', selectedState.name);
-                          setFormData(prev => ({ ...prev, state_code: selectedState.code }));
+                      if (isOtherVendorSelected) {
+                        if (value) {
+                          // Find the state name and code from the selected ID
+                          const selectedState = states.find(state => state.id === value);
+                          if (selectedState) {
+                            handleInputChange('state', selectedState.name);
+                            setFormData(prev => ({ ...prev, state_code: selectedState.code }));
+                          }
+                        } else {
+                          handleInputChange('state', '');
+                          setFormData(prev => ({ ...prev, state_code: undefined }));
                         }
-                      } else {
-                        handleInputChange('state', '');
-                        setFormData(prev => ({ ...prev, state_code: undefined }));
                       }
                     }}
                     placeholder="Select State"
+                    disabled={!isOtherVendorSelected}
                   />
                 </div>
               </div>
