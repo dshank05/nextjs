@@ -976,7 +976,7 @@ export default function PurchaseReturnVendorCreatePage() {
               <div className="flex justify-end space-x-4">
                 <button
                   type="button"
-                  onClick={() => router.push('/entry/purchasereturn')}
+                  onClick={() => router.push('/entry/purchasereturn-vendor')}
                   className="px-6 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
                 >
                   Cancel
