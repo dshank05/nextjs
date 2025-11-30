@@ -13,7 +13,11 @@ interface PurchaseReturn {
   vendor_name: string;
   total_amount: number;
   total_tax: number;
+  refund_amount: number;
   status: number;
+  payment_status: number;
+  payment_mode: number;
+  payment_date?: number;
   fy: number;
   notes?: string;
   item_count: number;
@@ -159,6 +163,14 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
     }
   };
 
+  const getPaymentStatusBadge = (paymentStatus: number) => {
+    if (paymentStatus === 1) {
+      return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+    } else {
+      return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Unpaid</span>;
+    }
+  };
+
   const getPageNumbers = () => {
     const pages = [];
     const start = Math.max(1, pagination.page - 2);
@@ -180,6 +192,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
               { key: 'item_count', label: 'Items Qty', enabled: true },
               { key: 'total_amount', label: 'Total Amount', enabled: true },
               { key: 'total_tax', label: 'Tax Amount', enabled: true },
+              { key: 'refund_amount', label: 'Refund Amount', enabled: true },
               { key: 'formattedDate', label: 'Date', enabled: true },
               { key: 'statusText', label: 'Status', enabled: true },
               { key: 'notes', label: 'Notes', enabled: true },
@@ -359,15 +372,15 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                 Items Qty
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_amount')}>
-                Total Amount {getSortIcon('total_amount')}
+                Refund Amount {getSortIcon('total_amount')}
               </th>
-              <th>Tax Amount</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('return_date')}>
                 Date {getSortIcon('return_date')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
                 Status {getSortIcon('status')}
               </th>
+              <th>Payment</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -387,10 +400,10 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{returnItem.total_amount.toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{returnItem.total_tax.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">₹{returnItem.refund_amount.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{returnItem.formattedDate}</td>
                 <td>{getStatusBadge(returnItem.status)}</td>
+                <td>{getPaymentStatusBadge(returnItem.payment_status)}</td>
                 <td>
                   <div className="flex items-center space-x-2">
                     <Link

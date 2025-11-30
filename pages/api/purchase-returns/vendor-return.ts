@@ -20,6 +20,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       vendor_id,
       return_date,
       return_notes,
+      payment_status, // 0=Unpaid/Pending Refund, 1=Paid/Refunded (optional, defaults to 0)
+      payment_mode,   // 0=Cash, 1=Bank (optional, defaults to 1)
+      payment_date,   // Unix timestamp (optional)
       items // Array of { purchase_item_id, return_qty, return_reason_id, unit_price, tax_rate, notes? }
     } = req.body
 
@@ -106,6 +109,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         select: { id: true }
       })
 
+      // Calculate refund amount (total + tax)
+      const refundAmount = totalAmount + totalTax
+
+      // Process payment tracking fields
+      const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status) : 0 // Default: Unpaid
+      const paymentModeValue = payment_mode !== undefined ? parseInt(payment_mode) : 1 // Default: Bank
+      const paymentDateValue = payment_date ? parseInt(payment_date) : null
+
       // Create the main return record (link to first affected purchase if available)
       const returnRecord = await tx.purchase_returns.create({
         data: {
@@ -116,7 +127,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           total_tax: totalTax,
           status: 'Completed',
           notes: return_notes || '',
-          fy: financialYear
+          fy: financialYear,
+          payment_status: paymentStatusValue,
+          payment_mode: paymentModeValue,
+          payment_date: paymentDateValue,
+          refund_amount: refundAmount
         }
       })
 
@@ -152,88 +167,53 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // Update return_status and recalculate totals for all affected purchases (OPTIMIZED)
+      // Update return_status for all affected purchases
+      // CRITICAL: We do NOT modify the original purchase amounts - they remain unchanged for accounting integrity
+      // Returns are tracked separately in purchase_returns and purchase_return_items tables
+      // Net amounts are calculated on-demand in reports/views when needed
       for (const purchase of affectedPurchases) {
-        // Get purchase details in one query
+        // Get purchase details
         const purchaseRecord = await tx.purchase.findUnique({
           where: { id: purchase.id },
-          select: { 
-            invoice_no: true, 
-            packing_forwarding_total: true,
-            items_total: true,
-            total_tax: true
-          }
+          select: { invoice_no: true }
         })
 
         // Get all items for this purchase
         const allPurchaseItems = await tx.purchaseitems.findMany({
           where: { invoice_no: purchaseRecord?.invoice_no },
-          select: { id: true, qty: true, rate: true, tax: true, cgst: true, sgst: true, igst: true }
+          select: { id: true, qty: true }
         })
 
-        // Get all returns for these items in one query
+        // Get all returns for these items
         const allReturns = await tx.purchase_return_items.findMany({
           where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
-          select: { purchase_item_id: true, return_qty: true, unit_price: true, tax_amount: true, cgst: true, sgst: true, igst: true }
+          select: { purchase_item_id: true, return_qty: true }
         })
 
-        // Calculate return totals
+        // Calculate return status based on returned quantities
         const returnMap = new Map()
         allReturns.forEach(r => {
-          const existing = returnMap.get(r.purchase_item_id) || { qty: 0, amount: 0, tax: 0, cgst: 0, sgst: 0, igst: 0 }
+          const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
           existing.qty += r.return_qty
-          existing.amount += r.return_qty * r.unit_price
-          existing.tax += r.tax_amount
-          existing.cgst += r.cgst || 0
-          existing.sgst += r.sgst || 0
-          existing.igst += r.igst || 0
           returnMap.set(r.purchase_item_id, existing)
         })
 
         let fullyReturnedCount = 0
-        let totalReturnedAmount = 0
-        let totalReturnedTax = 0
-        let totalReturnedCgst = 0
-        let totalReturnedSgst = 0
-        let totalReturnedIgst = 0
-
         for (const item of allPurchaseItems) {
           const returnData = returnMap.get(item.id)
-          if (returnData) {
-            totalReturnedAmount += returnData.amount
-            totalReturnedTax += returnData.tax
-            totalReturnedCgst += returnData.cgst
-            totalReturnedSgst += returnData.sgst
-            totalReturnedIgst += returnData.igst
-            if (returnData.qty >= (item.qty || 0)) fullyReturnedCount++
+          if (returnData && returnData.qty >= (item.qty || 0)) {
+            fullyReturnedCount++
           }
         }
 
-        // Calculate return_status
+        // Calculate return_status: 0=none, 1=partial, 2=full
         const returnStatus = fullyReturnedCount === 0 ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
 
-        // Calculate new totals
-        const originalItemsTotal = allPurchaseItems.reduce((sum, item) => sum + ((item.qty || 0) * (item.rate || 0)), 0)
-        const newItemsTotal = originalItemsTotal - totalReturnedAmount
-        const newTotalTax = allPurchaseItems.reduce((sum, item) => sum + (item.tax || 0), 0) - totalReturnedTax
-        const newTotalCgst = allPurchaseItems.reduce((sum, item) => sum + (item.cgst || 0), 0) - totalReturnedCgst
-        const newTotalSgst = allPurchaseItems.reduce((sum, item) => sum + (item.sgst || 0), 0) - totalReturnedSgst
-        const newTotalIgst = allPurchaseItems.reduce((sum, item) => sum + (item.igst || 0), 0) - totalReturnedIgst
-        const packingTotal = purchaseRecord?.packing_forwarding_total || 0
-        const newGrandTotal = newItemsTotal + newTotalTax + packingTotal
-
-        // Update purchase
+        // ✅ ONLY update return_status - preserve original purchase amounts
         await tx.purchase.update({
           where: { id: purchase.id },
           data: { 
-            return_status: returnStatus,
-            items_total: newItemsTotal,
-            total_taxable_value: newItemsTotal,
-            total_tax: newTotalTax,
-            total_cgst: newTotalCgst,
-            total_sgst: newTotalSgst,
-            total_igst: newTotalIgst,
-            total: newGrandTotal
+            return_status: returnStatus
           }
         })
       }
@@ -252,7 +232,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           return_no: `PR-${String(result.id).padStart(3, '0')}`,
           total_amount: totalAmount,
           total_tax: totalTax,
-          status: 'Completed'
+          refund_amount: totalAmount + totalTax,
+          status: 'Completed',
+          payment_status: result.payment_status,
+          payment_mode: result.payment_mode,
+          payment_date: result.payment_date
         }
       }
     })

@@ -116,6 +116,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             status: true,
             notes: true,
             fy: true,
+            payment_status: true,
+            payment_mode: true,
+            payment_date: true,
+            refund_amount: true,
             created_at: true,
             updated_at: true
           }
@@ -201,7 +205,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         vendor_address: vendor?.address || '',
         total_amount: returnRecord.total_amount || 0,
         total_tax: returnRecord.total_tax || 0,
+        refund_amount: returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax),
         status: returnRecord.status || 'Completed',
+        payment_status: returnRecord.payment_status ?? 0,
+        payment_mode: returnRecord.payment_mode ?? 1,
+        payment_date: returnRecord.payment_date,
         return_date: returnRecord.return_date,
         formattedDate: formattedDate,
         item_count: itemCountMap.get(returnRecord.id) || 0,

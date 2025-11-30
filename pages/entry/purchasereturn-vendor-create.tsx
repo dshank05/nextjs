@@ -104,6 +104,11 @@ export default function PurchaseReturnVendorCreatePage() {
   const [dateTo, setDateTo] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Payment tracking state
+  const [paymentStatus, setPaymentStatus] = useState<number>(0); // 0=Unpaid, 1=Paid
+  const [paymentMode, setPaymentMode] = useState<number>(1); // 0=Cash, 1=Bank
+  const [paymentDate, setPaymentDate] = useState('');
 
   // New state for enhanced features
   const [loadedDateRange, setLoadedDateRange] = useState({ from: '', to: '' });
@@ -308,6 +313,9 @@ export default function PurchaseReturnVendorCreatePage() {
         // Set return data
         setReturnDate(returnData.return.return_date);
         setReturnNotes(returnData.return.notes || '');
+        setPaymentStatus(returnData.return.payment_status ?? 0);
+        setPaymentMode(returnData.return.payment_mode ?? 1);
+        setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
 
         // Set vendor
         const vendorData = returnData.vendor;
@@ -481,6 +489,9 @@ export default function PurchaseReturnVendorCreatePage() {
       const returnData = {
         return_date: returnDate,
         return_notes: returnNotes,
+        payment_status: paymentStatus,
+        payment_mode: paymentMode,
+        payment_date: paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: parseInt(item.id),
           return_qty: item.return_qty,
@@ -570,8 +581,8 @@ export default function PurchaseReturnVendorCreatePage() {
 
           {/* Return Information */}
           <div className="mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
+            <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Vendor *</label>
                 <SearchableSelect
                   options={vendors.map(v => ({
@@ -594,6 +605,39 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Status</label>
+                <select
+                  value={paymentStatus}
+                  onChange={(e) => setPaymentStatus(parseInt(e.target.value))}
+                  className="input w-full"
+                >
+                  <option value={0}>Unpaid (Pending Refund)</option>
+                  <option value={1}>Paid (Refunded)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+                <select
+                  value={paymentMode}
+                  onChange={(e) => setPaymentMode(parseInt(e.target.value))}
+                  className="input w-full"
+                  disabled={paymentStatus === 0}
+                >
+                  <option value={0}>Cash</option>
+                  <option value={1}>Bank</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Date</label>
+                <input
+                  type="date"
+                  value={paymentDate}
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  className="input w-full"
+                  disabled={paymentStatus === 0}
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Search Bills</label>
                 <ClearableInput
                   value={billSearchTerm}
@@ -602,6 +646,8 @@ export default function PurchaseReturnVendorCreatePage() {
                   className="w-full"
                 />
               </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Search Items</label>
                 <ClearableInput
@@ -611,7 +657,7 @@ export default function PurchaseReturnVendorCreatePage() {
                   className="w-full"
                 />
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
                 <div className="flex items-center gap-2">
                   <input

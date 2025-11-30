@@ -172,6 +172,7 @@ export default function PurchaseCreate() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
+  const [purchaseReturnStatus, setPurchaseReturnStatus] = useState<PurchaseReturnStatus | null>(null);
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -1576,6 +1577,41 @@ export default function PurchaseCreate() {
     <div className="space-y-3">
 
       <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Return Warning Banner */}
+        {isEditMode && purchaseReturnStatus && purchaseReturnStatus.has_returns && (
+          <div className={`card ${purchaseReturnStatus.is_fully_returned ? 'bg-red-900/20 border-red-700' : 'bg-orange-900/20 border-orange-700'}`}>
+            <div className="p-4">
+              <div className="flex items-start space-x-3">
+                <div className="flex-shrink-0">
+                  {purchaseReturnStatus.is_fully_returned ? (
+                    <span className="text-3xl">🔒</span>
+                  ) : (
+                    <span className="text-3xl">⚠️</span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <h3 className={`text-lg font-bold ${purchaseReturnStatus.is_fully_returned ? 'text-red-300' : 'text-orange-300'}`}>
+                    {purchaseReturnStatus.is_fully_returned ? 'Purchase Fully Returned' : 'Purchase Partially Returned'}
+                  </h3>
+                  <p className="text-slate-300 mt-1">
+                    {purchaseReturnStatus.fully_returned_items} of {purchaseReturnStatus.total_items} items have been returned.
+                    {purchaseReturnStatus.is_fully_returned 
+                      ? ' This purchase cannot be edited.'
+                      : ' Items with returns have editing restrictions.'}
+                  </p>
+                  {!purchaseReturnStatus.is_fully_returned && (
+                    <ul className="mt-2 text-sm text-slate-400 list-disc list-inside space-y-1">
+                      <li>Fully returned items cannot be edited or deleted (marked with 🔒)</li>
+                      <li>Partially returned items cannot have quantities reduced below returned amount</li>
+                      <li>Original purchase amounts are preserved for accounting</li>
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Single Mega Card with All Sections */}
         <div className="card">
           <div className="p-3">

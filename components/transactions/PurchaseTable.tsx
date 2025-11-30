@@ -686,6 +686,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
                 Payment Status {getSortIcon('payment_status')}
               </th>
+              <th>Return Status</th>
               <th>P/F</th>
               <th>Actions</th>
             </tr>
@@ -719,6 +720,15 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 <td className="text-slate-300">{formatDate(purchase.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(purchase.payment_mode)}</td>
                 <td>{getStatusBadge(purchase.payment_status)}</td>
+                <td>
+                  {purchase.return_status === 2 ? (
+                    <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>
+                  ) : purchase.return_status === 1 ? (
+                    <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial Return</span>
+                  ) : (
+                    <span className="px-2 py-1 bg-slate-600 text-white text-xs rounded-full">No Returns</span>
+                  )}
+                </td>
                 <td className="text-slate-300">₹{(purchase.packing_forwarding_total || 0).toLocaleString('en-IN')}</td>
                 <td>
                   <div className="flex items-center space-x-2">

@@ -302,6 +302,84 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
+        // ===== RETURN VALIDATION =====
+        // Block editing if purchase is fully returned
+        if (existingPurchase.return_status === 2) {
+          return res.status(400).json({
+            message: 'Cannot edit a fully returned purchase. All items have been returned.',
+            error_code: 'FULLY_RETURNED'
+          })
+        }
+
+        // If purchase has partial returns, validate item-level changes
+        if (existingPurchase.return_status === 1 && items && Array.isArray(items)) {
+          // Get all purchase items
+          const purchaseItems = await prisma.purchaseitems.findMany({
+            where: { invoice_no: existingPurchase.invoice_no },
+            select: { id: true, product_id: true, qty: true, name_of_product: true }
+          })
+
+          // Get all returns for these items
+          const purchaseItemIds = purchaseItems.map(item => item.id)
+          const returnItems = await prisma.purchase_return_items.findMany({
+            where: { purchase_item_id: { in: purchaseItemIds } },
+            select: { purchase_item_id: true, return_qty: true }
+          })
+
+          // Calculate returned quantities per item
+          const returnedQtyMap = new Map<number, number>()
+          returnItems.forEach(returnItem => {
+            const existingQty = returnedQtyMap.get(returnItem.purchase_item_id) || 0
+            returnedQtyMap.set(returnItem.purchase_item_id, existingQty + returnItem.return_qty)
+          })
+
+          // Create map of product_id to purchase_item for validation
+          const productToPurchaseItemMap = new Map(
+            purchaseItems.map(item => [item.product_id, { id: item.id, qty: item.qty, name: item.name_of_product }])
+          )
+
+          // Validate each item in the update request
+          for (const newItem of items) {
+            const productId = parseInt(newItem.product_id)
+            const purchaseItemData = productToPurchaseItemMap.get(productId)
+            
+            if (purchaseItemData) {
+              const returnedQty = returnedQtyMap.get(purchaseItemData.id) || 0
+              
+              // Cannot reduce quantity below returned amount
+              if (returnedQty > 0 && newItem.qty < returnedQty) {
+                return res.status(400).json({
+                  message: `Cannot reduce quantity for "${purchaseItemData.name}" to ${newItem.qty}. ${returnedQty} units have already been returned.`,
+                  error_code: 'QTY_BELOW_RETURNED',
+                  item: {
+                    product_name: purchaseItemData.name,
+                    returned_qty: returnedQty,
+                    requested_qty: newItem.qty
+                  }
+                })
+              }
+            }
+          }
+
+          // Check for item deletions
+          const newProductIds = new Set(items.map(item => parseInt(item.product_id)))
+          for (const purchaseItem of purchaseItems) {
+            if (!newProductIds.has(purchaseItem.product_id)) {
+              const returnedQty = returnedQtyMap.get(purchaseItem.id) || 0
+              if (returnedQty > 0) {
+                return res.status(400).json({
+                  message: `Cannot delete "${purchaseItem.name_of_product}". ${returnedQty} units have been returned.`,
+                  error_code: 'CANNOT_DELETE_RETURNED_ITEM',
+                  item: {
+                    product_name: purchaseItem.name_of_product,
+                    returned_qty: returnedQty
+                  }
+                })
+              }
+            }
+          }
+        }
+
         // Start transaction for purchase and item updates
         const result = await prisma.$transaction(async (tx) => {
           // ===== CRITICAL FIX: Update bill_to table with vendor details =====

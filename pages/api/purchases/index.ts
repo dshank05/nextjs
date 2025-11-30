@@ -131,9 +131,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.packing_forwarding_total = parseFloat(packingForwardingTotal as string)
     }
 
-    // Filter out fully returned purchases (return_status = 2)
-    where.return_status = { not: 2 }; // 0=none, 1=partial, 2=full (hide fully returned)
-
     // Validate and set sort parameters
     const validSortFields = ['id', 'invoice_no', 'vendor_name', 'total', 'total_tax', 'packing_forwarding_total', 'invoice_date', 'payment_status', 'payment_mode', 'fy', 'bill_reference', 'item_count']
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'

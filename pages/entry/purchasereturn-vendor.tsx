@@ -13,7 +13,11 @@ interface PurchaseReturn {
   vendor_name: string;
   total_amount: number;
   total_tax: number;
+  refund_amount: number;
   status: number;
+  payment_status: number;
+  payment_mode: number;
+  payment_date?: number;
   fy: number;
   notes?: string;
   item_count: number;
@@ -179,7 +183,11 @@ export default function PurchaseReturnIndexPage() {
         vendor_name: ret.vendor_name,
         total_amount: ret.total_amount,
         total_tax: ret.total_tax,
+        refund_amount: ret.refund_amount || (ret.total_amount + ret.total_tax),
         status: ret.status === 'Completed' ? 1 : 0,
+        payment_status: ret.payment_status ?? 0,
+        payment_mode: ret.payment_mode ?? 1,
+        payment_date: ret.payment_date,
         fy: ret.fy,
         notes: ret.notes,
         item_count: ret.item_count,
