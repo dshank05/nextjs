@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Search, Filter, Loader } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
 
@@ -42,9 +42,15 @@ export interface ProductSelectionPanelProps {
     onClose: () => void;
     title: string;
     showCarModelFilter: boolean;
-    filterOptions: FilterOptions;
+    filterOptions?: FilterOptions; // Now optional - will fetch if not provided
     selectedCarModel: string;
     onCarModelSelection: (value: string) => void;
+    selectedCategory?: string;
+    onCategorySelection?: (value: string) => void;
+    selectedSubcategory?: string;
+    onSubcategorySelection?: (value: string) => void;
+    selectedCompany?: string;
+    onCompanySelection?: (value: string) => void;
     searchedProducts: Product[];
     productSearchTerm: string;
     onSearchTermChange: (value: string) => void;
@@ -57,9 +63,15 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     onClose,
     title,
     showCarModelFilter,
-    filterOptions,
+    filterOptions: propFilterOptions,
     selectedCarModel,
     onCarModelSelection,
+    selectedCategory = '',
+    onCategorySelection,
+    selectedSubcategory = '',
+    onSubcategorySelection,
+    selectedCompany = '',
+    onCompanySelection,
     searchedProducts,
     productSearchTerm,
     onSearchTermChange,
@@ -67,6 +79,41 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     isLoading = false, // Default to false
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
+    
+    // Internal state for filter options - will fetch from API if not provided via props
+    const [internalFilterOptions, setInternalFilterOptions] = useState<FilterOptions>({
+        categories: [],
+        subcategories: [],
+        companies: [],
+        models: []
+    });
+    const [filterOptionsLoading, setFilterOptionsLoading] = useState(false);
+
+    // Use prop filterOptions if provided, otherwise use internal state
+    const filterOptions = propFilterOptions || internalFilterOptions;
+
+    // Fetch filter options from API if not provided via props
+    useEffect(() => {
+        const fetchFilterOptions = async () => {
+            // Only fetch if not provided via props
+            if (propFilterOptions) return;
+
+            setFilterOptionsLoading(true);
+            try {
+                const response = await fetch('/api/products/filters');
+                if (response.ok) {
+                    const data = await response.json();
+                    setInternalFilterOptions(data);
+                }
+            } catch (error) {
+                console.error('Error fetching filter options:', error);
+            } finally {
+                setFilterOptionsLoading(false);
+            }
+        };
+
+        fetchFilterOptions();
+    }, [propFilterOptions]);
 
     useEffect(() => {
         if (isOpen && inputRef.current) {
@@ -98,33 +145,87 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                         </button>
                     </div>
 
-          {/* Combined Search and Filter Row */}
-          <div className="flex gap-3 mb-4">
-            {/* Search Input - Fixed Width */}
-            <div className="flex flex-shrink-0 w-36items-center bg-slate-800 border border-slate-600 rounded">
-              {/* <Search className="w-4 h-4 text-slate-400 ml-3" /> */}
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder="Search products..."
-                value={productSearchTerm}
-                onChange={(e) => onSearchTermChange(e.target.value)}
-                className="flex-1 pl-3 pr-4 py-2 bg-transparent text-white text-sm focus:outline-none placeholder-slate-400"
-              />
-            </div>
-
-            {/* Car Model Filter (only shown if enabled) */}
-            {showCarModelFilter && (
-              <div className="flex-1 min-w-0">
-                <SearchableSelect
-                  options={filterOptions.models.map(model => ({ id: model.id.toString(), name: model.name }))}
-                  selectedValue={selectedCarModel}
-                  onSelectionChange={(value) => onCarModelSelection(value || '')}
-                  placeholder="Filter by car model..."
-                />
-              </div>
-            )}
+          {/* Search Input */}
+          <div className="flex items-center bg-slate-800 border border-slate-600 rounded mb-3">
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Search products..."
+              value={productSearchTerm}
+              onChange={(e) => onSearchTermChange(e.target.value)}
+              className="flex-1 pl-3 pr-4 py-2 bg-transparent text-white text-sm focus:outline-none placeholder-slate-400"
+            />
           </div>
+
+          {/* Filters Row */}
+          {filterOptionsLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <Loader className="w-5 h-5 text-blue-500 animate-spin mr-2" />
+              <span className="text-slate-400 text-sm">Loading filters...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              {/* Category Filter */}
+              {onCategorySelection && (
+                <div>
+                  <SearchableSelect
+                    options={filterOptions.categories.map(cat => ({ 
+                      id: cat.id.toString(), 
+                      name: cat.category_name || cat.name 
+                    }))}
+                    selectedValue={selectedCategory}
+                    onSelectionChange={(value) => onCategorySelection(value || '')}
+                    placeholder="Filter by category..."
+                  />
+                </div>
+              )}
+
+              {/* Subcategory Filter */}
+              {onSubcategorySelection && (
+                <div>
+                  <SearchableSelect
+                    options={filterOptions.subcategories.map(sub => ({ 
+                      id: sub.id.toString(), 
+                      name: sub.subcategory_name || sub.name 
+                    }))}
+                    selectedValue={selectedSubcategory}
+                    onSelectionChange={(value) => onSubcategorySelection(value || '')}
+                    placeholder="Filter by subcategory..."
+                  />
+                </div>
+              )}
+
+              {/* Car Model Filter */}
+              {showCarModelFilter && (
+                <div>
+                  <SearchableSelect
+                    options={filterOptions.models.map(model => ({ 
+                      id: model.id.toString(), 
+                      name: model.name 
+                    }))}
+                    selectedValue={selectedCarModel}
+                    onSelectionChange={(value) => onCarModelSelection(value || '')}
+                    placeholder="Filter by car model..."
+                  />
+                </div>
+              )}
+
+              {/* Company Filter */}
+              {onCompanySelection && (
+                <div>
+                  <SearchableSelect
+                    options={filterOptions.companies.map(comp => ({ 
+                      id: comp.id.toString(), 
+                      name: comp.company_name || comp.name 
+                    }))}
+                    selectedValue={selectedCompany}
+                    onSelectionChange={(value) => onCompanySelection(value || '')}
+                    placeholder="Filter by company..."
+                  />
+                </div>
+              )}
+            </div>
+          )}
                 </div>
 
                 {/* Product List */}

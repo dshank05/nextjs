@@ -198,6 +198,9 @@ export default function PurchaseCreate() {
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
   const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
+  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
+  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
+  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
   const [productsLoading, setProductsLoading] = useState(false);
@@ -494,10 +497,10 @@ export default function PurchaseCreate() {
     });
   };
 
-  // Handle product search and car model filtering via API calls
+  // Handle product search and filtering via API calls
   useEffect(() => {
-    fetchProducts(selectedPanelCarModel, productSearchTerm);
-  }, [productSearchTerm, selectedPanelCarModel]);
+    fetchProducts(selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany);
+  }, [productSearchTerm, selectedPanelCarModel, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany]);
 
   // Auto-product selection based on filters (category + car model + company)
   // useEffect(() => {
@@ -692,12 +695,21 @@ export default function PurchaseCreate() {
     }
   };
 
-  const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
+  const fetchProducts = async (
+    modelFilter: string = '', 
+    searchTerm: string = '', 
+    categoryFilter: string = '', 
+    subcategoryFilter: string = '', 
+    companyFilter: string = ''
+  ) => {
     setProductsLoading(true);
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
       if (searchTerm) params.append('search', searchTerm);
+      if (categoryFilter) params.append('categoryFilter', categoryFilter);
+      if (subcategoryFilter) params.append('subcategoryFilter', subcategoryFilter);
+      if (companyFilter) params.append('companyFilter', companyFilter);
       const url = `/api/products?${params.toString()}`;
       const response = await fetch(url);
       if (response.ok) {
@@ -1980,18 +1992,18 @@ export default function PurchaseCreate() {
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PRODUCT NAME
                       </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      {/* <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CATEGORY
                       </th>
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         SUB CATEGORY
-                      </th>
+                      </th> */}
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CAR MODELS
                       </th>
-                      <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      {/* <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         COMPANY
-                      </th>
+                      </th> */}
                       <th className="px-2 py-2 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PART NO
                       </th>
@@ -2077,29 +2089,29 @@ export default function PurchaseCreate() {
                           </button>
                         </div>
                       </td>
-                      <td className="px-2 py-2">
-                        <SearchableSelect
-                          options={[
-                            { id: '', name: 'Select Category' },
-                            ...filterOptions.categories.map((cat) => ({
-                              id: cat.id.toString(),
-                              name: cat.name
-                            }))
-                          ]}
-                          selectedValue={productRowFilters.category.toString()}
-                          onSelectionChange={(value) => {
-                            const numValue = value ? parseInt(value) : 0;
-                            const selectedOption = filterOptions.categories.find(cat => cat.id === numValue);
-                            setProductRowFilters(prev => ({
-                              ...prev,
-                              category: numValue,
-                              categoryName: selectedOption?.name || ''
-                            }));
-                          }}
-                          placeholder="Select Category"
-                        />
-                      </td>
-                      <td className="px-2 py-2">
+                        {/* <td className="px-2 py-2">
+                          <SearchableSelect
+                            options={[
+                              { id: '', name: 'Select Category' },
+                              ...filterOptions.categories.map((cat) => ({
+                                id: cat.id.toString(),
+                                name: cat.name
+                              }))
+                            ]}
+                            selectedValue={productRowFilters.category.toString()}
+                            onSelectionChange={(value) => {
+                              const numValue = value ? parseInt(value) : 0;
+                              const selectedOption = filterOptions.categories.find(cat => cat.id === numValue);
+                              setProductRowFilters(prev => ({
+                                ...prev,
+                                category: numValue,
+                                categoryName: selectedOption?.name || ''
+                              }));
+                            }}
+                            placeholder="Select Category"
+                          />
+                        </td> */}
+                      {/* <td className="px-2 py-2">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Sub Category' },
@@ -2120,7 +2132,7 @@ export default function PurchaseCreate() {
                           }}
                           placeholder="Select Sub Category"
                         />
-                      </td>
+                      </td> */}
                       <td className="px-2 py-2">
                         <SearchableMultiSelect
                           mode="single"
@@ -2158,7 +2170,7 @@ export default function PurchaseCreate() {
                           placeholder="Select car model..."
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      {/* <td className="px-2 py-2">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Company' },
@@ -2179,7 +2191,7 @@ export default function PurchaseCreate() {
                           }}
                           placeholder="Select Company"
                         />
-                      </td>
+                      </td> */}
                       <td className="px-2 py-2">
                         <input
                           type="text"
@@ -2234,7 +2246,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-2 py-2 text-center w-24">
+                      <td className="px-2 py-2 text-center w-32">
                         <input
                           type="number"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2274,7 +2286,7 @@ export default function PurchaseCreate() {
                         />
                       </td>
                       {enableTax && (
-                        <td className="px-2 py-2 text-center w-20">
+                        <td className="px-2 py-2 text-center w-32">
                           <input
                             type="number"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2295,7 +2307,7 @@ export default function PurchaseCreate() {
                           />
                         </td>
                       )}
-                      <td className="px-2 py-2 text-center w-20">
+                      <td className="px-2 py-2 text-center w-32">
                         <input
                           type="number"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2330,7 +2342,7 @@ export default function PurchaseCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-2 py-2 text-center w-20">
+                      <td className="px-2 py-2 text-center w-32">
                         <div className="flex items-center justify-center space-x-2">
                           <button
                             type="button"
@@ -2512,18 +2524,18 @@ export default function PurchaseCreate() {
                               )}
                             </div>
                           </td>
-                        <td className="px-2 py-2 text-xs text-slate-200">
+                        {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const catOption = filterOptions.categories.find(cat => cat.id.toString() === product.category);
                             return catOption?.name || product.category;
                           })()}
-                        </td>
-                        <td className="px-2 py-2 text-xs text-slate-200">
+                        </td> */}
+                        {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const subCatOption = filterOptions.subcategories.find(sub => sub.id.toString() === product.sub_category);
                             return subCatOption?.name || product.sub_category;
                           })()}
-                        </td>
+                        </td> */}
                         {editingRowId === product.id ? (
                           <td className="px-2 py-2">
                             {(() => {
@@ -2576,12 +2588,12 @@ export default function PurchaseCreate() {
                             {product.car_model}
                           </td>
                         )}
-                        <td className="px-2 py-2 text-xs text-slate-200">
+                        {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const compOption = filterOptions.companies.find(comp => comp.id.toString() === product.company);
                             return compOption?.name || product.company;
                           })()}
-                        </td>
+                        </td> */}
                         <td className="px-2 py-2 text-xs text-slate-200">
                           {product.part_number || 'N/A'}
                         </td>
@@ -2985,7 +2997,7 @@ export default function PurchaseCreate() {
                         </td>
                       </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableTax ? 10 : 9} className="px-2 py-2"></td>
+                        <td colSpan={enableTax ? 7 : 6} className="px-2 py-2"></td>
                         <td colSpan={2} className="px-2 py-2 text-center">
                           <button
                             type="button"
@@ -3277,12 +3289,25 @@ export default function PurchaseCreate() {
       {/* Product Selection Side Panel */}
       <ProductSelectionPanel
         isOpen={isProductPanelOpen}
-        onClose={() => setIsProductPanelOpen(false)}
+        onClose={() => {
+          setIsProductPanelOpen(false);
+          // Clear filters when closing
+          setSelectedPanelCarModel('');
+          setSelectedPanelCategory('');
+          setSelectedPanelSubcategory('');
+          setSelectedPanelCompany('');
+        }}
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={filterOptions}
         selectedCarModel={selectedPanelCarModel}
         onCarModelSelection={setSelectedPanelCarModel}
+        selectedCategory={selectedPanelCategory}
+        onCategorySelection={setSelectedPanelCategory}
+        selectedSubcategory={selectedPanelSubcategory}
+        onSubcategorySelection={setSelectedPanelSubcategory}
+        selectedCompany={selectedPanelCompany}
+        onCompanySelection={setSelectedPanelCompany}
         searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
@@ -3297,6 +3322,11 @@ export default function PurchaseCreate() {
           });
           setIsProductPanelOpen(false);
           setProductSearchTerm('');
+          // Clear filters after selection
+          setSelectedPanelCarModel('');
+          setSelectedPanelCategory('');
+          setSelectedPanelSubcategory('');
+          setSelectedPanelCompany('');
         }}
       />
 

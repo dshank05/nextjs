@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Edit, FileText, Truck } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
+import { ExportMenu } from '../../../components/common/ExportMenu';
 
 
 interface InvoiceItem {
@@ -175,6 +176,62 @@ export default function InvoiceView() {
     }
   };
 
+  // Enhanced Excel export using new layout system
+  const handleExportPageAsExcel = async () => {
+    try {
+      const { exportToExcelWithLayout } = await import('../../../lib/export-utils-enhanced');
+      const { saleViewExportLayout, prepareSaleDataForExport } = await import('../../../lib/export-layouts/sale-view-layout');
+
+      // Fetch business details
+      const businessResponse = await fetch('/api/business-details');
+      const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
+
+      // Prepare data for export
+      const preparedData = prepareSaleDataForExport(invoice);
+
+      await exportToExcelWithLayout(
+        preparedData,
+        {
+          title: 'Sales Invoice Details',
+          fileName: `Sale_Invoice_${invoice.invoice_no}`,
+          layout: saleViewExportLayout
+        },
+        businessDetails
+      );
+    } catch (error) {
+      console.error('Excel export error:', error);
+      alert('Error exporting Excel. Please try again.');
+    }
+  };
+
+  // Enhanced PDF export using new layout system
+  const handlePrintOrPDF = async (output: 'print' | 'pdf' = 'pdf') => {
+    try {
+      const { exportToPDFWithLayout } = await import('../../../lib/export-utils-enhanced');
+      const { saleViewExportLayout, prepareSaleDataForExport } = await import('../../../lib/export-layouts/sale-view-layout');
+
+      // Fetch business details
+      const businessResponse = await fetch('/api/business-details');
+      const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
+
+      // Prepare data for export
+      const preparedData = prepareSaleDataForExport(invoice);
+
+      await exportToPDFWithLayout(
+        preparedData,
+        {
+          title: 'Sales Invoice Details',
+          fileName: `Sale_Invoice_${invoice.invoice_no}`,
+          layout: saleViewExportLayout
+        },
+        businessDetails
+      );
+    } catch (error) {
+      console.error('PDF error:', error);
+      alert('Error generating PDF. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="card h-96 flex items-center justify-center">
@@ -270,6 +327,29 @@ export default function InvoiceView() {
             </div>
 
             <div className="flex justify-end space-x-3 pt-4">
+              <ExportMenu
+                data={[invoice]}
+                columns={[
+                  { key: 'invoice_no', label: 'Invoice Number', enabled: true },
+                  { key: 'customer_name', label: 'Customer Name', enabled: true },
+                  { key: 'formattedDate', label: 'Date', enabled: true },
+                  { key: 'total', label: 'Total Amount', enabled: true },
+                  { key: 'payment_status', label: 'Payment Status', enabled: true },
+                  { key: 'payment_mode', label: 'Payment Mode', enabled: true },
+                  { key: 'bill_reference', label: 'Bill Reference', enabled: true },
+                ]}
+                config={{
+                  title: 'Sales Invoice Details',
+                  fileName: `Sale_Invoice_${invoice.invoice_no}_${new Date().toISOString().split('T')[0]}`
+                }}
+                onExport={(exportType) => {
+                  if (exportType === 'excel') {
+                    handleExportPageAsExcel();
+                  } else if (exportType === 'pdf') {
+                    handlePrintOrPDF('pdf');
+                  }
+                }}
+              />
               <Link
                 href={`/sale/create?edit=${id}`}
                 onClick={handleEditInvoice}

@@ -197,8 +197,11 @@ export default function InvoiceCCreate() {
   // State for filtered subcategories based on selected category
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
-  // State for sidepanel car model filtering
+  // State for sidepanel filtering
   const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
+  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
+  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
+  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
 
   // Helper function to get consistent company info from product
   const getCompanyInfo = (product: Product) => {
@@ -584,10 +587,10 @@ export default function InvoiceCCreate() {
     fetchSubcategoriesForTable(productRowFilters.category);
   }, [productRowFilters.category]);
 
-  // Handle product search and car model filtering via API calls
+  // Handle product search and filtering via API calls
   useEffect(() => {
-    fetchProducts(selectedPanelCarModel, productSearchTerm);
-  }, [productSearchTerm, selectedPanelCarModel]);
+    fetchProducts(selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany);
+  }, [productSearchTerm, selectedPanelCarModel, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany]);
 
   // Auto-select product when filters match exactly one product
   useEffect(() => {
@@ -777,12 +780,21 @@ export default function InvoiceCCreate() {
     }
   };
 
-  const fetchProducts = async (modelFilter: string = '', searchTerm: string = '') => {
+  const fetchProducts = async (
+    modelFilter: string = '', 
+    searchTerm: string = '',
+    categoryFilter: string = '',
+    subcategoryFilter: string = '',
+    companyFilter: string = ''
+  ) => {
     setProductsLoading(true);
     try {
       const params = new URLSearchParams();
       if (modelFilter) params.append('modelFilter', modelFilter);
       if (searchTerm) params.append('search', searchTerm);
+      if (categoryFilter) params.append('categoryFilter', categoryFilter);
+      if (subcategoryFilter) params.append('subcategoryFilter', subcategoryFilter);
+      if (companyFilter) params.append('companyFilter', companyFilter);
       const url = `/api/products?${params.toString()}`;
       const response = await fetch(url);
       if (response.ok) {
@@ -2705,12 +2717,25 @@ export default function InvoiceCCreate() {
       {/* Product Selection Side Panel */}
       <ProductSelectionPanel
         isOpen={isProductPanelOpen}
-        onClose={() => setIsProductPanelOpen(false)}
+        onClose={() => {
+          setIsProductPanelOpen(false);
+          // Clear filters when closing
+          setSelectedPanelCarModel('');
+          setSelectedPanelCategory('');
+          setSelectedPanelSubcategory('');
+          setSelectedPanelCompany('');
+        }}
         title="Select Product"
         showCarModelFilter={true}
         filterOptions={memoizedFilterOptions}
         selectedCarModel={selectedPanelCarModel}
         onCarModelSelection={setSelectedPanelCarModel}
+        selectedCategory={selectedPanelCategory}
+        onCategorySelection={setSelectedPanelCategory}
+        selectedSubcategory={selectedPanelSubcategory}
+        onSubcategorySelection={setSelectedPanelSubcategory}
+        selectedCompany={selectedPanelCompany}
+        onCompanySelection={setSelectedPanelCompany}
         searchedProducts={products}
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
@@ -2726,6 +2751,11 @@ export default function InvoiceCCreate() {
           });
           setIsProductPanelOpen(false);
           setProductSearchTerm('');
+          // Clear filters after selection
+          setSelectedPanelCarModel('');
+          setSelectedPanelCategory('');
+          setSelectedPanelSubcategory('');
+          setSelectedPanelCompany('');
         }}
       />
 

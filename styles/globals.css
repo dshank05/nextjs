@@ -244,3 +244,87 @@ input[type=number] {
   -moz-appearance: textfield;
 }
 
+/* Print styles - Hide UI elements and filters when printing */
+@media print {
+  /* Hide navigation, sidebar, and UI chrome */
+  nav,
+  aside,
+  .sidebar,
+  header,
+  footer {
+    display: none !important;
+  }
+
+  /* Hide filter panels, search bars, and action buttons */
+  .filter-panel,
+  .filters-section,
+  .search-bar,
+  .action-buttons,
+  .export-menu,
+  .pagination,
+  .items-per-page,
+  button,
+  [role="button"] {
+    display: none !important;
+  }
+
+  /* Hide specific filter-related classes */
+  .mb-6:has(input[type="search"]),
+  .mb-6:has(input[type="text"][placeholder*="Search"]),
+  .mb-6:has(input[placeholder*="search"]),
+  .space-y-4:has(.grid):first-child {
+    display: none !important;
+  }
+
+  /* Ensure content takes full width */
+  main,
+  .main-content {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Optimize table printing */
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Remove shadows and backgrounds for clean print */
+  .card,
+  .shadow-lg,
+  .shadow {
+    box-shadow: none !important;
+    border: 1px solid #000 !important;
+  }
+
+  /* Ensure text is black for printing */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Make sure tables are readable */
+  .table thead th {
+    background: #f3f4f6 !important;
+    color: black !important;
+    border: 1px solid #000 !important;
+  }
+
+  .table tbody td {
+    color: black !important;
+    border: 1px solid #ddd !important;
+  }
+}

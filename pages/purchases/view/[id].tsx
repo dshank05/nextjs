@@ -189,118 +189,74 @@ export default function PurchaseView() {
     router.push(`/purchases/create?edit=${id}`);
   };
 
-  // Universal print/PDF function using template-based printPage utility
+  // Enhanced PDF export using new layout system
   const handlePrintOrPDF = async (output: 'print' | 'pdf' = 'print') => {
     try {
-      const { printPage } = await import('../../../lib/export-utils');
+      if (output === 'pdf') {
+        // Use new enhanced PDF export
+        const { exportToPDFWithLayout } = await import('../../../lib/export-utils-enhanced');
+        const { purchaseViewExportLayout, preparePurchaseDataForExport } = await import('../../../lib/export-layouts/purchase-view-layout');
 
-      // Fetch business details
-      const businessResponse = await fetch('/api/business-details');
-      const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
+        // Fetch business details
+        const businessResponse = await fetch('/api/business-details');
+        const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
 
-      await printPage({
-        title: 'Purchase Invoice',
-        businessDetails,
-        output,
-        pageType: 'purchase-view',
-        data: purchase
-      });
+        // Prepare data for export
+        const preparedData = preparePurchaseDataForExport(purchase);
+
+        await exportToPDFWithLayout(
+          preparedData,
+          {
+            title: 'Purchase Details',
+            fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}`,
+            layout: purchaseViewExportLayout
+          },
+          businessDetails
+        );
+      } else {
+        // Keep print functionality using existing system
+        const { printPage } = await import('../../../lib/export-utils');
+
+        // Fetch business details
+        const businessResponse = await fetch('/api/business-details');
+        const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
+
+        await printPage({
+          title: 'Purchase Invoice',
+          businessDetails,
+          output,
+          pageType: 'purchase-view',
+          data: purchase
+        });
+      }
     } catch (error) {
       console.error('Print/PDF error:', error);
       alert(`Error generating ${output === 'pdf' ? 'PDF' : 'print'}. Please try again.`);
     }
   };
 
-  // Simple Excel export function with Label-Value format (like the page layout)
-  const handleExportPageAsExcel = () => {
+  // Enhanced Excel export using new layout system
+  const handleExportPageAsExcel = async () => {
     try {
-      // ExportMenu passes data as array, so get the first item
-      const purchaseData = Array.isArray(purchase) ? purchase[0] : purchase;
+      const { exportToExcelWithLayout } = await import('../../../lib/export-utils-enhanced');
+      const { purchaseViewExportLayout, preparePurchaseDataForExport } = await import('../../../lib/export-layouts/purchase-view-layout');
 
-      // Create simple Label-Value Excel data (2 columns)
-      const excelData = [];
+      // Fetch business details
+      const businessResponse = await fetch('/api/business-details');
+      const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
 
-      // Basic Information (like the page layout)
-      excelData.push({ 'Label': 'Total:', 'Value': `₹${(purchase.total || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Items:', 'Value': purchase.items?.length || 0 });
-      excelData.push({ 'Label': 'Invoice:', 'Value': purchase.invoice_number || purchase.invoice_no });
-      excelData.push({ 'Label': 'Date:', 'Value': formatDate(purchase.date || purchase.invoice_date) });
-      excelData.push({ 'Label': 'Status:', 'Value': purchase.payment_status === 1 ? 'Paid' : 'Unpaid' });
-      excelData.push({ 'Label': 'Payment Mode:', 'Value': getPaymentModeText(purchase.payment_mode) });
-      excelData.push({ 'Label': 'Bill Reference:', 'Value': purchase.bill_reference || 'N/A' });
-      excelData.push({ 'Label': 'Bill Reference Date:', 'Value': (purchase as any).bill_reference_date || 'N/A' });
+      // Prepare data for export
+      const preparedData = preparePurchaseDataForExport(purchase);
 
-      // Vendor & Staff Info
-      excelData.push({ 'Label': 'Vendor:', 'Value': purchase.vendor?.vendor_name || 'N/A' });
-      excelData.push({ 'Label': 'Contact:', 'Value': purchase.vendor?.contact_no || 'N/A' });
-      excelData.push({ 'Label': 'Email:', 'Value': purchase.vendor?.email || 'N/A' });
-      excelData.push({ 'Label': 'GSTIN:', 'Value': purchase.vendor?.tax_id || 'N/A' });
-      excelData.push({ 'Label': 'Staff:', 'Value': purchase.staff?.name || 'N/A' });
-
-      // Financial Summary
-      excelData.push({ 'Label': 'Items Total:', 'Value': `₹${(purchase.items_total || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Freight:', 'Value': `₹${(purchase.freight || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Taxable Value:', 'Value': `₹${(purchase.total_taxable_value || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Total Tax:', 'Value': `₹${(purchase.total_tax || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Grand Total:', 'Value': `₹${(purchase.total || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'CGST:', 'Value': `₹${(purchase.total_cgst || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'SGST:', 'Value': `₹${(purchase.total_sgst || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'IGST:', 'Value': `₹${(purchase.total_igst || 0).toLocaleString('en-IN')}` });
-
-      // Transport & Additional
-      excelData.push({ 'Label': 'Transport:', 'Value': purchase.transport_name || 'N/A' });
-      excelData.push({ 'Label': 'Vehicle:', 'Value': purchase.vehicle_number || 'N/A' });
-      excelData.push({ 'Label': 'Freight:', 'Value': `₹${(purchase.freight || 0).toLocaleString('en-IN')}` });
-      excelData.push({ 'Label': 'Notes:', 'Value': purchase.notes || 'No notes available' });
-      excelData.push({ 'Label': 'Descriptions:', 'Value': purchase.descriptions || 'No descriptions available' });
-
-      // Add purchase items table
-      if (purchase.items && purchase.items.length > 0) {
-        excelData.push({ 'Label': '', 'Value': '' }); // Empty row
-        excelData.push({ 'Label': 'PURCHASE ITEMS', 'Value': '' });
-
-        // Add item headers
-        excelData.push({ 'Label': 'SN', 'Value': 'Product Name' });
-        excelData.push({ 'Label': '', 'Value': 'Part No' });
-        excelData.push({ 'Label': '', 'Value': 'HSN' });
-        excelData.push({ 'Label': '', 'Value': 'Qty' });
-        excelData.push({ 'Label': '', 'Value': 'Rate' });
-        excelData.push({ 'Label': '', 'Value': 'Tax %' });
-        excelData.push({ 'Label': '', 'Value': 'Tax Amount' });
-        excelData.push({ 'Label': '', 'Value': 'Subtotal' });
-
-        // Add each item
-        purchase.items.forEach((item, index) => {
-          const taxAmount = (item.total || item.subtotal || 0) - ((item.qty * (item.rate || 0)) / (1 + (item.gst_percentage || 0) / 100));
-
-          excelData.push({ 'Label': (index + 1).toString(), 'Value': item.display_name || item.product_name || 'N/A' });
-          excelData.push({ 'Label': '', 'Value': item.part || 'N/A' });
-          excelData.push({ 'Label': '', 'Value': item.hsn || 'N/A' });
-          excelData.push({ 'Label': '', 'Value': item.qty || 0 });
-          excelData.push({ 'Label': '', 'Value': `₹${(item.rate || 0).toLocaleString('en-IN')}` });
-          excelData.push({ 'Label': '', 'Value': `${item.gst_percentage || item.tax || 0}%` });
-          excelData.push({ 'Label': '', 'Value': `₹${taxAmount.toLocaleString('en-IN')}` });
-          excelData.push({ 'Label': '', 'Value': `₹${(item.total || item.subtotal || 0).toLocaleString('en-IN')}` });
-        });
-
-        // Add totals
-        excelData.push({ 'Label': '', 'Value': '' }); // Empty row
-        excelData.push({ 'Label': 'TOTAL', 'Value': '' });
-        excelData.push({ 'Label': '', 'Value': purchase.items.reduce((sum, item) => sum + (item.qty || 0), 0) });
-        excelData.push({ 'Label': '', 'Value': '' });
-        excelData.push({ 'Label': '', 'Value': '' });
-        excelData.push({ 'Label': '', 'Value': '' });
-        excelData.push({ 'Label': '', 'Value': `₹${(purchase.total_tax || 0).toLocaleString('en-IN')}` });
-        excelData.push({ 'Label': '', 'Value': `₹${(purchase.items_total || 0).toLocaleString('en-IN')}` });
-      }
-
-      // Use the existing export utility
-      const { exportToExcelGeneric } = require('../../../lib/export-utils');
-      exportToExcelGeneric(excelData, {
-        title: 'Purchase Details',
-        fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}_${new Date().toISOString().split('T')[0]}`
-      });
-
+      await exportToExcelWithLayout(
+        preparedData,
+        {
+          title: 'Purchase Details',
+          fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}`,
+          layout: purchaseViewExportLayout
+        },
+        businessDetails
+      );
     } catch (error) {
       console.error('Excel export error:', error);
       alert('Error exporting Excel. Please try again.');
@@ -463,9 +419,10 @@ export default function PurchaseView() {
               <span className="text-white font-medium">₹{purchase.items_total?.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-400">Freight:</span>
-              <span className="text-white font-medium">₹{purchase.freight?.toLocaleString('en-IN') || '0'}</span>
+              <span className="text-slate-400">P&F Total:</span>
+              <span className="text-white font-medium">₹{purchase.packing_forwarding_total?.toLocaleString('en-IN') || '0'}</span>
             </div>
+           
             <div className="flex justify-between">
               <span className="text-slate-400">Taxable Value:</span>
               <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
@@ -502,6 +459,10 @@ export default function PurchaseView() {
               <span className="text-slate-400">Vehicle:</span>
               <span className="text-white font-medium">{purchase.vehicle_number || 'N/A'}</span>
             </div>
+             <div className="flex justify-between">
+              <span className="text-slate-400">Freight:</span>
+              <span className="text-white font-medium">₹{purchase.freight?.toLocaleString('en-IN') || '0'}</span>
+            </div>
             <div className="flex justify-between">
               <span className="text-slate-400">P&F Qty:</span>
               <span className="text-white font-medium">{purchase.packing_forwarding_qty || '0'}</span>
@@ -510,10 +471,7 @@ export default function PurchaseView() {
               <span className="text-slate-400">P&F Rate:</span>
               <span className="text-white font-medium">₹{purchase.packing_forwarding_rate?.toLocaleString('en-IN') || '0'}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">P&F Total:</span>
-              <span className="text-white font-medium">₹{purchase.packing_forwarding_total?.toLocaleString('en-IN') || '0'}</span>
-            </div>
+            
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Notes:</span>
