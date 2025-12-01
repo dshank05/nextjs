@@ -108,22 +108,49 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Get original purchase items to get current available quantities
-    const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
-    const originalPurchaseItems = await prisma.purchaseitems.findMany({
-      where: {
-        id: { in: purchaseItemIds }
-      },
-      select: {
-        id: true,
-        product_id: true,
-        name_of_product: true,
-        part: true,
-        qty: true,
-        rate: true,
-        gst_percentage: true
-      }
-    })
+    // ✅ CRITICAL FIX: Get ALL purchase items from the original purchase, not just returned ones
+    // This allows users to add more items when editing a return
+    let allPurchaseItems: any[] = []
+    
+    if (purchase?.invoice_no) {
+      // Get ALL items from the original purchase
+      allPurchaseItems = await prisma.purchaseitems.findMany({
+        where: {
+          invoice_no: purchase.invoice_no
+        },
+        select: {
+          id: true,
+          product_id: true,
+          name_of_product: true,
+          part: true,
+          qty: true,
+          rate: true,
+          gst_percentage: true,
+          invoice_no: true
+        }
+      })
+    } else {
+      // Fallback: If no purchase_id, just get the items that were returned
+      const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
+      allPurchaseItems = await prisma.purchaseitems.findMany({
+        where: {
+          id: { in: purchaseItemIds }
+        },
+        select: {
+          id: true,
+          product_id: true,
+          name_of_product: true,
+          part: true,
+          qty: true,
+          rate: true,
+          gst_percentage: true,
+          invoice_no: true
+        }
+      })
+    }
+    
+    // Keep reference for backward compatibility
+    const originalPurchaseItems = allPurchaseItems
 
     // Get product details
     const productIds = Array.from(new Set(originalPurchaseItems.map(item => item.product_id).filter(Boolean)))
@@ -138,6 +165,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         stock: true
       }
     })
+
+    // Create purchaseItemIds array from all purchase items (not just returned ones)
+    const purchaseItemIds = originalPurchaseItems.map(item => item.id)
 
     // Get already returned quantities for these items (excluding current return)
     const returnedQuantities = await prisma.purchase_return_items.groupBy({
@@ -170,17 +200,24 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       console.warn('Invalid return date format:', returnRecord.return_date, error)
     }
 
-    // Build return items with current available quantities
-    const returnItemsWithDetails = returnItems.map(item => {
-      const originalItem = originalPurchaseItems.find(oi => oi.id === item.purchase_item_id)
-      const product = originalItem ? productMap.get(originalItem.product_id) : null
-      const alreadyReturned = returnedQtyMap.get(item.purchase_item_id) || 0
-      const availableQty = (originalItem?.qty || 0) - alreadyReturned
+    // ✅ NEW: Build ALL purchase items with return status (not just returned ones)
+    // Create a map of return items for quick lookup
+    const returnItemsMap = new Map(returnItems.map(item => [item.purchase_item_id, item]))
+    
+    const allItemsWithDetails = originalPurchaseItems.map(originalItem => {
+      const product = productMap.get(originalItem.product_id)
+      const returnItem = returnItemsMap.get(originalItem.id)
+      const alreadyReturned = returnedQtyMap.get(originalItem.id) || 0
+      const availableQty = (originalItem.qty || 0) - alreadyReturned
 
-      // Calculate tax breakdown (since it's not stored in return items)
-      const taxRate = originalItem?.gst_percentage || 0
-      const subtotal = item.return_qty * item.unit_price
-      const taxAmount = item.tax_amount // Use stored tax amount
+      // If this item was returned, use the return data; otherwise set return_qty to 0
+      const returnQty = returnItem?.return_qty || 0
+      const unitPrice = returnItem?.unit_price || originalItem.rate || 0
+      const taxRate = originalItem.gst_percentage || 0
+      
+      // Calculate tax for the returned quantity
+      const subtotal = returnQty * unitPrice
+      const taxAmount = returnItem?.tax_amount || 0
 
       // Determine CGST/SGST vs IGST based on vendor state
       const BUSINESS_STATE_CODE = 9 // Uttar Pradesh
@@ -193,28 +230,31 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
 
       return {
-        id: item.id.toString(),
-        purchase_item_id: item.purchase_item_id,
-        product_id: originalItem?.product_id || 0,
-        product_name: product?.display_name || originalItem?.name_of_product || 'Unknown Product',
-        display_name: product?.display_name || originalItem?.name_of_product,
-        part_number: product?.part_no || originalItem?.part,
-        original_qty: originalItem?.qty || 0, // Original purchase quantity
-        available_qty: Math.max(0, availableQty), // Don't add current return qty since it's already excluded from alreadyReturned
-        return_qty: item.return_qty,
-        unit_price: item.unit_price,
+        id: originalItem.id.toString(),
+        purchase_item_id: originalItem.id,
+        product_id: originalItem.product_id || 0,
+        product_name: product?.display_name || originalItem.name_of_product || 'Unknown Product',
+        display_name: product?.display_name || originalItem.name_of_product,
+        part_number: product?.part_no || originalItem.part,
+        original_qty: originalItem.qty || 0, // Original purchase quantity
+        available_qty: Math.max(0, availableQty), // Available for return (excluding current return since it's in returnedQtyMap)
+        return_qty: returnQty, // 0 if not returned, actual qty if returned
+        unit_price: unitPrice,
         tax_rate: taxRate,
         tax_amount: taxAmount,
         cgst,
         sgst,
         igst,
-        return_reason_id: item.return_reason_id,
-        return_reason: item.reason?.reason_name || 'Unknown Reason',
-        notes: item.notes,
+        return_reason_id: returnItem?.return_reason_id || 1,
+        return_reason: returnItem?.reason?.reason_name || 'Unknown Reason',
+        notes: returnItem?.notes || '',
         bill_reference: purchase?.invoice_no?.toString() || 'N/A',
         invoice_date: purchase?.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : ''
       }
     })
+    
+    // Keep the variable name for backward compatibility
+    const returnItemsWithDetails = allItemsWithDetails
 
     // Group items by bill (for vendor-based returns without specific purchase)
     const bills = [{
@@ -333,7 +373,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           purchase_item_id: parseInt(item.purchase_item_id),
           return_qty: item.return_qty,
           unit_price: item.unit_price,
-          tax_rate: item.tax_rate,
           tax_amount: taxAmount,
           cgst,
           sgst,
@@ -395,6 +434,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ])
 
       // Update return record and create new items in parallel
+      const refundAmount = totalAmount + totalTax
       const [updatedReturn] = await Promise.all([
         tx.purchase_returns.update({
           where: { id: returnId },
@@ -402,6 +442,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
             total_amount: totalAmount,
             total_tax: totalTax,
+            refund_amount: refundAmount,
             notes: notes || '',
             updated_at: new Date()
           }
@@ -414,7 +455,67 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         })
       ])
 
+      // Recalculate return_status for affected purchases
+      // Get the return record to find purchase_id
+      const returnWithPurchase = await tx.purchase_returns.findUnique({
+        where: { id: returnId },
+        select: { purchase_id: true }
+      })
+
+      if (returnWithPurchase?.purchase_id) {
+        // Get purchase details
+        const purchaseRecord = await tx.purchase.findUnique({
+          where: { id: returnWithPurchase.purchase_id },
+          select: { invoice_no: true }
+        })
+
+        if (purchaseRecord) {
+          // Get all items for this purchase
+          const allPurchaseItems = await tx.purchaseitems.findMany({
+            where: { invoice_no: purchaseRecord.invoice_no },
+            select: { id: true, qty: true }
+          })
+
+          // Get all returns for these items
+          const allReturns = await tx.purchase_return_items.findMany({
+            where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
+            select: { purchase_item_id: true, return_qty: true }
+          })
+
+          // Calculate return status based on returned quantities
+          const returnMap = new Map()
+          allReturns.forEach(r => {
+            const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
+            existing.qty += r.return_qty
+            returnMap.set(r.purchase_item_id, existing)
+          })
+
+          let fullyReturnedCount = 0
+          let hasAnyReturns = false
+          for (const item of allPurchaseItems) {
+            const returnData = returnMap.get(item.id)
+            if (returnData && returnData.qty > 0) {
+              hasAnyReturns = true
+              if (returnData.qty >= (item.qty || 0)) {
+                fullyReturnedCount++
+              }
+            }
+          }
+
+          // Calculate return_status: 0=none, 1=partial, 2=full
+          const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
+
+          // Update return_status on purchase
+          await tx.purchase.update({
+            where: { id: returnWithPurchase.purchase_id },
+            data: { return_status: returnStatus }
+          })
+        }
+      }
+
       return updatedReturn
+    }, {
+      timeout: 10000 // 10 second timeout for the transaction
     })
 
     res.status(200).json({

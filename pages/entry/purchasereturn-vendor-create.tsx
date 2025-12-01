@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
 import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
@@ -70,6 +70,9 @@ export default function PurchaseReturnVendorCreatePage() {
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoadingEditData, setIsLoadingEditData] = useState(false);
+  
+  // Ref to track if we're initializing vendor (to prevent multiple API calls)
+  const isInitializingVendor = useRef(false);
 
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
@@ -134,6 +137,9 @@ export default function PurchaseReturnVendorCreatePage() {
     
     // Skip if in edit mode and bills already loaded from session storage
     if (isEditMode && bills.length > 0) return;
+    
+    // Skip if we're initializing vendor (prevents duplicate calls)
+    if (isInitializingVendor.current) return;
 
     const timer = setTimeout(() => {
       loadVendorBills(vendor.id, 1, billSearchTerm, dateFrom, dateTo);
@@ -273,6 +279,9 @@ export default function PurchaseReturnVendorCreatePage() {
 
     const selectedVendor = vendors.find(v => v.id === vendorId);
     if (selectedVendor) {
+      // Set flag to prevent useEffect from triggering during initialization
+      isInitializingVendor.current = true;
+      
       setVendor(selectedVendor);
 
       // Set default 3-month date range
@@ -296,6 +305,9 @@ export default function PurchaseReturnVendorCreatePage() {
 
       // Load initial 3 months of data
       await loadVendorBills(vendorId, 1, '', fromDate, toDate, false);
+      
+      // Reset flag after loading completes
+      isInitializingVendor.current = false;
     }
   };
 

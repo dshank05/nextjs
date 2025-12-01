@@ -180,6 +180,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
         return {
           id: item.id.toString(),
+          purchase_item_id: item.id, // Add this for frontend compatibility
           product_id: item.product_id,
           product_name: product?.display_name || item.name_of_product || 'Unknown Product',
           display_name: product?.display_name || item.name_of_product,

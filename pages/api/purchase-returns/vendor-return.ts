@@ -199,15 +199,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
 
         let fullyReturnedCount = 0
+        let hasAnyReturns = false
         for (const item of allPurchaseItems) {
           const returnData = returnMap.get(item.id)
-          if (returnData && returnData.qty >= (item.qty || 0)) {
-            fullyReturnedCount++
+          if (returnData && returnData.qty > 0) {
+            hasAnyReturns = true
+            if (returnData.qty >= (item.qty || 0)) {
+              fullyReturnedCount++
+            }
           }
         }
 
         // Calculate return_status: 0=none, 1=partial, 2=full
-        const returnStatus = fullyReturnedCount === 0 ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
+        const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
 
         // ✅ ONLY update return_status - preserve original purchase amounts
         await tx.purchase.update({

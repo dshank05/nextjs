@@ -92,10 +92,10 @@ export default function PurchaseReturnDetailPage() {
       };
 
       // Transform return items from bills
-      const returnItems: ReturnItem[] = [];
+      const allReturnItems: ReturnItem[] = [];
       billsInfo.forEach((bill: any) => {
         bill.items.forEach((item: any, index: number) => {
-          returnItems.push({
+          allReturnItems.push({
             id: item.id || (bill.id + index), // Fallback ID if not provided
             product_name: item.product_name,
             part_number: item.part_number,
@@ -114,8 +114,14 @@ export default function PurchaseReturnDetailPage() {
         });
       });
 
+      // ✅ Filter to show only actually returned items
+      // Hide items with return_qty=0 AND no valid reason (Unknown Reason)
+      const actuallyReturnedItems = allReturnItems.filter(item => {
+        return item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason');
+      });
+
       setReturnData(returnData);
-      setReturnItems(returnItems);
+      setReturnItems(actuallyReturnedItems);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load return details');
       console.error('Error fetching return details:', err);
