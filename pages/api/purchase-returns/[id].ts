@@ -287,27 +287,45 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // Start transaction
+    // Start transaction with increased timeout
     const result = await prisma.$transaction(async (tx) => {
-      // Get current return items to restore stock first
+      // Get current return items
       const currentReturnItems = await tx.purchase_return_items.findMany({
         where: { purchase_return_id: returnId },
-        select: { purchase_item_id: true, return_qty: true }
+        select: { 
+          purchase_item_id: true, 
+          return_qty: true
+        }
       })
 
-      // Restore stock for current return items (reverse the decrement)
-      for (const currentItem of currentReturnItems) {
-        const purchaseItem = await tx.purchaseitems.findUnique({
-          where: { id: currentItem.purchase_item_id },
-          select: { product_id: true }
+      // Batch stock restoration
+      if (currentReturnItems.length > 0) {
+        // Get product_ids for current items
+        const currentPurchaseItemIds = currentReturnItems.map(item => item.purchase_item_id)
+        const currentPurchaseItems = await tx.purchaseitems.findMany({
+          where: { id: { in: currentPurchaseItemIds } },
+          select: { id: true, product_id: true }
         })
+        const currentPurchaseItemMap = new Map(currentPurchaseItems.map(pi => [pi.id, pi.product_id]))
 
-        if (purchaseItem?.product_id) {
+        const stockUpdates = currentReturnItems
+          .filter(item => currentPurchaseItemMap.has(item.purchase_item_id))
+          .map(item => ({
+            product_id: currentPurchaseItemMap.get(item.purchase_item_id)!,
+            qty: item.return_qty
+          }))
+
+        // Group by product_id and sum quantities (in case same product appears multiple times)
+        const stockMap = new Map<number, number>()
+        for (const update of stockUpdates) {
+          stockMap.set(update.product_id, (stockMap.get(update.product_id) || 0) + update.qty)
+        }
+
+        // Restore stock in batch
+        for (const [product_id, qty] of Array.from(stockMap.entries())) {
           await tx.product.update({
-            where: { id: purchaseItem.product_id },
-            data: {
-              stock: { increment: currentItem.return_qty } // Restore stock
-            }
+            where: { id: product_id },
+            data: { stock: { increment: qty } }
           })
         }
       }
@@ -369,34 +387,47 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
+      // Get product_ids for new items in batch
+      const purchaseItemIds = processedItems.map(item => item.purchase_item_id)
+      const purchaseItems = await tx.purchaseitems.findMany({
+        where: { id: { in: purchaseItemIds } },
+        select: { id: true, product_id: true }
+      })
+      const purchaseItemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]))
+
       // Delete existing return items
       await tx.purchase_return_items.deleteMany({
         where: { purchase_return_id: returnId }
       })
 
-      // Create new return items and apply new stock decrements
-      for (const item of processedItems) {
-        await tx.purchase_return_items.create({
-          data: {
-            purchase_return_id: returnId,
-            ...item
-          }
-        })
+      // Create new return items in batch using createMany
+      await tx.purchase_return_items.createMany({
+        data: processedItems.map(item => ({
+          purchase_return_id: returnId,
+          ...item
+        }))
+      })
 
-        // Apply new stock decrement
-        const purchaseItem = await tx.purchaseitems.findUnique({
-          where: { id: item.purchase_item_id },
-          select: { product_id: true }
-        })
+      // Batch stock decrements
+      const newStockUpdates = processedItems
+        .filter(item => purchaseItemMap.has(item.purchase_item_id))
+        .map(item => ({
+          product_id: purchaseItemMap.get(item.purchase_item_id)!,
+          qty: item.return_qty
+        }))
 
-        if (purchaseItem?.product_id) {
-          await tx.product.update({
-            where: { id: purchaseItem.product_id },
-            data: {
-              stock: { decrement: item.return_qty } // Apply new return
-            }
-          })
-        }
+      // Group by product_id and sum quantities
+      const newStockMap = new Map<number, number>()
+      for (const update of newStockUpdates) {
+        newStockMap.set(update.product_id, (newStockMap.get(update.product_id) || 0) + update.qty)
+      }
+
+      // Apply new stock decrements in batch
+      for (const [product_id, qty] of Array.from(newStockMap.entries())) {
+        await tx.product.update({
+          where: { id: product_id },
+          data: { stock: { decrement: qty } }
+        })
       }
 
       return updatedReturn

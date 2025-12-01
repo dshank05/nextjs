@@ -29,6 +29,7 @@ interface PurchaseBill {
 
 interface PurchaseItem {
   id: string;
+  purchase_item_id?: number; // ID of the purchase item in purchaseitems table
   product_id: number;
   product_name: string;
   display_name?: string;
@@ -551,7 +552,7 @@ export default function PurchaseReturnVendorCreatePage() {
         payment_mode: paymentMode,
         payment_date: paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
         items: Array.from(selectedItems.values()).map(item => ({
-          purchase_item_id: parseInt(item.id),
+          purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id
           return_qty: item.return_qty,
           return_reason_id: item.return_reason_id,
           unit_price: item.unit_price,
