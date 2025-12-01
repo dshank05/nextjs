@@ -643,11 +643,11 @@ export default function PurchaseReturnVendorCreatePage() {
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-slate-200 flex items-center gap-2">
               <Package className="w-6 h-6" />
-              {isEditMode ? 'Edit' : 'Create'} Purchase Return {vendor?.vendor_name ? `from ${vendor.vendor_name}` : ''}
-            </h1>
-            {isEditMode && returnIdParam && (
-              <p className="text-slate-400 text-sm">Return ID: {returnIdParam}</p>
+              {isEditMode ? 'Edit' : 'Create'} Purchase Return {vendor?.vendor_name ? `from ${vendor.vendor_name}` : ''}  {isEditMode && returnIdParam && (
+              <p className="text-slate-400">| Return ID: {returnIdParam}</p>
             )}
+            </h1> 
+            
           </div>
 
           {/* Return Information */}
