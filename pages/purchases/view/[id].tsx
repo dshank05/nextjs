@@ -612,7 +612,7 @@ export default function PurchaseView() {
                   const totalAmount = taxableValue + taxAmount;
 
                   return (
-                    <tr key={item.id} className={isFullyReturned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : ''}>
+                    <tr key={item.id}>
                       <td>{index + 1}</td>
                       <td className="font-medium text-white">{item.display_name || item.product_name}</td>
                       <td className="text-slate-300">{item.part || 'N/A'}</td>
