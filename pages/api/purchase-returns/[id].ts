@@ -98,7 +98,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         unit_price: true,
         tax_amount: true,
         return_reason_id: true,
-        notes: true
+        notes: true,
+        reason: {
+          select: {
+            id: true,
+            reason_name: true
+          }
+        }
       }
     })
 
@@ -193,7 +199,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         product_name: product?.display_name || originalItem?.name_of_product || 'Unknown Product',
         display_name: product?.display_name || originalItem?.name_of_product,
         part_number: product?.part_no || originalItem?.part,
-        available_qty: Math.max(0, availableQty + item.return_qty), // Include current return qty back in available
+        original_qty: originalItem?.qty || 0, // Original purchase quantity
+        available_qty: Math.max(0, availableQty), // Don't add current return qty since it's already excluded from alreadyReturned
         return_qty: item.return_qty,
         unit_price: item.unit_price,
         tax_rate: taxRate,
@@ -202,6 +209,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         sgst,
         igst,
         return_reason_id: item.return_reason_id,
+        return_reason: item.reason?.reason_name || 'Unknown Reason',
         notes: item.notes,
         bill_reference: purchase?.invoice_no?.toString() || 'N/A',
         invoice_date: purchase?.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : ''

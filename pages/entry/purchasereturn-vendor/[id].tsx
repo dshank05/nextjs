@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Printer, Edit, Trash2, Building2, FileText, Package, ClipboardList } from 'lucide-react';
 import { useSnackbar } from '../../../components/SnackbarProvider';
+import SessionStorageService from '../../../lib/sessionStorage';
 
 interface PurchaseReturn {
   id: number;
@@ -45,6 +46,7 @@ export default function PurchaseReturnDetailPage() {
 
   const [returnData, setReturnData] = useState<PurchaseReturn | null>(null);
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
+  const [fullApiData, setFullApiData] = useState<any>(null); // Store full API response for session storage
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +65,10 @@ export default function PurchaseReturnDetailPage() {
       }
 
       const data = await response.json();
+      
+      // Store full API response for session storage
+      setFullApiData(data.data);
+      
       const returnInfo = data.data.return;
       const vendorInfo = data.data.vendor;
       const billsInfo = data.data.bills;
@@ -99,7 +105,7 @@ export default function PurchaseReturnDetailPage() {
             tax_amount: item.tax_amount,
             subtotal: item.return_qty * item.unit_price,
             total: item.total,
-            return_reason: 'Return', // API doesn't provide reason name, just use generic
+            return_reason: item.return_reason || 'Unknown Reason',
             notes: item.notes || '',
             bill_reference: bill.invoice_no,
             bill_date: bill.invoice_date,
@@ -119,8 +125,10 @@ export default function PurchaseReturnDetailPage() {
   };
 
   const handleEditReturn = () => {
-    if (returnData) {
-      router.push(`/entry/purchasereturn-vendor-create?id=${returnData.id}`);
+    if (fullApiData && id) {
+      // Cache the full return data to session storage like purchase edit
+      SessionStorageService.set('purchase-returns', id.toString(), fullApiData);
+      router.push(`/entry/purchasereturn-vendor-create?id=${id}`);
     }
   };
 

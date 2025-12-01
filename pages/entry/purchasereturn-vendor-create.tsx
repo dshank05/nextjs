@@ -6,6 +6,7 @@ import { ClearableInput } from '../../components/common/ClearableInput';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import SessionStorageService from '../../lib/sessionStorage';
 
 interface Vendor {
   id: string;
@@ -32,6 +33,7 @@ interface PurchaseItem {
   product_name: string;
   display_name?: string;
   part_number?: string;
+  original_qty?: number; // Original purchase quantity
   available_qty: number;
   unit_price: number;
   tax_rate: number;
@@ -66,6 +68,7 @@ export default function PurchaseReturnVendorCreatePage() {
   const { showSnackbar } = useSnackbar();
 
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isLoadingEditData, setIsLoadingEditData] = useState(false);
 
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
@@ -122,14 +125,21 @@ export default function PurchaseReturnVendorCreatePage() {
 
   // Debounced bill search effect (API call)
   useEffect(() => {
+    // Skip if no vendor selected
     if (!vendor?.id) return;
+    
+    // Skip if currently loading edit data
+    if (isLoadingEditData) return;
+    
+    // Skip if in edit mode and bills already loaded from session storage
+    if (isEditMode && bills.length > 0) return;
 
     const timer = setTimeout(() => {
       loadVendorBills(vendor.id, 1, billSearchTerm, dateFrom, dateTo);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [billSearchTerm, dateFrom, dateTo, vendor?.id]);
+  }, [billSearchTerm, dateFrom, dateTo, vendor?.id, isLoadingEditData, isEditMode, bills.length]);
 
   // Load data on mount
   useEffect(() => {
@@ -305,13 +315,26 @@ export default function PurchaseReturnVendorCreatePage() {
   };
 
   const loadReturnForEdit = async (returnId: string) => {
+    setIsLoadingEditData(true);
     try {
-      const response = await fetch(`/api/purchase-returns/${returnId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const returnData = data.data;
+      // Check session storage first (like purchase edit)
+      let returnData = SessionStorageService.get('purchase-returns', returnId);
+      
+      // If not in session storage, fetch from API
+      if (!returnData) {
+        console.log('📡 No cached data, fetching from API...');
+        const response = await fetch(`/api/purchase-returns/${returnId}`);
+        if (response.ok) {
+          const data = await response.json();
+          returnData = data.data;
+        } else {
+          throw new Error('Failed to load return data');
+        }
+      } else {
+        console.log('✅ Loaded return data from session storage');
+      }
 
-        // Set return data
+      // Set return data
         setReturnDate(returnData.return.return_date);
         setReturnNotes(returnData.return.notes || '');
         setPaymentStatus(returnData.return.payment_status ?? 0);
@@ -328,15 +351,51 @@ export default function PurchaseReturnVendorCreatePage() {
         });
 
         // Set bills and items
-        setBills(returnData.bills);
-        setAllLoadedBills(returnData.bills);
+        // In edit mode, set available_qty to the original_qty (from original purchase)
+        const adjustedBills = returnData.bills.map((bill: PurchaseBill) => ({
+          ...bill,
+          items: bill.items.map((item: PurchaseItem) => ({
+            ...item,
+            // In edit mode, available_qty should be the original_qty (original purchase quantity)
+            available_qty: item.original_qty || item.available_qty
+          }))
+        }));
+        
+        setBills(adjustedBills);
+        setAllLoadedBills(adjustedBills);
 
-        // Pre-select the returned items
-        const selectedItemsMap = new Map();
-        returnData.bills.forEach((bill: PurchaseBill) => {
+        // Pre-select the returned items with calculated fields
+        const selectedItemsMap = new Map<string, SelectedReturnItem>();
+        adjustedBills.forEach((bill: PurchaseBill) => {
           bill.items.forEach((item: PurchaseItem) => {
             if (item.return_qty && item.return_qty > 0) {
-              selectedItemsMap.set(item.id, item as SelectedReturnItem);
+              // Calculate tax and totals
+              const subtotal = item.return_qty * item.unit_price;
+              const taxAmount = (subtotal * item.tax_rate) / 100;
+
+              // Determine CGST/SGST vs IGST based on vendor state
+              const isIntraState = returnData.vendor.state === 'Uttar Pradesh';
+              let cgst = 0, sgst = 0, igst = 0;
+              if (isIntraState) {
+                cgst = taxAmount / 2;
+                sgst = taxAmount / 2;
+              } else {
+                igst = taxAmount;
+              }
+
+              const returnItem: SelectedReturnItem = {
+                ...item,
+                return_qty: item.return_qty,
+                return_reason_id: item.return_reason_id || 1,
+                subtotal,
+                tax_amount: taxAmount,
+                cgst,
+                sgst,
+                igst,
+                total: subtotal + taxAmount
+              };
+
+              selectedItemsMap.set(item.id, returnItem);
             }
           });
         });
@@ -344,20 +403,18 @@ export default function PurchaseReturnVendorCreatePage() {
 
         // Expand bills that have selected items
         const billsToExpand = new Set<string>();
-        returnData.bills.forEach((bill: PurchaseBill) => {
+        adjustedBills.forEach((bill: PurchaseBill) => {
           if (bill.items.some((item: PurchaseItem) => selectedItemsMap.has(item.id))) {
             billsToExpand.add(bill.id);
           }
         });
         setExpandedBills(billsToExpand);
 
-        showSnackbar('success', 'Return data loaded for editing');
-      } else {
-        throw new Error('Failed to load return data');
-      }
     } catch (error) {
       console.error('Error loading return for edit:', error);
       showSnackbar('error', 'Failed to load return data for editing');
+    } finally {
+      setIsLoadingEditData(false);
     }
   };
 
