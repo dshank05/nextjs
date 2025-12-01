@@ -287,7 +287,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // Start transaction with increased timeout
+    // Start transaction
     const result = await prisma.$transaction(async (tx) => {
       // Get current return items
       const currentReturnItems = await tx.purchase_return_items.findMany({
@@ -297,38 +297,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           return_qty: true
         }
       })
-
-      // Batch stock restoration
-      if (currentReturnItems.length > 0) {
-        // Get product_ids for current items
-        const currentPurchaseItemIds = currentReturnItems.map(item => item.purchase_item_id)
-        const currentPurchaseItems = await tx.purchaseitems.findMany({
-          where: { id: { in: currentPurchaseItemIds } },
-          select: { id: true, product_id: true }
-        })
-        const currentPurchaseItemMap = new Map(currentPurchaseItems.map(pi => [pi.id, pi.product_id]))
-
-        const stockUpdates = currentReturnItems
-          .filter(item => currentPurchaseItemMap.has(item.purchase_item_id))
-          .map(item => ({
-            product_id: currentPurchaseItemMap.get(item.purchase_item_id)!,
-            qty: item.return_qty
-          }))
-
-        // Group by product_id and sum quantities (in case same product appears multiple times)
-        const stockMap = new Map<number, number>()
-        for (const update of stockUpdates) {
-          stockMap.set(update.product_id, (stockMap.get(update.product_id) || 0) + update.qty)
-        }
-
-        // Restore stock in batch
-        for (const [product_id, qty] of Array.from(stockMap.entries())) {
-          await tx.product.update({
-            where: { id: product_id },
-            data: { stock: { increment: qty } }
-          })
-        }
-      }
 
       // Get current return
       const currentReturn = await tx.purchase_returns.findUnique({
@@ -340,7 +308,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         throw new Error('Return not found')
       }
 
-      // Calculate new totals
+      // Calculate new totals and process items
       let totalAmount = 0
       let totalTax = 0
 
@@ -375,60 +343,76 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Update return record
-      const updatedReturn = await tx.purchase_returns.update({
-        where: { id: returnId },
-        data: {
-          return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
-          total_amount: totalAmount,
-          total_tax: totalTax,
-          notes: notes || '',
-          updated_at: new Date()
-        }
-      })
+      // Pre-calculate NET stock adjustments (like invoice API pattern)
+      const stockAdjustments = new Map<number, number>()
 
-      // Get product_ids for new items in batch
-      const purchaseItemIds = processedItems.map(item => item.purchase_item_id)
+      // Get all purchase_item_ids (old + new)
+      const allPurchaseItemIds = [
+        ...currentReturnItems.map(item => item.purchase_item_id),
+        ...processedItems.map(item => item.purchase_item_id)
+      ]
+      const uniquePurchaseItemIds = Array.from(new Set(allPurchaseItemIds))
+
+      // Fetch product_ids for all items in one query
       const purchaseItems = await tx.purchaseitems.findMany({
-        where: { id: { in: purchaseItemIds } },
+        where: { id: { in: uniquePurchaseItemIds } },
         select: { id: true, product_id: true }
       })
       const purchaseItemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]))
 
-      // Delete existing return items
-      await tx.purchase_return_items.deleteMany({
-        where: { purchase_return_id: returnId }
-      })
-
-      // Create new return items in batch using createMany
-      await tx.purchase_return_items.createMany({
-        data: processedItems.map(item => ({
-          purchase_return_id: returnId,
-          ...item
-        }))
-      })
-
-      // Batch stock decrements
-      const newStockUpdates = processedItems
-        .filter(item => purchaseItemMap.has(item.purchase_item_id))
-        .map(item => ({
-          product_id: purchaseItemMap.get(item.purchase_item_id)!,
-          qty: item.return_qty
-        }))
-
-      // Group by product_id and sum quantities
-      const newStockMap = new Map<number, number>()
-      for (const update of newStockUpdates) {
-        newStockMap.set(update.product_id, (newStockMap.get(update.product_id) || 0) + update.qty)
+      // Calculate reversals for old return items (add back to stock)
+      for (const oldItem of currentReturnItems) {
+        const productId = purchaseItemMap.get(oldItem.purchase_item_id)
+        if (productId) {
+          const currentAdjustment = stockAdjustments.get(productId) || 0
+          stockAdjustments.set(productId, currentAdjustment + oldItem.return_qty)
+        }
       }
 
-      // Apply new stock decrements in batch
-      for (const [product_id, qty] of Array.from(newStockMap.entries())) {
-        await tx.product.update({
-          where: { id: product_id },
-          data: { stock: { decrement: qty } }
+      // Calculate deductions for new return items (remove from stock)
+      for (const newItem of processedItems) {
+        const productId = purchaseItemMap.get(newItem.purchase_item_id)
+        if (productId) {
+          const currentAdjustment = stockAdjustments.get(productId) || 0
+          stockAdjustments.set(productId, currentAdjustment - newItem.return_qty)
+        }
+      }
+
+      // Execute all stock adjustments in parallel using Promise.all
+      const stockUpdatePromises = Array.from(stockAdjustments.entries())
+        .filter(([_, adjustment]) => adjustment !== 0) // Skip if no net change
+        .map(([productId, adjustment]) =>
+          tx.product.update({
+            where: { id: productId },
+            data: { stock: { increment: adjustment } }
+          })
+        )
+
+      // Delete old items and update stock in parallel
+      const [deleteResult] = await Promise.all([
+        tx.purchase_return_items.deleteMany({ where: { purchase_return_id: returnId } }),
+        ...stockUpdatePromises
+      ])
+
+      // Update return record and create new items in parallel
+      const [updatedReturn] = await Promise.all([
+        tx.purchase_returns.update({
+          where: { id: returnId },
+          data: {
+            return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
+            total_amount: totalAmount,
+            total_tax: totalTax,
+            notes: notes || '',
+            updated_at: new Date()
+          }
+        }),
+        tx.purchase_return_items.createMany({
+          data: processedItems.map(item => ({
+            purchase_return_id: returnId,
+            ...item
+          }))
         })
-      }
+      ])
 
       return updatedReturn
     })
