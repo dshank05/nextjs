@@ -486,6 +486,44 @@ export default function PurchaseReturnVendorCreatePage() {
     }
   };
 
+  // Update return price for an item
+  const updateReturnPrice = (itemId: string, newPrice: number, item: PurchaseItem) => {
+    const selectedItem = selectedItems.get(itemId);
+    if (!selectedItem) return;
+
+    // Use new price
+    const price = Math.max(0, newPrice);
+    
+    // Recalculate with new price
+    const subtotal = selectedItem.return_qty * price;
+    const taxAmount = (subtotal * item.tax_rate) / 100;
+
+    // Determine CGST/SGST vs IGST
+    const vendorState = vendor?.state || '';
+    const isIntraState = vendorState === 'Uttar Pradesh';
+
+    let cgst = 0, sgst = 0, igst = 0;
+    if (isIntraState) {
+      cgst = taxAmount / 2;
+      sgst = taxAmount / 2;
+    } else {
+      igst = taxAmount;
+    }
+
+    const updatedItem: SelectedReturnItem = {
+      ...selectedItem,
+      unit_price: price,
+      subtotal,
+      tax_amount: taxAmount,
+      cgst,
+      sgst,
+      igst,
+      total: subtotal + taxAmount
+    };
+
+    setSelectedItems(prev => new Map(prev.set(itemId, updatedItem)));
+  };
+
   // Update return reason for an item
   const updateReturnReason = (itemId: string, reasonId: number) => {
     setSelectedItems(prev => {
@@ -899,8 +937,22 @@ export default function PurchaseReturnVendorCreatePage() {
                                           placeholder="0"
                                         />
                                       </td>
-                                      <td className="px-4 py-3 text-center text-sm text-slate-300">
-                                        ₹{item.unit_price.toFixed(0)}
+                                      <td className="px-4 py-3 text-center">
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={selectedItem?.unit_price || item.unit_price}
+                                          onChange={(e) => {
+                                            const newPrice = parseFloat(e.target.value) || 0;
+                                            if (selectedItem) {
+                                              updateReturnPrice(item.id, newPrice, item);
+                                            }
+                                          }}
+                                          className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm"
+                                          placeholder="0.00"
+                                          disabled={!selectedItem}
+                                        />
                                       </td>
                                       {enableTax && (
                                         <td className="px-4 py-3 text-center text-sm text-slate-300">

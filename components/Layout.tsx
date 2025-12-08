@@ -74,6 +74,8 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor' },
+        { name: 'VENDOR PAYMENT', href: '/entry/vendor-payment' },
+        { name: 'VENDOR REFUND', href: '/entry/vendor-refund' },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
         { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },

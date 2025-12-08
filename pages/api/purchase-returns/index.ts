@@ -160,12 +160,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get vendor info and item counts in batch queries
+    // Get vendor info, item counts, and refund allocations in batch queries
     const vendorIds = Array.from(new Set(returns.map(r => r.vendor_id).filter(Boolean)))
     const returnIds = returns.map(r => r.id)
 
     // Get vendor details directly from returns
-    const [vendorData, itemCounts] = await Promise.all([
+    const [vendorData, itemCounts, refundAllocations] = await Promise.all([
       // Get vendor details using vendor_ids from returns
       vendorIds.length > 0 ? prisma.vendor_details.findMany({
         where: { id: { in: vendorIds } },
@@ -177,12 +177,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         by: ['purchase_return_id'],
         where: { purchase_return_id: { in: returnIds } },
         _count: { id: true }
+      }) : Promise.resolve([]),
+
+      // Get refund allocations for each return
+      returnIds.length > 0 ? prisma.refund_allocations.groupBy({
+        by: ['return_id'],
+        where: { return_id: { in: returnIds } },
+        _sum: { allocated_amount: true }
       }) : Promise.resolve([])
     ])
 
     // Create lookup maps
     const vendorMap = new Map(vendorData.map(v => [v.id, v]))
     const itemCountMap = new Map(itemCounts.map(ic => [ic.purchase_return_id, ic._count.id]))
+    const refundMap = new Map(refundAllocations.map((r: any) => [r.return_id, Number(r._sum.allocated_amount || 0)]))
 
     // Enhanced returns with vendor info (direct relationship)
     let enhancedReturns = returns.map((returnRecord) => {
@@ -220,7 +228,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         notes: returnRecord.notes || '',
         fy: returnRecord.fy,
         created_at: returnRecord.created_at,
-        updated_at: returnRecord.updated_at
+        updated_at: returnRecord.updated_at,
+        // Refund allocation summary
+        total_refunded: refundMap.get(returnRecord.id) || 0,
+        remaining_refund: (returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax)) - (refundMap.get(returnRecord.id) || 0)
       }
     })
 

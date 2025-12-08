@@ -1,20 +1,30 @@
-# Payment Allocation System - Implementation Plan
+# Payment & Refund Allocation System - Implementation Plan
 
-**Document Version:** 1.0  
+**Document Version:** 2.0  
 **Created:** December 7, 2025  
-**Status:** 📋 PLANNING PHASE  
-**Scope:** Vendor Payment Allocation with Partial Payments  
+**Updated:** December 7, 2025  
+**Status:** 🚧 IMPLEMENTATION IN PROGRESS  
+**Scope:** Vendor Payment & Refund Allocation with Partial Payments/Refunds
 
 ---
 
 ## 🎯 OBJECTIVE
 
-Implement a comprehensive payment allocation system that allows:
+Implement a comprehensive **payment AND refund allocation system** that allows:
+
+### **For Purchases (Money Out)**:
 1. **Partial Payments**: Track payments on bills (₹30k paid on ₹50k bill)
 2. **Payment Allocation**: Allocate one payment to multiple bills
 3. **Bill Tagging**: Pay vendor directly and tag which bills to apply payment to
 4. **Payment Reversal**: Reverse payments with proper audit trail (no deletions)
-5. **Bulk Payments**: Pay multiple vendors at once
+5. **Payment History**: Complete audit trail per purchase
+
+### **For Returns (Money In)**:
+1. **Partial Refunds**: Track refunds on returns (₹6k refunded on ₹10k return)
+2. **Refund Allocation**: Allocate one refund to multiple returns
+3. **Return Tagging**: Receive refund from vendor and tag which returns to apply to
+4. **Refund Reversal**: Reverse refunds with proper audit trail (no deletions)
+5. **Refund History**: Complete audit trail per return
 
 ---
 
@@ -116,9 +126,9 @@ PUT /api/purchase-returns/[id] (UPDATE) ✅ ALREADY IMPLEMENTED
 
 ## 🗄️ DATABASE SCHEMA DESIGN
 
-### **New Tables**:
+### **New Tables** (4 tables total):
 
-#### **1. vendor_payments**
+#### **1. vendor_payments** (Payments TO vendors)
 Tracks all vendor payments (master payment records)
 
 ```sql
@@ -142,7 +152,7 @@ CREATE TABLE vendor_payments (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-#### **2. payment_allocations**
+#### **2. payment_allocations** (Link payments to bills)
 Tracks how payments are allocated to specific bills
 
 ```sql
@@ -163,14 +173,65 @@ CREATE TABLE payment_allocations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-### **Purchase Table Update**:
+#### **3. vendor_refunds** (Refunds FROM vendors)
+Tracks all vendor refunds (master refund records)
 
 ```sql
--- No schema change needed!
+CREATE TABLE vendor_refunds (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  vendor_id INT NOT NULL,
+  refund_date INT NOT NULL,
+  refund_amount DECIMAL(10,2) NOT NULL,
+  refund_mode INT NOT NULL,  -- 0=Cash, 1=Bank
+  refund_type VARCHAR(20) NOT NULL,  -- 'RETURN_SPECIFIC' or 'DIRECT'
+  notes TEXT,
+  fy INT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  INDEX idx_vendor_refunds_vendor (vendor_id),
+  INDEX idx_vendor_refunds_date (refund_date),
+  INDEX idx_vendor_refunds_fy (fy),
+  
+  FOREIGN KEY (vendor_id) REFERENCES vendor_details(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+#### **4. refund_allocations** (Link refunds to returns)
+Tracks how refunds are allocated to specific returns
+
+```sql
+CREATE TABLE refund_allocations (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  refund_id INT NOT NULL,
+  return_id INT NOT NULL,
+  allocated_amount DECIMAL(10,2) NOT NULL,
+  allocation_date INT NOT NULL,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  
+  INDEX idx_refund_allocations_refund (refund_id),
+  INDEX idx_refund_allocations_return (return_id),
+  
+  FOREIGN KEY (refund_id) REFERENCES vendor_refunds(id) ON DELETE CASCADE,
+  FOREIGN KEY (return_id) REFERENCES purchase_returns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+```
+
+### **Existing Tables - New Status Values**:
+
+```sql
+-- Purchase table: No schema change needed!
 -- payment_status will use new values:
 -- 0 = Unpaid (no payments)
 -- 1 = Paid (fully paid) - EXISTING, backward compatible
 -- 2 = Partially Paid (some payment made) - NEW
+
+-- Purchase_returns table: No schema change needed!
+-- payment_status will use new values:
+-- 0 = Unpaid (no refund)
+-- 1 = Fully Refunded - EXISTING, backward compatible
+-- 2 = Partially Refunded (some refund received) - NEW
 ```
 
 ### **Prisma Schema Updates**:
@@ -313,6 +374,87 @@ Result:
 
 ---
 
+## 🔄 REFUND SCENARIOS
+
+### **Scenario 6: Partial Refund on Return**
+```
+Return DN-001: ₹10,000 (Unpaid)
+Refund: ₹6,000
+
+Result:
+├─ vendor_refunds: id=1, amount=6000
+├─ refund_allocations: refund_id=1, return_id=7, amount=6000
+├─ Return DN-001: payment_status=2 (Partially Refunded)
+└─ Ledger: REFUND_RECEIVED (Dr ₹6,000)
+   Notes: "Partial refund ₹6,000 for return DN-001 via Refund #1"
+
+Vendor Balance: -₹10,000 + ₹6,000 = -₹4,000 (vendor still owes ₹4k)
+```
+
+### **Scenario 7: Multiple Refunds on Same Return**
+```
+Return DN-001: ₹10,000 (Unpaid)
+Refund 1: ₹6,000
+Refund 2: ₹4,000
+
+Result:
+├─ vendor_refunds: id=1 (₹6k), id=2 (₹4k)
+├─ refund_allocations:
+│  ├─ refund_id=1, return_id=7, amount=6000
+│  └─ refund_id=2, return_id=7, amount=4000
+├─ Return DN-001: payment_status=1 (Fully Refunded after 2nd)
+└─ Ledger:
+   ├─ REFUND_RECEIVED (Dr ₹6,000) via Refund #1
+   └─ REFUND_RECEIVED (Dr ₹4,000) via Refund #2
+```
+
+### **Scenario 8: One Refund, Multiple Returns**
+```
+Outstanding Returns:
+├─ DN-001: ₹5,000 (Unpaid)
+├─ DN-002: ₹3,000 (Unpaid)
+└─ DN-003: ₹4,000 (Unpaid)
+
+Refund: ₹10,000 allocated as:
+├─ DN-001: ₹5,000 (full)
+├─ DN-002: ₹3,000 (full)
+└─ DN-003: ₹2,000 (partial)
+
+Result:
+├─ vendor_refunds: id=2, amount=10000
+├─ refund_allocations:
+│  ├─ refund_id=2, return_id=7, amount=5000
+│  ├─ refund_id=2, return_id=8, amount=3000
+│  └─ refund_id=2, return_id=9, amount=2000
+├─ Return DN-001: payment_status=1 (Fully Refunded)
+├─ Return DN-002: payment_status=1 (Fully Refunded)
+├─ Return DN-003: payment_status=2 (Partially Refunded - ₹2k of ₹4k)
+└─ Ledger:
+   ├─ REFUND_RECEIVED (Dr ₹5,000) for DN-001 via Refund #2
+   ├─ REFUND_RECEIVED (Dr ₹3,000) for DN-002 via Refund #2
+   └─ REFUND_RECEIVED (Dr ₹2,000) for DN-003 via Refund #2 (partial)
+```
+
+### **Scenario 9: Refund Reversal**
+```
+Original: Refund #2 (₹10,000) allocated to 3 returns
+Reverse: Refund #2
+
+Result:
+├─ vendor_refunds: id=3, amount=-10000, type='REVERSAL'
+├─ refund_allocations:
+│  ├─ refund_id=3, return_id=7, amount=-5000
+│  ├─ refund_id=3, return_id=8, amount=-3000
+│  └─ refund_id=3, return_id=9, amount=-2000
+├─ All returns revert to unpaid/partial status
+└─ Ledger:
+   ├─ REFUND_RECEIVED (negative - Cr ₹5,000) for DN-001
+   ├─ REFUND_RECEIVED (negative - Cr ₹3,000) for DN-002
+   └─ REFUND_RECEIVED (negative - Cr ₹2,000) for DN-003
+```
+
+---
+
 ## 🔧 PAYMENT STATUS CALCULATION
 
 ### **Helper Function**:
@@ -360,7 +502,56 @@ await prisma.purchase.update({
 
 ---
 
+## 🔧 REFUND STATUS CALCULATION
+
+### **Helper Function**:
+
+```typescript
+async function calculateRefundStatus(returnId: number): Promise<number> {
+  // Get return refund amount
+  const returnRecord = await prisma.purchase_returns.findUnique({
+    where: { id: returnId },
+    select: { refund_amount: true }
+  })
+  
+  if (!returnRecord) return 0
+  
+  // Get total allocated to this return
+  const allocations = await prisma.refund_allocations.aggregate({
+    where: { return_id: returnId },
+    _sum: { allocated_amount: true }
+  })
+  
+  const totalRefunded = allocations._sum.allocated_amount || 0
+  const totalReturn = returnRecord.refund_amount
+  
+  if (totalRefunded === 0) {
+    return 0 // Unpaid
+  } else if (totalRefunded >= totalReturn) {
+    return 1 // Fully Refunded (keep existing value!)
+  } else {
+    return 2 // Partially Refunded (new!)
+  }
+}
+```
+
+### **Usage**:
+
+```typescript
+// After creating refund allocation
+const newStatus = await calculateRefundStatus(returnId)
+
+await prisma.purchase_returns.update({
+  where: { id: returnId },
+  data: { payment_status: newStatus }
+})
+```
+
+---
+
 ## 📋 API ENDPOINTS TO CREATE
+
+### **PAYMENT APIs**:
 
 ### **1. POST /api/vendor-payments** (Create Payment)
 
@@ -472,45 +663,204 @@ await prisma.purchase.update({
 }
 ```
 
+### **4. POST /api/vendor-refunds** (Create Refund)
+
+**Purpose**: Create a refund and allocate to returns
+
+**Request Body**:
+```typescript
+{
+  vendor_id: 5,
+  refund_amount: 10000,
+  refund_mode: 1, // 0=Cash, 1=Bank
+  refund_date: 1706140800,
+  refund_type: 'RETURN_SPECIFIC', // or 'DIRECT'
+  notes: "Refund received via bank transfer",
+  allocations: [
+    { return_id: 7, allocated_amount: 5000, notes: "" },
+    { return_id: 8, allocated_amount: 3000, notes: "" },
+    { return_id: 9, allocated_amount: 2000, notes: "" }
+  ]
+}
+```
+
+**Logic**:
+1. Validate total allocation = refund amount
+2. Create vendor_refunds record
+3. Create refund_allocations records
+4. Update return payment_status for each return
+5. Create REFUND_RECEIVED ledger entries
+
+**Response**:
+```typescript
+{
+  success: true,
+  data: {
+    refund: {
+      id: 2,
+      vendor_id: 5,
+      amount: 10000,
+      date: 1706140800,
+      mode: 1,
+      allocations: [...]
+    }
+  }
+}
+```
+
+### **5. GET /api/vendor-refunds** (List Refunds)
+
+**Purpose**: List all refunds with filters
+
+**Query Parameters**:
+```
+?vendor_id=5
+&dateFrom=2025-01-01
+&dateTo=2025-01-31
+&refund_mode=1
+&page=1
+&limit=50
+```
+
+**Response**:
+```typescript
+{
+  refunds: [
+    {
+      id: 2,
+      vendor_id: 5,
+      vendor_name: "ABC Corp",
+      refund_amount: 10000,
+      refund_date: 1706140800,
+      refund_mode: 1,
+      refund_type: "RETURN_SPECIFIC",
+      allocations: [
+        { return_id: 7, debit_note_no: "DN-001", amount: 5000 },
+        { return_id: 8, debit_note_no: "DN-002", amount: 3000 },
+        { return_id: 9, debit_note_no: "DN-003", amount: 2000 }
+      ]
+    }
+  ],
+  pagination: { ... }
+}
+```
+
+### **6. POST /api/vendor-refunds/[id]/reverse** (Reverse Refund)
+
+**Purpose**: Reverse a refund (with audit trail)
+
+**Request Body**:
+```typescript
+{
+  reason: "Refund error - need to correct allocation"
+}
+```
+
+**Logic**:
+1. Create reversal vendor_refunds record (negative amount)
+2. Create reversal refund_allocations (negative amounts)
+3. Recalculate return payment_status
+4. Create REFUND_RECEIVED ledger entries (reversed)
+
+**Response**:
+```typescript
+{
+  success: true,
+  message: "Refund reversed successfully",
+  data: {
+    reversal_refund_id: 3
+  }
+}
+```
+
 ---
 
 ## 📝 IMPLEMENTATION CHECKLIST
 
 ### **Phase 1: Database Setup** (Day 1)
-- [ ] Create SQL migration script for `vendor_payments` table
-- [ ] Create SQL migration script for `payment_allocations` table
+- [ ] Create SQL migration script for all 4 tables
+  - [ ] `vendor_payments` table
+  - [ ] `payment_allocations` table
+  - [ ] `vendor_refunds` table
+  - [ ] `refund_allocations` table
 - [ ] Update Prisma schema with new models
 - [ ] Run `npx prisma generate`
+- [ ] Run `npx prisma db push`
 - [ ] Test database connection and relations
 
-### **Phase 2: Helper Functions** (Day 1)
-- [ ] Create `calculatePaymentStatus()` helper
-- [ ] Create `getPaymentHistory()` helper
-- [ ] Create `validatePaymentAllocation()` helper
-- [ ] Test helper functions
+### **Phase 2: Helper Functions** (Day 1-2)
+- [ ] Create `lib/payment-allocation-service.ts`
+- [ ] Implement `calculatePurchasePaymentStatus()` helper
+- [ ] Implement `calculateReturnRefundStatus()` helper
+- [ ] Implement `validatePaymentAllocation()` helper
+- [ ] Implement `validateRefundAllocation()` helper
+- [ ] Implement `getPaymentHistory()` helper
+- [ ] Implement `getRefundHistory()` helper
+- [ ] Test all helper functions
 
-### **Phase 3: Payment APIs** (Days 2-3)
+### **Phase 3: New APIs - Payments** (Days 2-3)
 - [ ] Implement `POST /api/vendor-payments` (create payment)
 - [ ] Implement `GET /api/vendor-payments` (list payments)
 - [ ] Implement `GET /api/vendor-payments/[id]` (payment details)
-- [ ] Implement `POST /api/vendor-payments/[id]/reverse` (reverse payment)
-- [ ] Test all payment APIs
+- [ ] Test payment APIs
 
-### **Phase 4: Update Existing APIs** (Day 4)
-- [ ] Update `GET /api/purchases/[id]` with payment info
-- [ ] Update `GET /api/purchases` to show payment status correctly
-- [ ] Test existing purchase APIs still work
-- [ ] Update ledger service notes for allocations
+### **Phase 4: New APIs - Refunds** (Days 3-4)
+- [ ] Implement `POST /api/vendor-refunds` (create refund)
+- [ ] Implement `GET /api/vendor-refunds` (list refunds)
+- [ ] Implement `GET /api/vendor-refunds/[id]` (refund details)
+- [ ] Test refund APIs
 
-### **Phase 5: Testing** (Day 5)
+### **Phase 5: Update Existing APIs** (Days 4-5)
+- [ ] Update `GET /api/purchases/[id]` with payment history
+- [ ] Update `GET /api/purchases` to show payment status (0/1/2)
+- [ ] Update `GET /api/purchase-returns/[id]` with refund history
+- [ ] Update `GET /api/purchase-returns` to show refund status (0/1/2)
+- [ ] Remove payment_status/mode/date from return creation API
+- [ ] Test existing APIs still work
+
+### **Phase 6: Frontend - New Screens** (Days 5-6)
+- [ ] Create `pages/entry/vendor-payment.tsx` (payment entry screen)
+- [ ] Create `pages/entry/vendor-refund.tsx` (refund entry screen)
+- [ ] Create `pages/reports/payment-history.tsx` (payment report)
+- [ ] Create `pages/reports/refund-history.tsx` (refund report)
+- [ ] Add navigation menu items
+
+### **Phase 7: Frontend - Update Existing** (Days 6-7)
+- [ ] Update `pages/entry/purchasereturn-vendor-create.tsx`:
+  - [ ] Remove payment_status, payment_mode, payment_date fields
+  - [ ] Strengthen item quantity validation
+  - [ ] Add visual indicators for available qty
+- [ ] Update purchase detail view with payment history section
+- [ ] Update return detail view with refund history section
+- [ ] Update vendor outstanding reports
+
+### **Phase 8: Testing** (Day 8)
+**Payment Tests:**
 - [ ] Test full payment scenario
 - [ ] Test partial payment scenario
 - [ ] Test multiple partial payments
 - [ ] Test one payment → multiple bills
-- [ ] Test payment reversal
-- [ ] Test ledger entries are correct
-- [ ] Test payment status calculation
+- [ ] Test payment status calculation (0/1/2)
+
+**Refund Tests:**
+- [ ] Test full refund scenario
+- [ ] Test partial refund scenario
+- [ ] Test multiple partial refunds
+- [ ] Test one refund → multiple returns
+- [ ] Test refund status calculation (0/1/2)
+
+**Integration Tests:**
+- [ ] Test ledger entries for all scenarios
+- [ ] Test payment/refund reversal
 - [ ] Test backward compatibility (existing 0/1 values)
+- [ ] Test item validation (over-return prevention)
+
+### **Phase 9: Documentation** (Day 8)
+- [ ] Update API documentation
+- [ ] Create user guide for payment entry
+- [ ] Create user guide for refund entry
+- [ ] Document all testing scenarios
+- [ ] Update COMPLETE_TEST_SCENARIOS.md
 
 ---
 

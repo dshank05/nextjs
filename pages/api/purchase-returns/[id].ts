@@ -257,6 +257,51 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Keep the variable name for backward compatibility
     const returnItemsWithDetails = allItemsWithDetails
 
+    // Get refund allocation history
+    const refundAllocations = await prisma.refund_allocations.findMany({
+      where: { return_id: returnId },
+      include: {
+        refund: {
+          select: {
+            id: true,
+            refund_date: true,
+            refund_amount: true,
+            refund_mode: true,
+            refund_type: true,
+            notes: true,
+            created_at: true
+          }
+        }
+      },
+      orderBy: {
+        allocation_date: 'desc'
+      }
+    })
+
+    // Calculate refund summary
+    const totalRefunded = refundAllocations.reduce(
+      (sum, alloc) => sum + Number(alloc.allocated_amount),
+      0
+    )
+    const totalReturn = returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax)
+    const remainingAmount = totalReturn - totalRefunded
+
+    // Format refund history
+    const refundHistory = refundAllocations.map(alloc => ({
+      allocation_id: alloc.id,
+      refund_id: alloc.refund_id,
+      allocated_amount: Number(alloc.allocated_amount),
+      allocation_date: alloc.allocation_date,
+      allocation_notes: alloc.notes,
+      refund_date: alloc.refund.refund_date,
+      refund_amount: Number(alloc.refund.refund_amount),
+      refund_mode: alloc.refund.refund_mode,
+      refund_mode_text: alloc.refund.refund_mode === 0 ? 'Cash' : 'Bank',
+      refund_type: alloc.refund.refund_type,
+      refund_notes: alloc.refund.notes,
+      created_at: alloc.refund.created_at
+    }))
+
     // Group items by bill (for vendor-based returns without specific purchase)
     const bills = [{
       id: purchase?.id?.toString() || returnRecord.id.toString(),
@@ -298,7 +343,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         total_bills: 1,
         total_items: returnItemsWithDetails.length,
         total_value: returnRecord.total_amount
-      }
+      },
+      refund_summary: {
+        total_return: totalReturn,
+        total_refunded: totalRefunded,
+        remaining_amount: remainingAmount,
+        refund_count: refundAllocations.length,
+        is_fully_refunded: totalRefunded >= totalReturn,
+        is_partially_refunded: totalRefunded > 0 && totalRefunded < totalReturn
+      },
+      refund_history: refundHistory
     }
 
     res.status(200).json({

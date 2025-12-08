@@ -212,14 +212,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get item counts, vendor info, staff info, and bill_to info in batch queries
+    // Get item counts, vendor info, staff info, bill_to info, and payment allocations in batch queries
     const invoiceNos = purchaseInvoices.map((inv: { invoice_no: any }) => inv.invoice_no)
+    const purchaseIds = purchaseInvoices.map((inv: any) => inv.id)
     const vendorIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.vendor_id).filter(Boolean)))
     const staffIds = Array.from(new Set(purchaseInvoices.map((inv: any) => inv.staff_id).filter(Boolean)))
     // Get bill_to data for "Other" vendors (vendor_id = 0)
     const otherVendorInvoices = purchaseInvoices.filter((inv: any) => inv.vendor_id === 0).map((inv: any) => inv.invoice_no)
 
-    const [itemCounts, vendorData, staffData, billToData] = await Promise.all([
+    const [itemCounts, vendorData, staffData, billToData, paymentAllocations] = await Promise.all([
       // Get all item counts in one query
       prisma.purchaseitems.groupBy({
         by: ['invoice_no'],
@@ -240,6 +241,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       otherVendorInvoices.length > 0 ? prisma.bill_to.findMany({
         where: { invoice_no: { in: otherVendorInvoices } },
         select: { invoice_no: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
+      }) : Promise.resolve([]),
+      // Get payment allocations for all purchases
+      purchaseIds.length > 0 ? prisma.payment_allocations.groupBy({
+        by: ['purchase_id'],
+        where: { purchase_id: { in: purchaseIds } },
+        _sum: { allocated_amount: true }
       }) : Promise.resolve([])
     ])
 
@@ -248,6 +255,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const vendorMap = new Map(vendorData.map(vendor => [vendor.id, vendor]))
     const staffMap = new Map(staffData.map(staff => [staff.id, staff]))
     const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
+    const paymentMap = new Map(paymentAllocations.map((payment: any) => [payment.purchase_id, Number(payment._sum.allocated_amount || 0)]))
 
     // Enhanced purchase invoices using maps
     let enhancedPurchases = purchaseInvoices.map((invoice: any) => {
@@ -317,6 +325,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         fy: invoice.fy,
         item_count: itemCountMap.get(invoice.invoice_no) || 0,
         return_status: invoice.return_status || 0, // ✅ Include return status
+        // Payment allocation summary
+        total_paid: paymentMap.get(invoice.id) || 0,
+        remaining_amount: invoice.total - (paymentMap.get(invoice.id) || 0),
         // OPTIMIZATION: Commented out unused fields - uncomment if needed
         // type: 'purchase',
         // formattedDate: formattedDate, // Frontend handles formatting

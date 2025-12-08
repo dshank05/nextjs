@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Printer, Edit, Trash2, Building2, FileText, Package, ClipboardList } from 'lucide-react';
+import { Printer, Edit, Trash2, Building2, FileText, Package, ClipboardList, Eye, DollarSign } from 'lucide-react';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
+import RefundHistoryModal from '../../../components/RefundHistoryModal';
+import QuickRefundModal from '../../../components/QuickRefundModal';
 
 interface PurchaseReturn {
   id: number;
@@ -49,6 +51,8 @@ export default function PurchaseReturnDetailPage() {
   const [fullApiData, setFullApiData] = useState<any>(null); // Store full API response for session storage
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showRefundHistoryModal, setShowRefundHistoryModal] = useState(false);
+  const [showQuickRefundModal, setShowQuickRefundModal] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -233,6 +237,21 @@ export default function PurchaseReturnDetailPage() {
                 {returnData.statusText}
               </span>
             </div>
+            {(fullApiData as any)?.refund_summary && (
+              <div 
+                className="flex justify-between items-center cursor-pointer hover:bg-slate-700/30 p-2 rounded transition-colors"
+                onClick={() => setShowRefundHistoryModal(true)}
+              >
+                <span className="text-slate-400 flex items-center gap-2">
+                  <Eye className="w-4 h-4" />
+                  Refund History:
+                </span>
+                <span className="text-blue-400 font-medium flex items-center gap-2">
+                  {(fullApiData as any).refund_summary.refund_count} refund{(fullApiData as any).refund_summary.refund_count !== 1 ? 's' : ''}
+                  <Eye className="w-4 h-4" />
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Column 2: Vendor Info */}
@@ -307,6 +326,16 @@ export default function PurchaseReturnDetailPage() {
               <Printer className="w-4 h-4" />
               Print
             </button>
+            {(fullApiData as any)?.refund_summary && (fullApiData as any).refund_summary.remaining_amount > 0 && (
+              <button
+                onClick={() => setShowQuickRefundModal(true)}
+                className="btn-secondary flex items-center gap-2"
+                title="Mark as Refunded"
+              >
+                <DollarSign className="w-4 h-4" />
+                Mark as Refunded
+              </button>
+            )}
             <button
               onClick={handleEditReturn}
               className="btn-primary flex items-center gap-2"
@@ -385,7 +414,32 @@ export default function PurchaseReturnDetailPage() {
             </table>
           </div>
         </div>
+
       </div>
+
+      {/* Modals */}
+      {(fullApiData as any)?.refund_summary && (
+        <>
+          <RefundHistoryModal
+            isOpen={showRefundHistoryModal}
+            onClose={() => setShowRefundHistoryModal(false)}
+            summary={(fullApiData as any).refund_summary}
+            history={(fullApiData as any).refund_history || []}
+          />
+          <QuickRefundModal
+            isOpen={showQuickRefundModal}
+            onClose={() => setShowQuickRefundModal(false)}
+            onSuccess={() => {
+              fetchReturnDetails(id as string);
+              setShowQuickRefundModal(false);
+            }}
+            returnId={returnData?.id || 0}
+            vendorId={returnData?.vendor_id || 0}
+            vendorName={returnData?.vendor_name || ''}
+            outstandingAmount={(fullApiData as any).refund_summary.remaining_amount}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -211,6 +211,50 @@ export default async function handler(
           items_count: returnItems.filter(item => item.purchase_return.id === ret.id).length
         }))
 
+        // Get payment allocation history
+        const paymentAllocations = await prisma.payment_allocations.findMany({
+          where: { purchase_id: purchaseId },
+          include: {
+            payment: {
+              select: {
+                id: true,
+                payment_date: true,
+                payment_amount: true,
+                payment_mode: true,
+                payment_type: true,
+                notes: true,
+                created_at: true
+              }
+            }
+          },
+          orderBy: {
+            allocation_date: 'desc'
+          }
+        })
+
+        // Calculate payment summary
+        const totalPaid = paymentAllocations.reduce(
+          (sum, alloc) => sum + Number(alloc.allocated_amount),
+          0
+        )
+        const remainingAmount = purchase.total - totalPaid
+
+        // Format payment history
+        const paymentHistory = paymentAllocations.map(alloc => ({
+          allocation_id: alloc.id,
+          payment_id: alloc.payment_id,
+          allocated_amount: Number(alloc.allocated_amount),
+          allocation_date: alloc.allocation_date,
+          allocation_notes: alloc.notes,
+          payment_date: alloc.payment.payment_date,
+          payment_amount: Number(alloc.payment.payment_amount),
+          payment_mode: alloc.payment.payment_mode,
+          payment_mode_text: alloc.payment.payment_mode === 0 ? 'Cash' : 'Bank',
+          payment_type: alloc.payment.payment_type,
+          payment_notes: alloc.payment.notes,
+          created_at: alloc.payment.created_at
+        }))
+
         // ✅ Transform to POST/PUT compatible structure
         const transformedPurchase = {
           // Main purchase fields - ensure all required fields are populated
@@ -261,6 +305,17 @@ export default async function handler(
 
           // Return transactions with payment details
           returns: returnsWithDetails,
+
+          // Payment allocation summary and history
+          payment_summary: {
+            total_bill: purchase.total,
+            total_paid: totalPaid,
+            remaining_amount: remainingAmount,
+            payment_count: paymentAllocations.length,
+            is_fully_paid: totalPaid >= purchase.total,
+            is_partially_paid: totalPaid > 0 && totalPaid < purchase.total
+          },
+          payment_history: paymentHistory,
 
           // Metadata
           fy: purchase.fy,

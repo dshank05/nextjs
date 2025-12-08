@@ -203,9 +203,10 @@ model Purchase {
   payment_status           Int?
   staff_id                 Int?
   return_status            Int?               @default(0)
-  staff                    staff?             @relation(fields: [staff_id], references: [id])
-  vendor                   vendor_details?    @relation(fields: [vendor_id], references: [id], map: "purchase_vendor_fkey")
+  staff                    staff?                  @relation(fields: [staff_id], references: [id])
+  vendor                   vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_vendor_fkey")
   purchase_returns         purchase_returns[]
+  payment_allocations      payment_allocations[]
 
   @@index([invoice_date], map: "idx_purchase_invoice_date")
   @@index([payment_status], map: "idx_purchase_payment_status")
@@ -568,8 +569,10 @@ model vendor_details {
   email       String? @db.VarChar(100)
   status      String  @default("Active") @db.VarChar(20)
   tax_id      String? @db.VarChar(50)
-  purchases   Purchase[]         // NEW: One-to-many with purchases
-  returns     purchase_returns[] // NEW: One-to-many with returns
+  purchases      Purchase[]
+  returns        purchase_returns[]
+  payments       vendor_payments[]
+  refunds        vendor_refunds[]
 
   @@index([vendor_name], map: "idx_vendor_name")
   @@index([contact_no], map: "idx_vendor_contact_no")
@@ -744,6 +747,7 @@ model purchase_returns {
   created_at                 DateTime                @default(now())
   updated_at                 DateTime                @updatedAt
   items                      purchase_return_items[]
+  refund_allocations         refund_allocations[]
   vendor                     vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
   purchase                   Purchase?               @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
 
@@ -854,4 +858,80 @@ model vendor_ledger {
   @@index([fy], map: "idx_vendor_ledger_fy")
   @@index([reference_type, reference_id], map: "idx_vendor_ledger_reference")
   @@map("vendor_ledger")
+}
+
+// ============================================================================
+// PAYMENT & REFUND ALLOCATION SYSTEM
+// ============================================================================
+
+model vendor_payments {
+  id             Int                   @id @default(autoincrement())
+  vendor_id      Int
+  payment_date   Int
+  payment_amount Decimal               @db.Decimal(10, 2)
+  payment_mode   Int
+  payment_type   String                @db.VarChar(20)
+  notes          String?               @db.Text
+  fy             Int
+  created_at     DateTime              @default(now())
+  updated_at     DateTime              @updatedAt
+  allocations    payment_allocations[]
+  vendor         vendor_details        @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@index([vendor_id], map: "idx_vendor_payments_vendor")
+  @@index([payment_date], map: "idx_vendor_payments_date")
+  @@index([fy], map: "idx_vendor_payments_fy")
+  @@map("vendor_payments")
+}
+
+model payment_allocations {
+  id               Int             @id @default(autoincrement())
+  payment_id       Int
+  purchase_id      Int
+  allocated_amount Decimal         @db.Decimal(10, 2)
+  allocation_date  Int
+  notes            String?         @db.Text
+  created_at       DateTime        @default(now())
+  payment          vendor_payments @relation(fields: [payment_id], references: [id], onDelete: Cascade)
+  purchase         Purchase        @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+
+  @@index([payment_id], map: "idx_payment_allocations_payment")
+  @@index([purchase_id], map: "idx_payment_allocations_purchase")
+  @@map("payment_allocations")
+}
+
+model vendor_refunds {
+  id            Int                  @id @default(autoincrement())
+  vendor_id     Int
+  refund_date   Int
+  refund_amount Decimal              @db.Decimal(10, 2)
+  refund_mode   Int
+  refund_type   String               @db.VarChar(20)
+  notes         String?              @db.Text
+  fy            Int
+  created_at    DateTime             @default(now())
+  updated_at    DateTime             @updatedAt
+  allocations   refund_allocations[]
+  vendor        vendor_details       @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@index([vendor_id], map: "idx_vendor_refunds_vendor")
+  @@index([refund_date], map: "idx_vendor_refunds_date")
+  @@index([fy], map: "idx_vendor_refunds_fy")
+  @@map("vendor_refunds")
+}
+
+model refund_allocations {
+  id               Int              @id @default(autoincrement())
+  refund_id        Int
+  return_id        Int
+  allocated_amount Decimal          @db.Decimal(10, 2)
+  allocation_date  Int
+  notes            String?          @db.Text
+  created_at       DateTime         @default(now())
+  refund           vendor_refunds   @relation(fields: [refund_id], references: [id], onDelete: Cascade)
+  return           purchase_returns @relation(fields: [return_id], references: [id], onDelete: Cascade)
+
+  @@index([refund_id], map: "idx_refund_allocations_refund")
+  @@index([return_id], map: "idx_refund_allocations_return")
+  @@map("refund_allocations")
 }

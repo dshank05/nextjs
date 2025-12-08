@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2, FileText, Truck, Printer, FileSpreadsheet } from 'lucide-react';
+import { Edit, Trash2, FileText, Truck, Printer, FileSpreadsheet, Eye, DollarSign } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
+import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
+import QuickPaymentModal from '../../../components/QuickPaymentModal';
 
 interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
@@ -148,6 +150,8 @@ export default function PurchaseView() {
   const { id } = router.query;
   const [purchase, setPurchase] = useState<Purchase | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
+  const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -374,6 +378,21 @@ export default function PurchaseView() {
               <span className="text-slate-400">Status:</span>
               <span className="text-white font-medium">{getStatusBadge(purchase.payment_status)}</span>
             </div>
+            {(purchase as any).payment_summary && (
+              <div 
+                className="flex justify-between items-center cursor-pointer hover:bg-slate-700/30 p-2 rounded transition-colors"
+                onClick={() => setShowPaymentHistoryModal(true)}
+              >
+                <span className="text-slate-400 flex items-center gap-2">
+                  <Eye className="w-4 h-4" />
+                  Payment History:
+                </span>
+                <span className="text-blue-400 font-medium flex items-center gap-2">
+                  {(purchase as any).payment_summary.payment_count} payment{(purchase as any).payment_summary.payment_count !== 1 ? 's' : ''}
+                  <Eye className="w-4 h-4" />
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-400">Payment Mode:</span>
               <span className="text-white font-medium">{getPaymentModeText(purchase.payment_mode)}</span>
@@ -519,6 +538,16 @@ export default function PurchaseView() {
                 }
               }}
             />
+            {(purchase as any).payment_summary && (purchase as any).payment_summary.remaining_amount > 0 && (
+              <button
+                onClick={() => setShowQuickPaymentModal(true)}
+                className="btn-secondary flex items-center gap-2"
+                title="Mark as Paid"
+              >
+                <DollarSign className="w-4 h-4" />
+                Mark as Paid
+              </button>
+            )}
             {purchase.return_status?.is_fully_returned ? (
               <button
                 disabled
@@ -612,6 +641,7 @@ export default function PurchaseView() {
             </table>
           </div>
         </div>
+
 
         {/* Purchase Returns Section */}
         {purchase.returns && purchase.returns.length > 0 && (
@@ -759,6 +789,30 @@ export default function PurchaseView() {
           </div>
         )}
       </div>
+
+      {/* Modals */}
+      {(purchase as any).payment_summary && (
+        <>
+          <PaymentHistoryModal
+            isOpen={showPaymentHistoryModal}
+            onClose={() => setShowPaymentHistoryModal(false)}
+            summary={(purchase as any).payment_summary}
+            history={(purchase as any).payment_history || []}
+          />
+          <QuickPaymentModal
+            isOpen={showQuickPaymentModal}
+            onClose={() => setShowQuickPaymentModal(false)}
+            onSuccess={() => {
+              fetchPurchase();
+              setShowQuickPaymentModal(false);
+            }}
+            purchaseId={purchase.id}
+            vendorId={purchase.vendor_id || 0}
+            vendorName={purchase.vendor?.vendor_name || ''}
+            outstandingAmount={(purchase as any).payment_summary.remaining_amount}
+          />
+        </>
+      )}
     </div>
   );
 }
