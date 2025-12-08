@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
+import { ledgerService } from '../../../lib/ledger-service'
 
 async function handler(
   req: NextApiRequest,
@@ -12,8 +13,6 @@ async function handler(
       return handleGet(req, res)
     case 'POST':
       return handlePost(req, res)
-    case 'PUT':
-      return handlePut(req, res)
     default:
       return res.status(405).json({ message: 'Method not allowed' })
   }
@@ -477,7 +476,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    if (!validPaymentModes.includes(payment_mode)) {
+    // ✅ Payment mode is required when payment_status = 1 (Paid)
+    if (payment_status === 1 && (payment_mode === undefined || payment_mode === null)) {
+      return res.status(400).json({
+        message: 'Payment mode (Cash/Bank) is required for paid purchases'
+      })
+    }
+
+    if (payment_mode !== undefined && payment_mode !== null && !validPaymentModes.includes(payment_mode)) {
       return res.status(400).json({
         message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
       })
@@ -539,7 +545,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           // taxrate: tax_rate || 0,
           invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
           updated_at: new Date().toISOString().split('T')[0], // Current date
-          payment_status: payment_status,
+          payment_status: payment_status || 0, // Default to 0 (unpaid) if not provided
           payment_mode: payment_mode,
           fy: currentFy, // Use FY from invoice counter
           transport: transport_name || '',
@@ -667,6 +673,35 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       timeout: 30000 // 30 second timeout for large purchases
     });
 
+    // Create ledger entry for purchase (outside transaction)
+    await ledgerService.createPurchaseEntry({
+      id: purchase.id,
+      vendor_id: parseInt(vendor_id),
+      invoice_no: purchase.invoice_no,
+      invoice_date: Math.floor(invoiceDate),
+      total: calculatedGrandTotal,
+      fy: currentFy
+    })
+
+    // If paid immediately, create payment ledger entry
+    if (payment_status === 1) {
+      await ledgerService.createEntry({
+        vendor_id: parseInt(vendor_id),
+        transaction_date: Math.floor(invoiceDate),
+        transaction_type: 'PAYMENT',
+        reference_type: 'purchase',
+        reference_id: purchase.id,
+        reference_no: purchase.invoice_no.toString(),
+        debit: 0,
+        credit: calculatedGrandTotal,
+        payment_mode: payment_mode,
+        payment_status: 1,
+        payment_date: Math.floor(invoiceDate),
+        notes: `Payment made for purchase ${purchase.invoice_no}`,
+        fy: currentFy
+      })
+    }
+
     res.status(201).json({
       message: 'Purchase created successfully',
       purchase: {
@@ -696,355 +731,6 @@ function getPaymentModeId(paymentMode: string): number {
   return paymentModes[paymentMode] || 1
 }
 
-async function handlePut(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const { id } = req.query
-    if (!id) {
-      return res.status(400).json({ message: 'Purchase ID is required' })
-    }
 
-    const {
-      // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
-      invoice_number,           // ✓ Purchase.invoice_no
-      bill_reference,           // ✓ Purchase.bill_reference
-      bill_reference_date,      // ✓ Purchase.bill_reference_date
-      staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
-      date,                     // ✓ Purchase.invoice_date
-
-      // ===== VENDOR RELATIONSHIP (ONLY FK STORED - NO VENDOR MANAGEMENT HERE) =====
-      vendor_id,                // ✓ Purchase.vendor_id (FK to vendor_details)
-
-      // ===== TRANSPORT FIELDS (ALL STORED) =====
-      transport_name,           // ✓ Purchase.transport_name
-      vehicle_number,           // ✓ Purchase.vehicle_number
-      transport_cost,           // ✓ Purchase.freight
-
-      // ===== ITEMS AND CALCULATIONS (ALL STORED) =====
-      items,                    // ✓ PurchaseItems table (multiple records)
-      descriptions,             // ✓ Purchase.descriptions
-      packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
-      packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
-      packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
-      // tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
-      // basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
-      total_cgst,               // ✓ Purchase.total_cgst
-      total_sgst,               // ✓ Purchase.total_sgst
-      total_igst,               // ✓ Purchase.total_igst
-      notes,                    // ✓ Purchase.notes
-      total_tax,                // ✓ Purchase.total_tax
-      payment_status,           // ✓ Purchase.status
-      payment_mode,             // ✓ Purchase.payment_mode
-      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
-      // grand_total,              // ❌ NOT STORED (calculated field)
-
-      // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-      // bill,                     // ❌ Purchase.bill - @deprecated legacy field, unclear purpose, no UI element
-      // tax,                      // ❌ Purchase.tax - @deprecated legacy field, unclear purpose, no UI element
-    } = req.body
-
-
-
-    // ===== VALIDATION =====
-    if (!invoice_number || vendor_id === undefined || vendor_id === null) {
-      return res.status(400).json({
-        message: 'Missing required fields: invoice_number or vendor_id'
-      })
-    }
-
-    // ===== VALIDATE VENDOR EXISTS =====
-    let existingVendor = null;
-    if (parseInt(vendor_id) !== 0) {
-      existingVendor = await prisma.vendor_details.findUnique({
-        where: { id: parseInt(vendor_id) }
-      })
-
-      if (!existingVendor) {
-        return res.status(400).json({
-          message: 'Invalid vendor selected - vendor does not exist'
-        })
-      }
-    }
-
-    // ===== VALIDATE PURCHASE EXISTS =====
-    const existingPurchase = await prisma.purchase.findUnique({
-      where: { id: parseInt(id as string) }
-    })
-
-    if (!existingPurchase) {
-      return res.status(404).json({
-        message: 'Purchase not found'
-      })
-    }
-
-    // Get current financial year
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
-
-    // Convert date to Unix timestamp
-    const invoiceDate = new Date(date).getTime() / 1000
-
-    // Calculate totals
-    const itemsTotal = items ? items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0) : 0
-    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
-
-    // Start transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Update purchase record (invoice_number stays the same)
-      const purchase = await tx.purchase.update({
-        where: { id: parseInt(id as string) },
-        data: {
-          bill_reference: bill_reference, // Keep bill reference separate from vendor name
-          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
-          staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
-          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK
-          items_total: itemsTotal,
-          freight: transport_cost || 0,
-          total_taxable_value: itemsTotal,
-          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-          // taxrate: tax_rate || 0,
-          total_cgst: total_cgst || 0,
-          total_sgst: total_sgst || 0,
-          total_igst: total_igst || 0,
-          total_tax: total_tax || 0,
-          total: calculatedGrandTotal,
-          notes: notes || '',
-          descriptions: descriptions,
-          packing_forwarding_qty: packing_forwarding_qty || 0,
-          packing_forwarding_rate: packing_forwarding_rate || 0,
-          packing_forwarding_total: packing_forwarding_total || 0,
-          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-          // basic_value: basic_value || 0,
-          // bill: bill,
-          // tax: tax,
-          invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
-          updated_at: new Date().toISOString().split('T')[0], // Current date
-          payment_status: payment_status || 0,  // Ensure we set a valid default if null
-          payment_mode: payment_mode || 1,      // Ensure we set a valid default if null
-          fy: financialYear,
-          transport: transport_name || '',
-          transport_name: transport_name,
-          vehicle_number: vehicle_number
-        }
-      })
-
-      // ===== UPDATE OR CREATE BILL_TO RECORD =====
-      // Update bill_to record for inline editing, or create if it doesn't exist
-      // ALWAYS save the data from req.body - this represents the vendor details for THIS specific purchase
-      await tx.bill_to.upsert({
-        where: { invoice_no: existingPurchase.invoice_no },
-        update: {
-          vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
-          contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
-          email: req.body.email_id ?? existingVendor?.email ?? '',
-          address: req.body.address ?? existingVendor?.address ?? '',
-          address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
-          city: req.body.city ?? existingVendor?.city ?? '',
-          state: req.body.state ?? existingVendor?.state ?? '',
-          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
-          gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
-          pin_code: req.body.pin_code ?? ''
-        },
-        create: {
-          invoice_no: existingPurchase.invoice_no,
-          vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? 'Other',
-          contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
-          email: req.body.email_id ?? existingVendor?.email ?? '',
-          address: req.body.address ?? existingVendor?.address ?? '',
-          address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
-          city: req.body.city ?? existingVendor?.city ?? '',
-          state: req.body.state ?? existingVendor?.state ?? '',
-          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
-          gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
-          pin_code: req.body.pin_code ?? ''
-        }
-      });
-      // Handle item-level updates using product_id matching
-      if (items) {
-        // Get existing purchase items for comparison
-        const existingItems = await tx.purchaseitems.findMany({
-          where: { invoice_no: purchase.invoice_no }
-        })
-
-        // Create maps for efficient lookup using product_id
-        const existingItemsMap = new Map<number, any>()
-        const newItemsMap = new Map<number, any>()
-
-        existingItems.forEach(item => {
-          existingItemsMap.set(item.product_id, {
-            id: item.id,
-            qty: item.qty || 0,
-            item: item
-          })
-        })
-
-        items.forEach(item => {
-          newItemsMap.set(parseInt(item.product_id), {
-            qty: item.qty || 0,
-            category_id: item.category_id,
-            subcategory_id: item.subcategory_id,
-            company_id: item.company_id,
-            model_id: item.model_id,
-            car_model: item.car_model || '',
-            part: item.part,
-            rate: item.rate,
-            total: item.total,
-            product_id: parseInt(item.product_id),
-            item: item
-          })
-        })
-
-        // Process deletions: items that exist in DB but not in new list
-        for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
-          if (!newItemsMap.has(productId)) {
-            // Item was removed - decrease stock (remove purchased items)
-            const validatedExistingQty = Number(existingData.qty) || 0;
-            if (validatedExistingQty > 0) {
-              await tx.product.update({
-                where: { id: productId },
-                data: {
-                  stock: {
-                    decrement: validatedExistingQty
-                  }
-                }
-              })
-            }
-            // Delete the item
-            await tx.purchaseitems.delete({
-              where: { id: existingData.id }
-            })
-          }
-        }
-
-        // Process additions and updates
-        for (const [productId, newData] of Array.from(newItemsMap.entries())) {
-          const existingData = existingItemsMap.get(productId)
-
-          if (!existingData) {
-            // ===== NEW ITEM: Create it and increase stock =====
-            // ===== VALIDATION: Ensure product exists =====
-            const product = await tx.product.findUnique({
-              where: { id: productId }
-            });
-
-            if (!product) {
-              throw new Error(`Product with ID ${productId} not found`);
-            }
-
-            // Use model_id directly from frontend (already looked up)
-            const modelId = newData.model_id ? parseInt(newData.model_id) : null;
-
-            await tx.purchaseitems.create({
-              data: {
-                invoice_no: purchase.invoice_no,
-                product_id: productId,
-                name_of_product: product.product_name || '',
-                category_id: product.product_category_id || null,
-                subcategory_id: product.product_subcategory_id || null,
-                model_id: modelId,
-                company_id: product.company_id || null,
-                car_model: newData.car_model || '',
-                vendor_id: parseInt(vendor_id),
-                hsn: product.hsn || '',
-                part: newData.part || '',
-                qty: newData.qty,
-                rate: newData.rate,
-                subtotal: newData.total,
-                gst_percentage: newData.gst_percentage || 0,
-                cgst: newData.cgst || 0,
-                sgst: newData.sgst || 0,
-                igst: newData.igst || 0,
-                tax: newData.tax || 0,
-                fy: financialYear,
-                invoice_date: invoiceDate
-              }
-            });
-
-            // Validate and convert quantity to number to prevent null/undefined/0 issues
-            const validatedNewQty = Number(newData.qty) || 0;
-
-            // ===== CRITICAL: Update product stock and purchase tracking =====
-            await tx.product.update({
-              where: { id: productId },
-              data: {
-                stock: {
-                  increment: validatedNewQty
-                },
-                // ===== RATE MANAGEMENT =====
-                // Update latest purchase rate and timestamp when purchase item is added/updated
-                latest_purchase_rate: newData.rate,
-                last_purchase_date: invoiceDate
-              }
-            });
-          } else {
-            // ===== EXISTING ITEM: Check if quantity/rate changed =====
-            const validatedNewQty = Number(newData.qty) || 0;
-            const validatedExistingQty = Number(existingData.qty) || 0;
-            const qtyDifference = validatedNewQty - validatedExistingQty;
-            const rateChanged = newData.rate !== existingData.item.rate;
-
-            if (Math.abs(qtyDifference) > 0.001 || rateChanged) { // Allow for small floating point differences
-              // Update quantity and adjust stock
-              await tx.purchaseitems.update({
-                where: { id: existingData.id },
-                data: {
-                  qty: newData.qty,
-                  rate: newData.rate,
-                  subtotal: newData.total
-                }
-              });
-
-              // Adjust stock based on quantity difference
-              if (Math.abs(qtyDifference) > 0.001) {
-                await tx.product.update({
-                  where: { id: productId },
-                  data: {
-                    stock: {
-                      increment: qtyDifference // Add the difference (can be negative)
-                    }
-                  }
-                });
-              }
-
-              // Update purchase rate if it changed
-              if (rateChanged) {
-                await tx.product.update({
-                  where: { id: productId },
-                  data: {
-                    latest_purchase_rate: newData.rate,
-                    last_purchase_date: invoiceDate
-                  }
-                });
-              }
-            }
-          }
-        }
-
-      }
-
-      return purchase
-    }, {
-      timeout: 30000 // 30 second timeout for large purchases
-    })
-
-    res.status(200).json({
-      message: 'Purchase updated successfully',
-      purchase: {
-        id: result.id,
-        invoice_no: result.invoice_no,
-        total: result.total,
-        vendor_name: existingVendor.vendor_name
-      }
-    })
-
-  } catch (error) {
-    console.error('Purchase update error:', error)
-    res.status(500).json({
-      message: 'Failed to update purchase',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-}
 
 export default withObservability(handler)

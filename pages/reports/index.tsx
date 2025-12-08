@@ -80,6 +80,30 @@ export default function Reports() {
             <button className="btn-primary w-full">View Performance Reports</button>
           </div>
         </div>
+
+        {/* Vendor Ledger Report */}
+        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer" onClick={() => window.location.href = '/reports/vendor-ledger'}>
+          <div className="text-center">
+            <span className="text-4xl mb-3 block">📊</span>
+            <h3 className="text-lg font-semibold text-white mb-2">Vendor Ledger</h3>
+            <p className="text-slate-400 text-sm mb-4">
+              Outstanding balances and debit notes tracking
+            </p>
+            <button className="btn-primary w-full">View Vendor Ledger</button>
+          </div>
+        </div>
+
+        {/* Debit Notes Report */}
+        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer" onClick={() => window.location.href = '/reports/debit-notes'}>
+          <div className="text-center">
+            <span className="text-4xl mb-3 block">📝</span>
+            <h3 className="text-lg font-semibold text-white mb-2">Debit Notes Report</h3>
+            <p className="text-slate-400 text-sm mb-4">
+              Vendor-wise debit note analysis and tracking
+            </p>
+            <button className="btn-primary w-full">View Debit Notes</button>
+          </div>
+        </div>
       </div>
 
       {/* Quick Report Actions */}

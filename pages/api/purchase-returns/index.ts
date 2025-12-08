@@ -146,6 +146,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             status: true,
             notes: true,
             fy: true,
+            payment_status: true,
+            payment_mode: true,
+            payment_date: true,
+            refund_amount: true,
             created_at: true,
             updated_at: true
           }

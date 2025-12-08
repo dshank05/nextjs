@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { ledgerService } from '../../../lib/ledger-service'
 
 export default async function handler(
   req: NextApiRequest,
@@ -667,6 +668,172 @@ export default async function handler(
         }, {
           timeout: 15000 // 15 seconds
         })
+
+        // ===== LEDGER HANDLING WITH REVERSAL ENTRIES =====
+        // Handle all payment status and amount changes using reversal entries (never delete)
+        const oldPaymentStatus = existingPurchase.payment_status
+        const newPaymentStatus = parsedPaymentStatus
+        const oldTotal = existingPurchase.total
+        const newTotal = result.total
+        const timestamp = new Date().toLocaleString('en-IN')
+
+        try {
+          // Case 1: Changed from PAID to UNPAID (unmarking)
+          if (oldPaymentStatus === 1 && newPaymentStatus === 0) {
+            // FIRST: Create PAYMENT_REVERSAL to reverse the payment
+            const paymentEntry = await prisma.vendor_ledger.findFirst({
+              where: {
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                transaction_type: 'PAYMENT'
+              },
+              orderBy: { id: 'desc' }
+            })
+            
+            if (paymentEntry) {
+              // Create REVERSAL entry (don't delete original!)
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PAYMENT_REVERSAL',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: paymentEntry.credit,
+                credit: 0,
+                payment_mode: existingPurchase.payment_mode,
+                payment_status: 0,
+                notes: `Payment reversed for purchase ${existingPurchase.invoice_no} - unmarked as unpaid on ${timestamp} for editing`,
+                fy: existingPurchase.fy
+              })
+            }
+            
+            // SECOND: Handle amount change if it occurred when unmarking
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (after unmarking)`,
+                fy: existingPurchase.fy
+              })
+            }
+          }
+
+          // Case 2: Changed from UNPAID to PAID (marking as paid)
+          if (oldPaymentStatus === 0 && newPaymentStatus === 1) {
+            // FIRST: Handle amount change if it occurred before marking as paid
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (before marking as paid)`,
+                fy: existingPurchase.fy
+              })
+            }
+            
+            // SECOND: Check if this is a re-mark (was previously paid and reversed)
+            const hasReversal = await prisma.vendor_ledger.findFirst({
+              where: {
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                transaction_type: 'PAYMENT_REVERSAL'
+              }
+            })
+            
+            const notes = hasReversal
+              ? `Payment made for purchase ${existingPurchase.invoice_no} (re-marked as paid after editing on ${timestamp})`
+              : `Payment made for purchase ${existingPurchase.invoice_no}`
+            
+            // THIRD: Create new PAYMENT entry with the new total
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: newTotal,
+              payment_mode: parsedPaymentMode,
+              payment_status: 1,
+              payment_date: existingPurchase.invoice_date,
+              notes: notes,
+              fy: existingPurchase.fy
+            })
+          }
+
+          // Case 3: Stayed UNPAID but amount changed
+          if (oldPaymentStatus === 0 && newPaymentStatus === 0 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create ADJUSTMENT entry for the difference
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference > 0 ? difference : 0,
+              credit: difference < 0 ? Math.abs(difference) : 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp}`,
+              fy: existingPurchase.fy
+            })
+          }
+
+          // Case 4: Stayed PAID but amount changed
+          if (oldPaymentStatus === 1 && newPaymentStatus === 1 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference > 0 ? difference : 0,
+              credit: difference < 0 ? Math.abs(difference) : 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (while paid)`,
+              fy: existingPurchase.fy
+            })
+            
+            // Create PAYMENT_ADJUSTMENT entry
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference < 0 ? Math.abs(difference) : 0,
+              credit: difference > 0 ? difference : 0,
+              payment_mode: existingPurchase.payment_mode,
+              payment_status: 1,
+              notes: `Payment adjustment for purchase ${existingPurchase.invoice_no} - ${difference > 0 ? 'additional' : 'refund'} ₹${Math.abs(difference)} on ${timestamp}`,
+              fy: existingPurchase.fy
+            })
+          }
+        } catch (error) {
+          console.error('Purchase Update - Failed to create ledger entries:', error);
+        }
 
         res.status(200).json({
           status: "success",

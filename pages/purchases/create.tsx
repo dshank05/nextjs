@@ -216,8 +216,8 @@ export default function PurchaseCreate() {
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
-  // Tax is now always disabled
-  const enableTax = false;
+  // Tax is now enabled for purchase calculations
+  const enableTax = true;
 
   // State for barcode scanning toggle
   const [enableBarcodeScanning, setEnableBarcodeScanning] = useState(false);
@@ -242,6 +242,9 @@ export default function PurchaseCreate() {
 
   // State for states data
   const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
+  
+  // Store original data for change detection in edit mode
+  const [originalData, setOriginalData] = useState<any>(null);
 
   // Auto-calculate total when qty, rate, or gst changes (only if total is empty)
   useEffect(() => {
@@ -847,7 +850,7 @@ export default function PurchaseCreate() {
       notes: purchase.notes || '',
       total_tax: purchase.total_tax?.toString() || '0',
       payment_status: purchase.payment_status || purchase.status || 0,
-      payment_mode: purchase.payment_mode || 1,
+      payment_mode: purchase.payment_mode !== undefined ? purchase.payment_mode : 0, // Default to Cash (0)
     });
 
     // Override with bill_to data if available (for inline editing)
@@ -883,51 +886,73 @@ export default function PurchaseCreate() {
     }
 
         // Convert purchase items to local format
-    if (purchase.items && purchase.items.length > 0) {
-      const convertedItems: PurchaseItem[] = purchase.items.map((item: any, index: number) => {
-        const qty = item.qty || 1;
-        const rate = item.rate || 0;
+    const convertedItems: PurchaseItem[] = purchase.items && purchase.items.length > 0
+      ? purchase.items.map((item: any, index: number) => {
+          const qty = item.qty || 1;
+          const rate = item.rate || 0;
 
-        // Use existing tax breakdown from database if available, otherwise calculate
-        const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
-        const total = item.total || item.subtotal || (qty * rate + tax);
+          // Use existing tax breakdown from database if available, otherwise calculate
+          const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
+          const total = item.total || item.subtotal || (qty * rate + tax);
 
-        // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
-        const cgst = item.cgst || 0;
-        const sgst = item.sgst || 0;
-        const igst = item.igst || 0;
+          // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
+          const cgst = item.cgst || 0;
+          const sgst = item.sgst || 0;
+          const igst = item.igst || 0;
 
-        return {
-          id: (index + 1).toString(),
-          product_id: item.product_id || item.category_id || 1,
-          product_name: item.product_name || item.name_of_product || '',
-          car_model: item.car_model || '',
-          category: item.category_id?.toString() || '',
-          sub_category: item.subcategory_id?.toString() || '',
-          company: item.company_id?.toString() || '',
-          part_number: item.part_number || item.part || '',
-          qty: qty,
-          rate: rate,
-          gst_percentage: item.gst_percentage || item.gst_rate || 0,
-          tax: tax,
-          cgst: cgst,
-          sgst: sgst,
-          igst: igst,
-          total: total,
-          // Include return status fields
-          original_qty: item.original_qty,
-          returned_qty: item.returned_qty,
-          available_qty: item.available_qty,
-          is_fully_returned: item.is_fully_returned,
-          return_history: item.return_history
-        };
-      });
+          return {
+            id: (index + 1).toString(),
+            product_id: item.product_id || item.category_id || 1,
+            product_name: item.product_name || item.name_of_product || '',
+            car_model: item.car_model || '',
+            category: item.category_id?.toString() || '',
+            sub_category: item.subcategory_id?.toString() || '',
+            company: item.company_id?.toString() || '',
+            part_number: item.part_number || item.part || '',
+            qty: qty,
+            rate: rate,
+            gst_percentage: item.gst_percentage || item.gst_rate || 0,
+            tax: tax,
+            cgst: cgst,
+            sgst: sgst,
+            igst: igst,
+            total: total,
+            // Include return status fields
+            original_qty: item.original_qty,
+            returned_qty: item.returned_qty,
+            available_qty: item.available_qty,
+            is_fully_returned: item.is_fully_returned,
+            return_history: item.return_history
+          };
+        })
+      : [];
 
+    if (convertedItems.length > 0) {
       setSelectedProducts(convertedItems);
     }
 
     // Mark initial data loading as complete
     setIsInitialDataLoaded(true);
+    
+    // Store original data for change detection
+    setOriginalData({
+      formData: {
+        bill_reference: purchase.bill_reference || '',
+        staff_id: purchase.staff_id || null,
+        transport_name: purchase.transport_name || purchase.transport || '',
+        vehicle_number: purchase.vehicle_number || '',
+        transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
+        descriptions: purchase.descriptions || '',
+        packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
+        packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
+        packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
+        notes: purchase.notes || '',
+        payment_status: purchase.payment_status || purchase.status || 0,
+        payment_mode: purchase.payment_mode !== undefined ? purchase.payment_mode : 0,
+      },
+      items: convertedItems,
+      vendor_id: purchase.vendor_id
+    });
   };
 
   const fetchPurchaseForEdit = async (purchaseId: number) => {
@@ -984,7 +1009,7 @@ export default function PurchaseCreate() {
           notes: purchase.notes || '',
           total_tax: purchase.total_tax?.toString() || '0',
           payment_status: purchase.payment_status || purchase.status || 0,
-          payment_mode: purchase.payment_mode || 1,
+          payment_mode: purchase.payment_mode !== undefined ? purchase.payment_mode : 0, // Default to Cash (0)
         });
 
         // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
@@ -1355,6 +1380,43 @@ export default function PurchaseCreate() {
 
     return subtotal + packingTotal + totalTax;
   }, [subtotal, totalTax, formData.packing_forwarding_total]);
+
+  // Check if data has changed in edit mode
+  const hasChanges = useMemo(() => {
+    if (!isEditMode || !originalData) return true; // Always allow in create mode
+
+    // Compare form fields
+    const formFieldsChanged = 
+      formData.bill_reference !== originalData.formData.bill_reference ||
+      formData.staff_id !== originalData.formData.staff_id ||
+      formData.transport_name !== originalData.formData.transport_name ||
+      formData.vehicle_number !== originalData.formData.vehicle_number ||
+      formData.transport_cost !== originalData.formData.transport_cost ||
+      formData.descriptions !== originalData.formData.descriptions ||
+      formData.packing_forwarding_qty !== originalData.formData.packing_forwarding_qty ||
+      formData.packing_forwarding_rate !== originalData.formData.packing_forwarding_rate ||
+      formData.packing_forwarding_total !== originalData.formData.packing_forwarding_total ||
+      formData.notes !== originalData.formData.notes ||
+      formData.payment_status !== originalData.formData.payment_status ||
+      formData.payment_mode !== originalData.formData.payment_mode;
+
+    // Compare vendor
+    const vendorChanged = vendorIdToSave !== originalData.vendor_id;
+
+    // Compare items (check length and content)
+    const itemsChanged = 
+      selectedProducts.length !== originalData.items.length ||
+      selectedProducts.some((item, index) => {
+        const origItem = originalData.items[index];
+        return !origItem || 
+          item.product_id !== origItem.product_id ||
+          item.qty !== origItem.qty ||
+          item.rate !== origItem.rate ||
+          item.gst_percentage !== origItem.gst_percentage;
+      });
+
+    return formFieldsChanged || vendorChanged || itemsChanged;
+  }, [isEditMode, originalData, formData, vendorIdToSave, selectedProducts]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -2317,10 +2379,15 @@ export default function PurchaseCreate() {
                             const newTotal = e.target.value;
                             const qty = parseFloat(templateRow.qty) || 0;
                             const enteredTotal = parseFloat(newTotal) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
                             if (qty > 0 && enteredTotal > 0) {
-                              // Calculate rate = total / qty
-                              const rate = enteredTotal / qty;
+                              // Calculate rate from total considering tax
+                              // total = (qty × rate) + tax
+                              // total = (qty × rate) + ((qty × rate) × gstPercent / 100)
+                              // total = (qty × rate) × (1 + gstPercent / 100)
+                              // rate = total / (qty × (1 + gstPercent / 100))
+                              const rate = enteredTotal / (qty * (1 + gstPercent / 100));
                               setTemplateRow(prev => ({
                                 ...prev,
                                 total: newTotal,
@@ -3276,8 +3343,9 @@ export default function PurchaseCreate() {
               </button>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || (isEditMode && !hasChanges)}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isEditMode && !hasChanges ? "No changes to save" : ""}
               >
                 {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Purchase' : 'Create Purchase')}
               </button>

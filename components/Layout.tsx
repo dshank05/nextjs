@@ -104,6 +104,7 @@ const Layout = ({ children }: LayoutProps) => {
       name: 'REPORTS',
       icon: '📊',
       subpages: [
+        { name: 'VENDOR LEDGER', href: '/reports/vendor-ledger' },
         { name: 'MINIMUM STOCK', href: '/reports/minimumstock' },
         { name: 'SALE', href: '/reports/sale' },
         { name: 'SALE X', href: '/reports/salex' },
@@ -111,6 +112,7 @@ const Layout = ({ children }: LayoutProps) => {
         // { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
         // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
+        { name: 'DEBIT NOTES', href: '/reports/debit-notes' },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'OPENING / CLOSING STOCK', href: '/reports/openingclosing' },
         { name: 'MECHANIC SALE', href: '/reports/mechanic' },

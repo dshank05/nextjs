@@ -720,30 +720,39 @@ model sale_return_items {
 }
 
 model purchase_returns {
-  id             Int                     @id @default(autoincrement())
-  vendor_id      Int?                    // Vendor-based returns (nullable for existing data)
-  purchase_id    Int?                    // Nullable for vendor-based returns
-  return_date    Int
-  total_amount   Float
-  total_tax      Float
-  status         String                  @default("Completed") @db.VarChar(20)
-  notes          String?                 @db.Text
-  fy             Int
-  payment_status Int?                    @default(0) // 0=Unpaid/Pending Refund, 1=Paid/Refunded
-  payment_mode   Int?                    @default(1) // 0=Cash, 1=Bank
-  payment_date   Int?                    // Unix timestamp when refund received
-  refund_amount  Float?                  // Total refund amount
-  created_at     DateTime                @default(now())
-  updated_at     DateTime                @updatedAt
-  items          purchase_return_items[]
-  vendor         vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
-  purchase       Purchase?               @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
+  id                         Int                     @id @default(autoincrement())
+  debit_note_no              String?                 @db.VarChar(50)
+  note_type                  String?                 @default("DEBIT") @db.VarChar(20)
+  vendor_id                  Int?                    // Vendor-based returns (nullable for existing data)
+  purchase_id                Int?                    // Nullable for vendor-based returns
+  return_date                Int
+  total_amount               Float
+  total_tax                  Float
+  status                     String                  @default("Completed") @db.VarChar(20)
+  notes                      String?                 @db.Text
+  fy                         Int
+  payment_status             Int?                    @default(0) // 0=Unpaid/Pending Refund, 1=Paid/Refunded
+  payment_mode               Int?                    @default(1) // 0=Cash, 1=Bank
+  payment_date               Int?                    // Unix timestamp when refund received
+  refund_amount              Float?                  // Total refund amount
+  include_packing_forwarding Int?                    @default(0) @db.TinyInt
+  include_freight            Int?                    @default(0) @db.TinyInt
+  pf_calculation_method      Int?                    @default(3) @db.TinyInt
+  freight_calculation_method Int?                    @default(3) @db.TinyInt
+  packing_forwarding_amount  Decimal?                @default(0) @db.Decimal(10, 2)
+  freight_amount             Decimal?                @default(0) @db.Decimal(10, 2)
+  created_at                 DateTime                @default(now())
+  updated_at                 DateTime                @updatedAt
+  items                      purchase_return_items[]
+  vendor                     vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_returns_vendor_fkey")
+  purchase                   Purchase?               @relation(fields: [purchase_id], references: [id], map: "purchase_returns_purchase_fkey")
 
   @@index([vendor_id], map: "purchase_returns_vendor_fkey")
   @@index([purchase_id], map: "purchase_returns_purchase_fkey")
   @@index([status], map: "idx_purchase_returns_status")
   @@index([fy], map: "idx_purchase_returns_fy")
   @@index([payment_status], map: "idx_purchase_returns_payment_status")
+  @@index([debit_note_no], map: "idx_purchase_returns_debit_note")
   @@map("purchase_returns")
 }
 
@@ -809,4 +818,40 @@ model salex_return_items {
   @@index([invoice_itemx_id], map: "salex_return_items_invoice_itemx_fkey")
   @@index([return_reason_id], map: "salex_return_items_reason_fkey")
   @@map("salex_return_items")
+}
+
+model note_counters {
+  id          Int    @id @default(autoincrement())
+  note_type   String @db.VarChar(20)
+  fy          Int
+  last_number Int    @default(0)
+
+  @@unique([note_type, fy], map: "unique_note_type_fy")
+  @@map("note_counters")
+}
+
+model vendor_ledger {
+  id               Int      @id @default(autoincrement())
+  vendor_id        Int
+  transaction_date Int
+  transaction_type String   @db.VarChar(50)
+  reference_type   String?  @db.VarChar(50)
+  reference_id     Int?
+  reference_no     String?  @db.VarChar(100)
+  payment_mode     Int?
+  payment_status   Int?
+  payment_date     Int?
+  debit            Float    @default(0)
+  credit           Float    @default(0)
+  balance          Float
+  notes            String?  @db.Text
+  fy               Int
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([vendor_id, transaction_date], map: "idx_vendor_ledger_vendor_date")
+  @@index([transaction_type], map: "idx_vendor_ledger_type")
+  @@index([fy], map: "idx_vendor_ledger_fy")
+  @@index([reference_type, reference_id], map: "idx_vendor_ledger_reference")
+  @@map("vendor_ledger")
 }

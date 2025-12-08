@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { ledgerService } from '../../../lib/ledger-service'
 
 async function handler(
   req: NextApiRequest,
@@ -316,7 +317,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id } = req.query
-    const { return_date, notes, items } = req.body
+    const { return_date, notes, items, payment_status, payment_mode, payment_date } = req.body
 
     if (!id || Array.isArray(id)) {
       return res.status(400).json({ message: 'Valid return ID is required' })
@@ -325,6 +326,32 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const returnId = parseInt(id)
     if (isNaN(returnId)) {
       return res.status(400).json({ message: 'Invalid return ID format' })
+    }
+
+    // Get existing return before transaction to check payment status change
+    const existingReturn = await prisma.purchase_returns.findUnique({
+      where: { id: returnId },
+      select: {
+        payment_status: true,
+        debit_note_no: true,
+        vendor_id: true,
+        fy: true,
+        total_amount: true,
+        total_tax: true
+      }
+    })
+
+    if (!existingReturn) {
+      return res.status(404).json({ message: 'Return not found' })
+    }
+
+    // ✅ Block editing if refunded
+    if (existingReturn.payment_status === 1) {
+      return res.status(400).json({
+        message: 'Cannot edit a refunded return. The refund has already been processed.',
+        error_code: 'REFUNDED_RETURN_EDIT_BLOCKED',
+        suggestion: 'Create a new return if additional items need to be returned'
+      })
     }
 
     // Start transaction
@@ -444,6 +471,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             total_tax: totalTax,
             refund_amount: refundAmount,
             notes: notes || '',
+            payment_status: payment_status !== undefined ? parseInt(payment_status) : undefined,
+            payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : undefined,
+            payment_date: payment_date ? parseInt(payment_date) : undefined,
             updated_at: new Date()
           }
         }),
@@ -517,6 +547,44 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }, {
       timeout: 10000 // 10 second timeout for the transaction
     })
+
+    // ✅ FIX: Update DEBIT_NOTE ledger entry if amount changed (outside transaction)
+    const amountChanged = 
+      result.total_amount !== existingReturn.total_amount || 
+      result.total_tax !== existingReturn.total_tax
+
+    if (amountChanged) {
+      // Update the DEBIT_NOTE ledger entry with new amount
+      await ledgerService.updateDebitNoteEntry({
+        vendor_id: existingReturn.vendor_id,
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        new_total_amount: result.total_amount,
+        new_total_tax: result.total_tax,
+        fy: existingReturn.fy
+      })
+    }
+
+    // Create ledger entry if payment status changed from unpaid to paid (outside transaction)
+    if (existingReturn.payment_status === 0 && payment_status === 1) {
+      const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax)
+      
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_RECEIVED',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: finalRefundAmount,
+        credit: 0,
+        payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+        payment_status: 1,
+        payment_date: payment_date ? parseInt(payment_date) : null,
+        notes: `Refund received for ${existingReturn.debit_note_no}`,
+        fy: existingReturn.fy
+      })
+    }
 
     res.status(200).json({
       success: true,
