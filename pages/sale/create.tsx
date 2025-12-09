@@ -729,7 +729,7 @@ export default function InvoiceCreate() {
         products: matchingProducts.map(p => ({ id: p.id, name: p.product_name }))
       });
 
-      if (matchingProducts.length === 1) {
+      if (matchingProducts.length === 1 && (!selectedRowProduct || selectedRowProduct.id !== matchingProducts[0].id) && selectedProducts.length === 0) {
         console.log('🎯 AUTO-SELECTING PRODUCT:', matchingProducts[0].product_name);
         handleProductSelection(matchingProducts[0]);
       } else if (matchingProducts.length === 0) {
@@ -1685,17 +1685,15 @@ export default function InvoiceCreate() {
         invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoice.invoice_date (convert to UNIX timestamp)
         select_customer: parseInt(selectedCustomerId),              // Invoice.select_customer
 
-        // ===== MANUAL CUSTOMER DETAILS (For "Other") =====
-        ...(isOtherCustomerSelected && {
-          customer_name: formData.customer_name,
-          contact_number: formData.contact_number,
-          email_id: formData.email_id,
-          address: formData.address,
-          city: formData.city,
-          state: formData.state,
-          gst_number: formData.gst_number,
-          pin_code: formData.pin_code
-        }),
+        // ===== CUSTOMER DETAILS (Always included) =====
+        customer_name: isOtherCustomerSelected ? formData.customer_name : (selectedCustomer?.billing_name || ''),
+        contact_number: isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || ''),
+        email_id: isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || ''),
+        address: isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || ''),
+        city: isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || ''),
+        state: isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state?.toString() || ''),
+        gst_number: isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || ''),
+        pin_code: isOtherCustomerSelected ? formData.pin_code : '',
 
         // ===== CALCULATED TOTALS =====
         items_total: subtotal,                                       // Invoice.items_total

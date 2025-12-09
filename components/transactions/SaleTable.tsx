@@ -55,6 +55,7 @@ interface Sale {
   customer_vendor_name?: string;
   customer_vendor_address?: string;
   customer_vendor_gstin?: string;
+  packing_forwarding_total?: number;
 }
 
 interface Pagination {
@@ -84,9 +85,13 @@ interface SaleTableProps {
     statusFilter: string;
     dateFrom: string;
     dateTo: string;
-    amountMin: string;
-    amountMax: string;
     uidFilter: string;
+    billRef?: string;
+    items?: string;
+    total?: string;
+    taxAmount?: string;
+    pf?: string;
+    paymentMode?: string;
     sortBy?: string;
     sortOrder?: string;
   }) => void;
@@ -99,13 +104,11 @@ interface SaleTableProps {
     statusFilter: string;
     dateFrom: string;
     dateTo: string;
-    amountMin: string;
-    amountMax: string;
     uidFilter: string;
   };
 }
 
-type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status';
+type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'total_tax' | 'packing_forwarding_total' | 'payment_mode';
 type SortOrder = 'asc' | 'desc';
 
 export const SaleTable: React.FC<SaleTableProps> = ({
@@ -131,18 +134,22 @@ export const SaleTable: React.FC<SaleTableProps> = ({
   const [statusFilter, setStatusFilter] = useState(initialFilters?.statusFilter || 'all');
   const [dateFrom, setDateFrom] = useState(initialFilters?.dateFrom || '');
   const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '');
-  const [amountMin, setAmountMin] = useState(initialFilters?.amountMin || '');
-  const [amountMax, setAmountMax] = useState(initialFilters?.amountMax || '');
   const [uidFilter, setUidFilter] = useState(initialFilters?.uidFilter || '');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ customers: [] });
+
+  // Column-specific filter states
+  const [billRefFilter, setBillRefFilter] = useState('');
+  const [taxAmountFilter, setTaxAmountFilter] = useState('');
+  const [pfFilter, setPfFilter] = useState('');
+  const [paymentModeFilter, setPaymentModeFilter] = useState('');
 
   // UI states for dropdowns
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   // Sorting states
-  const [sortBy, setSortBy] = useState<SortField>('invoice_date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sortBy, setSortBy] = useState<SortField>('invoice_no');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   // Debounced search
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -159,8 +166,6 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       setStatusFilter(initialFilters.statusFilter || 'all');
       setDateFrom(initialFilters.dateFrom || '');
       setDateTo(initialFilters.dateTo || '');
-      setAmountMin(initialFilters.amountMin || '');
-      setAmountMax(initialFilters.amountMax || '');
       setUidFilter(initialFilters.uidFilter || '');
     }
   }, [initialFilters]);
@@ -189,9 +194,11 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         statusFilter,
         dateFrom,
         dateTo,
-        amountMin,
-        amountMax,
         uidFilter,
+        billRef: billRefFilter,
+        taxAmount: taxAmountFilter,
+        pf: pfFilter,
+        paymentMode: paymentModeFilter,
         sortBy,
         sortOrder
       });
@@ -205,9 +212,11 @@ export const SaleTable: React.FC<SaleTableProps> = ({
     setStatusFilter('all');
     setDateFrom('');
     setDateTo('');
-    setAmountMin('');
-    setAmountMax('');
     setUidFilter('');
+    setBillRefFilter('');
+    setTaxAmountFilter('');
+    setPfFilter('');
+    setPaymentModeFilter('');
   };
 
   // Filtered options
@@ -228,8 +237,6 @@ export const SaleTable: React.FC<SaleTableProps> = ({
         statusFilter,
         dateFrom,
         dateTo,
-        amountMin,
-        amountMax,
         uidFilter,
         sortBy: field,
         sortOrder: newSortOrder
@@ -329,8 +336,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-7 gap-4 mb-4">
-        {/* UID Filter */}
+      <div className="grid grid-cols-11 gap-4 mb-4">
+        {/* Invoice No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
           <ClearableInput
@@ -347,15 +354,47 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   statusFilter,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter: newValue,
+                  billRef: billRefFilter,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: paymentModeFilter,
                   sortBy,
                   sortOrder
                 });
               }
             }}
             min="1"
+          />
+        </div>
+
+        {/* Bill Ref Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Bill Ref</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter bill reference"
+            value={billRefFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setBillRefFilter(newValue);
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  billRef: newValue,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: paymentModeFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
           />
         </div>
 
@@ -381,15 +420,124 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   statusFilter,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter,
+                  billRef: billRefFilter,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: paymentModeFilter,
                   sortBy,
                   sortOrder
                 });
               }
             }}
             placeholder="Select customer..."
+          />
+        </div>
+
+        {/* Items Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Items</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter item count"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
+        {/* Total Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Total (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter total amount"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
+          />
+        </div>
+
+        {/* TAX AMOUNT Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">TAX AMOUNT (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter tax amount"
+            value={taxAmountFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setTaxAmountFilter(newValue);
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
+          />
+        </div>
+
+        {/* P/F Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">P/F (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter P/F amount"
+            value={pfFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setPfFilter(newValue);
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
           />
         </div>
 
@@ -409,15 +557,51 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   statusFilter,
                   dateFrom: start,
                   dateTo: end,
-                  amountMin,
-                  amountMax,
                   uidFilter,
+                  billRef: billRefFilter,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: paymentModeFilter,
                   sortBy,
                   sortOrder
                 });
               }
             }}
             placeholder="Select date range..."
+          />
+        </div>
+
+        {/* Payment Mode Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Modes' },
+              { id: '0', name: 'Cash' },
+              { id: '1', name: 'Bank' }
+            ]}
+            selectedValue={paymentModeFilter}
+            onSelectionChange={(value) => {
+              const newValue = value || '';
+              setPaymentModeFilter(newValue);
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  billRef: billRefFilter,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            placeholder="Select payment mode..."
           />
         </div>
 
@@ -449,73 +633,17 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   statusFilter: apiStatusValue,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter,
+                  billRef: billRefFilter,
+                  taxAmount: taxAmountFilter,
+                  pf: pfFilter,
+                  paymentMode: paymentModeFilter,
                   sortBy,
                   sortOrder
                 });
               }
             }}
             placeholder="Select status..."
-          />
-        </div>
-
-        {/* Amount Min */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="0"
-            value={amountMin}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMin(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin: newValue,
-                  amountMax,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
-          />
-        </div>
-
-        {/* Amount Max */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="No limit"
-            value={amountMax}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMax(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax: newValue,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
           />
         </div>
 
@@ -527,9 +655,11 @@ export const SaleTable: React.FC<SaleTableProps> = ({
               setStatusFilter('all');
               setDateFrom('');
               setDateTo('');
-              setAmountMin('');
-              setAmountMax('');
               setUidFilter('');
+              setBillRefFilter('');
+              setTaxAmountFilter('');
+              setPfFilter('');
+              setPaymentModeFilter('');
               // Apply cleared filters
               if (onApplyFilters) {
                 onApplyFilters({
@@ -537,8 +667,6 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   statusFilter: 'all',
                   dateFrom: '',
                   dateTo: '',
-                  amountMin: '',
-                  amountMax: '',
                   uidFilter: '',
                   sortBy,
                   sortOrder
@@ -574,18 +702,30 @@ export const SaleTable: React.FC<SaleTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_no')}>
                 Invoice No {getSortIcon('invoice_no')}
               </th>
-              <th>Bill Ref</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bill_reference')}>
+                Bill Ref {getSortIcon('bill_reference')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_name')}>
                 Customer {getSortIcon('customer_name')}
               </th>
-              <th>Items</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('item_count')}>
+                Items {getSortIcon('item_count')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
                 Total {getSortIcon('total')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_tax')}>
+                TAX AMOUNT {getSortIcon('total_tax')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('packing_forwarding_total')}>
+                P/F {getSortIcon('packing_forwarding_total')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_date')}>
                 Date {getSortIcon('invoice_date')}
               </th>
-              <th>Payment Mode</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_mode')}>
+                Payment Mode {getSortIcon('payment_mode')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
                 Status {getSortIcon('payment_status')}
               </th>
@@ -610,6 +750,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                   </div>
                 </td>
                 <td className="text-slate-300 font-semibold">₹{sale.total.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(sale.total_tax || 0).toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(sale.packing_forwarding_total || 0).toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(sale.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(sale.payment_mode)}</td>
                 <td>{getStatusBadge(sale.payment_status)}</td>

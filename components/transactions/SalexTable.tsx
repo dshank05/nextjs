@@ -55,6 +55,7 @@ interface Salex {
   customer_vendor_name?: string;
   customer_vendor_address?: string;
   customer_vendor_gstin?: string;
+  packing_forwarding_total?: number;
 }
 
 interface Pagination {
@@ -84,9 +85,14 @@ interface SalexTableProps {
     statusFilter: string;
     dateFrom: string;
     dateTo: string;
-    amountMin: string;
-    amountMax: string;
     uidFilter: string;
+    billRef?: string;
+    items?: string;
+    total?: string;
+    taxAmount?: string;
+    notes?: string;
+    pf?: string;
+    paymentMode?: string;
     sortBy?: string;
     sortOrder?: string;
   }) => void;
@@ -99,13 +105,11 @@ interface SalexTableProps {
     statusFilter: string;
     dateFrom: string;
     dateTo: string;
-    amountMin: string;
-    amountMax: string;
     uidFilter: string;
   };
 }
 
-type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status';
+type SortField = 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'total_tax' | 'packing_forwarding_total' | 'payment_mode' | 'notes';
 type SortOrder = 'asc' | 'desc';
 
 export const SalexTable: React.FC<SalexTableProps> = ({
@@ -131,18 +135,23 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   const [statusFilter, setStatusFilter] = useState(initialFilters?.statusFilter || 'all');
   const [dateFrom, setDateFrom] = useState(initialFilters?.dateFrom || '');
   const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '');
-  const [amountMin, setAmountMin] = useState(initialFilters?.amountMin || '');
-  const [amountMax, setAmountMax] = useState(initialFilters?.amountMax || '');
   const [uidFilter, setUidFilter] = useState(initialFilters?.uidFilter || '');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ customers: [] });
+
+  // Column-specific filter states
+  const [billRefFilter, setBillRefFilter] = useState('');
+  const [taxAmountFilter, setTaxAmountFilter] = useState('');
+  const [notesFilter, setNotesFilter] = useState('');
+  const [pfFilter, setPfFilter] = useState('');
+  const [paymentModeFilter, setPaymentModeFilter] = useState('');
 
   // UI states for dropdowns
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   // Sorting states
-  const [sortBy, setSortBy] = useState<SortField>('invoice_date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [sortBy, setSortBy] = useState<SortField>('invoice_no');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   // Debounced search
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
@@ -159,8 +168,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
       setStatusFilter(initialFilters.statusFilter || 'all');
       setDateFrom(initialFilters.dateFrom || '');
       setDateTo(initialFilters.dateTo || '');
-      setAmountMin(initialFilters.amountMin || '');
-      setAmountMax(initialFilters.amountMax || '');
       setUidFilter(initialFilters.uidFilter || '');
     }
   }, [initialFilters]);
@@ -189,9 +196,12 @@ export const SalexTable: React.FC<SalexTableProps> = ({
         statusFilter,
         dateFrom,
         dateTo,
-        amountMin,
-        amountMax,
         uidFilter,
+        billRef: billRefFilter,
+        taxAmount: taxAmountFilter,
+        notes: notesFilter,
+        pf: pfFilter,
+        paymentMode: paymentModeFilter,
         sortBy,
         sortOrder
       });
@@ -205,9 +215,12 @@ export const SalexTable: React.FC<SalexTableProps> = ({
     setStatusFilter('all');
     setDateFrom('');
     setDateTo('');
-    setAmountMin('');
-    setAmountMax('');
     setUidFilter('');
+    setBillRefFilter('');
+    setTaxAmountFilter('');
+    setNotesFilter('');
+    setPfFilter('');
+    setPaymentModeFilter('');
   };
 
   // Filtered options
@@ -228,8 +241,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
         statusFilter,
         dateFrom,
         dateTo,
-        amountMin,
-        amountMax,
         uidFilter,
         sortBy: field,
         sortOrder: newSortOrder
@@ -329,8 +340,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-7 gap-4 mb-4">
-        {/* UID Filter */}
+      <div className="grid grid-cols-12 gap-4 mb-4">
+        {/* Invoice No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
           <ClearableInput
@@ -347,8 +358,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   statusFilter,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter: newValue,
                   sortBy,
                   sortOrder
@@ -356,6 +365,30 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               }
             }}
             min="1"
+          />
+        </div>
+
+        {/* Bill Ref Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Bill Ref</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter bill reference"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
           />
         </div>
 
@@ -381,8 +414,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   statusFilter,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter,
                   sortBy,
                   sortOrder
@@ -390,6 +421,133 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               }
             }}
             placeholder="Select customer..."
+          />
+        </div>
+
+        {/* Items Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Items</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter item count"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
+        {/* Total Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Total (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter total amount"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
+          />
+        </div>
+
+        {/* TAX AMOUNT Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">TAX AMOUNT (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter tax amount"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
+          />
+        </div>
+
+        {/* NOTES Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Notes</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter notes"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+          />
+        </div>
+
+        {/* P/F Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">P/F (₹)</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter P/F amount"
+            value={''}
+            onChange={(e) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+            step="0.01"
           />
         </div>
 
@@ -409,8 +567,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   statusFilter,
                   dateFrom: start,
                   dateTo: end,
-                  amountMin,
-                  amountMax,
                   uidFilter,
                   sortBy,
                   sortOrder
@@ -418,6 +574,34 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               }
             }}
             placeholder="Select date range..."
+          />
+        </div>
+
+        {/* Payment Mode Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Modes' },
+              { id: '0', name: 'Cash' },
+              { id: '1', name: 'Bank' }
+            ]}
+            selectedValue={''}
+            onSelectionChange={(value) => {
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  customerFilter,
+                  statusFilter,
+                  dateFrom,
+                  dateTo,
+                  uidFilter,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            placeholder="Select payment mode..."
           />
         </div>
 
@@ -449,8 +633,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   statusFilter: apiStatusValue,
                   dateFrom,
                   dateTo,
-                  amountMin,
-                  amountMax,
                   uidFilter,
                   sortBy,
                   sortOrder
@@ -458,64 +640,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               }
             }}
             placeholder="Select status..."
-          />
-        </div>
-
-        {/* Amount Min */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="0"
-            value={amountMin}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMin(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin: newValue,
-                  amountMax,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
-          />
-        </div>
-
-        {/* Amount Max */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="No limit"
-            value={amountMax}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setAmountMax(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  amountMin,
-                  amountMax: newValue,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
           />
         </div>
 
@@ -527,9 +651,12 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               setStatusFilter('all');
               setDateFrom('');
               setDateTo('');
-              setAmountMin('');
-              setAmountMax('');
               setUidFilter('');
+              setBillRefFilter('');
+              setTaxAmountFilter('');
+              setNotesFilter('');
+              setPfFilter('');
+              setPaymentModeFilter('');
               // Apply cleared filters
               if (onApplyFilters) {
                 onApplyFilters({
@@ -537,8 +664,6 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   statusFilter: 'all',
                   dateFrom: '',
                   dateTo: '',
-                  amountMin: '',
-                  amountMax: '',
                   uidFilter: '',
                   sortBy,
                   sortOrder
@@ -574,18 +699,33 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_no')}>
                 Invoice No {getSortIcon('invoice_no')}
               </th>
-              <th>Bill Ref</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bill_reference')}>
+                Bill Ref {getSortIcon('bill_reference')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_name')}>
                 Customer {getSortIcon('customer_name')}
               </th>
-              <th>Items</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('item_count')}>
+                Items {getSortIcon('item_count')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
                 Total {getSortIcon('total')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_tax')}>
+                TAX AMOUNT {getSortIcon('total_tax')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('notes')}>
+                NOTES {getSortIcon('notes')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('packing_forwarding_total')}>
+                P/F {getSortIcon('packing_forwarding_total')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_date')}>
                 Date {getSortIcon('invoice_date')}
               </th>
-              <th>Payment Mode</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_mode')}>
+                Payment Mode {getSortIcon('payment_mode')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
                 Status {getSortIcon('payment_status')}
               </th>
@@ -610,6 +750,9 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                   </div>
                 </td>
                 <td className="text-slate-300 font-semibold">₹{salex.total.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(salex.total_tax || 0).toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">{salex.notes || 'N/A'}</td>
+                <td className="text-slate-300">₹{(salex.packing_forwarding_total || 0).toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(salex.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(salex.payment_mode)}</td>
                 <td>{getStatusBadge(salex.payment_status)}</td>

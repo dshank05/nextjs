@@ -130,6 +130,7 @@ interface InvoiceFormData {
   packing_forwarding_total: string;
   tax_rate: string;
   basic_value: string;
+  pin_code: string;
   // Removed GST fields for salex
   // total_cgst: string;
   // total_sgst: string;
@@ -372,6 +373,7 @@ export default function InvoiceCCreate() {
     packing_forwarding_total: '',
     tax_rate: '',
     basic_value: '',
+    pin_code: '',
     // Removed GST fields for salex
     // total_cgst: '',
     // total_sgst: '',
@@ -466,7 +468,8 @@ export default function InvoiceCCreate() {
           packing_forwarding_rate: invoiceData.packing_forwarding_rate ? invoiceData.packing_forwarding_rate.toString() : '0',
           packing_forwarding_total: invoiceData.packing_forwarding_total ? invoiceData.packing_forwarding_total.toString() : '0',
           tax_rate: '0', // Always 0 for salex
-          basic_value: invoiceData.basic_value || '0'
+          basic_value: invoiceData.basic_value || '0',
+          pin_code: ''
         });
 
         // Set customer data from billingDetails and select customer immediately
@@ -965,7 +968,8 @@ export default function InvoiceCCreate() {
           packing_forwarding_rate: invoice.packing_forwarding_rate ? invoice.packing_forwarding_rate.toString() : '0',
           packing_forwarding_total: invoice.packing_forwarding_total ? invoice.packing_forwarding_total.toString() : '0',
           tax_rate: '0', // Always 0 for salex
-          basic_value: invoice.basic_value || '0'
+          basic_value: invoice.basic_value || '0',
+          pin_code: ''
         };
 
         console.log('📝 SETTING API FORM DATA:', formDataToSet);
@@ -1327,6 +1331,16 @@ export default function InvoiceCCreate() {
         select_customer: parseInt(selectedCustomerId),
         staff_id: formData.staff_id,
         staff_details: staffList.find(e => e.id === formData?.staff_id?.toString())?.staff_name,
+
+        // ===== CUSTOMER DETAILS (Always included) =====
+        customer_name: isOtherCustomerSelected ? formData.customer_name : (selectedCustomer?.billing_name || ''),
+        contact_number: isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || ''),
+        email_id: isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || ''),
+        address: isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || ''),
+        city: isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || ''),
+        state: isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state?.toString() || ''),
+        gst_number: isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || ''),
+        pin_code: isOtherCustomerSelected ? formData.pin_code : '',
 
         // Invoice items
         invoiceItems: selectedProducts.map(item => ({

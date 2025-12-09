@@ -340,7 +340,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tx.bill_tosales.create({
           data: {
             invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
-            customer_id: customerId                       // BillToSales.customer_id (FK to customer_details)
+            customer_id: customerId,                      // BillToSales.customer_id (FK to customer_details)
+            billing_name: req.body.customer_name,         // BillToSales.billing_name (required)
+            contact_no: req.body.contact_number,          // BillToSales.contact_no
+            email: req.body.email_id,                     // BillToSales.email
+            billing_address: req.body.address,            // BillToSales.billing_address (required)
+            billing_city: req.body.city,                  // BillToSales.billing_city
+            billing_state: req.body.state,                // BillToSales.billing_state
+            billing_gstin: req.body.gst_number            // BillToSales.billing_gstin
           }
         }),
 
@@ -348,7 +355,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tx.shipto.create({
           data: {
             invoice_no: invoice.id,                        // shipto.invoice_no (FK to invoice)
-            customer_id: customerId,                       // shipto.customer_id (FK to customer_details)
+            shipping_name: req.body.useShippingAddress
+              ? shippingDetails?.user_name || req.body.customer_name
+              : req.body.customer_name,                    // shipto.shipping_name
+            shipping_address: req.body.useShippingAddress
+              ? shippingDetails?.address || req.body.address
+              : req.body.address,                          // shipto.shipping_address (required)
+            shipping_city: req.body.useShippingAddress
+              ? shippingDetails?.city || req.body.city
+              : req.body.city,                             // shipto.shipping_city
+            shipping_state: req.body.useShippingAddress
+              ? shippingDetails?.state || req.body.state
+              : req.body.state,                            // shipto.shipping_state
+            shipping_gstin: req.body.useShippingAddress
+              ? shippingDetails?.gstin || req.body.gst_number
+              : req.body.gst_number,                       // shipto.shipping_gstin
             shipping: !!shippingDetails                    // shipping flag: true if shipping to shipping address, false for billing
           }
         }),

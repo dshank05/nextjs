@@ -13,12 +13,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       endDate = '',
       fy = '',
       status = '',
-      amountMin = '',
-      amountMax = '',
       vendor = '',
-      uid = '', // NEW: Filter by salex ID
-      sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
-      sortOrder = 'desc' // NEW: Sort order (default: desc)
+      uid = '', // Filter by salex ID
+      billRef = '', // NEW: Filter by bill reference
+      items = '', // NEW: Filter by item count
+      taxAmount = '', // NEW: Filter by tax amount
+      pf = '', // NEW: Filter by packing/forwarding amount
+      paymentMode = '', // NEW: Filter by payment mode
+      sortBy = 'invoice_date', // Sort field (default: invoice_date)
+      sortOrder = 'desc' // Sort order (default: desc)
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -64,13 +67,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    if (amountMin && amountMin !== '') {
-      where.total = { gte: parseFloat(amountMin as string) }
+    // NEW: Filter by payment mode
+    if (paymentMode && paymentMode !== '') {
+      where.payment_mode = parseInt(paymentMode as string)
     }
 
-    if (amountMax && amountMax !== '') {
-      where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
+    // NEW: Filter by tax amount
+    if (taxAmount && taxAmount !== '') {
+      where.total_tax = { gte: parseFloat(taxAmount as string) }
     }
+
+    // NEW: Filter by packing/forwarding amount
+    if (pf && pf !== '') {
+      where.packing_forwarding_total = { gte: parseFloat(pf as string) }
+    }
+
+    // NEW: Filter by item count - will be handled after fetching data since it's not stored on invoice table
+    const itemsFilter = items && items !== '' ? parseInt(items as string) : null
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'invoice_no', 'customer_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
@@ -89,27 +102,28 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const result = await Promise.all([
         prisma.invoicex.findMany({
           where,
-          select: {
-            id: true,
-            invoice_no: true,
-            select_customer: true,
-            items_total: true,
-            freight: true,
-            total_taxable_value: true,
-            taxrate: true,
-            total_cgst: true,
-            total_sgst: true,
-            total_igst: true,
-            total_tax: true,
-            total: true,
-            notes: true,
-            invoice_date: true,
-            payment_status: true,
-            payment_mode: true,
-            fy: true,
-            bill_reference: true,
-            return_status: true
-          }
+        select: {
+          id: true,
+          invoice_no: true,
+          select_customer: true,
+          items_total: true,
+          freight: true,
+          total_taxable_value: true,
+          taxrate: true,
+          total_cgst: true,
+          total_sgst: true,
+          total_igst: true,
+          total_tax: true,
+          total: true,
+          notes: true,
+          invoice_date: true,
+          payment_status: true,
+          payment_mode: true,
+          fy: true,
+          bill_reference: true,
+          return_status: true,
+          packing_forwarding_total: true
+        }
         }),
         prisma.invoicex.count({ where })
       ])
@@ -142,7 +156,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: true,
             fy: true,
             bill_reference: true,
-            return_status: true
+            return_status: true,
+            packing_forwarding_total: true
           }
         }),
         prisma.invoicex.count({ where })
@@ -236,8 +251,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         // total_cgst: invoice.total_cgst || 0,
         // total_sgst: invoice.total_sgst || 0,
         // total_igst: invoice.total_igst || 0,
-        // total_tax: invoice.total_tax || 0,
-        // notes: invoice.notes || '',
+        total_tax: invoice.total_tax || 0,
+        notes: invoice.notes || '',
         // transport: '', // Not fetched in salex API
         // items: [], // Never populated in GET response
         total: invoice.total,
@@ -250,11 +265,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         mode: invoice.mode || 0,
         type: invoice.type || 'salex',
         item_count: itemCountMap.get(invoice.id) || 0,
+        packing_forwarding_total: invoice.packing_forwarding_total || 0,
         // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
         // formattedDate,
         // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
+
+    // Apply item count filtering if specified
+    if (itemsFilter !== null && !isNaN(itemsFilter)) {
+      enhancedSalex = enhancedSalex.filter(salex => (salex.item_count || 0) >= itemsFilter!)
+    }
 
     // Apply post-sorting for customer_name if needed
     if (needsPostSorting) {

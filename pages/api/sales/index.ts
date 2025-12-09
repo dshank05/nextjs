@@ -702,12 +702,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       endDate = '',
       fy = '',
       status = '',
-      amountMin = '',
-      amountMax = '',
       vendor = '',
-      uid = '', // NEW: Filter by sale ID
-      sortBy = 'invoice_date', // NEW: Sort field (default: invoice_date)
-      sortOrder = 'desc' // NEW: Sort order (default: desc)
+      uid = '', // Filter by invoice number
+      billRef = '', // NEW: Filter by bill reference
+      items = '', // NEW: Filter by item count
+      taxAmount = '', // NEW: Filter by tax amount
+      pf = '', // NEW: Filter by packing/forwarding amount
+      paymentMode = '', // NEW: Filter by payment mode
+      sortBy = 'invoice_date', // Sort field (default: invoice_date)
+      sortOrder = 'desc' // Sort order (default: desc)
     } = req.query
 
     const pageNum = parseInt(page as string)
@@ -720,6 +723,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Handle UID filtering - filter by invoice_no for "Invoice No" filter
     if (uid && uid !== '') {
       where.invoice_no = parseInt(uid as string)
+    }
+
+    // NEW: Filter by bill reference
+    if (billRef && billRef !== '') {
+      where.bill_reference = { contains: billRef as string }
     }
 
     if (search) {
@@ -753,13 +761,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    if (amountMin && amountMin !== '') {
-      where.total = { gte: parseFloat(amountMin as string) }
+    // NEW: Filter by payment mode
+    if (paymentMode && paymentMode !== '') {
+      where.payment_mode = parseInt(paymentMode as string)
     }
 
-    if (amountMax && amountMax !== '') {
-      where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
+    // NEW: Filter by tax amount
+    if (taxAmount && taxAmount !== '') {
+      where.total_tax = { gte: parseFloat(taxAmount as string) }
     }
+
+    // NEW: Filter by packing/forwarding amount
+    if (pf && pf !== '') {
+      where.packing_forwarding_total = { gte: parseFloat(pf as string) }
+    }
+
+    // NEW: Filter by item count - will be handled after fetching data since it's not stored on invoice table
+    const itemsFilter = items && items !== '' ? parseInt(items as string) : null
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'invoice_no', 'customer_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
@@ -778,7 +796,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const result = await Promise.all([
         prisma.invoice.findMany({
           where,
-          select: {
+        select: {
             id: true,
             invoice_no: true,
             select_customer: true,
@@ -797,7 +815,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: true,
             fy: true,
             bill_reference: true,
-            return_status: true
+            return_status: true,
+            packing_forwarding_total: true
           }
         }),
         prisma.invoice.count({ where })
@@ -831,7 +850,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: true,
             fy: true,
             bill_reference: true,
-            return_status: true
+            return_status: true,
+            packing_forwarding_total: true
           }
         }),
         prisma.invoice.count({ where })
@@ -926,7 +946,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         // total_cgst: invoice.total_cgst || 0,
         // total_sgst: invoice.total_sgst || 0,
         // total_igst: invoice.total_igst || 0,
-        // total_tax: invoice.total_tax || 0,
+        total_tax: invoice.total_tax || 0,
         // notes: invoice.notes || '',
         // transport: '', // Not fetched in sales API
         // items: [], // Never populated in GET response
@@ -939,11 +959,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         fy: invoice.fy,
         type: invoice.type || 'sale',
         item_count: itemCountMap.get(invoice.id) || 0,
+        packing_forwarding_total: invoice.packing_forwarding_total || 0,
         // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
         // formattedDate,
         // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
+
+    // Apply item count filtering if specified
+    if (itemsFilter !== null && !isNaN(itemsFilter)) {
+      enhancedSales = enhancedSales.filter(sale => (sale.item_count || 0) >= itemsFilter!)
+    }
 
     // Apply post-sorting for customer_name if needed
     if (needsPostSorting) {
