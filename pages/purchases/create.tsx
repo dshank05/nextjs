@@ -3301,7 +3301,7 @@ export default function PurchaseCreate() {
                         { id: '1', name: 'Bank' }
                       ]}
                       selectedValue={formData.payment_mode.toString()}
-                      onSelectionChange={(value) => handleInputChange('payment_mode', value || '1')}
+                      onSelectionChange={(value) => handleInputChange('payment_mode', value || '0')}
                       placeholder="Select Payment Mode"
                     />
                   </div>

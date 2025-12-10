@@ -110,6 +110,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.total = where.total ? { ...where.total, lte: parseFloat(amountMax as string) } : { lte: parseFloat(amountMax as string) }
     }
 
+    // Vendor filter - CRITICAL FIX
+    if (vendor && vendor !== '') {
+      where.vendor_id = parseInt(vendor as string)
+    }
+
     // Bill Reference filter
     if (billReference && billReference !== '') {
       where.bill_reference = { contains: billReference as string }

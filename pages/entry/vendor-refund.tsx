@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { RefreshCw, FileText, CheckCircle } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
+import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 
 interface OutstandingReturn {
@@ -33,6 +34,7 @@ export default function VendorRefundEntry() {
   const [notes, setNotes] = useState<string>('')
   const [currentFY, setCurrentFY] = useState<number>(2024)
   const [error, setError] = useState<string>('')
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false)
 
   useEffect(() => {
     fetchVendors()
@@ -129,7 +131,7 @@ export default function VendorRefundEntry() {
     return outstandingReturns.reduce((sum, ret) => sum + (ret.allocated || 0), 0)
   }
 
-  const validateAndSubmit = async () => {
+  const handleRecordRefund = () => {
     setError('')
     
     if (!selectedVendor) {
@@ -163,6 +165,21 @@ export default function VendorRefundEntry() {
       return
     }
     
+    // Show confirmation modal instead of submitting directly
+    setShowConfirmModal(true)
+  }
+
+  const confirmRecordRefund = async () => {
+    const allocations = outstandingReturns
+      .filter(ret => ret.allocated && ret.allocated > 0)
+      .map(ret => ({
+        return_id: ret.return_id,
+        allocated_amount: ret.allocated,
+        notes: `Refund for ${ret.return_no}`
+      }))
+    
+    const refundAmt = parseFloat(refundAmount)
+    
     setLoading(true)
     try {
       const res = await fetch('/api/vendor-refunds', {
@@ -183,16 +200,21 @@ export default function VendorRefundEntry() {
       const data = await res.json()
       
       if (res.ok && data.success) {
-        showSnackbar('success', 'Refund recorded successfully!')
-        router.push('/entry/purchasereturn-vendor')
+        showSnackbar('success', `Refund recorded successfully! Refund #${data.data.refund.id}`)
+        setTimeout(() => {
+          router.push('/entry/purchasereturn-vendor')
+        }, 500)
       } else {
         setError(data.error || 'Failed to record refund')
+        showSnackbar('error', data.error || 'Failed to record refund')
       }
     } catch (error) {
       console.error('Error submitting refund:', error)
       setError('Failed to record refund')
+      showSnackbar('error', 'Network error occurred while recording refund')
     } finally {
       setLoading(false)
+      setShowConfirmModal(false)
     }
   }
 
@@ -354,8 +376,9 @@ export default function VendorRefundEntry() {
                               value={ret.allocated || ''}
                               onChange={(e) => handleAllocationChange(ret.return_id, e.target.value)}
                               max={ret.outstanding_refund}
-                              className="input w-24 text-right"
+                              className={`input w-24 text-right ${!refundAmount ? 'opacity-50 cursor-not-allowed' : ''}`}
                               placeholder="0.00"
+                              disabled={!refundAmount}
                             />
                           </td>
                         </tr>
@@ -406,15 +429,28 @@ export default function VendorRefundEntry() {
               Cancel
             </button>
             <button
-              onClick={validateAndSubmit}
+              onClick={handleRecordRefund}
               className="btn-primary"
               disabled={loading || !selectedVendor || Math.abs(difference) > 0.01}
             >
-              {loading ? 'Recording...' : 'Record Refund'}
+              Record Refund
             </button>
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmModal}
+        title="Confirm Refund Recording"
+        message={`Record vendor refund of ₹${refundAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingReturns.filter(r => r.allocated && r.allocated > 0).length} return(s)?`}
+        confirmText="Record Refund"
+        cancelText="Cancel"
+        showLoading={loading}
+        loadingText="Recording refund..."
+        onConfirm={confirmRecordRefund}
+        onCancel={() => setShowConfirmModal(false)}
+      />
     </div>
   )
 }

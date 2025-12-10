@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { DollarSign, FileText, CheckCircle } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
+import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 
 interface OutstandingBill {
@@ -33,6 +34,7 @@ export default function VendorPaymentEntry() {
   const [notes, setNotes] = useState<string>('')
   const [currentFY, setCurrentFY] = useState<number>(2024)
   const [error, setError] = useState<string>('')
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false)
 
   useEffect(() => {
     fetchVendors()
@@ -129,7 +131,47 @@ export default function VendorPaymentEntry() {
     return outstandingBills.reduce((sum, bill) => sum + (bill.allocated || 0), 0)
   }
 
-  const validateAndSubmit = async () => {
+  const isRecordPaymentDisabled = (): boolean => {
+    // Check 1: Loading state
+    if (loading) {
+      console.log('❌ Disabled: Loading')
+      return true
+    }
+    
+    // Check 2: Vendor not selected
+    if (!selectedVendor) {
+      console.log('❌ Disabled: No vendor selected')
+      return true
+    }
+    
+    // Check 3: Payment amount empty or invalid
+    if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
+      console.log('❌ Disabled: Payment amount empty or ≤ 0', { paymentAmount })
+      return true
+    }
+    
+    // Check 4: Nothing allocated
+    const allocated = getTotalAllocated()
+    if (allocated === 0) {
+      console.log('❌ Disabled: Nothing allocated', { allocated })
+      return true
+    }
+    
+    // Check 5: Difference not zero (over/under allocated)
+    const paymentAmt = parseFloat(paymentAmount) || 0
+    const totalAllocated = getTotalAllocated()
+    const difference = paymentAmt - totalAllocated
+    if (Math.abs(difference) > 0.01) {
+      console.log('❌ Disabled: Difference not zero', { paymentAmt, totalAllocated, difference })
+      return true
+    }
+    
+    // All checks passed - enable button
+    console.log('✅ ENABLED: All checks passed', { loading, selectedVendor, paymentAmount, allocated, difference })
+    return false
+  }
+
+  const handleRecordPayment = () => {
     setError('')
     
     if (!selectedVendor) {
@@ -150,21 +192,31 @@ export default function VendorPaymentEntry() {
       return
     }
     
-    const allocations = outstandingBills
-      .filter(bill => bill.allocated && bill.allocated > 0)
-      .map(bill => ({
-        purchase_id: bill.purchase_id,
-        allocated_amount: bill.allocated,
-        notes: `Payment for Invoice ${bill.invoice_no}`
-      }))
+    const allocations = outstandingBills.filter(bill => bill.allocated && bill.allocated > 0)
     
     if (allocations.length === 0) {
       setError('Please allocate payment to at least one bill')
       return
     }
-    
+
+    // Show confirmation modal
+    setShowConfirmationModal(true)
+  }
+
+  const confirmRecordPayment = async () => {
     setLoading(true)
     try {
+      const totalAllocated = getTotalAllocated()
+      const paymentAmt = parseFloat(paymentAmount)
+      
+      const allocations = outstandingBills
+        .filter(bill => bill.allocated && bill.allocated > 0)
+        .map(bill => ({
+          purchase_id: bill.purchase_id,
+          allocated_amount: bill.allocated,
+          notes: `Payment for Invoice ${bill.invoice_no}`
+        }))
+      
       const res = await fetch('/api/vendor-payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -184,7 +236,15 @@ export default function VendorPaymentEntry() {
       
       if (res.ok && data.success) {
         showSnackbar('success', 'Payment recorded successfully!')
-        router.push('/purchases')
+        
+        // Reset form to initial state
+        setSelectedVendor(0)
+        setOutstandingBills([])
+        setPaymentAmount('')
+        setPaymentMode(1)
+        setPaymentDate(new Date().toISOString().split('T')[0])
+        setNotes('')
+        setError('')
       } else {
         setError(data.error || 'Failed to record payment')
       }
@@ -193,6 +253,7 @@ export default function VendorPaymentEntry() {
       setError('Failed to record payment')
     } finally {
       setLoading(false)
+      setShowConfirmationModal(false)
     }
   }
 
@@ -325,8 +386,14 @@ export default function VendorPaymentEntry() {
               ) : outstandingBills.length === 0 ? (
                 <div className="text-center py-8 text-slate-400">No outstanding bills for this vendor</div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="table">
+                <>
+                  {(!paymentAmount || parseFloat(paymentAmount) <= 0) && (
+                    <div className="mb-3 text-sm text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                      💡 Please enter Payment Amount above to enable bill allocation
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="table">
                     <thead>
                       <tr>
                         <th>Invoice No</th>
@@ -354,7 +421,8 @@ export default function VendorPaymentEntry() {
                               value={bill.allocated || ''}
                               onChange={(e) => handleAllocationChange(bill.purchase_id, e.target.value)}
                               max={bill.outstanding_amount}
-                              className="input w-24 text-right"
+                              disabled={!paymentAmount || parseFloat(paymentAmount) <= 0}
+                              className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
                               placeholder="0.00"
                             />
                           </td>
@@ -362,7 +430,8 @@ export default function VendorPaymentEntry() {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -406,15 +475,28 @@ export default function VendorPaymentEntry() {
               Cancel
             </button>
             <button
-              onClick={validateAndSubmit}
-              className="btn-primary"
-              disabled={loading || !selectedVendor || Math.abs(difference) > 0.01}
+              onClick={handleRecordPayment}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-600"
+              disabled={isRecordPaymentDisabled()}
             >
               {loading ? 'Recording...' : 'Record Payment'}
             </button>
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmationModal}
+        title="Confirm Payment"
+        message={`Record payment of ₹${paymentAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingBills.filter(b => b.allocated && b.allocated > 0).length} bill(s)?`}
+        confirmText="Record Payment"
+        cancelText="Cancel"
+        showLoading={loading}
+        loadingText="Recording Payment..."
+        onConfirm={confirmRecordPayment}
+        onCancel={() => setShowConfirmationModal(false)}
+      />
     </div>
   )
 }

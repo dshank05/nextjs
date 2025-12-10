@@ -334,8 +334,8 @@ export default function SalePage() {
       filters.statusFilter === currentFilters.statusFilter &&
       filters.dateFrom === currentFilters.dateFrom &&
       filters.dateTo === currentFilters.dateTo &&
-      filters.amountMin === currentFilters.amountMin &&
-      filters.amountMax === currentFilters.amountMax &&
+      // filters.amountMin === currentFilters.amountMin &&
+      // filters.amountMax === currentFilters.amountMax &&
       filters.uidFilter === currentFilters.uidFilter &&
       (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
     );
@@ -404,8 +404,8 @@ export default function SalePage() {
           statusFilter: currentFilters.statusFilter,
           dateFrom: currentFilters.dateFrom,
           dateTo: currentFilters.dateTo,
-          amountMin: currentFilters.amountMin,
-          amountMax: currentFilters.amountMax,
+          // amountMin: currentFilters.amountMin,
+          // amountMax: currentFilters.amountMax,
           uidFilter: currentFilters.uidFilter
         }}
         actionButton={(

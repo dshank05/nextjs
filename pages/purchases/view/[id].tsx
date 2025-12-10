@@ -287,6 +287,7 @@ export default function PurchaseView() {
     switch (status) {
       case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
       case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
       default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
     }
   };
@@ -811,6 +812,9 @@ export default function PurchaseView() {
             vendorId={purchase.vendor_id || 0}
             vendorName={purchase.vendor?.vendor_name || ''}
             outstandingAmount={(purchase as any).payment_summary.remaining_amount}
+            totalBill={(purchase as any).payment_summary.total_bill}
+            totalPaid={(purchase as any).payment_summary.total_paid}
+            paymentHistory={(purchase as any).payment_history || []}
           />
         </>
       )}

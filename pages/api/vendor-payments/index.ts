@@ -71,7 +71,24 @@ async function handleCreatePayment(
       });
     }
 
-    // Create payment and allocations in a transaction
+    // If fy not provided, fetch it from the first purchase allocation
+    let financialYear = fy;
+    if (!financialYear && allocations.length > 0) {
+      const firstPurchase = await prisma.purchase.findUnique({
+        where: { id: allocations[0].purchase_id },
+        select: { fy: true }
+      });
+      financialYear = firstPurchase?.fy;
+    }
+
+    if (!financialYear) {
+      return res.status(400).json({
+        error: 'Financial year (fy) is required',
+        details: 'Could not determine financial year from purchase'
+      });
+    }
+
+    // Create payment and allocations in a transaction with extended timeout
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create payment record
       const payment = await tx.vendor_payments.create({
@@ -82,7 +99,7 @@ async function handleCreatePayment(
           payment_mode,
           payment_type,
           notes,
-          fy
+          fy: financialYear
         }
       });
 
@@ -101,20 +118,38 @@ async function handleCreatePayment(
         });
         createdAllocations.push(alloc);
 
-        // Update purchase payment status
-        const newStatus = await calculatePurchasePaymentStatus(allocation.purchase_id);
-        await tx.purchase.update({
-          where: { id: allocation.purchase_id },
-          data: { payment_status: newStatus }
-        });
-
-        // Get purchase details for ledger
+        // Calculate payment status within transaction context
         const purchase = await tx.purchase.findUnique({
           where: { id: allocation.purchase_id },
           select: {
             invoice_no: true,
             total: true
           }
+        });
+
+        // Get total allocated to this purchase (including this new allocation)
+        const allocationsSum = await tx.payment_allocations.aggregate({
+          where: { purchase_id: allocation.purchase_id },
+          _sum: { allocated_amount: true }
+        });
+
+        const totalPaid = Number(allocationsSum._sum.allocated_amount || 0);
+        const totalBill = Number(purchase?.total || 0);
+
+        // Calculate new status
+        let newStatus = 0;
+        if (totalPaid === 0) {
+          newStatus = 0; // Unpaid
+        } else if (totalPaid >= totalBill) {
+          newStatus = 1; // Fully Paid
+        } else {
+          newStatus = 2; // Partially Paid
+        }
+
+        // Update purchase payment status
+        await tx.purchase.update({
+          where: { id: allocation.purchase_id },
+          data: { payment_status: newStatus }
         });
 
         // Create ledger entry for this allocation
@@ -131,7 +166,7 @@ async function handleCreatePayment(
           debit: 0,
           credit: allocation.allocated_amount,
           notes: `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`,
-          fy
+          fy: financialYear
         });
       }
 
@@ -139,6 +174,8 @@ async function handleCreatePayment(
         payment,
         allocations: createdAllocations
       };
+    }, {
+      timeout: 15000 // 15 second timeout for payment transactions
     });
 
     return res.status(201).json({

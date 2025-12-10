@@ -856,6 +856,11 @@ export default async function handler(
           if (oldPaymentStatus === 1 && newPaymentStatus === 1 && oldTotal !== newTotal) {
             const difference = newTotal - oldTotal
             
+            // Check if this purchase has payment allocations (Type A) vs marked paid during creation (Type B)
+            const paymentAllocations = await prisma.payment_allocations.findMany({
+              where: { purchase_id: purchaseId }
+            })
+            
             // Create PURCHASE_ADJUSTMENT entry
             await ledgerService.createEntry({
               vendor_id: existingPurchase.vendor_id,
@@ -870,21 +875,48 @@ export default async function handler(
               fy: existingPurchase.fy
             })
             
-            // Create PAYMENT_ADJUSTMENT entry
-            await ledgerService.createEntry({
-              vendor_id: existingPurchase.vendor_id,
-              transaction_date: Math.floor(Date.now() / 1000),
-              transaction_type: 'PAYMENT_ADJUSTMENT',
-              reference_type: 'purchase',
-              reference_id: purchaseId,
-              reference_no: existingPurchase.invoice_no.toString(),
-              debit: difference < 0 ? Math.abs(difference) : 0,
-              credit: difference > 0 ? difference : 0,
-              payment_mode: existingPurchase.payment_mode,
-              payment_status: 1,
-              notes: `Payment adjustment for purchase ${existingPurchase.invoice_no} - ${difference > 0 ? 'additional' : 'refund'} ₹${Math.abs(difference)} on ${timestamp}`,
-              fy: existingPurchase.fy
-            })
+            if (paymentAllocations.length > 0) {
+              // Type A: Paid via payment allocation system
+              // DO NOT create PAYMENT_ADJUSTMENT - the actual payment is tracked in payment_allocations
+              // Recalculate payment_status based on actual allocated amounts
+              const totalAllocated = paymentAllocations.reduce(
+                (sum, alloc) => sum + Number(alloc.allocated_amount),
+                0
+              )
+              
+              // Calculate new payment status
+              let newCalculatedStatus = 0
+              if (totalAllocated >= newTotal) {
+                newCalculatedStatus = 1 // Fully paid
+              } else if (totalAllocated > 0) {
+                newCalculatedStatus = 2 // Partially paid
+              }
+              
+              // Update payment_status if it changed
+              if (newCalculatedStatus !== newPaymentStatus) {
+                await prisma.purchase.update({
+                  where: { id: purchaseId },
+                  data: { payment_status: newCalculatedStatus }
+                })
+              }
+            } else {
+              // Type B: Marked as paid during creation (no payment allocations)
+              // Create PAYMENT_ADJUSTMENT to keep it balanced
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PAYMENT_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference < 0 ? Math.abs(difference) : 0,
+                credit: difference > 0 ? difference : 0,
+                payment_mode: existingPurchase.payment_mode,
+                payment_status: 1,
+                notes: `Payment adjustment for purchase ${existingPurchase.invoice_no} - ${difference > 0 ? 'additional' : 'refund'} ₹${Math.abs(difference)} on ${timestamp}`,
+                fy: existingPurchase.fy
+              })
+            }
           }
         } catch (error) {
           console.error('Purchase Update - Failed to create ledger entries:', error);

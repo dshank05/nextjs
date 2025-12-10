@@ -71,6 +71,16 @@ async function handleCreateRefund(
       });
     }
 
+    // If fy not provided, fetch it from the first return allocation
+    let financialYear = fy;
+    if (!financialYear && allocations.length > 0) {
+      const firstReturn = await prisma.purchase_returns.findUnique({
+        where: { id: allocations[0].return_id },
+        select: { fy: true }
+      });
+      financialYear = firstReturn?.fy;
+    }
+
     // Create refund and allocations in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create refund record
@@ -82,7 +92,7 @@ async function handleCreateRefund(
           refund_mode,
           refund_type,
           notes,
-          fy
+          fy: financialYear
         }
       });
 
@@ -101,20 +111,38 @@ async function handleCreateRefund(
         });
         createdAllocations.push(alloc);
 
-        // Update return refund status
-        const newStatus = await calculateReturnRefundStatus(allocation.return_id);
-        await tx.purchase_returns.update({
-          where: { id: allocation.return_id },
-          data: { payment_status: newStatus }
-        });
-
-        // Get return details for ledger
+        // Get return details
         const purchaseReturn = await tx.purchase_returns.findUnique({
           where: { id: allocation.return_id },
           select: {
             debit_note_no: true,
-            total_amount: true
+            total_amount: true,
+            total_tax: true,
+            refund_amount: true
           }
+        });
+
+        // Calculate total refunded for this return (using tx client)
+        const totalRefunded = await tx.refund_allocations.aggregate({
+          where: { return_id: allocation.return_id },
+          _sum: { allocated_amount: true }
+        });
+
+        const totalRefundedAmount = Number(totalRefunded._sum.allocated_amount || 0);
+        const totalReturnAmount = purchaseReturn?.refund_amount || (purchaseReturn ? purchaseReturn.total_amount + purchaseReturn.total_tax : 0);
+
+        // Calculate new status
+        let newStatus = 0; // Unpaid
+        if (totalRefundedAmount >= totalReturnAmount - 0.01) {
+          newStatus = 1; // Fully refunded
+        } else if (totalRefundedAmount > 0) {
+          newStatus = 2; // Partially refunded
+        }
+
+        // Update return refund status
+        await tx.purchase_returns.update({
+          where: { id: allocation.return_id },
+          data: { payment_status: newStatus }
         });
 
         // Create ledger entry for this allocation
@@ -131,7 +159,7 @@ async function handleCreateRefund(
           debit: allocation.allocated_amount,
           credit: 0,
           notes: `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`,
-          fy
+          fy: financialYear
         });
       }
 
@@ -139,6 +167,8 @@ async function handleCreateRefund(
         refund,
         allocations: createdAllocations
       };
+    }, {
+      timeout: 15000 // 15 seconds timeout for ledger operations
     });
 
     return res.status(201).json({

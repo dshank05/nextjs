@@ -108,7 +108,79 @@ async function viewTestData() {
       console.log('  (No return items found)\n')
     }
 
-    // 6. VENDOR LEDGER ⭐ MOST IMPORTANT
+    // 6. VENDOR PAYMENTS
+    const payments = await prisma.vendor_payments.findMany({
+      orderBy: { id: 'asc' }
+    })
+    console.log('💵 VENDOR PAYMENTS: ' + payments.length + ' records')
+    if (payments.length > 0) {
+      console.table(payments.map(p => ({
+        id: p.id,
+        vendor_id: p.vendor_id,
+        payment_date: new Date(p.payment_date * 1000).toLocaleDateString(),
+        amount: p.payment_amount,
+        mode: p.payment_mode === 0 ? 'Cash' : 'Bank',
+        type: p.payment_type,
+        notes: p.notes ? p.notes.substring(0, 30) : ''
+      })))
+    } else {
+      console.log('  (No vendor payments found)\n')
+    }
+
+    // 7. PAYMENT ALLOCATIONS
+    const paymentAllocations = await prisma.payment_allocations.findMany({
+      orderBy: [{ payment_id: 'asc' }, { id: 'asc' }]
+    })
+    console.log('🔗 PAYMENT ALLOCATIONS: ' + paymentAllocations.length + ' records')
+    if (paymentAllocations.length > 0) {
+      console.table(paymentAllocations.map(pa => ({
+        id: pa.id,
+        payment_id: pa.payment_id,
+        purchase_id: pa.purchase_id,
+        allocated_amount: pa.allocated_amount,
+        notes: pa.notes ? pa.notes.substring(0, 30) : ''
+      })))
+    } else {
+      console.log('  (No payment allocations found)\n')
+    }
+
+    // 8. VENDOR REFUNDS
+    const refunds = await prisma.vendor_refunds.findMany({
+      orderBy: { id: 'asc' }
+    })
+    console.log('💰 VENDOR REFUNDS: ' + refunds.length + ' records')
+    if (refunds.length > 0) {
+      console.table(refunds.map(r => ({
+        id: r.id,
+        vendor_id: r.vendor_id,
+        refund_date: new Date(r.refund_date * 1000).toLocaleDateString(),
+        amount: r.refund_amount,
+        mode: r.refund_mode === 0 ? 'Cash' : 'Bank',
+        type: r.refund_type,
+        notes: r.notes ? r.notes.substring(0, 30) : ''
+      })))
+    } else {
+      console.log('  (No vendor refunds found)\n')
+    }
+
+    // 9. REFUND ALLOCATIONS
+    const refundAllocations = await prisma.refund_allocations.findMany({
+      orderBy: [{ refund_id: 'asc' }, { id: 'asc' }]
+    })
+    console.log('🔗 REFUND ALLOCATIONS: ' + refundAllocations.length + ' records')
+    if (refundAllocations.length > 0) {
+      console.table(refundAllocations.map(ra => ({
+        id: ra.id,
+        refund_id: ra.refund_id,
+        return_id: ra.return_id,
+        allocated_amount: ra.allocated_amount,
+        notes: ra.notes ? ra.notes.substring(0, 30) : ''
+      })))
+    } else {
+      console.log('  (No refund allocations found)\n')
+    }
+
+    // 10. VENDOR LEDGER ⭐ MOST IMPORTANT
     const ledger = await prisma.vendor_ledger.findMany({
       orderBy: [
         { vendor_id: 'asc' },

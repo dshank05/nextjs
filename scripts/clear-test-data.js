@@ -18,6 +18,10 @@ async function clearTestData() {
     console.log('='.repeat(80) + '\n')
 
     console.log('⚠️  This will delete ALL data from:')
+    console.log('   - payment_allocations')
+    console.log('   - vendor_payments')
+    console.log('   - refund_allocations')
+    console.log('   - vendor_refunds')
     console.log('   - vendor_ledger')
     console.log('   - purchase_return_items')
     console.log('   - purchase_returns')
@@ -30,6 +34,22 @@ async function clearTestData() {
     await new Promise(resolve => setTimeout(resolve, 1000))
 
     // Clear in correct order to avoid FK violations
+    console.log('🗑️  Clearing payment_allocations...')
+    const paymentAllocations = await prisma.payment_allocations.deleteMany({})
+    console.log(`   ✅ Deleted ${paymentAllocations.count} payment allocations\n`)
+
+    console.log('🗑️  Clearing vendor_payments...')
+    const payments = await prisma.vendor_payments.deleteMany({})
+    console.log(`   ✅ Deleted ${payments.count} vendor payments\n`)
+
+    console.log('🗑️  Clearing refund_allocations...')
+    const refundAllocations = await prisma.refund_allocations.deleteMany({})
+    console.log(`   ✅ Deleted ${refundAllocations.count} refund allocations\n`)
+
+    console.log('🗑️  Clearing vendor_refunds...')
+    const refunds = await prisma.vendor_refunds.deleteMany({})
+    console.log(`   ✅ Deleted ${refunds.count} vendor refunds\n`)
+
     console.log('🗑️  Clearing vendor_ledger...')
     const ledger = await prisma.vendor_ledger.deleteMany({})
     console.log(`   ✅ Deleted ${ledger.count} ledger entries\n`)
@@ -58,11 +78,15 @@ async function clearTestData() {
     console.log('✅ ALL TEST DATA CLEARED SUCCESSFULLY!')
     console.log('='.repeat(80))
     console.log('\n📊 Summary:')
+    console.log(`   - Payment Allocations: ${paymentAllocations.count} deleted`)
+    console.log(`   - Vendor Payments: ${payments.count} deleted`)
+    console.log(`   - Refund Allocations: ${refundAllocations.count} deleted`)
+    console.log(`   - Vendor Refunds: ${refunds.count} deleted`)
     console.log(`   - Vendor Ledger: ${ledger.count} entries deleted`)
     console.log(`   - Purchase Returns: ${returns.count} + ${returnItems.count} items deleted`)
     console.log(`   - Purchases: ${purchases.count} + ${items.count} items deleted`)
     console.log(`   - Bill To: ${billTo.count} records deleted`)
-    console.log(`   - Total Deleted: ${ledger.count + returnItems.count + returns.count + items.count + billTo.count + purchases.count} records\n`)
+    console.log(`   - Total Deleted: ${paymentAllocations.count + payments.count + refundAllocations.count + refunds.count + ledger.count + returnItems.count + returns.count + items.count + billTo.count + purchases.count} records\n`)
 
   } catch (error) {
     console.error('\n❌ Error clearing test data:', error)

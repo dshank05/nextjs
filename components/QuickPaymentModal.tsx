@@ -2,6 +2,17 @@ import { useState } from 'react';
 import { X, DollarSign } from 'lucide-react';
 import { useSnackbar } from './SnackbarProvider';
 
+interface PaymentHistory {
+  allocation_id: number;
+  payment_date: number;
+  payment_amount: number;
+  allocated_amount: number;
+  payment_mode: number;
+  payment_mode_text: string;
+  notes: string | null;
+  created_at: string;
+}
+
 interface QuickPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -10,6 +21,9 @@ interface QuickPaymentModalProps {
   vendorId: number;
   vendorName: string;
   outstandingAmount: number;
+  totalBill?: number;
+  totalPaid?: number;
+  paymentHistory?: PaymentHistory[];
 }
 
 export default function QuickPaymentModal({
@@ -19,7 +33,10 @@ export default function QuickPaymentModal({
   purchaseId,
   vendorId,
   vendorName,
-  outstandingAmount
+  outstandingAmount,
+  totalBill,
+  totalPaid = 0,
+  paymentHistory = []
 }: QuickPaymentModalProps) {
   const { showSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
@@ -103,12 +120,54 @@ export default function QuickPaymentModal({
             <p className="text-white font-medium">{vendorName}</p>
           </div>
 
-          <div>
-            <p className="text-sm text-slate-400">Outstanding Amount</p>
-            <p className="text-orange-400 font-semibold text-lg">
-              ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </p>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-3 gap-3 p-4 bg-slate-700/50 rounded-lg">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Total Bill</p>
+              <p className="text-white font-semibold">
+                ₹{(totalBill || outstandingAmount + totalPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Paid</p>
+              <p className="text-green-400 font-semibold">
+                ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Outstanding</p>
+              <p className="text-orange-400 font-semibold">
+                ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </p>
+            </div>
           </div>
+
+          {/* Payment History (if exists) */}
+          {paymentHistory.length > 0 && (
+            <div className="p-4 bg-slate-700/30 rounded-lg">
+              <p className="text-sm font-medium text-slate-300 mb-3">Previous Payments</p>
+              <div className="space-y-2 max-h-32 overflow-y-auto">
+                {paymentHistory.map((payment) => (
+                  <div key={payment.allocation_id} className="flex justify-between items-center text-sm">
+                    <div>
+                      <span className="text-slate-400">
+                        {new Date(payment.payment_date * 1000).toLocaleDateString('en-IN')}
+                      </span>
+                      <span className="mx-2 text-slate-500">•</span>
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        payment.payment_mode === 0 ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'
+                      }`}>
+                        {payment.payment_mode_text}
+                      </span>
+                    </div>
+                    <span className="text-green-400 font-medium">
+                      ₹{payment.allocated_amount.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">

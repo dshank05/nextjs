@@ -10,7 +10,11 @@
     "prisma:generate": "prisma generate",
     "prisma:db:push": "prisma db push",
     "prisma:db:pull": "prisma db pull",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "test": "jest",
+    "test:batch1": "jest tests/batch-1-purchase-creation.test.js",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
@@ -48,8 +52,11 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
+    "dotenv": "^17.2.3",
     "eslint": "^8",
     "eslint-config-next": "14.0.4",
+    "jest": "^30.2.0",
+    "node-fetch": "^2.7.0",
     "postcss": "^8",
     "prisma": "^5.7.0",
     "tailwindcss": "^3.3.0",

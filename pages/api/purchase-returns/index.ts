@@ -238,9 +238,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Apply vendor filter (after data enhancement)
     if (vendor && vendor !== '') {
       const vendorStr = Array.isArray(vendor) ? vendor[0] : vendor;
-      enhancedReturns = enhancedReturns.filter(ret =>
-        ret.vendor_name.toLowerCase().includes(vendorStr.toLowerCase())
-      )
+      const vendorNum = parseInt(vendorStr);
+      
+      // If it's a number, filter by vendor_id, otherwise by vendor_name
+      if (!isNaN(vendorNum)) {
+        // Filter by vendor ID
+        const vendorIds = returns.map(r => r.vendor_id);
+        enhancedReturns = enhancedReturns.filter(ret => {
+          const originalReturn = returns.find(r => r.id === ret.id);
+          return originalReturn && originalReturn.vendor_id === vendorNum;
+        });
+      } else {
+        // Filter by vendor name (string search)
+        enhancedReturns = enhancedReturns.filter(ret =>
+          ret.vendor_name.toLowerCase().includes(vendorStr.toLowerCase())
+        );
+      }
     }
 
     // Apply post-sorting for vendor_name if needed
