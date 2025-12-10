@@ -69,10 +69,10 @@ export default function PurchaseReturnDetailPage() {
       }
 
       const data = await response.json();
-      
+
       // Store full API response for session storage
       setFullApiData(data.data);
-      
+
       const returnInfo = data.data.return;
       const vendorInfo = data.data.vendor;
       const billsInfo = data.data.bills;
@@ -231,24 +231,25 @@ export default function PurchaseReturnDetailPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Status:</span>
-              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                returnData.status === 1 ? 'bg-green-600 text-white' : 'bg-yellow-600 text-white'
-              }`}>
+              <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${returnData.status === 1 ? 'bg-green-600 text-white' : 'bg-yellow-600 text-white'
+                }`}>
                 {returnData.statusText}
               </span>
             </div>
             {(fullApiData as any)?.refund_summary && (
-              <div 
-                className="flex justify-between items-center cursor-pointer hover:bg-slate-700/30 p-2 rounded transition-colors"
-                onClick={() => setShowRefundHistoryModal(true)}
+              <div
+                className="flex justify-between"
+
               >
-                <span className="text-slate-400 flex items-center gap-2">
-                  <Eye className="w-4 h-4" />
+                <span className="text-slate-400">
                   Refund History:
                 </span>
                 <span className="text-blue-400 font-medium flex items-center gap-2">
                   {(fullApiData as any).refund_summary.refund_count} refund{(fullApiData as any).refund_summary.refund_count !== 1 ? 's' : ''}
-                  <Eye className="w-4 h-4" />
+                  <div className='cursor-pointer'>
+                    <Eye className="w-4 h-4" onClick={() => setShowRefundHistoryModal(true)} />
+                  </div>
+
                 </span>
               </div>
             )}

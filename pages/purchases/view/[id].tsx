@@ -380,16 +380,17 @@ export default function PurchaseView() {
             </div>
             {(purchase as any).payment_summary && (
               <div 
-                className="flex justify-between items-center cursor-pointer hover:bg-slate-700/30 p-2 rounded transition-colors"
-                onClick={() => setShowPaymentHistoryModal(true)}
+                className="flex justify-between items-center "
+                
               >
-                <span className="text-slate-400 flex items-center gap-2">
-                  <Eye className="w-4 h-4" />
+                <span className="text-slate-400">
                   Payment History:
                 </span>
                 <span className="text-blue-400 font-medium flex items-center gap-2">
                   {(purchase as any).payment_summary.payment_count} payment{(purchase as any).payment_summary.payment_count !== 1 ? 's' : ''}
-                  <Eye className="w-4 h-4" />
+                  <div className='cursor-pointer'>
+                     <Eye className="w-4 h-4"  onClick={() => setShowPaymentHistoryModal(true)}/>
+                  </div>
                 </span>
               </div>
             )}
