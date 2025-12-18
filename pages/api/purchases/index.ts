@@ -144,8 +144,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // For other fields, we can sort at database level
     const needsPostSorting = sortField === 'vendor_name' || sortField === 'item_count'
 
-    let purchaseInvoices: any[]
-    let total: number
+    let purchaseInvoices: any[] = []
+    let total: number = 0
 
     if (needsPostSorting) {
       // Get all purchase invoices without sorting (we'll sort after fetching vendor names)
@@ -195,6 +195,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             items_total: true,
             freight: true,
             total_taxable_value: true,
+            packing_forwarding_total: true,
             taxrate: true,
             total_cgst: true,
             total_sgst: true,
@@ -393,77 +394,38 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 }
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    // ===== RATE MANAGEMENT =====
-    // ✓ Updates product's latest_purchase_rate when purchase is created
-    // ✓ Validates purchase rates > 0 before processing
-    // ✓ Maintains rate history through automatic product updates
-    // ✓ Supports transaction safety for stock and rate updates together
+  const startTime = Date.now();
 
-    // ===== INVOICE NUMBERING =====
-    // Get next invoice number based on current financial year
+  try {
     const { nextInvoiceNo, currentFy } = await getNextInvoiceNumber('purchase');
 
     const {
-      // ===== MAIN PURCHASE TABLE FIELDS (ALL STORED) =====
-      // invoice_number is now auto-generated based on FY
-      bill_reference,           // ✓ Purchase.bill_reference
-      bill_reference_date,      // ✓ Purchase.bill_reference_date
-      staff_id,                 // ✓ Purchase.staff_id (FK to staff table, optional)
-      date,                     // ✓ Purchase.invoice_date
-
-      // ===== VENDOR RELATIONSHIP (ONLY FK STORED - NO VENDOR MANAGEMENT HERE) =====
-      vendor_id,                // ✓ Purchase.vendor_id (FK to vendor_details)
-
-      // ===== TRANSPORT FIELDS (ALL STORED) =====
-      transport_name,           // ✓ Purchase.transport_name
-      vehicle_number,           // ✓ Purchase.vehicle_number
-      transport_cost,           // ✓ Purchase.freight
-
-      // ===== ITEMS AND CALCULATIONS (ALL STORED) =====
-      items,                    // ✓ PurchaseItems table (multiple records)
-      descriptions,             // ✓ Purchase.descriptions
-      packing_forwarding_qty,   // ✓ Purchase.packing_forwarding_qty
-      packing_forwarding_rate,  // ✓ Purchase.packing_forwarding_rate
-      packing_forwarding_total, // ✓ Purchase.packing_forwarding_total
-      // ===== EXTRA FIELDS - COMMENTED OUT (NOT PROCESSED) =====
-      // tax_rate,                 // ❌ Purchase.taxrate - @deprecated legacy field, unclear purpose, no UI element
-      // basic_value,              // ❌ Purchase.basic_value - @deprecated legacy field, unclear purpose, no UI element
-      total_cgst,               // ✓ Purchase.total_cgst
-      total_sgst,               // ✓ Purchase.total_sgst
-      total_igst,               // ✓ Purchase.total_igst
-      notes,                    // ✓ Purchase.notes
-      total_tax,                // ✓ Purchase.total_tax
-      payment_status,           // ✓ Purchase.status
-      payment_mode,             // ✓ Purchase.payment_mode
-
+      bill_reference,
+      bill_reference_date,
+      staff_id,
+      date,
+      vendor_id,
+      items,
+      descriptions,
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
+      total_cgst,
+      total_sgst,
+      total_igst,
+      notes,
+      total_tax,
+      payment_status,
+      payment_mode
     } = req.body
 
-    // ===== FUTURE SCHEMA EXPANSION FIELDS =====
-    // These fields don't exist in current Purchase/PurchaseItems tables, similar to Product API approach:
-    // TODO: Add these fields to Purchase/PurchaseItems schemas when ready:
-    // - approved_by: String? (user who approved the purchase)
-    // - approval_date: DateTime? (when purchase was approved)
-    // - expected_delivery_date: DateTime? (for purchase order tracking)
-    // - supplier_rating: Int? (1-5 star supplier performance)
-    // - purchase_order_no: String? (link to PO system)
-    // - delivery_status: String? ("pending", "partial", "complete")
-    // - quality_check_status: String? ("pending", "passed", "failed")
-    // - payment_terms: String? ("net_30", "net_60", custom terms)
-    // - discount_amount: Float? (separate from item-level discounts)
-    // - additional_charges: Json? (misc fees, insurance, etc.)
-    // - internal_notes: String? (separate from customer-facing notes)
-
-    // ===== VALIDATION =====
-    // Allow vendor_id to be 0 (Other)
+    // ===== STEP 2: VALIDATION =====
     if (vendor_id === undefined || vendor_id === null || !items || items.length === 0) {
       return res.status(400).json({
         message: 'Missing required fields: vendor_id, or items'
       })
     }
 
-    // ===== VALIDATE "OTHER" VENDOR FIELDS =====
-    // When vendor_id is 0 (Other),contact_number are mandatory
     if (parseInt(vendor_id) === 0) {
       if (!req.body.contact_number || req.body.contact_number.trim() === '') {
         return res.status(400).json({
@@ -472,8 +434,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // ===== RATE VALIDATION =====
-    // Validate all purchase items have valid rates > 0
     for (const item of items) {
       if (!item.rate || item.rate <= 0) {
         return res.status(400).json({
@@ -482,7 +442,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Validate payment_status and payment_mode are valid integers
     const validPaymentStatuses = [0, 1];
     const validPaymentModes = [0, 1];
 
@@ -492,7 +451,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // ✅ Payment mode is required when payment_status = 1 (Paid)
     if (payment_status === 1 && (payment_mode === undefined || payment_mode === null)) {
       return res.status(400).json({
         message: 'Payment mode (Cash/Bank) is required for paid purchases'
@@ -505,9 +463,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // ===== VALIDATE VENDOR EXISTS =====
-    // Vendor must already exist - purchase only stores the relationship
-    // If vendor_id is 0, it's an "Other" vendor, so we skip lookup
     let existingVendor = null;
     if (parseInt(vendor_id) !== 0) {
       existingVendor = await prisma.vendor_details.findUnique({
@@ -521,29 +476,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Convert date to Unix timestamp
+    // ===== STEP 3: DATA PREPARATION =====
     const invoiceDate = new Date(date).getTime() / 1000
-
-    // Calculate totals
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
-    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
+    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (req.body.transport_cost || 0) + (total_tax || 0)
 
-    // ===== CRITICAL FIX: Use database transaction for atomic operations =====
-    // This ensures purchase creation, item creation, product updates, and bill_to creation all succeed or all fail together
-    // Increased timeout to 30 seconds to handle large purchases with many items
+    // ===== STEP 4: OPTIMIZED DATABASE TRANSACTION =====
     const purchase = await prisma.$transaction(async (tx) => {
-      // Create purchase record within transaction
+      // ===== DB OPERATION 1: Create purchase record =====
       const purchase = await tx.purchase.create({
         data: {
           invoice_no: nextInvoiceNo,
-          bill_reference: bill_reference, // Keep bill reference separate from vendor name
+          bill_reference: bill_reference,
           bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
-          staff_id: staff_id ? parseInt(staff_id) : null, // FK to staff table (optional)
-          vendor_id: parseInt(vendor_id), // ✅ Save vendor ID as FK for backward compatibility
+          staff_id: staff_id ? parseInt(staff_id) : null,
+          vendor_id: parseInt(vendor_id),
           items_total: itemsTotal,
-          freight: transport_cost || 0,
+          freight: req.body.transport_cost || 0,
           total_taxable_value: itemsTotal,
-          // taxrate: tax_rate || 0,
           total_cgst: total_cgst || 0,
           total_sgst: total_sgst || 0,
           total_igst: total_igst || 0,
@@ -554,34 +504,22 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           packing_forwarding_qty: packing_forwarding_qty || 0,
           packing_forwarding_rate: packing_forwarding_rate || 0,
           packing_forwarding_total: packing_forwarding_total || 0,
-          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-          // basic_value: basic_value || 0,
-          // bill: bill,
-          // tax: tax,
-          // taxrate: tax_rate || 0,
-          invoice_date: Math.floor(invoiceDate), // ✅ STANDARDIZE: Store as Unix timestamp
-          updated_at: new Date().toISOString().split('T')[0], // Current date
-          payment_status: payment_status || 0, // Default to 0 (unpaid) if not provided
+          invoice_date: Math.floor(invoiceDate),
+          updated_at: new Date().toISOString().split('T')[0],
+          payment_status: payment_status || 0,
           payment_mode: payment_mode,
-          fy: currentFy, // Use FY from invoice counter
-          transport: transport_name || '',
-          transport_name: transport_name,
-          vehicle_number: vehicle_number,
-          return_status: 0 // 0=none, 1=partial, 2=full - new purchases have no returns
-          // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-          // taxrate: tax_rate || 0,
-          // basic_value: basic_value || 0,
-          // bill: bill,
-          // tax: tax,
+          fy: currentFy,
+          transport: req.body.transport_name || '',
+          transport_name: req.body.transport_name,
+          vehicle_number: req.body.vehicle_number,
+          return_status: 0
         }
       });
 
-      // ===== CREATE BILL_TO RECORD =====
-      // Save vendor details to bill_to table for inline editing
+      // ===== DB OPERATION 2: Create bill_to record =====
       await tx.bill_to.create({
         data: {
           invoice_no: nextInvoiceNo,
-
           vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
           contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
           email: req.body.email_id ?? existingVendor?.email ?? '',
@@ -595,8 +533,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       });
 
-      // ===== PERFORMANCE FIX: Batch load all products at once =====
-      // Instead of N separate product.findUnique queries, do 1 batch query
+      // ===== DB OPERATION 3: Batch load all products =====
       const productIds = items.map(item => parseInt(item.product_id));
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
@@ -613,7 +550,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // Create product lookup map for O(1) access
       const productMap = new Map(products.map(product => [product.id, product]));
 
-      // Validate all products exist
+      // ===== DB OPERATION 4: Validate products exist =====
       for (const item of items) {
         const productId = parseInt(item.product_id);
         if (!productMap.has(productId)) {
@@ -621,75 +558,66 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // Create purchase items and update products within the same transaction
-      for (const item of items) {
+      // ===== OPTIMIZED DB OPERATION 5: Bulk insert purchase items =====
+      const bulkInsertData = items.map(item => {
         const productId = parseInt(item.product_id);
         const product = productMap.get(productId)!;
 
-        // Get product details from pre-loaded data
-        const productName = product.product_name || '';
-        const categoryId = product.product_category_id || 0;
-        const subcategoryId = product.product_subcategory_id || 0;
-        const hsn = product.hsn || '';
-
-        // Use model_id directly from frontend (already looked up from car_model)
         const modelId = item.model_id ? parseInt(item.model_id) : null;
-        // Use company_id directly from the frontend data
         const companyId = item.company_id ? parseInt(item.company_id) : null;
 
-        // Create purchase item record
-        await tx.purchaseitems.create({
-          data: {
-            invoice_no: purchase.invoice_no,
-            product_id: productId, // ✅ CRITICAL FIX: Save product_id to maintain relationship
-            name_of_product: productName,
-            category_id: categoryId,
-            subcategory_id: subcategoryId,
-            model_id: modelId, // ✅ Use model_id directly from frontend
-            company_id: companyId, // ✅ Use company_id from frontend
-            car_model: item.car_model || '', // ✅ Store the car model string for display
-            vendor_id: parseInt(vendor_id), // ✅ Save vendor ID in purchase items as well
-            // ===== EXTRA FIELDS - COMMENTED OUT (NOT STORED IN DB) =====
-            // hsn: hsn,
-            part: item.part || '', // ✅ Use part number from frontend
-            qty: item.qty,
-            // unit: 1, // @deprecated - Default unit (not used for products)
-            rate: item.rate,
-            subtotal: item.total,
-            gst_percentage: item.gst_percentage || 0,
-            cgst: item.cgst || 0,
-            sgst: item.sgst || 0,
-            igst: item.igst || 0,
-            tax: item.tax || 0,
-            fy: currentFy, // Use FY from invoice counter
-            invoice_date: invoiceDate
-          }
-        });
+        return {
+          invoice_no: purchase.invoice_no,
+          product_id: productId,
+          name_of_product: product.product_name,
+          category_id: product.product_category_id || 0,
+          subcategory_id: product.product_subcategory_id || 0,
+          model_id: modelId,
+          company_id: companyId,
+          car_model: item.car_model || '',
+          vendor_id: parseInt(vendor_id),
+          part: item.part || '',
+          qty: item.qty,
+          rate: item.rate,
+          subtotal: item.total,
+          gst_percentage: item.gst_percentage || 0,
+          cgst: item.cgst || 0,
+          sgst: item.sgst || 0,
+          igst: item.igst || 0,
+          tax: item.tax || 0,
+          fy: currentFy,
+          invoice_date: invoiceDate
+        };
+      });
 
-        // Validate and convert quantity to number to prevent null/undefined/0 issues
-        const validatedQty = Number(item.qty) || 0;
+      // Use Prisma's createMany for bulk insert
+      await tx.purchaseitems.createMany({
+        data: bulkInsertData
+      });
 
-        // ===== CRITICAL: Update product stock and purchase tracking WITHIN transaction =====
-        await tx.product.update({
-          where: { id: productId },
-          data: {
-            stock: {
-              increment: validatedQty
-            },
-            // ===== RATE MANAGEMENT =====
-            // Update latest purchase rate and timestamp when purchase is created
-            latest_purchase_rate: item.rate,
-            last_purchase_date: invoiceDate
-          }
-        });
-      }
+      // ===== OPTIMIZED DB OPERATION 6: Parallel stock updates =====
+      await Promise.all(
+        items.map(async (item) => {
+          const productId = parseInt(item.product_id);
+          const validatedQty = Number(item.qty) || 0;
+
+          return tx.product.update({
+            where: { id: productId },
+            data: {
+              stock: {
+                increment: validatedQty
+              },
+              latest_purchase_rate: item.rate,
+              last_purchase_date: invoiceDate
+            }
+          });
+        })
+      );
 
       return purchase;
-    }, {
-      timeout: 30000 // 30 second timeout for large purchases
-    });
+    }, { timeout: 45000 });
 
-    // Create ledger entry for purchase (outside transaction)
+    // ===== STEP 5: LEDGER OPERATIONS =====
     await ledgerService.createPurchaseEntry({
       id: purchase.id,
       vendor_id: parseInt(vendor_id),
@@ -699,7 +627,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       fy: currentFy
     })
 
-    // If paid immediately, create payment ledger entry
     if (payment_status === 1) {
       await ledgerService.createEntry({
         vendor_id: parseInt(vendor_id),
@@ -718,6 +645,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    const totalTime = Date.now() - startTime;
+
     res.status(201).json({
       message: 'Purchase created successfully',
       purchase: {
@@ -729,7 +658,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
   } catch (error) {
-    console.error('Purchase creation error:', error)
+    const totalTime = Date.now() - startTime;
+    console.error(`Purchase creation failed after ${totalTime}ms:`, error);
     res.status(500).json({
       message: 'Failed to create purchase',
       error: error instanceof Error ? error.message : 'Unknown error'

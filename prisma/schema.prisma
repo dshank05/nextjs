@@ -242,6 +242,9 @@ model Purchaseitems {
   purchase_return_items purchase_return_items[]
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
+  @@index([invoice_no, product_id], map: "idx_purchase_items_invoice_product")
+  @@index([product_id], map: "idx_purchase_items_product_id")
+  @@index([invoice_no], map: "idx_purchase_items_invoice_no")
   @@map("purchase_items")
 }
 
