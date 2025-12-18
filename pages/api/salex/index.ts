@@ -85,8 +85,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // NEW: Filter by item count - will be handled after fetching data since it's not stored on invoice table
     const itemsFilter = items && items !== '' ? parseInt(items as string) : null
 
-    // Validate and set sort parameters
-    const validSortFields = ['id', 'invoice_no', 'customer_name', 'total', 'invoice_date', 'payment_status', 'fy', 'bill_reference']
+    // Validate and set sort parameters - COMPLETE LIST for SalexTable compatibility
+    const validSortFields = [
+      'id', 'invoice_no', 'customer_name', 'total', 'invoice_date',
+      'payment_status', 'fy', 'bill_reference', 'item_count',
+      'total_tax', 'packing_forwarding_total', 'payment_mode', 'notes'
+    ]
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 

@@ -610,7 +610,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
 
         {/* Status Filter */}
         <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Payment Status</label>
           <SearchableSelect
             options={[
               { id: 'all', name: 'All Status' },
@@ -730,7 +730,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                 Payment Mode {getSortIcon('payment_mode')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
-                Status {getSortIcon('payment_status')}
+                Payment Status {getSortIcon('payment_status')}
               </th>
               <th>Actions</th>
             </tr>
