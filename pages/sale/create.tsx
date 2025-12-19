@@ -309,11 +309,14 @@ export default function InvoiceCreate() {
   // State for discount toggle
   const [enableDiscount, setEnableDiscount] = useState(false);
 
+  // State for tax toggle (Option A: Preserve Original Tax Setting)
+  const [enableTax, setEnableTax] = useState(true);
+
   // Auto-calculate total when qty, rate, gst, or discount changes
   useEffect(() => {
     const qty = parseFloat(templateRow.qty) || 0;
     const rate = parseFloat(templateRow.rate) || 0;
-    const gstPercent = parseFloat(templateRow.gst) || 0;
+    const gstPercent = enableTax ? parseFloat(templateRow.gst) || 0 : 0;
     const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
     if (qty > 0 && rate > 0) {
@@ -333,7 +336,7 @@ export default function InvoiceCreate() {
         total: ''
       }));
     }
-  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount]);
+  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount, enableTax]);
 
   // State for selected customer details (fetched on-demand, not stored in formData)
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -528,6 +531,10 @@ export default function InvoiceCreate() {
       if (hasDiscounts) {
         setEnableDiscount(true);
       }
+
+      // Check if any items have tax and enable tax checkbox (Option A: Preserve Original Tax Setting)
+      const hasTax = convertedItems.some(item => item.gst_percentage > 0 || item.tax > 0);
+      setEnableTax(hasTax);
 
       // Clear raw items after conversion
       setRawInvoiceItems([]);
@@ -1393,14 +1400,14 @@ export default function InvoiceCreate() {
         return;
       }
 
-      // Recalculate tax and total based on discount if enabled
+      // Recalculate tax and total based on discount and tax toggles
       const subtotal = editingRowData.qty * editingRowData.rate;
       const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
       const taxableAmount = subtotal - discountAmount;
-      const taxAmount = (taxableAmount * editingRowData.gst_percentage) / 100;
+      const taxAmount = enableTax ? (taxableAmount * editingRowData.gst_percentage) / 100 : 0;
 
-      // Calculate GST breakdown based on customer's state
-      const gstBreakdown = calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code);
+      // Calculate GST breakdown based on customer's state (only if tax is enabled)
+      const gstBreakdown = enableTax ? calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code) : { cgst: 0, sgst: 0, igst: 0 };
 
       const updatedItem = {
         ...editingRowData,
@@ -1918,7 +1925,7 @@ export default function InvoiceCreate() {
                   </label>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
@@ -1949,20 +1956,20 @@ export default function InvoiceCreate() {
                     }}
                     placeholder="Select Customer"
                   />
-                  {isOtherCustomerSelected && (
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
-                      <input
-                        type="text"
-                        value={formData.customer_name}
-                        onChange={(e) => handleInputChange('customer_name', e.target.value)}
-                        className="input w-full"
-                        placeholder="Enter customer name"
-                      />
-                    </div>
-                  )}
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
+                {isOtherCustomerSelected && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
+                    <input
+                      type="text"
+                      value={formData.customer_name}
+                      onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter customer name"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
@@ -2010,7 +2017,7 @@ export default function InvoiceCreate() {
                 </div>
               </div>
 
-              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-4 gap-4 mt-3">
+              <div className={`md:col-span-2 grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mt-3`}>
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
@@ -2163,11 +2170,16 @@ export default function InvoiceCreate() {
               </div>
             </div>
 
-            {/* Discount Section */}
+            {/* Discount & Tax Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="flex flex-row-reverse mb-3">
-                {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
-                <label className="flex items-center space-x-2 cursor-pointer">
+              <div className="flex flex-row-reverse mb-3 space-x-6">
+                {/* <h3 className="text-lg font-medium text-slate-200">Discount & Tax</h3> */}
+                {enableDiscount && (
+                  <div className="text-xs text-slate-400 mt-1">
+                    Percentage-based discount enabled
+                  </div>
+                )}
+                <label className="flex items-center space-x-2 cursor-pointer pr-4">
                   <input
                     type="checkbox"
                     checked={enableDiscount}
@@ -2175,6 +2187,15 @@ export default function InvoiceCreate() {
                     className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
                   />
                   <span className="text-sm text-slate-300">Enable Discount</span>
+                </label>
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableTax}
+                    onChange={(e) => setEnableTax(e.target.checked)}
+                    className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
+                  />
+                  <span className="text-sm text-slate-300 pr-4">Enable Tax</span>
                 </label>
               </div>
 
@@ -2216,9 +2237,11 @@ export default function InvoiceCreate() {
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-32">
                         RATE
                       </th>
-                      <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-32">
-                        GST (%)
-                      </th>
+                      {enableTax && (
+                        <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-32">
+                          GST (%)
+                        </th>
+                      )}
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
                           DISCOUNT (%)
@@ -2404,34 +2427,36 @@ export default function InvoiceCreate() {
                           }}
                         />
                       </td>
-                      <td className="px-4 py-3 text-center w-32">
-                        <input
-                          type="number"
+                      {enableTax && (
+                        <td className="px-4 py-3 text-center w-32">
+                          <input
+                            type="number"
 
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
-                          value={templateRow.gst}
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              gst: e.target.value
-                            }));
-                          }}
-                          onWheel={(e) => e.preventDefault()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault();
-                            }
-                          }}
-                        />
-                      </td>
+                            className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                            placeholder="0.00"
+                            value={templateRow.gst}
+                            onChange={(e) => {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                gst: e.target.value
+                              }));
+                            }}
+                            onWheel={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                              }
+                            }}
+                          />
+                        </td>
+                      )}
                       {enableDiscount && (
                         <td className="px-4 py-3 text-center w-20">
                           <input
                             type="number"
-
                             min="0"
                             max="100"
+                            step="1"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                             placeholder="0.00"
                             value={templateRow.discount}
@@ -2512,17 +2537,17 @@ export default function InvoiceCreate() {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const gstPercent = parseFloat(templateRow.gst) || 0;
+                                const gstPercent = enableTax ? parseFloat(templateRow.gst) || 0 : 0;
                                 const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
                                 // Calculate amounts
                                 const subtotal = qty * rate;
                                 const discountAmount = (subtotal * discountPercent) / 100;
                                 const taxableAmount = subtotal - discountAmount;
-                                const tax = (taxableAmount * gstPercent) / 100; // Tax on discounted price
+                                const tax = enableTax ? (taxableAmount * gstPercent) / 100 : 0; // Tax on discounted price, or 0 if tax disabled
 
-                                // Calculate tax breakdown based on customer's state
-                                const gstBreakdown = calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code);
+                                // Calculate tax breakdown based on customer's state (only if tax is enabled)
+                                const gstBreakdown = enableTax ? calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code) : { cgst: 0, sgst: 0, igst: 0 };
                                 const cgst = gstBreakdown.cgst;
                                 const sgst = gstBreakdown.sgst;
                                 const igst = gstBreakdown.igst;
@@ -2750,28 +2775,30 @@ export default function InvoiceCreate() {
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                               />
                             </td>
-                            <td className="px-3 py-2 text-center w-32">
-                              <input
-                                type="number"
+                            {enableTax && (
+                              <td className="px-3 py-2 text-center w-32">
+                                <input
+                                  type="number"
 
-                                value={editingRowData?.gst_percentage || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
-                                className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                onWheel={(e) => e.preventDefault()}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                    e.preventDefault();
-                                  }
-                                }}
-                              />
-                            </td>
+                                  value={editingRowData?.gst_percentage || ''}
+                                  onChange={(e) => setEditingRowData(prev => prev ? { ...prev, gst_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                  className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                  onWheel={(e) => e.preventDefault()}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                      e.preventDefault();
+                                    }
+                                  }}
+                                />
+                              </td>
+                            )}
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center w-20">
                                 <input
                                   type="number"
-
                                   min="0"
                                   max="100"
+                                  step="1"
                                   value={editingRowData?.discount_percentage || ''}
                                   onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
                                   className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2824,12 +2851,17 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
                               ₹{Math.round(product.rate)}
                             </td>
-                            <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ₹{Math.round(product.tax)}
-                            </td>
+                            {enableTax && (
+                              <td className="px-3 py-2 text-center text-xs text-slate-200">
+                                ₹{Math.round(product.tax)}
+                              </td>
+                            )}
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.discount_amount)}
+                                {discountMode === 'percentage'
+                                  ? `${Math.round(product.discount_percentage)}%`
+                                  : `₹${Math.round(product.discount_amount)}`
+                                }
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
@@ -2892,7 +2924,7 @@ export default function InvoiceCreate() {
                         </td>
                       </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount && enableTax ? 12 : enableDiscount || enableTax ? 11 : 10} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           <button
                             type="button"
