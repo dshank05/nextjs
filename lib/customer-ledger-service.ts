@@ -261,6 +261,32 @@ export async function recordReturnTransaction(
 }
 
 /**
+ * Create ledger entry for salex return transaction (credit note)
+ */
+export async function recordSalexReturnTransaction(
+  customerId: number,
+  returnId: number,
+  returnNo: string,
+  refundAmount: number,
+  transactionDate: number,
+  fy: number,
+  notes?: string
+): Promise<void> {
+  await createCustomerLedgerEntry({
+    customer_id: customerId,
+    transaction_date: transactionDate,
+    transaction_type: 'CREDIT_NOTE',
+    reference_type: 'SALEX_RETURN',
+    reference_id: returnId,
+    reference_no: returnNo,
+    debit: 0,
+    credit: refundAmount,  // Money going out to customer
+    notes: notes || `Salex return credit note ${returnNo}`,
+    fy
+  })
+}
+
+/**
  * Create ledger entry for customer receipt/payment
  */
 export async function recordReceiptTransaction(

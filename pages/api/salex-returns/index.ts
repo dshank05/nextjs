@@ -475,6 +475,38 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       timeout: 15000 // 15 seconds timeout for complex return processing
     })
 
+    // Create customer ledger entry for salex return (outside transaction)
+    try {
+      const { recordSalexReturnTransaction, recordRefundPaidTransaction } = await import('../../../lib/customer-ledger-service')
+      
+      await recordSalexReturnTransaction(
+        invoicex.select_customer,
+        result.id,
+        `SXR-${String(result.id).padStart(3, '0')}`,
+        refundAmount,
+        returnDateTimestamp,
+        financialYear,
+        return_notes || `Return for salex invoice ${invoicex.invoice_no}`
+      )
+
+      // If refunded immediately, create refund ledger entry
+      if (paymentStatusValue === 1) {
+        await recordRefundPaidTransaction(
+          invoicex.select_customer,
+          result.id,
+          `REF-${String(result.id).padStart(3, '0')}`,
+          refundAmount,
+          returnDateTimestamp,
+          paymentModeValue,
+          financialYear,
+          `Refund for salex return SXR-${result.id}`
+        )
+      }
+    } catch (ledgerError) {
+      console.error('Failed to create customer ledger entry:', ledgerError)
+      // Don't fail the return if ledger entry fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Return processed successfully',

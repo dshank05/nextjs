@@ -785,8 +785,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                       <button
                         onClick={() => onPartialReturn(salex)}
                         title="Create Partial Return"
-                        className={`btn-icon text-blue-400 hover:text-blue-300 ${(salex.return_status || 0) > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        disabled={(salex.return_status || 0) > 1}
+                        className={`btn-icon text-blue-400 hover:text-blue-300 ${(salex.return_status || 0) === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={(salex.return_status || 0) === 2}
                       >
                         <FileMinus className="w-4 h-4" />
                       </button>

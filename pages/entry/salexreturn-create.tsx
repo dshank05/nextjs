@@ -65,9 +65,9 @@ interface SelectedReturnItem extends SaleItem {
   total: number;
 }
 
-export default function SaleReturnCreatePage() {
+export default function SalexReturnCreatePage() {
   const router = useRouter();
-  const { customer: customerIdParam, invoice: invoiceIdParam, id: returnIdParam } = router.query;
+  const { customer: customerIdParam, invoicex: invoicexIdParam, id: returnIdParam } = router.query;
   const { showSnackbar } = useSnackbar();
 
   const [isEditMode, setIsEditMode] = useState(false);
@@ -163,12 +163,12 @@ export default function SaleReturnCreatePage() {
       loadReturnForEdit(returnIdParam as string);
     }
     // Check if we're in invoice mode
-    else if (invoiceIdParam) {
+    else if (invoicexIdParam) {
       setIsInvoiceMode(true);
-      setTargetInvoiceId(invoiceIdParam as string);
-      loadInvoiceForReturn(invoiceIdParam as string);
+      setTargetInvoiceId(invoicexIdParam as string);
+      loadInvoiceForReturn(invoicexIdParam as string);
     }
-  }, [returnIdParam, invoiceIdParam]);
+  }, [returnIdParam, invoicexIdParam]);
 
 
   const loadCustomers = async () => {
@@ -207,7 +207,7 @@ export default function SaleReturnCreatePage() {
         ...(toDate && { to_date: toDate })
       });
 
-      const billsResponse = await fetch(`/api/sale-returns/customer-items?${params}`);
+      const billsResponse = await fetch(`/api/salex-returns/customer-items?${params}`);
       if (billsResponse.ok) {
         const billsData = await billsResponse.json();
         const data = billsData.data;
@@ -342,13 +342,13 @@ export default function SaleReturnCreatePage() {
     setLoading(true);
     try {
       // Fetch invoice details
-      const response = await fetch(`/api/sales/${invoiceId}`);
+      const response = await fetch(`/api/salex/${invoiceId}`);
       if (!response.ok) {
         throw new Error('Failed to load invoice');
       }
 
       const data = await response.json();
-      const invoice = data.sale;
+      const invoice = data.salex;
 
       // Extract customer ID and auto-select customer
       const customerId = invoice.select_customer?.toString();
@@ -414,12 +414,12 @@ export default function SaleReturnCreatePage() {
     setIsLoadingEditData(true);
     try {
       // Check session storage first (like purchase edit)
-      let returnData = SessionStorageService.get('sale-returns', returnId);
+      let returnData = SessionStorageService.get('salex-returns', returnId);
 
       // If not in session storage, fetch from API
       if (!returnData) {
         console.log('📡 No cached data, fetching from API...');
-        const response = await fetch(`/api/sale-returns/${returnId}`);
+        const response = await fetch(`/api/salex-returns/${returnId}`);
         if (response.ok) {
           const data = await response.json();
           returnData = data.data;
@@ -698,7 +698,7 @@ export default function SaleReturnCreatePage() {
       let response;
       if (isEditMode && returnIdParam) {
         // Edit mode - update existing return
-        response = await fetch(`/api/sale-returns/${returnIdParam}`, {
+        response = await fetch(`/api/salex-returns/${returnIdParam}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(returnData)
@@ -709,7 +709,7 @@ export default function SaleReturnCreatePage() {
           customer_id: customer?.id,
           ...returnData
         };
-        response = await fetch('/api/sale-returns/customer-return', {
+        response = await fetch('/api/salex-returns/customer-return', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(createData)
@@ -721,7 +721,7 @@ export default function SaleReturnCreatePage() {
         const action = isEditMode ? 'updated' : 'created';
         const returnId = isEditMode ? returnIdParam : result.data.return.id;
         showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
-        router.push('/entry/salereturn');
+        router.push('/entry/salexreturn');
       } else {
         const error = await response.json();
         showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);
@@ -765,7 +765,7 @@ export default function SaleReturnCreatePage() {
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-slate-200 flex items-center gap-2">
               <Package className="w-6 h-6" />
-              {isEditMode ? 'Edit' : 'Create'} Sale Return {customer?.billing_name ? `from ${customer.billing_name}` : ''}  {isEditMode && returnIdParam && (
+              {isEditMode ? 'Edit' : 'Create'} Salex Return {customer?.billing_name ? `from ${customer.billing_name}` : ''}  {isEditMode && returnIdParam && (
               <p className="text-slate-400">| Return ID: {returnIdParam}</p>
             )}
             </h1>
@@ -1188,7 +1188,7 @@ export default function SaleReturnCreatePage() {
               <div className="flex justify-end space-x-4">
                 <button
                   type="button"
-                  onClick={() => router.push('/entry/salereturn')}
+                  onClick={() => router.push('/entry/salexreturn')}
                   className="px-6 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
                 >
                   Cancel

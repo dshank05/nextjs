@@ -494,6 +494,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Create customer ledger entry for credit note (outside transaction)
     try {
+      const { recordReturnTransaction, recordRefundPaidTransaction } = await import('../../../lib/customer-ledger-service')
+      
       await recordReturnTransaction(
         invoice.select_customer,
         result.id,
@@ -503,6 +505,20 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         financialYear,
         return_notes || `Return for invoice ${invoice.invoice_no}`
       )
+
+      // If refunded immediately, create refund ledger entry
+      if (paymentStatusValue === 1) {
+        await recordRefundPaidTransaction(
+          invoice.select_customer,
+          result.id,
+          `REF-${String(result.id).padStart(3, '0')}`,
+          refundAmount,
+          returnDateTimestamp,
+          paymentModeValue,
+          financialYear,
+          `Refund for return SR-${result.id}`
+        )
+      }
     } catch (ledgerError) {
       console.error('Failed to create customer ledger entry:', ledgerError)
       // Don't fail the return if ledger entry fails

@@ -780,8 +780,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                       <button
                         onClick={() => onPartialReturn(sale)}
                         title="Create Partial Return"
-                        className={`btn-icon text-blue-400 hover:text-blue-300 ${(sale.return_status || 0) > 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        disabled={(sale.return_status || 0) > 1}
+                        className={`btn-icon text-blue-400 hover:text-blue-300 ${(sale.return_status || 0) === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        disabled={(sale.return_status || 0) === 2}
                       >
                         <FileMinus className="w-4 h-4" />
                       </button>
