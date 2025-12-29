@@ -129,6 +129,7 @@ model Invoice {
   mechanic                 mechanic?      @relation(fields: [mechanic_id], references: [id], map: "invoice_mechanic_fkey")
   staff                    staff?         @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
   sale_returns             sale_returns[]
+  customer_payment_allocations customer_payment_allocations[]
 
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
@@ -356,6 +357,8 @@ model customer_details {
   shipping_state      String? @db.VarChar(100)
   shipping_state_code Int?
   shipping_gstin      String? @db.VarChar(30)
+  customer_payments   customer_payments[]
+  customer_refunds    customer_refunds[]
 }
 
 model financial_year {
@@ -446,6 +449,7 @@ model invoicex {
   mechanic                 mechanic?       @relation(fields: [mechanic_id], references: [id], map: "invoicex_mechanic_fkey")
   staff                    staff?          @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
   salex_returns            salex_returns[]
+  customer_payment_allocations customer_payment_allocations[]
 
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")
@@ -698,6 +702,7 @@ model sale_returns {
   updated_at     DateTime            @updatedAt
   items          sale_return_items[]
   invoice        Invoice             @relation(fields: [invoice_id], references: [id], map: "sale_returns_invoice_fkey")
+  customer_refund_allocations customer_refund_allocations[]
 
   @@index([invoice_id], map: "sale_returns_invoice_fkey")
   @@index([status], map: "idx_sale_returns_status")
@@ -801,6 +806,7 @@ model salex_returns {
   updated_at     DateTime             @updatedAt
   items          salex_return_items[]
   invoicex       invoicex             @relation(fields: [invoicex_id], references: [id], map: "salex_returns_invoicex_fkey")
+  customer_refund_allocations customer_refund_allocations[]
 
   @@index([invoicex_id], map: "salex_returns_invoicex_fkey")
   @@index([status], map: "idx_salex_returns_status")
@@ -861,6 +867,114 @@ model vendor_ledger {
   @@index([fy], map: "idx_vendor_ledger_fy")
   @@index([reference_type, reference_id], map: "idx_vendor_ledger_reference")
   @@map("vendor_ledger")
+}
+
+model customer_ledger {
+  id               Int      @id @default(autoincrement())
+  customer_id      Int
+  transaction_date Int
+  transaction_type String   @db.VarChar(50)
+  reference_type   String?  @db.VarChar(50)
+  reference_id     Int?
+  reference_no     String?  @db.VarChar(100)
+  payment_mode     Int?
+  payment_status   Int?
+  payment_date     Int?
+  debit            Float    @default(0)  // Money coming in (sales, receipts)
+  credit           Float    @default(0)  // Money going out (returns, payments)
+  balance          Float
+  notes            String?  @db.Text
+  fy               Int
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@index([customer_id, transaction_date], map: "idx_customer_ledger_customer_date")
+  @@index([transaction_type], map: "idx_customer_ledger_type")
+  @@index([fy], map: "idx_customer_ledger_fy")
+  @@index([reference_type, reference_id], map: "idx_customer_ledger_reference")
+  @@map("customer_ledger")
+}
+
+// ============================================================================
+// CUSTOMER PAYMENT ALLOCATION SYSTEM (Phase 2)
+// ============================================================================
+
+model customer_payments {
+  id             Int                   @id @default(autoincrement())
+  customer_id    Int
+  payment_date   Int
+  payment_amount Decimal               @db.Decimal(10, 2)
+  payment_mode   Int                   // 0=Cash, 1=Bank
+  payment_type   String                @db.VarChar(20)
+  notes          String?               @db.Text
+  fy             Int
+  created_at     DateTime              @default(now())
+  updated_at     DateTime              @updatedAt
+  allocations    customer_payment_allocations[]
+  customer       customer_details      @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([customer_id], map: "idx_customer_payments_customer")
+  @@index([payment_date], map: "idx_customer_payments_date")
+  @@index([fy], map: "idx_customer_payments_fy")
+  @@map("customer_payments")
+}
+
+model customer_payment_allocations {
+  id               Int                 @id @default(autoincrement())
+  payment_id       Int
+  invoice_id       Int?                // For regular sales
+  invoicex_id      Int?                // For tax-exempt sales
+  allocated_amount Decimal             @db.Decimal(10, 2)
+  allocation_date  Int
+  notes            String?             @db.Text
+  created_at       DateTime            @default(now())
+  payment          customer_payments   @relation(fields: [payment_id], references: [id], onDelete: Cascade)
+  invoice          Invoice?            @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  invoicex         invoicex?           @relation(fields: [invoicex_id], references: [id], onDelete: Cascade)
+
+  @@index([payment_id], map: "idx_customer_payment_allocations_payment")
+  @@index([invoice_id], map: "idx_customer_payment_allocations_invoice")
+  @@index([invoicex_id], map: "idx_customer_payment_allocations_invoicex")
+  @@map("customer_payment_allocations")
+}
+
+model customer_refunds {
+  id            Int                  @id @default(autoincrement())
+  customer_id   Int
+  refund_date   Int
+  refund_amount Decimal              @db.Decimal(10, 2)
+  refund_mode   Int                  // 0=Cash, 1=Bank
+  refund_type   String               @db.VarChar(20)
+  notes         String?              @db.Text
+  fy            Int
+  created_at    DateTime             @default(now())
+  updated_at    DateTime             @updatedAt
+  allocations   customer_refund_allocations[]
+  customer      customer_details     @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([customer_id], map: "idx_customer_refunds_customer")
+  @@index([refund_date], map: "idx_customer_refunds_date")
+  @@index([fy], map: "idx_customer_refunds_fy")
+  @@map("customer_refunds")
+}
+
+model customer_refund_allocations {
+  id               Int              @id @default(autoincrement())
+  refund_id        Int
+  sale_return_id   Int?             // For regular sale returns
+  salex_return_id  Int?             // For tax-exempt sale returns
+  allocated_amount Decimal          @db.Decimal(10, 2)
+  allocation_date  Int
+  notes            String?          @db.Text
+  created_at       DateTime         @default(now())
+  refund           customer_refunds @relation(fields: [refund_id], references: [id], onDelete: Cascade)
+  sale_return      sale_returns?    @relation(fields: [sale_return_id], references: [id], onDelete: Cascade)
+  salex_return     salex_returns?   @relation(fields: [salex_return_id], references: [id], onDelete: Cascade)
+
+  @@index([refund_id], map: "idx_customer_refund_allocations_refund")
+  @@index([sale_return_id], map: "idx_customer_refund_allocations_sale_return")
+  @@index([salex_return_id], map: "idx_customer_refund_allocations_salex_return")
+  @@map("customer_refund_allocations")
 }
 
 // ============================================================================

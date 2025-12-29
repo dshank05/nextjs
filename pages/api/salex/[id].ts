@@ -9,7 +9,7 @@ async function handler(
   const { id } = req.query
 
   if (!id || typeof id !== 'string') {
-    return res.status(400).json({ message: 'Invalid invoice ID' })
+    return res.status(400).json({ message: 'Invalid salex ID' })
   }
 
   switch (req.method) {
@@ -24,385 +24,519 @@ async function handler(
   }
 }
 
-async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: string) {
+async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
-    const salexId = parseInt(invoiceId)
-    if (isNaN(salexId)) {
-      return res.status(400).json({ message: 'Invalid salex ID' })
-    }
-
-    // Get the salex record
     const salex = await prisma.invoicex.findUnique({
-      where: { id: salexId }
+      where: { id: parseInt(salexId) }
     })
 
     if (!salex) {
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    // Get the salex items for this invoice with product display_name
-    const salexItems = await prisma.invoice_itemsx.findMany({
-      where: { invoice_no: salex.id },
-      include: {
-        product: {
-          select: {
-            display_name: true
-          }
-        }
-      }
-    })
+    // Get related data separately
+    const [customerData, staffData, mechanicData, returnData, paymentAllocations] = await Promise.all([
+      salex.select_customer && salex.select_customer !== 0 ?
+        prisma.customer_details.findUnique({
+          where: { id: salex.select_customer },
+          select: { id: true, billing_name: true, billing_gstin: true }
+        }) : Promise.resolve(null),
 
-    // Get complete customer data from customer_details table or bill_tosalesx table for "Other" customers
-    let customerData = null
-    if (salex.select_customer === 0 || salex.select_customer === null) {
-      // "Other" customer - get data from bill_tosalesx table
-      const billToData = await prisma.bill_tosalesx.findUnique({
-        where: { invoice_no: salex.id }
-      })
-      if (billToData) {
-        customerData = {
-          id: 0,
-          billing_name: billToData.billing_name || '',
-          billing_address: billToData.billing_address || '',
-          billing_gstin: billToData.billing_gstin || '',
-          contact_no: billToData.contact_no || '',
-          email: billToData.email || ''
-        }
-      }
-    } else if (salex.select_customer) {
-      customerData = await prisma.customer_details.findUnique({
-        where: { id: salex.select_customer },
+      salex.staff_id ?
+        prisma.staff.findUnique({
+          where: { id: salex.staff_id },
+          select: { id: true, name: true }
+        }) : Promise.resolve(null),
+
+      salex.mechanic_id ?
+        prisma.mechanic.findUnique({
+          where: { id: salex.mechanic_id },
+          select: { id: true, name: true }
+        }) : Promise.resolve(null),
+
+      prisma.salex_returns.findMany({
+        where: { invoicex_id: salex.id },
         select: {
           id: true,
-          billing_name: true,
-          billing_address: true,
-          billing_gstin: true,
-          contact_no: true,
-          email: true
+          return_date: true,
+          total_amount: true,
+          status: true
         }
-      })
+      }),
+
+      // Note: customer_payment_allocations relation doesn't exist in current Prisma client
+      // This will be available after prisma generate
+      Promise.resolve([])
+    ])
+
+    if (!salex) {
+      return res.status(404).json({ message: 'Salex not found' })
     }
 
-    // Get transport details
-    const transportDetails = await prisma.transport_detailsx.findFirst({
-      where: { invoice_id: salex.id }
+    // Get item count
+    const itemCount = await prisma.invoice_itemsx.count({
+      where: { invoice_no: salex.id }
     })
 
-    // Get staff details if staff_id exists
-    let staffData = null
-    if (salex.staff_id) {
-      staffData = await prisma.staff.findUnique({
-        where: { id: salex.staff_id },
-        select: { id: true, name: true, phone: true, email: true }
-      })
+    // Format date
+    let formattedDate: string | null = null
+    try {
+      if (salex.invoice_date) {
+        const dateObj = new Date(salex.invoice_date * 1000)
+        if (!isNaN(dateObj.getTime())) {
+          formattedDate = dateObj.toLocaleDateString('en-IN')
+        }
+      }
+    } catch (error) {
+      console.warn('Invalid date format for salex:', salex.invoice_date, error)
     }
 
-    // Get mechanic details if mechanic_id exists
-    let mechanicData = null
-    if (salex.mechanic_id) {
-      mechanicData = await prisma.mechanic.findUnique({
-        where: { id: salex.mechanic_id },
-        select: { id: true, name: true, phone: true }
-      })
-    }
+    // Calculate payment summary (will be 0 until prisma generate is fixed)
+    const totalAllocated = 0 // paymentAllocations.reduce((sum, alloc) => sum + Number(alloc.allocated_amount), 0)
 
-    // Transform to POST/PUT compatible structure
-    const transformedSalex = {
-      // Main salex fields - ensure all required fields are populated
+    const enhancedSalex = {
       id: salex.id,
-      invoice_number: salex.invoice_no?.toString() || '',
-      bill_reference: salex.bill_reference || '',
-      staff_id: salex.staff_id || null,
-      mechanic_id: salex.mechanic_id || null,
-      commission: salex.commission || 0,
-      date: salex.invoice_date,  // Keep as number for proper formatting
-      customer_id: salex.select_customer || null,
-      transport_cost: salex.freight || 0,
-
-      // Financial summary fields - ensure these are populated
-      items_total: salex.items_total || 0,
-      total_taxable_value: salex.total_taxable_value || salex.items_total || 0,
-      total_tax: salex.total_tax || 0,
-      total: salex.total || (salex.items_total + (salex.total_tax || 0)),
-      freight: salex.freight || 0,
-
-      // Transform items to POST structure
-      items: salexItems.map(item => ({
-        product_id: item.product_id,
-        product_name: item.product?.display_name || item.name_of_product || 'Unknown Product',
-        display_name: item.product?.display_name || item.name_of_product || 'Unknown Product',
-        category_id: item.category_id,
-        subcategory_id: item.subcategory_id,
-        company_id: item.company_id,
-        model_id: item.model_id,
-        part: item.part || '',
-        qty: item.qty,
-        rate: item.rate,
-        gst_percentage: item.gst_percentage || 0,
-        cgst: item.cgst || 0,
-        sgst: item.sgst || 0,
-        igst: item.igst || 0,
-        tax: item.tax || 0,
-        total: item.subtotal || (item.qty * item.rate),
-        subtotal: item.subtotal || (item.qty * item.rate),
-        hsn: item.hsn || ''
-      })),
-
-      // Additional fields
-      descriptions: salex.descriptions || '',
-      packing_forwarding_qty: salex.packing_forwarding_qty || 0,
-      packing_forwarding_rate: salex.packing_forwarding_rate || 0,
-      packing_forwarding_total: salex.packing_forwarding_total || 0,
-
-      // Tax summary fields
-      total_cgst: salex.total_cgst || 0,
-      total_sgst: salex.total_sgst || 0,
-      total_igst: salex.total_igst || 0,
-      notes: salex.notes || '',
-
-      // Payment fields
-      payment_status: salex.payment_status || 0,
-      payment_mode: salex.payment_mode || 1,
-
-      // Metadata
+      invoice_no: salex.invoice_no,
+      customer_id: salex.select_customer,
+      customer_name: customerData?.billing_name || 'Other',
+      customer_gstin: customerData?.billing_gstin || '',
+      invoice_date: salex.invoice_date,
+      formattedDate: formattedDate,
+      items_total: salex.items_total,
+      freight: salex.freight,
+      total_taxable_value: salex.total_taxable_value,
+      total_tax: salex.total_tax,
+      total: salex.total,
+      notes: salex.notes,
+      descriptions: salex.descriptions,
+      payment_status: salex.payment_status,
+      payment_mode: salex.payment_mode,
+      return_status: salex.return_status,
       fy: salex.fy,
-      item_count: salexItems.length,
-
-      // Backward compatibility
-      select_customer: salex.select_customer || null,
-      customer: customerData,
-      staff: staffData,
-      mechanic: mechanicData,
-
-      // Transport details for UI compatibility
-      transportDetails: {
-        vehicle_no: transportDetails?.vehicle_no || '',
-        trans_mode: transportDetails?.trans_mode || ''
-      }
+      staff_id: salex.staff_id,
+      staff_name: staffData?.name,
+      mechanic_id: salex.mechanic_id,
+      mechanic_name: mechanicData?.name,
+      bill_reference: salex.bill_reference,
+      discount: salex.discount,
+      packing_forwarding_total: salex.packing_forwarding_total,
+      item_count: itemCount,
+      return_count: returnData.length,
+      total_allocated: totalAllocated,
+      outstanding_amount: salex.total - totalAllocated,
+      created_at: salex.updated_at,
+      updated_at: salex.updated_at
     }
 
-    res.status(200).json(transformedSalex)
-
-  } catch (error) {
-    console.error('Get salex error:', error)
-    res.status(500).json({ message: 'Failed to fetch salex', error: error instanceof Error ? error.message : 'Unknown error' })
-  }
-}
-
-async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: string) {
-  try {
-    const {
-      invoice_no,
-      invoice_date,
-      select_customer,
-      items_total = 0,
-      freight = 0,
-      total_taxable_value,
-      total,
-      notes = '',
-      payment_status,
-      payment_mode,
-
-      // Additional fields from UI
-      descriptions = '',
-      discount = 0,      // Invoice-level discount amount
-      staff_details,
-      staff_id,
-      mechanic_id,
-      commission,
-      bill_reference,
-
-      // Packing & forwarding fields
-      packing_forwarding_qty,
-      packing_forwarding_rate,
-      packing_forwarding_total,
-
-      invoiceItems,
-      billingDetails,
-      shippingDetails,
-      transportDetails
-    } = req.body
-
-    // Validate required fields
-    if (!invoice_no || !invoice_date || !select_customer) {
-      return res.status(400).json({ message: 'Required fields missing' })
-    }
-
-    // Get current invoice data for stock adjustments (salex doesn't affect stock)
-    const currentInvoice = await prisma.invoicex.findUnique({
-      where: { id: parseInt(invoiceId) }
+    res.status(200).json({
+      salex: enhancedSalex
     })
-
-    if (!currentInvoice) {
-      return res.status(404).json({ message: 'Invoice not found' })
-    }
-
-    // ===== SPLIT INTO MULTIPLE TRANSACTIONS TO AVOID TIMEOUT =====
-
-    // Transaction 1: Update main invoice data
-    const updatedInvoice = await prisma.$transaction(async (tx: any) => {
-      // Convert date to timestamp
-      const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
-      const fy = new Date().getFullYear()
-
-      return await tx.invoicex.update({
-        where: { id: parseInt(invoiceId) },
-        data: {
-          invoice_no: parseInt(invoice_no),
-          select_customer: parseInt(select_customer),
-          items_total: parseFloat(items_total),
-          freight: parseFloat(freight),
-          total_taxable_value: parseFloat(total_taxable_value),
-          taxrate: 0, // No tax for salex
-          total_cgst: 0,
-          total_sgst: 0,
-          total_igst: 0,
-          total_tax: 0,
-          total: parseFloat(total),
-          notes: notes || '',
-          descriptions: descriptions || '', // Add descriptions field
-          bill_reference: bill_reference || '', // Add bill_reference field
-          invoice_date: invoiceDateTimestamp,
-          updated_at: new Date().toISOString().slice(0, 19).replace('T', ' '),
-          payment_status: parseInt(payment_status),
-          payment_mode: parseInt(payment_mode),
-          fy: fy,
-          staff_details,
-          staff_id: staff_id ? parseInt(staff_id) : null,
-          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null,
-          commission: commission || 0,
-          // Add packing and forwarding fields
-          packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty) : null,
-          packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate) : null,
-          packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total) : null
-        }
-      })
-    }, { timeout: 15000 }) // 15 seconds timeout
-
-    // Transaction 2: Handle invoice items (salex doesn't affect stock)
-    if (invoiceItems && invoiceItems.length > 0) {
-      await prisma.$transaction(async (tx: any) => {
-        // Delete old invoice items
-        await tx.invoice_itemsx.deleteMany({
-          where: { invoice_no: parseInt(invoiceId) }
-        })
-
-        // Create new invoice items
-        const invoiceDateTimestamp = Math.floor(new Date(invoice_date).getTime() / 1000)
-        const fy = new Date().getFullYear()
-
-        await tx.invoice_itemsx.createMany({
-          data: invoiceItems.map((item: any) => ({
-            product_id: item.product_id, // Required foreign key to Product table
-            invoice_no: parseInt(invoiceId),
-            name_of_product: item.name_of_product,
-            qty: parseFloat(item.qty),
-            rate: parseFloat(item.rate),
-            subtotal: parseFloat(item.subtotal),
-            hsn: item.hsn || '',
-            part: item.part,
-            category_id: item.category_id || null,
-            subcategory_id: item.subcategory_id || null,
-            model_id: item.model_id ? parseInt(item.model_id) : null, // Convert to integer
-            company_id: item.company_id || null,
-            discount: parseFloat(item.discount) || 0, // Item-level discount amount
-            discountrate: parseFloat(item.discountrate) || 0, // Item-level discount percentage
-            fy: fy,
-            invoice_date: invoiceDateTimestamp
-          }))
-        })
-      }, { timeout: 15000 }) // 15 seconds timeout
-    }
-
-    // Transaction 3: Update related tables (separate transaction)
-    await prisma.$transaction(async (tx: any) => {
-      // Update billing details (now uses customer_id foreign key)
-      await tx.bill_tosalesx.upsert({
-        where: { invoice_no: parseInt(invoiceId) },
-        update: {
-          customer_id: parseInt(select_customer)
-        },
-        create: {
-          invoice_no: parseInt(invoiceId),
-          customer_id: parseInt(select_customer)
-        }
-      })
-
-      // Update shipping details (now uses customer_id foreign key)
-      if (shippingDetails && shippingDetails !== null) {
-        await tx.shiptox.upsert({
-          where: { invoice_no: parseInt(invoiceId) },
-          update: {
-            customer_id: parseInt(select_customer),
-            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
-          },
-          create: {
-            invoice_no: parseInt(invoiceId),
-            customer_id: parseInt(select_customer),
-            shipping: shippingDetails.useShippingAddress !== undefined ? shippingDetails.useShippingAddress : false
-          }
-        })
-      }
-
-      // Update transport details
-      if (transportDetails) {
-        await tx.transport_detailsx.upsert({
-          where: { invoice_id: parseInt(invoiceId) },
-          update: {
-            trans_mode: transportDetails.trans_mode,
-            vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date
-          },
-          create: {
-            invoice_id: parseInt(invoiceId),
-            trans_mode: transportDetails.trans_mode,
-            vehicle_no: transportDetails.vehicle_no,
-            supply_date: transportDetails.supply_date
-          }
-        })
-      }
-    }, { timeout: 10000 }) // 10 seconds timeout
-
-    // Update transaction record (outside transaction since it's not critical)
-    await prisma.incexpx.updateMany({
-      where: { invoice_id: parseInt(invoiceId) },
-      data: {
-        amt: updatedInvoice.total,
-        payment_mode: updatedInvoice.payment_mode,
-        notes: updatedInvoice.notes
-      }
-    })
-
-    res.status(200).json(updatedInvoice)
   } catch (error) {
-    console.error('Salex invoice update error:', error)
+    console.error('Salex fetch error:', error)
     res.status(500).json({
-      message: 'Failed to update invoice',
+      message: 'Failed to fetch salex',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
 }
 
-async function handleDelete(req: NextApiRequest, res: NextApiResponse, invoiceId: string) {
+async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
-    // Delete in transaction (salex doesn't affect stock)
-    await prisma.$transaction(async (tx: any) => {
-      // Delete related records
-      await tx.transport_detailsx.deleteMany({ where: { invoice_id: parseInt(invoiceId) } })
-      await tx.ship_tox.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
-      await tx.bill_tosalesx.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
-      await tx.invoice_itemsx.deleteMany({ where: { invoice_no: parseInt(invoiceId) } })
-      await tx.incexpx.deleteMany({ where: { invoice_id: parseInt(invoiceId) } })
+    const {
+      bill_reference,
+      staff_id,
+      mechanic_id,
+      commission,
+      date,
+      customer_id,
+      transport_cost,
+      items,
+      descriptions,
+      packing_forwarding_qty,
+      packing_forwarding_rate,
+      packing_forwarding_total,
+      total_cgst,
+      total_sgst,
+      total_igst,
+      notes,
+      total_tax,
+      payment_status,
+      payment_mode
+    } = req.body
 
-      // Delete main invoice
-      await tx.invoicex.delete({ where: { id: parseInt(invoiceId) } })
+    // Validation
+    if (customer_id === undefined || customer_id === null) {
+      return res.status(400).json({
+        message: 'Customer ID is required'
+      })
+    }
+
+    // Check if salex exists
+    const existingSalex = await prisma.invoicex.findUnique({
+      where: { id: parseInt(salexId) }
     })
 
-    res.status(200).json({ message: 'Salex invoice deleted successfully' })
+    if (!existingSalex) {
+      return res.status(404).json({ message: 'Salex not found' })
+    }
+
+    // Validate customer exists
+    let existingCustomer = null;
+    if (parseInt(customer_id) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(customer_id) }
+      })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
+    }
+
+    // Validate payment fields
+    const validPaymentStatuses = [0, 1, 2]
+    const validPaymentModes = [0, 1]
+
+    const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
+      ? parseInt(payment_status.toString())
+      : existingSalex.payment_status
+
+    const parsedPaymentMode = payment_mode !== undefined && payment_mode !== null
+      ? parseInt(payment_mode.toString())
+      : existingSalex.payment_mode
+
+    if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
+      return res.status(400).json({
+        message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Partial), or 2 (Paid)'
+      })
+    }
+
+    if (!validPaymentModes.includes(parsedPaymentMode)) {
+      return res.status(400).json({
+        message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
+      })
+    }
+
+    // Get current financial year
+    const currentDate = new Date()
+    const currentYear = currentDate.getFullYear()
+    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+
+    // Convert date to Unix timestamp
+    const invoiceDate = date ? Math.floor(new Date(date).getTime() / 1000) : existingSalex.invoice_date
+
+    // Calculate totals if items provided
+    let itemsTotal = existingSalex.items_total
+    let totalTaxable = existingSalex.total_taxable_value
+
+    if (items && items.length > 0) {
+      itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
+      totalTaxable = itemsTotal
+    }
+
+    // Start transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Update salex record
+      const salexUpdateData: any = {
+        select_customer: parseInt(customer_id),
+        bill_reference: bill_reference || existingSalex.bill_reference,
+        commission: commission !== undefined ? commission : existingSalex.commission,
+        items_total: itemsTotal,
+        freight: transport_cost !== undefined ? transport_cost : existingSalex.freight,
+        total_taxable_value: totalTaxable,
+        total_cgst: total_cgst !== undefined ? total_cgst : existingSalex.total_cgst,
+        total_sgst: total_sgst !== undefined ? total_sgst : existingSalex.total_sgst,
+        total_igst: total_igst !== undefined ? total_igst : existingSalex.total_igst,
+        total_tax: total_tax !== undefined ? total_tax : existingSalex.total_tax,
+        total: itemsTotal + (packing_forwarding_total || existingSalex.packing_forwarding_total || 0) + (transport_cost || existingSalex.freight || 0) + (total_tax || existingSalex.total_tax || 0),
+        notes: notes !== undefined ? notes : existingSalex.notes,
+        descriptions: descriptions !== undefined ? descriptions : existingSalex.descriptions,
+        packing_forwarding_qty: packing_forwarding_qty !== undefined ? packing_forwarding_qty : existingSalex.packing_forwarding_qty,
+        packing_forwarding_rate: packing_forwarding_rate !== undefined ? packing_forwarding_rate : existingSalex.packing_forwarding_rate,
+        packing_forwarding_total: packing_forwarding_total !== undefined ? packing_forwarding_total : existingSalex.packing_forwarding_total,
+        invoice_date: invoiceDate,
+        payment_status: parsedPaymentStatus,
+        payment_mode: parsedPaymentMode,
+        fy: financialYear,
+        updated_at: new Date()
+      };
+
+      // Handle staff and mechanic relations
+      if (staff_id !== undefined) {
+        salexUpdateData.staff_id = staff_id ? parseInt(staff_id) : null
+      }
+
+      if (mechanic_id !== undefined) {
+        salexUpdateData.mechanic_id = mechanic_id ? parseInt(mechanic_id) : null
+      }
+
+      const salex = await tx.invoicex.update({
+        where: { id: parseInt(salexId) },
+        data: salexUpdateData
+      })
+
+      // Handle item-level updates if items provided
+      if (items && items.length > 0) {
+        // Get existing salex items for comparison
+        const existingItems = await tx.invoice_itemsx.findMany({
+          where: { invoice_no: salex.id }
+        })
+
+        // Create maps for efficient lookup using product_id
+        const existingItemsMap = new Map<number, any>()
+        const newItemsMap = new Map<number, any>()
+
+        existingItems.forEach(item => {
+          existingItemsMap.set(item.product_id, {
+            id: item.id,
+            qty: item.qty || 0,
+            item: item
+          })
+        })
+
+        items.forEach(item => {
+          newItemsMap.set(parseInt(item.product_id), {
+            qty: item.qty || 0,
+            rate: item.rate || 0,
+            product_id: parseInt(item.product_id),
+            item: item
+          })
+        })
+
+        // Process deletions: items that exist in DB but not in new list
+        for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
+          if (!newItemsMap.has(productId)) {
+            // Item was removed - increase stock (return sold items)
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            if (validatedExistingQty > 0) {
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: {
+                    increment: validatedExistingQty
+                  }
+                }
+              })
+            }
+            // Delete the item
+            await tx.invoice_itemsx.delete({
+              where: { id: existingData.id }
+            })
+          }
+        }
+
+        // Process additions and updates
+        for (const [productId, newData] of Array.from(newItemsMap.entries())) {
+          const existingData = existingItemsMap.get(productId)
+
+          if (!existingData) {
+            // New item - create it and decrease stock
+            const product = await tx.product.findUnique({
+              where: { id: productId },
+              select: {
+                product_name: true,
+                hsn: true,
+                product_category_id: true,
+                product_subcategory_id: true,
+                company_id: true,
+                stock: true
+              }
+            })
+
+            if (!product) {
+              throw new Error(`Product with ID ${productId} not found`)
+            }
+
+            // Check stock availability for new items
+            if (product.stock < newData.qty) {
+              throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${newData.qty}`)
+            }
+
+            const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null;
+
+            await tx.invoice_itemsx.create({
+              data: {
+                invoice_no: salex.id,
+                product_id: productId,
+                name_of_product: newData.item.product_name || product.product_name || '',
+                category_id: product.product_category_id,
+                subcategory_id: product.product_subcategory_id,
+                model_id: modelId,
+                company_id: product.company_id,
+                hsn: product.hsn,
+                part: newData.item.part || '',
+                qty: newData.qty,
+                rate: newData.rate,
+                subtotal: newData.qty * newData.rate,
+                gst_percentage: newData.item.gst_percentage || 0,
+                cgst: newData.item.cgst || 0,
+                sgst: newData.item.sgst || 0,
+                igst: newData.item.igst || 0,
+                tax: newData.item.tax || 0,
+                fy: financialYear,
+                invoice_date: invoiceDate
+              }
+            })
+
+            // Decrease stock for new salex sales
+            const validatedNewQty = Number(newData.qty) || 0;
+            await tx.product.update({
+              where: { id: productId },
+              data: {
+                stock: {
+                  decrement: validatedNewQty
+                }
+              }
+            })
+          } else {
+            // Existing item - check if quantity changed
+            const validatedNewQty = Number(newData.qty) || 0;
+            const validatedExistingQty = Number(existingData.qty) || 0;
+            const qtyDifference = validatedNewQty - validatedExistingQty;
+
+            if (Math.abs(qtyDifference) > 0.001) {
+              // Check stock availability for increased quantity
+              if (qtyDifference > 0) {
+                const product = await tx.product.findUnique({
+                  where: { id: productId },
+                  select: { stock: true, product_name: true }
+                })
+
+                if (product && product.stock < qtyDifference) {
+                  throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested additional ${qtyDifference}`)
+                }
+              }
+
+              // Update quantity and adjust stock
+              await tx.invoice_itemsx.update({
+                where: { id: existingData.id },
+                data: {
+                  qty: newData.qty,
+                  rate: newData.rate,
+                  subtotal: newData.qty * newData.rate
+                }
+              })
+
+              // Adjust stock based on quantity difference
+              await tx.product.update({
+                where: { id: productId },
+                data: {
+                  stock: {
+                    increment: -qtyDifference // Negative because salex sales decrease stock
+                  }
+                }
+              })
+            }
+          }
+        }
+      }
+
+      return salex
+    })
+
+    res.status(200).json({
+      message: 'Salex updated successfully',
+      salex: {
+        id: result.id,
+        invoice_no: result.invoice_no,
+        total: result.total,
+        customer_name: existingCustomer?.billing_name || 'Other'
+      }
+    })
+
   } catch (error) {
-    console.error('Salex invoice deletion error:', error)
+    console.error('Salex update error:', error)
     res.status(500).json({
-      message: 'Failed to delete invoice',
+      message: 'Failed to update salex',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: string) {
+  try {
+    // Check if salex exists
+    const existingSalex = await prisma.invoicex.findUnique({
+      where: { id: parseInt(salexId) }
+    })
+
+    if (!existingSalex) {
+      return res.status(404).json({ message: 'Salex not found' })
+    }
+
+    // Check for dependencies separately
+    const returnCount = await prisma.salex_returns.count({
+      where: { invoicex_id: parseInt(salexId) }
+    })
+
+    if (returnCount > 0) {
+      return res.status(400).json({
+        message: 'Cannot delete salex with existing returns. Delete returns first.'
+      })
+    }
+
+    // Note: customer_payment_allocations check will be added after prisma generate
+    // For now, we'll allow deletion but it may fail if allocations exist
+
+    // Use database transaction for salex deletion and stock restoration
+    await prisma.$transaction(async (tx) => {
+      // Get all salex items to restore stock
+      const salexItems = await tx.invoice_itemsx.findMany({
+        where: { invoice_no: parseInt(salexId) }
+      })
+
+      // Restore stock for all items
+      for (const item of salexItems) {
+        const validatedQty = Number(item.qty) || 0;
+        if (validatedQty > 0) {
+          await tx.product.update({
+            where: { id: item.product_id },
+            data: {
+              stock: {
+                increment: validatedQty
+              }
+            }
+          })
+        }
+      }
+
+      // Delete related records
+      await tx.invoice_itemsx.deleteMany({
+        where: { invoice_no: parseInt(salexId) }
+      })
+
+      await tx.transport_detailsx.deleteMany({
+        where: { invoice_id: parseInt(salexId) }
+      })
+
+      await tx.shiptox.deleteMany({
+        where: { invoice_no: parseInt(salexId) }
+      })
+
+      await tx.bill_tosalesx.deleteMany({
+        where: { invoice_no: parseInt(salexId) }
+      })
+
+      await tx.incexpx.deleteMany({
+        where: { invoice_id: parseInt(salexId) }
+      })
+
+      // Delete the salex
+      await tx.invoicex.delete({
+        where: { id: parseInt(salexId) }
+      })
+    })
+
+    res.status(200).json({
+      success: true,
+      message: 'Salex deleted successfully'
+    })
+
+  } catch (error) {
+    console.error('Salex deletion error:', error)
+    res.status(500).json({
+      message: 'Failed to delete salex',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }

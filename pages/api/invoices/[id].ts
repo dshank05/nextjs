@@ -39,7 +39,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     }
 
     // Get related data
-    const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, customerDetails, staffDetails, mechanicDetails] = await Promise.all([
+    const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, customerDetails, staffDetails, mechanicDetails, returnHistory] = await Promise.all([
       prisma.bill_tosales.findFirst({
         where: { invoice_no: invoice.id }
       }),
@@ -116,7 +116,25 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           name: true,
           phone: true
         }
-      }) : Promise.resolve(null)
+      }) : Promise.resolve(null),
+
+      // Get return history for this invoice
+      prisma.sale_returns.findMany({
+        where: { invoice_id: parseInt(invoiceId) },
+        select: {
+          id: true,
+          return_date: true,
+          total_amount: true,
+          total_tax: true,
+          refund_amount: true,
+          status: true,
+          payment_status: true,
+          notes: true,
+          fy: true,
+          created_at: true
+        },
+        orderBy: { return_date: 'desc' }
+      })
     ])
 
     // Handle null transportDetails properly
@@ -143,6 +161,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       bill_reference: invoice.bill_reference,
       payment_mode: invoice.payment_mode,
       payment_status: invoice.payment_status,
+      return_status: invoice.return_status, // Add return status
 
       // Related entity IDs
       staff_details: invoice.staff_details,
@@ -173,6 +192,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       } : null,
       transportDetails,
       transactions,
+      returnHistory, // Add return history
 
       // Complete entity data for UI compatibility
       customer: customerDetails ? {
@@ -266,6 +286,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
 
     if (!currentInvoice) {
       return res.status(404).json({ message: 'Invoice not found' })
+    }
+
+    // Block editing if invoice is fully returned
+    if (currentInvoice.return_status === 2) {
+      return res.status(400).json({
+        message: 'Cannot edit a fully returned invoice. All items have been returned.',
+        error_code: 'FULLY_RETURNED_INVOICE_EDIT_BLOCKED',
+        suggestion: 'Create a new invoice if additional items need to be sold'
+      })
     }
 
     // ===== SINGLE OPTIMIZED TRANSACTION TO PREVENT TIMEOUT =====

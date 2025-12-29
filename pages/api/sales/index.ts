@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { withObservability } from '../../../lib/withObservability'
+import { calculatePaymentStatus } from '../../../lib/payment-allocation-service'
 
 async function handler(
   req: NextApiRequest,
@@ -81,8 +82,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Validate payment_status and payment_mode
-    const validPaymentStatuses = [0, 1];
+    // Validate payment_status and payment_mode (Phase 2: Payment Allocation)
+    const validPaymentStatuses = [0, 1, 2]; // 0=Unpaid, 1=Partial, 2=Paid
     const validPaymentModes = [0, 1];
 
     const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
@@ -95,7 +96,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
       return res.status(400).json({
-        message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
+        message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Partial), or 2 (Paid)'
       })
     }
 
@@ -265,24 +266,42 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Create income transaction within transaction
-      await tx.incexp.create({
-        data: {
-          invoice_id: sale.id,
-          user_id: 1, // TODO: Get from authentication context
-          amt: sale.total,
-          payment_mode: sale.payment_mode,
-          type: 0, // 0 = Income
-          incexp_date: new Date().toISOString().split('T')[0],
-          fy: sale.fy,
-          notes: sale.notes || `Sale invoice #${sale.invoice_no}`
-        }
-      })
-
       return sale;
     }, {
       timeout: 30000 // 30 second timeout for large sales
     });
+
+    // Create customer ledger entry for sale (outside transaction)
+    try {
+      const { recordSaleTransaction, recordReceiptTransaction } = await import('../../../lib/customer-ledger-service')
+      
+      await recordSaleTransaction(
+        parseInt(customer_id),
+        sale.id,
+        sale.invoice_no.toString(),
+        calculatedGrandTotal,
+        Math.floor(invoiceDate),
+        currentFy,
+        notes || `Sale invoice ${sale.invoice_no}`
+      )
+
+      // If paid immediately, create receipt entry
+      if (parsedPaymentStatus === 1) {
+        await recordReceiptTransaction(
+          parseInt(customer_id),
+          sale.id,
+          `PAY-${String(sale.id).padStart(3, '0')}`,
+          calculatedGrandTotal,
+          Math.floor(invoiceDate),
+          parsedPaymentMode,
+          currentFy,
+          `Payment received for sale ${sale.invoice_no}`
+        )
+      }
+    } catch (ledgerError) {
+      console.error('Failed to create customer ledger entry:', ledgerError)
+      // Don't fail the sale if ledger entry fails
+    }
 
     res.status(201).json({
       message: 'Sale created successfully',
@@ -377,7 +396,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // ===== VALIDATE PAYMENT FIELDS =====
-    const validPaymentStatuses = [0, 1];
+    const validPaymentStatuses = [0, 1, 2]; // 0=Unpaid, 1=Partial, 2=Paid
     const validPaymentModes = [0, 1];
 
     const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
@@ -390,7 +409,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
       return res.status(400).json({
-        message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
+        message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Partial), or 2 (Paid)'
       })
     }
 
@@ -399,6 +418,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
       })
     }
+
+    // Get old sale data before update for comparison
+    const oldSale = await prisma.invoice.findUnique({
+      where: { id: saleId },
+      select: { total: true, payment_status: true }
+    })
 
     // Get current financial year
     const currentDate = new Date()
@@ -413,6 +438,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     if (items && items.length > 0) {
       itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
     }
+
+    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -673,6 +700,49 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return sale
     })
 
+    // Create ledger adjustment entries if amount changed (outside transaction)
+    if (oldSale && oldSale.total !== calculatedGrandTotal) {
+      try {
+        const { recordSaleAdjustmentTransaction, recordReceiptAdjustmentTransaction } = await import('../../../lib/customer-ledger-service')
+        
+        const diff = calculatedGrandTotal - Number(oldSale.total)
+        
+        // Create sale adjustment entry
+        await recordSaleAdjustmentTransaction(
+          parseInt(customer_id),
+          result.id,
+          result.invoice_no.toString(),
+          diff,
+          Math.floor(invoiceDate),
+          financialYear,
+          `Sale amount adjusted from ₹${oldSale.total} to ₹${calculatedGrandTotal}`
+        )
+        
+        // If sale was paid, create receipt adjustment
+        if (parsedPaymentStatus === 1) {
+          await recordReceiptAdjustmentTransaction(
+            parseInt(customer_id),
+            result.id,
+            result.id,
+            `ADJ-${String(result.id).padStart(3, '0')}`,
+            diff,
+            Math.floor(invoiceDate),
+            financialYear,
+            `Receipt adjusted for sale amount change`
+          )
+          
+          // Update payment allocations
+          await prisma.customer_payment_allocations.updateMany({
+            where: { invoice_id: result.id },
+            data: { allocated_amount: calculatedGrandTotal }
+          })
+        }
+      } catch (ledgerError) {
+        console.error('Failed to create ledger adjustment entries:', ledgerError)
+        // Don't fail the update if ledger entry fails
+      }
+    }
+
     res.status(200).json({
       message: 'Sale updated successfully',
       sale: {
@@ -864,12 +934,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get customer names, bill_to data, and item counts in batch queries
+    // Get customer names, bill_to data, item counts, and payment allocations in batch queries
     const invoiceIds = salesInvoices.map((inv: { id: any }) => inv.id)
     // Get bill_to data for "Other" customers (select_customer = 0)
     const otherCustomerInvoices = salesInvoices.filter((inv: any) => inv.select_customer === 0).map((inv: any) => inv.id)
 
-    const [customerData, itemCounts, billToData] = await Promise.all([
+    const [customerData, itemCounts, billToData, paymentAllocations] = await Promise.all([
       // Get customer IDs from invoices first
       prisma.invoice.findMany({
         where: { id: { in: invoiceIds } },
@@ -887,6 +957,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       otherCustomerInvoices.length > 0 ? prisma.bill_tosales.findMany({
         where: { invoice_no: { in: otherCustomerInvoices } },
         select: { invoice_no: true, billing_name: true, contact_no: true, email: true, billing_address: true, billing_address2: true, billing_city: true, billing_state: true, billing_gstin: true }
+      }) : Promise.resolve([]),
+
+      // Get payment allocations for all invoices
+      invoiceIds.length > 0 ? prisma.customer_payment_allocations.groupBy({
+        by: ['invoice_id'],
+        where: { invoice_id: { in: invoiceIds } },
+        _sum: { allocated_amount: true }
       }) : Promise.resolve([])
     ])
 
@@ -917,9 +994,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     })
 
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
+    const paymentMap = new Map(paymentAllocations.map((payment: any) => [payment.invoice_id, Number(payment._sum.allocated_amount || 0)]))
 
     // Enhanced sales invoices using maps
     let enhancedSales = salesInvoices.map((invoice: any) => {
+      // Calculate outstanding amount
+      const totalPaid = paymentMap.get(invoice.id) || 0
+      const outstandingAmount = Number(invoice.total) - totalPaid
 
       // Handle integer timestamp format for sales
       let formattedDate = 'Invalid Date'
@@ -964,6 +1045,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         type: invoice.type || 'sale',
         item_count: itemCountMap.get(invoice.id) || 0,
         packing_forwarding_total: invoice.packing_forwarding_total || 0,
+        // Payment allocation summary (NEW)
+        total_paid: totalPaid,
+        outstanding_amount: outstandingAmount,
         // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
         // formattedDate,
         // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
