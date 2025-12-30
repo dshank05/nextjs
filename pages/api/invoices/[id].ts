@@ -39,7 +39,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
     }
 
     // Get related data
-    const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, customerDetails, staffDetails, mechanicDetails, returnHistory] = await Promise.all([
+    const [billingDetails, shippingDetails, transportDetailsResult, invoiceItems, transactions, billToData, staffDetails, mechanicDetails, returnHistory] = await Promise.all([
       prisma.bill_tosales.findFirst({
         where: { invoice_no: invoice.id }
       }),
@@ -75,27 +75,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
         }
       }),
       prisma.incexp.findMany({ where: { invoice_id: invoice.id } }),
-      // Fetch complete customer data from customer_details table
-      prisma.customer_details.findUnique({
-        where: { id: invoice.select_customer },
+      // Always fetch customer data from bill_to table (manual entry)
+      prisma.bill_to.findFirst({
+        where: { invoice_no: invoice.id },
         select: {
-          id: true,
-          billing_name: true,
-          billing_address: true,
-          billing_address_2: true,
-          billing_city: true,
-          billing_state: true,
-          billing_state_code: true,
-          billing_gstin: true,
+          vendor_name: true,
           contact_no: true,
           email: true,
-          shipping_name: true,
-          shipping_address: true,
-          shipping_address_2: true,
-          shipping_city: true,
-          shipping_state: true,
-          shipping_state_code: true,
-          shipping_gstin: true
+          address: true,
+          address2: true,
+          city: true,
+          state: true,
+          gstin: true,
+          pin_code: true
         }
       }),
       // Fetch complete staff data from staff table
@@ -176,14 +168,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       packing_forwarding_total: invoice.packing_forwarding_total,
 
       // Top-level fields expected by UI
-      customer_name: customerDetails?.billing_name || '',
+      customer_name: billToData?.vendor_name || '',
       vehicle_number: transportDetails?.vehicle_no || '',
       transport_name: transportDetails?.trans_mode || '',
 
       // Related data arrays
       invoiceItems,
       billingDetails: {
-        customer_id: invoice.select_customer?.toString()
+        customer_id: '0' // Always 0 for manual entry
       },
       shippingDetails: shippingDetails ? {
         id: shippingDetails.id,
@@ -194,25 +186,25 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       transactions,
       returnHistory, // Add return history
 
-      // Complete entity data for UI compatibility
-      customer: customerDetails ? {
-        id: customerDetails.id.toString(),
-        billing_name: customerDetails.billing_name,
-        billing_address: customerDetails.billing_address || '',
-        billing_address_2: customerDetails.billing_address_2 || '',
-        billing_city: customerDetails.billing_city || '',
-        billing_state: customerDetails.billing_state,
-        billing_state_code: customerDetails.billing_state_code,
-        billing_gstin: customerDetails.billing_gstin || '',
-        contact_no: customerDetails.contact_no || '',
-        email: customerDetails.email || '',
-        shipping_name: customerDetails.shipping_name || '',
-        shipping_address: customerDetails.shipping_address || '',
-        shipping_address_2: customerDetails.shipping_address_2 || '',
-        shipping_city: customerDetails.shipping_city || '',
-        shipping_state: customerDetails.shipping_state,
-        shipping_state_code: customerDetails.shipping_state_code,
-        shipping_gstin: customerDetails.shipping_gstin || ''
+      // Complete entity data for UI compatibility (from bill_to table)
+      customer: billToData ? {
+        id: '0', // Manual entry customer
+        billing_name: billToData.vendor_name,
+        billing_address: billToData.address || '',
+        billing_address_2: billToData.address2 || '',
+        billing_city: billToData.city || '',
+        billing_state: billToData.state || '',
+        billing_state_code: null, // Not stored in bill_to
+        billing_gstin: billToData.gstin || '',
+        contact_no: billToData.contact_no || '',
+        email: billToData.email || '',
+        shipping_name: billToData.vendor_name || '',
+        shipping_address: billToData.address || '',
+        shipping_address_2: billToData.address2 || '',
+        shipping_city: billToData.city || '',
+        shipping_state: billToData.state || '',
+        shipping_state_code: null, // Not stored in bill_to
+        shipping_gstin: billToData.gstin || ''
       } : null,
       staff: staffDetails,
       mechanic: mechanicDetails
@@ -233,8 +225,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       // Main invoice fields
       invoice_no,
       invoice_date,
-      select_customer,
-      customer_id, // Alternative customer ID location (for backward compatibility)
       items_total,
       freight,
       total_taxable_value,
@@ -304,23 +294,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       note: 'UI sends calculated total discount, API saves it directly'
     });
 
-    // Validate customer data first (outside transaction for better error handling)
-    let customerIdSource: string | undefined;
-    if (select_customer) {
-      customerIdSource = select_customer;
-      console.log('✅ Using customer_id from select_customer:', customerIdSource);
-    } else if (customer_id) {
-      customerIdSource = customer_id;
-      console.log('✅ Using customer_id from top-level customer_id:', customerIdSource);
-    } else {
-      throw new Error('Customer selection is required for invoice update (select_customer or customer_id)')
-    }
-
-    const customerId = parseInt(customerIdSource.toString());
-    if (isNaN(customerId) || customerId <= 0) {
-      throw new Error('Invalid customer ID provided')
-    }
-
+    // Always use customer ID = 0 for manual entry (no customer selection)
+    const customerId = 0;
     console.log('🎯 FINAL CUSTOMER ID FOR UPDATE:', customerId);
 
     // Single comprehensive transaction with proper timeout and error handling
@@ -333,7 +308,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
             ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
             : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
-          select_customer,
+          select_customer: 0, // Always 0 for manual entry
           items_total: items_total || 0,
           freight: freight || 0,
           total_taxable_value,

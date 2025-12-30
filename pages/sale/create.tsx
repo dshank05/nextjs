@@ -9,26 +9,6 @@ import SessionStorageService from '../../lib/sessionStorage';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 
-interface Customer {
-  id: string;
-  billing_name: string;
-  shipping_name?: string;
-  billing_address?: string;
-  billing_address_2?: string;
-  billing_city?: string;
-  billing_state?: number;
-  billing_state_code?: number;
-  shipping_address?: string;
-  shipping_address_2?: string;
-  shipping_city?: string;
-  shipping_state?: number;
-  shipping_state_code?: number;
-  billing_gstin?: string;
-  shipping_gstin?: string;
-  contact_no?: string;
-  email?: string;
-}
-
 interface StaffDetails {
   id: string;
   staff_name: string;
@@ -147,7 +127,6 @@ export default function InvoiceCreate() {
   // Business state hardcoded to Uttar Pradesh (assuming state code 9)
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -156,21 +135,14 @@ export default function InvoiceCreate() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
-  const [customersLoaded, setCustomersLoaded] = useState(false);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
-  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [isOtherCustomerSelected, setIsOtherCustomerSelected] = useState(false);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
-
-  // Shipping address selection state
-  const [useShippingAddress, setUseShippingAddress] = useState(false);
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -338,15 +310,6 @@ export default function InvoiceCreate() {
     }
   }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount, enableTax]);
 
-  // State for selected customer details (fetched on-demand, not stored in formData)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
-  // New state for GST rates (from product create)
-  const [gstRates, setGstRates] = useState<any[]>([]);
-
-  // State for customer state code (like vendor state in purchase create)
-  const [customerStateForTax, setCustomerStateForTax] = useState<number>(); // Track customer's state code for tax calculations (default to business state)
-
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
@@ -363,6 +326,12 @@ export default function InvoiceCreate() {
 
   // Initialize snackbar hook
   const { showSnackbar } = useSnackbar();
+
+  // Helper function to get state code from state name
+  const getStateCodeFromName = (stateName: string): number | undefined => {
+    const state = states.find(s => s.name === stateName);
+    return state?.code;
+  };
 
   // Memoize the filterOptions to prevent unnecessary re-renders
   const memoizedFilterOptions = useMemo(() => filterOptions, [
@@ -420,38 +389,20 @@ export default function InvoiceCreate() {
   useEffect(() => {
     const initializeData = async () => {
       try {
-        // Fetch customers first so customer data is available for edit mode
-        await fetchCustomers();
-
-        // Fetch other data in parallel
+        // Fetch data in parallel
         await Promise.all([
           fetchStaffList(),
           fetchMechanics(),
           fetchProducts(),
           fetchFilterOptions(),
-          fetchGstRates(),
           fetchStates()
         ]);
-
-
       } catch (error) {
         console.error('Error initializing data:', error);
       }
     };
 
     initializeData();
-  }, []);
-
-  // Broadcast listener for customer creation
-  useEffect(() => {
-    const unsubscribe = subscribeBroadcast((message) => {
-      if (message.type === 'created' && message.resource === 'customers') {
-        console.log('📡 Received broadcast: New customer created, refetching customers...');
-        fetchCustomers();
-      }
-    });
-
-    return unsubscribe;
   }, []);
 
   // Fetch last invoice number only in create mode
@@ -543,7 +494,7 @@ export default function InvoiceCreate() {
 
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
-    if (customersLoaded && isEditMode && editInvoiceId) {
+    if (isEditMode && editInvoiceId) {
       console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
 
       // First try to get data from sessionStorage
@@ -590,11 +541,7 @@ export default function InvoiceCreate() {
           pin_code: billingDetails?.billing_pin_code || ''
         });
 
-        // Set customer data from billingDetails
-        console.log("setting customer id ")
-        if (invoiceData?.customer_id || invoiceData?.select_customer) {
-          selectCustomerById((invoiceData.customer_id || invoiceData.select_customer).toString())
-        }
+        // Customer data is now directly populated from the invoice data (no customer selection needed)
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -621,53 +568,9 @@ export default function InvoiceCreate() {
       fetchInvoiceForEdit(editInvoiceId);
     }
 
-  }, [customersLoaded, isEditMode, editInvoiceId]);
+  }, [isEditMode, editInvoiceId]);
 
-  const selectCustomerById = (customerId: string) => {
-    console.log('🔄 selectCustomerById called with customerId:', customerId);
-    console.log('📋 Current customers list length:', customers.length);
-    console.log('📋 Current customers:', customers.map(c => ({ id: c.id, name: c.billing_name })));
-
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      console.log('✅ Customer found in loaded list, setting customer data:', customer.billing_name);
-      console.log('📊 Customer details:', {
-        id: customer.id,
-        billing_name: customer.billing_name,
-        contact_no: customer.contact_no,
-        billing_address: customer.billing_address
-      });
-
-      // Set selection state
-      console.log('🔄 Calling setSelectedCustomerId with:', customerId);
-      setSelectedCustomerId(customerId);
-
-      console.log('🔄 Calling setSelectedCustomer with customer object');
-      setSelectedCustomer(customer);
-
-      console.log('🔄 Calling setVendorIdToSave with:', parseInt(customerId));
-      setVendorIdToSave(parseInt(customerId));
-
-      // Populate form fields with customer data
-      console.log('🔄 Updating formData with customer details');
-      setFormData(prev => ({
-        ...prev,
-        customer_name: customer.billing_name,
-        contact_number: customer.contact_no || '',
-        address: customer.billing_address || '',
-        city: customer.billing_city || '',
-        state: customer.billing_state?.toString() || '',
-        gst_number: customer.billing_gstin || '',
-        email_id: customer.email || '',
-        pin_code: '' // Reset pin code when selecting existing customer
-      }));
-
-      console.log('✅ selectCustomerById completed successfully');
-    } else {
-      console.warn(`❌ Customer with ID ${customerId} not found in loaded customers list`);
-      console.log('📋 Available customer IDs:', customers.map(c => c.id));
-    }
-  };
+  // Customer selection function removed - no longer needed since we removed customer dropdown
 
 
 
@@ -779,23 +682,6 @@ export default function InvoiceCreate() {
     }
   }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/customers?dropdown=true');
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
-        setCustomersLoaded(true);
-      } else {
-        setCustomers([]);
-        setCustomersLoaded(true);
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      setCustomers([]); // Set empty array on error
-      setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
-    }
-  };
 
   const fetchStaffList = async () => {
     try {
@@ -867,15 +753,6 @@ export default function InvoiceCreate() {
     } catch (error) { console.error('Error fetching filter options:', error); }
   };
 
-  const fetchGstRates = async () => {
-    try {
-      const response = await fetch('/api/gst-rates');
-      if (response.ok) {
-        const data = await response.json();
-        setGstRates(data.gstRates || []);
-      }
-    } catch (error) { console.error('Error fetching GST rates:', error); }
-  };
 
   const fetchStates = async () => {
     try {
@@ -986,7 +863,7 @@ export default function InvoiceCreate() {
 
         setFormData(formDataToSet);
 
-        selectCustomerById(invoiceData?.customer_id.toString())
+        // Direct population of customer data from invoice (no customer selection needed)
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -1100,46 +977,8 @@ export default function InvoiceCreate() {
           }));
         }
 
-        // Set customer data - find customer in loaded customers list for proper state codes
-        if (invoice.select_customer || invoice.customer_id) {  // API field is select_customer, not customer_id
-          setSelectedCustomerId(invoice.select_customer.toString());
-          setVendorIdToSave(invoice.select_customer); // For consistency with purchase create
 
-          // Find customer in loaded customers list for proper state codes and data
-          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString());
-          if (existingCustomer) {
-            // Use real customer data from the API
-            setSelectedCustomer(existingCustomer);
-            setCustomerStateForTax(existingCustomer.billing_state_code);
-
-            // CRITICAL: Call handleCustomerSelect to populate customer form fields (STATE, etc.)
-            handleCustomerSelect(existingCustomer.id);
-          } else {
-            // Fallback: create customer object from invoice data if not found in list
-            console.warn('Customer not found in loaded list, creating from invoice data');
-            const customer = {
-              id: invoice.select_customer.toString(),
-              billing_name: invoice.customer_name || '',
-              shipping_name: '',
-              billing_address: invoice.address || '',
-              billing_address_2: '',
-              billing_city: invoice.city || '',
-              billing_state: 0, // We don't have state code from API
-              billing_state_code: 0, // We don't have state code from API
-              shipping_address: '',
-              shipping_address_2: '',
-              shipping_city: '',
-              shipping_state: 0,
-              shipping_state_code: 0, // Default - could be improved with API enhancement
-              billing_gstin: invoice.gst_number || '',
-              shipping_gstin: '',
-              contact_no: invoice.contact_number || '',
-              email: invoice.email_id || ''
-            };
-            setSelectedCustomer(customer);
-            setCustomerStateForTax(customer.billing_state_code);
-          }
-        }
+       
 
         // Set other related entity IDs
         if (invoice.staff_id) {
@@ -1166,213 +1005,23 @@ export default function InvoiceCreate() {
 
   const handleInputChange = (field: keyof InvoiceFormData, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+
+    // Clear tax calculations when state changes
+    if (field === 'state') {
+      setSelectedProducts([]);
+      setFormData(prev => ({
+        ...prev,
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+    }
+
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  const handleCustomerSelect = (customerId: string) => {
-    if (customerId === '0') {
-      // "Other" selected
-      setSelectedCustomerId('0');
-      setVendorIdToSave(0);
-      setSelectedCustomer(null);
-      setIsOtherCustomerSelected(true);
-
-      // Clear tax calculations and selected products
-      setSelectedProducts([]);
-      setFormData(prev => ({
-        ...prev,
-        customer_name: '', // Clear for manual entry
-        contact_number: '',
-        email_id: '',
-        address: '',
-        city: '',
-        state: '',
-        state_code: undefined,
-        gst_number: '',
-        pin_code: '',
-        total_cgst: '',
-        total_sgst: '',
-        total_igst: ''
-      }));
-      // Default to Intra-state (Business State) for "Other" to allow tax calculation
-      setCustomerStateForTax(BUSINESS_STATE_CODE);
-      return;
-    }
-
-    setIsOtherCustomerSelected(false);
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      setSelectedCustomer(customer);
-      setCustomerStateForTax(customer.billing_state_code); // Set customer's state for tax calculations
-
-      // Clear tax calculations when customer changes
-      setSelectedProducts([]);
-      setFormData(prev => ({
-        ...prev,
-        total_cgst: '',
-        total_sgst: '',
-        total_igst: '',
-        // Auto-populate customer details including state
-        customer_name: customer.billing_name,
-        contact_number: customer.contact_no || '',
-        address: customer.billing_address || '',
-        city: customer.billing_city || '',
-        state: customer.billing_state?.toString() || '',
-        state_code: customer.billing_state_code,
-        gst_number: customer.billing_gstin || '',
-        email_id: customer.email || ''
-      }));
-    } else {
-      setSelectedCustomer(null);
-    }
-  };
-
-  const addProductToInvoice = (product: Product) => {
-    // Don't allow adding products without customer selection
-    if (!selectedCustomer) {
-      setErrors({ products: 'Please select a customer before adding products' });
-      return;
-    }
-
-    const { companyId, companyName } = getCompanyInfo(product);
-
-    const qty = 1;
-    const rate = product.latest_selling_price || product.rate || 0;
-    const gstPercent = product.gst_rate_percentage || product.gst_rate || 0;
-    const subtotal = qty * rate;
-
-    // Calculate tax on the full amount (no discount by default)
-    const totalTaxAmount = (subtotal * gstPercent) / 100;
-
-    // Calculate GST breakdown based on customer's state
-    const gstBreakdown = calculateGSTBreakdown(totalTaxAmount, selectedCustomer.billing_state_code);
-
-    const newItem: InvoiceItem = {
-      id: Date.now().toString(),
-      product_id: product.id,
-      product_name: product.product_name,
-      car_model_ids: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-      car_model_names: [],
-      category_id: product.product_category_id || 0,
-      category_name: product.category_name || '',
-      subcategory_id: product.product_subcategory_id || null,
-      subcategory_name: product.subcategory_name || '',
-      company_id: companyId,
-      company_name: companyName,
-      part_number: product.part_no || '',
-      qty: qty,
-      rate: rate,
-      gst_percentage: gstPercent,
-      discount_percentage: 0,
-      tax: totalTaxAmount,
-      discount_amount: 0,
-      total: subtotal + totalTaxAmount,
-      // New pricing fields
-      hsn: product.hsn || '',
-      mrp: 0, // Default MRP
-      discount: 0, // Default discount
-      margin: 0, // Default margin
-      // GST breakdown - calculated based on state
-      cgst: gstBreakdown.cgst,
-      sgst: gstBreakdown.sgst,
-      igst: gstBreakdown.igst
-    };
-
-    setSelectedProducts(prev => [...prev, newItem]);
-    setSearchTerm('');
-
-    // Clear any product-related errors after successful addition
-    if (errors.products) {
-      setErrors(prev => ({ ...prev, products: '' }));
-    }
-  };
-
-  const updateProductQuantity = (id: string, qty: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        const newSubtotal = qty * item.rate;
-        const newDiscountAmount = (newSubtotal * item.discount_percentage) / 100;
-        const taxableAmount = newSubtotal - newDiscountAmount;
-        const newTax = (taxableAmount * item.gst_percentage) / 100;
-
-        // Recalculate GST breakdown
-        const gstBreakdown = calculateGSTBreakdown(newTax, selectedCustomer?.billing_state_code);
-
-        const newTotal = taxableAmount + newTax;
-
-        return {
-          ...item,
-          qty,
-          discount_amount: newDiscountAmount,
-          tax: newTax,
-          total: newTotal,
-          cgst: gstBreakdown.cgst,
-          sgst: gstBreakdown.sgst,
-          igst: gstBreakdown.igst
-        };
-      }
-      return item;
-    }));
-  };
-
-  const updateProductDiscount = (id: string, discountPercentage: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        const subtotal = item.qty * item.rate;
-        const newDiscountAmount = (subtotal * discountPercentage) / 100;
-        const taxableAmount = subtotal - newDiscountAmount;
-        const newTax = (taxableAmount * item.gst_percentage) / 100;
-
-        // Recalculate GST breakdown
-        const gstBreakdown = calculateGSTBreakdown(newTax, selectedCustomer?.billing_state_code);
-
-        const newTotal = taxableAmount + newTax;
-
-        return {
-          ...item,
-          discount_percentage: discountPercentage,
-          discount_amount: newDiscountAmount,
-          tax: newTax,
-          total: newTotal,
-          cgst: gstBreakdown.cgst,
-          sgst: gstBreakdown.sgst,
-          igst: gstBreakdown.igst
-        };
-      }
-      return item;
-    }));
-  };
-
-  const updateProductRate = (id: string, newRate: number, newSubtotal: number, newDiscountAmount: number, newTax: number, newTotal: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          rate: newRate,
-          discount_amount: newDiscountAmount,
-          tax: newTax,
-          total: newTotal
-        };
-      }
-      return item;
-    }));
-  };
-
-  const updateProductGst = (id: string, newGstPercent: number, newTax: number, newTotal: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        return {
-          ...item,
-          gst_percentage: newGstPercent,
-          tax: newTax,
-          total: newTotal
-        };
-      }
-      return item;
-    }));
-  };
 
   const handleEditProduct = (item: InvoiceItem) => {
     // Enable inline editing for this specific row
@@ -1407,7 +1056,8 @@ export default function InvoiceCreate() {
       const taxAmount = enableTax ? (taxableAmount * editingRowData.gst_percentage) / 100 : 0;
 
       // Calculate GST breakdown based on customer's state (only if tax is enabled)
-      const gstBreakdown = enableTax ? calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code) : { cgst: 0, sgst: 0, igst: 0 };
+      const customerStateCode = getStateCodeFromName(formData.state);
+      const gstBreakdown = enableTax ? calculateGSTBreakdown(taxAmount, customerStateCode || null) : { cgst: 0, sgst: 0, igst: 0 };
 
       const updatedItem = {
         ...editingRowData,
@@ -1497,7 +1147,9 @@ export default function InvoiceCreate() {
 
     console.log('🔍 VALIDATING TAX DATA FOR', selectedProducts.length, 'PRODUCTS');
     console.log('🏢 BUSINESS STATE CODE:', BUSINESS_STATE_CODE);
-    console.log('👤 CUSTOMER STATE CODE:', selectedCustomer?.billing_state_code);
+    
+    const customerStateCode = getStateCodeFromName(formData.state);
+    console.log('👤 CUSTOMER STATE CODE:', customerStateCode);
 
     // First, validate individual products for basic issues (GST percentages, calculation consistency)
     selectedProducts.forEach((item, index) => {
@@ -1520,9 +1172,9 @@ export default function InvoiceCreate() {
     });
 
     // Then, validate overall state-based tax logic based on TOTALS, not individual products
-    if (selectedProducts.length > 0 && selectedCustomer) {
+    if (selectedProducts.length > 0 && formData.state) {
       const { totalCgst, totalSgst, totalIgst } = calculateExpectedTax();
-      const isIntraState = !selectedCustomer.billing_state_code || selectedCustomer.billing_state_code === BUSINESS_STATE_CODE;
+      const isIntraState = !customerStateCode || customerStateCode === BUSINESS_STATE_CODE;
 
       // Check if there are any products with GST > 0
       const hasTaxableProducts = selectedProducts.some(product => product.gst_percentage > 0);
@@ -1573,18 +1225,17 @@ export default function InvoiceCreate() {
       newErrors.invoice_number = 'Invoice number is required';
       console.log('❌ NO INVOICE NUMBER');
     }
-    if (!selectedCustomerId || !selectedCustomer) {
-      newErrors.customer_name = 'Please select a customer';
-      console.log('❌ NO CUSTOMER SELECTED');
+    if (!formData.customer_name.trim()) {
+      newErrors.customer_name = 'Customer name is required';
+      console.log('❌ NO CUSTOMER NAME');
     }
-    if (isOtherCustomerSelected && !formData.customer_name.trim()) {
-      newErrors.customer_name = 'Customer name is required when "Other" is selected';
-    }
-    if (isOtherCustomerSelected && !formData.state.trim()) {
+    if (!formData.state.trim()) {
       newErrors.state = 'State is required';
+      console.log('❌ NO STATE');
     }
-    if (isOtherCustomerSelected && !formData.contact_number.trim()) {
+    if (!formData.contact_number.trim()) {
       newErrors.contact_number = 'Phone number is required';
+      console.log('❌ NO CONTACT NUMBER');
     }
     if (selectedProducts.length === 0) {
       newErrors.products = 'At least one product is required';
@@ -1649,14 +1300,13 @@ export default function InvoiceCreate() {
     e.preventDefault();
 
     console.log('🔍 VALIDATING FORM...');
-    console.log('📋 FORM DATA:', {
-      invoice_number: formData.invoice_number,
-      selectedCustomerId,
-      selectedCustomer,
-      selectedProducts: selectedProducts.length,
-      payment_status: formData.payment_status,
-      payment_mode: formData.payment_mode
-    });
+        console.log('📋 FORM DATA:', {
+          invoice_number: formData.invoice_number,
+          customer_name: formData.customer_name,
+          selectedProducts: selectedProducts.length,
+          payment_status: formData.payment_status,
+          payment_mode: formData.payment_mode
+        });
 
     const isValid = validateForm();
     console.log('✅ VALIDATION RESULT:', isValid);
@@ -1690,17 +1340,17 @@ export default function InvoiceCreate() {
         // ===== MAIN INVOICE FIELDS =====
         invoice_no: parseInt(formData.invoice_number),               // Invoice.invoice_no
         invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoice.invoice_date (convert to UNIX timestamp)
-        select_customer: parseInt(selectedCustomerId),              // Invoice.select_customer
+        select_customer: 0,                                          // Invoice.select_customer (set to 0 for manual entry)
 
-        // ===== CUSTOMER DETAILS (Always included) =====
-        customer_name: isOtherCustomerSelected ? formData.customer_name : (selectedCustomer?.billing_name || ''),
-        contact_number: isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || ''),
-        email_id: isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || ''),
-        address: isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || ''),
-        city: isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || ''),
-        state: isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state?.toString() || ''),
-        gst_number: isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || ''),
-        pin_code: isOtherCustomerSelected ? formData.pin_code : '',
+        // ===== CUSTOMER DETAILS (Always from form data) =====
+        customer_name: formData.customer_name,
+        contact_number: formData.contact_number,
+        email_id: formData.email_id,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        gst_number: formData.gst_number,
+        pin_code: formData.pin_code,
 
         // ===== CALCULATED TOTALS =====
         items_total: subtotal,                                       // Invoice.items_total
@@ -1757,21 +1407,6 @@ export default function InvoiceCreate() {
           invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoiceitems.invoice_date
           fy: new Date().getFullYear()                                // Invoiceitems.fy
         })),
-
-        // ===== CUSTOMER ID =====
-        customer_id: selectedCustomerId,
-
-        // ===== SHIPPING DETAILS =====
-        ...(selectedCustomer && {
-          shippingDetails: {
-            user_name: useShippingAddress ? selectedCustomer.shipping_name || selectedCustomer.billing_name : selectedCustomer.billing_name, // ship_to.user_name
-            address: useShippingAddress ? selectedCustomer.shipping_address || selectedCustomer.billing_address : selectedCustomer.billing_address, // ship_to.address
-            gstin: useShippingAddress ? selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin : selectedCustomer.billing_gstin // ship_to.gstin
-          }
-        }),
-
-        // ===== SHIPPING FLAG =====
-        useShippingAddress: useShippingAddress,
 
         // ===== TRANSPORT DETAILS =====
         transportDetails: {
@@ -1912,7 +1547,7 @@ export default function InvoiceCreate() {
 
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
+              {/* <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                 <div className="flex flex-row-reverse mt-1">
                   <label className="flex items-center space-x-2 cursor-pointer">
                     <input
@@ -1924,62 +1559,27 @@ export default function InvoiceCreate() {
                     <span className="text-sm text-slate-300">Use shipping address</span>
                   </label>
                 </div>
-              </div>
-              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
+              </div> */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
-                    <a
-                      href="/customers/create?from=sale"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
-                    >
-                      + Add New Customer
-                    </a>
-                  </div>
-                  <SearchableSelect
-                    options={[
-                      { id: '', name: 'Select Customer' },
-                      { id: '0', name: 'Other' },
-                      ...customers.map((customer) => ({
-                        id: customer.id,
-                        name: customer.billing_name
-                      }))
-                    ]}
-                    selectedValue={selectedCustomerId || ''}
-                    onSelectionChange={(value) => {
-                      const customerId = value || '';
-                      console.log('🔄 CUSTOMER DROPDOWN MANUAL CHANGE:', customerId);
-                      setSelectedCustomerId(customerId);
-                      handleCustomerSelect(customerId);
-                    }}
-                    placeholder="Select Customer"
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CUSTOMER NAME *</label>
+                  <input
+                    type="text"
+                    value={formData.customer_name}
+                    onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter customer name"
                   />
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
-                {isOtherCustomerSelected && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
-                    <input
-                      type="text"
-                      value={formData.customer_name}
-                      onChange={(e) => handleInputChange('customer_name', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter customer name"
-                    />
-                  </div>
-                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
                   <input
                     type="text"
-                    value={isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || '')}
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('contact_number', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    value={formData.contact_number}
+                    onChange={(e) => handleInputChange('contact_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter contact number"
                     maxLength={10}
                   />
                 </div>
@@ -1987,74 +1587,49 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || '')}
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('email_id', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter email" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    value={formData.email_id}
+                    onChange={(e) => handleInputChange('email_id', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    {useShippingAddress ? 'SHIPPING GST NUMBER' : 'BILLING GST NUMBER'}
-                  </label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={
-                      isOtherCustomerSelected
-                        ? formData.gst_number
-                        : (useShippingAddress
-                          ? selectedCustomer?.shipping_gstin || ''
-                          : selectedCustomer?.billing_gstin || '')
-                    }
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('gst_number', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter GSTIN" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    value={formData.gst_number}
+                    onChange={(e) => handleInputChange('gst_number', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter GST number"
                   />
                 </div>
               </div>
 
-              <div className={`md:col-span-2 grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mt-3`}>
-                <div className="md:col-span-1">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+                <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
                     type="text"
-                    value={isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || '')}
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('address', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter address" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    value={formData.address}
+                    onChange={(e) => handleInputChange('address', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter address"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
-                  <input
-                    type="text"
-                    value={selectedCustomer?.billing_address_2 || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
-                  />
-                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || '')}
-                    onChange={(e) => isOtherCustomerSelected && handleInputChange('city', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter city" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    value={formData.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter city"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE *</label>
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select State' },
@@ -2063,46 +1638,25 @@ export default function InvoiceCreate() {
                         name: state.name
                       }))
                     ]}
-                    selectedValue={(() => {
-                      // Find the state ID that matches the current state code
-                      if (selectedCustomer?.billing_state_code) {
-                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
-                        return matchingState ? matchingState.id : '';
-                      }
-                      // Fallback to state name matching if no state code
-                      if (formData.state || selectedCustomer?.billing_state) {
-                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
-                        const matchingState = states.find(state => state.name === currentStateName);
-                        return matchingState ? matchingState.id : '';
-                      }
-                      return '';
-                    })()}
+                    selectedValue={formData.state || ''}
                     onSelectionChange={(value) => {
-                      if (value) {
-                        // Find the state name from the selected ID
-                        const selectedState = states.find(state => state.id === value);
-                        if (selectedState) {
-                          handleInputChange('state', selectedState.name);
-                        }
-                      } else {
-                        handleInputChange('state', '');
-                      }
+                      handleInputChange('state', value);
                     }}
                     placeholder="Select State"
                   />
+                  {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
                 </div>
-                {isOtherCustomerSelected && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
-                    <input
-                      type="text"
-                      value={formData.pin_code}
-                      onChange={(e) => handleInputChange('pin_code', e.target.value)}
-                      className="input w-full"
-                      placeholder="Enter pin code"
-                    />
-                  </div>
-                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
+                  <input
+                    type="text"
+                    value={formData.pin_code}
+                    onChange={(e) => handleInputChange('pin_code', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter pin code"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2265,20 +1819,20 @@ export default function InvoiceCreate() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (!selectedCustomerId) {
-                              setErrors({ customer_name: 'Please select a customer first' });
+                            if (!formData.customer_name.trim()) {
+                              setErrors({ customer_name: 'Please enter customer name first' });
                               return;
                             }
                             setErrors({});
                             setProductSearchTerm('');
                             setIsProductPanelOpen(true);
                           }}
-                          disabled={!selectedCustomerId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedCustomerId
+                          disabled={!formData.customer_name.trim()}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${formData.customer_name.trim()
                             ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
                             : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
                             }`}
-                          title={!selectedCustomerId ? 'Please select a customer first' : ''}
+                          title={!formData.customer_name.trim() ? 'Please enter customer name first' : ''}
                         >
                           {selectedRowProduct ? (
                             productRowFilters.carModels.length > 0
@@ -2547,7 +2101,8 @@ export default function InvoiceCreate() {
                                 const tax = enableTax ? (taxableAmount * gstPercent) / 100 : 0; // Tax on discounted price, or 0 if tax disabled
 
                                 // Calculate tax breakdown based on customer's state (only if tax is enabled)
-                                const gstBreakdown = enableTax ? calculateGSTBreakdown(tax, selectedCustomer?.billing_state_code) : { cgst: 0, sgst: 0, igst: 0 };
+                                const customerStateCode = getStateCodeFromName(formData.state);
+                                const gstBreakdown = enableTax ? calculateGSTBreakdown(tax, customerStateCode || null) : { cgst: 0, sgst: 0, igst: 0 };
                                 const cgst = gstBreakdown.cgst;
                                 const sgst = gstBreakdown.sgst;
                                 const igst = gstBreakdown.igst;
@@ -2723,7 +2278,8 @@ export default function InvoiceCreate() {
                                       const taxAmount = (taxableAmount * editingRowData.gst_percentage) / 100;
 
                                       // Recalculate GST breakdown based on customer's state
-                                      const gstBreakdown = calculateGSTBreakdown(taxAmount, selectedCustomer?.billing_state_code);
+                                      const customerStateCode = getStateCodeFromName(formData.state);
+                                      const gstBreakdown = calculateGSTBreakdown(taxAmount, customerStateCode || null);
                                       const updatedItem = {
                                         ...editingRowData,
                                         car_model_names: newCarModelNames,
@@ -2858,10 +2414,7 @@ export default function InvoiceCreate() {
                             )}
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                {discountMode === 'percentage'
-                                  ? `${Math.round(product.discount_percentage)}%`
-                                  : `₹${Math.round(product.discount_amount)}`
-                                }
+                                {Math.round(product.discount_percentage)}%
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
@@ -2940,8 +2493,8 @@ export default function InvoiceCreate() {
                 </table>
               </div>
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
-              {!selectedCustomerId && (
-                <p className="text-xs text-amber-400 mt-1">Select a customer first</p>
+              {!formData.customer_name.trim() && (
+                <p className="text-xs text-amber-400 mt-1">Enter customer name first</p>
               )}
             </div>
 

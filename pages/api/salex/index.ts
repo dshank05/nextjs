@@ -356,23 +356,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validate required fields
-    // Allow select_customer to be 0 (Other)
-    if (!invoice_date || select_customer === undefined || select_customer === null || !invoiceItems || invoiceItems.length === 0) {
+    if (!invoice_date || !invoiceItems || invoiceItems.length === 0) {
       return res.status(400).json({ message: 'Missing required fields' })
     }
 
-    // ===== VALIDATE CUSTOMER EXISTS =====
-    let existingCustomer = null;
-    if (parseInt(select_customer) !== 0) {
-      existingCustomer = await prisma.customer_details.findUnique({
-        where: { id: parseInt(select_customer) }
-      })
-
-      if (!existingCustomer) {
-        return res.status(400).json({
-          message: 'Invalid customer selected - customer does not exist'
-        })
-      }
+    // Validate customer data is provided
+    if (!req.body.customer_name || !req.body.contact_number || !req.body.state) {
+      return res.status(400).json({ message: 'Customer name, contact number, and state are required' })
     }
 
     console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
@@ -504,15 +494,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await tx.bill_tosalesx.create({
         data: {
           invoice_no: invoice.id,
-          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
-          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
-          email: req.body.email_id || existingCustomer?.email || '',
-          billing_address: req.body.address || existingCustomer?.billing_address || '',
-          billing_address2: existingCustomer?.billing_address_2 || '',
-          billing_city: req.body.city || existingCustomer?.billing_city || '',
-          billing_state: req.body.state || existingCustomer?.billing_state || '',
-          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
-          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
+          billing_name: req.body.customer_name,
+          contact_no: req.body.contact_number || '',
+          email: req.body.email_id || '',
+          billing_address: req.body.address || '',
+          billing_address2: '',
+          billing_city: req.body.city || '',
+          billing_state: req.body.state || '',
+          billing_state_code: req.body.state_code || null,
+          billing_gstin: req.body.gst_number || ''
         }
       })
 
@@ -520,14 +510,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await tx.shiptox.create({
         data: {
           invoice_no: invoice.id,
-          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
-          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
-          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
-          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
-          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
-          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
-          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
-          shipping: useShippingAddress || true
+          shipping_name: req.body.customer_name,
+          shipping_address: req.body.address || '',
+          shipping_address2: '',
+          shipping_city: req.body.city || '',
+          shipping_state: req.body.state || '',
+          shipping_state_code: req.body.state_code || null,
+          shipping_gstin: req.body.gst_number || '',
+          shipping: true
         }
       })
 
@@ -586,7 +576,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         id: invoice.id,
         invoice_no: invoice.invoice_no,
         total: invoice.total,
-        customer_name: existingCustomer?.billing_name || req.body.customer_name || 'Other'
+        customer_name: req.body.customer_name
       }
     })
   } catch (error) {
@@ -970,48 +960,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return sale
     })
 
-    // Create ledger adjustment entries if amount changed (outside transaction)
-    if (oldSalex && oldSalex.total !== calculatedGrandTotal) {
-      try {
-        const { recordSalexAdjustmentTransaction, recordReceiptAdjustmentTransaction } = await import('../../../lib/customer-ledger-service')
-        
-        const diff = calculatedGrandTotal - Number(oldSalex.total)
-        
-        // Create salex adjustment entry
-        await recordSalexAdjustmentTransaction(
-          parseInt(customer_id),
-          result.id,
-          result.invoice_no.toString(),
-          diff,
-          Math.floor(invoiceDate),
-          financialYear,
-          `Salex amount adjusted from ₹${oldSalex.total} to ₹${calculatedGrandTotal}`
-        )
-        
-        // If salex was paid, create receipt adjustment
-        if (parsedPaymentStatus === 1) {
-          await recordReceiptAdjustmentTransaction(
-            parseInt(customer_id),
-            result.id,
-            result.id,
-            `ADJ-${String(result.id).padStart(3, '0')}`,
-            diff,
-            Math.floor(invoiceDate),
-            financialYear,
-            `Receipt adjusted for salex amount change`
-          )
-          
-          // Update payment allocations
-          await prisma.customer_payment_allocations.updateMany({
-            where: { invoicex_id: result.id },
-            data: { allocated_amount: calculatedGrandTotal }
-          })
-        }
-      } catch (ledgerError) {
-        console.error('Failed to create ledger adjustment entries:', ledgerError)
-        // Don't fail the update if ledger entry fails
-      }
-    }
+    // Note: Ledger adjustment logic removed for salex as it's not currently implemented
+    // If needed in the future, implement recordSalexAdjustmentTransaction in customer-ledger-service
 
     res.status(200).json({
       message: 'Salex updated successfully',

@@ -156,8 +156,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== MAIN INVOICE FIELDS (CURRENTLY STORED IN DATABASE) =====
       invoice_no,                        // ✓ Invoice.invoice_no
       invoice_date,                      // ✓ Invoice.invoice_date (converted to timestamp)
-      select_customer,                   // ✓ Invoice.select_customer
-      customer_id,                       // Alternative customer ID location (for backward compatibility)
       items_total,                       // ✓ Invoice.items_total
       freight,                           // ✓ Invoice.freight
       total_taxable_value,               // ✓ Invoice.total_taxable_value
@@ -174,7 +172,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       updated_at,                        // ✓ Invoice.updated_at (NEWLY ADDED)
 
       // ===== RELATIONAL DATA (CURRENTLY STORED IN DATABASE) =====
-      invoiceItems,                      // ✓ InvoiceItems table (multiple records) - WITH product_id FK
+      invoiceItems,                      // ✓ InvoiceItems table (multiple records)
       billingDetails,                    // ✓ BillToSales table (single record)
       shippingDetails,                   // ✓ ShipTo table (single record)
       transportDetails,                  // ✓ TransportDetails table (single record)
@@ -218,14 +216,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     console.log(' INVOICE API RECEIVED PAYLOAD:');
     console.log('✅ FIELDS BEING STORED IN DATABASE:', {
-      invoice_no, invoice_date, select_customer, items_total, freight,
+      invoice_no, invoice_date, items_total, freight,
       total_taxable_value, total_cgst, total_sgst, total_igst, total_tax, total, notes, descriptions, fy, bill_reference, payment_mode,
       has_billing_details: !!billingDetails, has_shipping_details: !!shippingDetails, has_transport_details: !!transportDetails, has_invoice_items: !!invoiceItems,
-      customer_id_sources: {
-        select_customer: select_customer,
-        customer_id: customer_id,
-        billingDetails_customer_id: billingDetails?.customer_id
-      }
+      customer_handling: 'Always manual entry (select_customer = 0)'
     });
     console.log('💰 INVOICE-LEVEL DISCOUNT FROM UI:', {
       discount_received: discount || 0,
@@ -244,7 +238,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
             ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
             : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
-          select_customer,                               // Invoice.select_customer
+          select_customer: 0,                            // Always 0 for manual entry
           items_total: items_total || 0,                 // Invoice.items_total
           freight: freight || 0,                         // Invoice.freight
           total_taxable_value,                           // Invoice.total_taxable_value
@@ -276,49 +270,29 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // ===== PHASE 1: PARALLEL CREATION OF RELATED RECORDS =====
-      // Validate required customer data - accept from either location for backward compatibility
-      let customerIdSource: string | undefined;
-      if (billingDetails?.customer_id) {
-        customerIdSource = billingDetails.customer_id;
-        console.log('✅ Using customer_id from billingDetails.customer_id:', customerIdSource);
-      } else if (customer_id) {
-        customerIdSource = customer_id;
-        console.log('✅ Using customer_id from top-level customer_id:', customerIdSource);
-      } else {
-        throw new Error('Customer billing details are required for invoice creation (billingDetails.customer_id or customer_id)')
-      }
-
-      const customerId = parseInt(customerIdSource.toString());
-      if (isNaN(customerId) || customerId <= 0) {
-        throw new Error('Invalid customer ID provided')
-      }
-
+      // Always use customer ID = 0 for manual entry (no customer selection)
+      const customerId = 0;
       console.log('🎯 FINAL CUSTOMER ID FOR CREATION:', customerId);
 
-      // ===== CREATE BILL_TO RECORD FOR "OTHER" CUSTOMERS =====
-      // Save customer details to bill_to table for inline editing (similar to purchase API)
-      const billToOperations = [];
-
-      // For "Other" customers (customer_id = 0), create bill_to record with manual details
-      if (customerId === 0) {
-        billToOperations.push(
-          tx.bill_to.create({
-            data: {
-              invoice_no: invoice_no,
-              vendor_name: req.body.customer_name,
-              contact_no: req.body.contact_number,
-              email: req.body.email_id || '',
-              address: req.body.address || '',
-              address2: req.body.address_2 || '',
-              city: req.body.city || '',
-              state: req.body.state || '',
-              state_code: req.body.state_code || null,
-              gstin: req.body.gst_number || '',
-              pin_code: req.body.pin_code || ''
-            }
-          })
-        );
-      }
+      // ===== CREATE BILL_TO RECORD =====
+      // Always create bill_to record with manual customer details
+      const billToOperations = [
+        tx.bill_to.create({
+          data: {
+            invoice_no: invoice_no,
+            vendor_name: req.body.customer_name,
+            contact_no: req.body.contact_number,
+            email: req.body.email_id || '',
+            address: req.body.address || '',
+            address2: req.body.address_2 || '',
+            city: req.body.city || '',
+            state: req.body.state || '',
+            state_code: req.body.state_code || null,
+            gstin: req.body.gst_number || '',
+            pin_code: req.body.pin_code || ''
+          }
+        })
+      ];
 
       // Create incexp, billing, shipping, and transport details in parallel
       const parallelOperations = [

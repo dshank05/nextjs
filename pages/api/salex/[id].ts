@@ -164,10 +164,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       payment_mode
     } = req.body
 
-    // Validation
-    if (customer_id === undefined || customer_id === null) {
+    // Validation - customer data should be in request body
+    if (!req.body.customer_name || !req.body.contact_number || !req.body.state) {
       return res.status(400).json({
-        message: 'Customer ID is required'
+        message: 'Customer name, contact number, and state are required'
       })
     }
 
@@ -178,20 +178,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
 
     if (!existingSalex) {
       return res.status(404).json({ message: 'Salex not found' })
-    }
-
-    // Validate customer exists
-    let existingCustomer = null;
-    if (parseInt(customer_id) !== 0) {
-      existingCustomer = await prisma.customer_details.findUnique({
-        where: { id: parseInt(customer_id) }
-      })
-
-      if (!existingCustomer) {
-        return res.status(400).json({
-          message: 'Invalid customer selected - customer does not exist'
-        })
-      }
     }
 
     // Validate payment fields
@@ -435,13 +421,61 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       return salex
     })
 
+    // Update customer data in bill_tosalesx
+    await prisma.bill_tosalesx.upsert({
+      where: { invoice_no: result.id },
+      update: {
+        billing_name: req.body.customer_name,
+        contact_no: req.body.contact_number || '',
+        email: req.body.email_id || '',
+        billing_address: req.body.address || '',
+        billing_city: req.body.city || '',
+        billing_state: req.body.state || '',
+        billing_state_code: req.body.state_code || null,
+        billing_gstin: req.body.gst_number || ''
+      },
+      create: {
+        invoice_no: result.id,
+        billing_name: req.body.customer_name,
+        contact_no: req.body.contact_number || '',
+        email: req.body.email_id || '',
+        billing_address: req.body.address || '',
+        billing_city: req.body.city || '',
+        billing_state: req.body.state || '',
+        billing_state_code: req.body.state_code || null,
+        billing_gstin: req.body.gst_number || ''
+      }
+    })
+
+    // Update shipping data in shiptox
+    await prisma.shiptox.upsert({
+      where: { invoice_no: result.id },
+      update: {
+        shipping_name: req.body.customer_name,
+        shipping_address: req.body.address || '',
+        shipping_city: req.body.city || '',
+        shipping_state: req.body.state || '',
+        shipping_state_code: req.body.state_code || null,
+        shipping_gstin: req.body.gst_number || ''
+      },
+      create: {
+        invoice_no: result.id,
+        shipping_name: req.body.customer_name,
+        shipping_address: req.body.address || '',
+        shipping_city: req.body.city || '',
+        shipping_state: req.body.state || '',
+        shipping_state_code: req.body.state_code || null,
+        shipping_gstin: req.body.gst_number || ''
+      }
+    })
+
     res.status(200).json({
       message: 'Salex updated successfully',
       salex: {
         id: result.id,
         invoice_no: result.invoice_no,
         total: result.total,
-        customer_name: existingCustomer?.billing_name || 'Other'
+        customer_name: req.body.customer_name
       }
     })
 

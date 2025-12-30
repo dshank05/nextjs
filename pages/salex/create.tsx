@@ -10,26 +10,6 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 
-interface Customer {
-  id: string;
-  billing_name: string;
-  shipping_name?: string;
-  billing_address?: string;
-  billing_address_2?: string;
-  billing_city?: string;
-  billing_state?: number;
-  billing_state_code?: number;
-  shipping_address?: string;
-  shipping_address_2?: string;
-  shipping_city?: string;
-  shipping_state?: number;
-  shipping_state_code?: number;
-  billing_gstin?: string;
-  shipping_gstin?: string;
-  contact_no?: string;
-  email?: string;
-}
-
 interface StaffDetails {
   id: string;
   staff_name: string;
@@ -150,7 +130,6 @@ export default function InvoiceCCreate() {
   // Initialize snackbar hook
   const { showSnackbar } = useSnackbar();
 
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [staffList, setStaffList] = useState<StaffDetails[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -159,23 +138,15 @@ export default function InvoiceCCreate() {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
   const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
-  const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [customersLoaded, setCustomersLoaded] = useState(false);
-
-  // "Other" customer selection state
-  const [isOtherCustomerSelected, setIsOtherCustomerSelected] = useState(false);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
 
-  // Shipping address selection state
-  const [useShippingAddress, setUseShippingAddress] = useState(false);
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -314,9 +285,6 @@ export default function InvoiceCCreate() {
     }
   }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount]);
 
-  // State for selected customer details (fetched on-demand, not stored in formData)
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
@@ -393,10 +361,7 @@ export default function InvoiceCCreate() {
   useEffect(() => {
     const initializeData = async () => {
       try {
-        // Fetch customers first so customer data is available for edit mode
-        await fetchCustomers();
-
-        // Fetch other data in parallel
+        // Fetch data in parallel
         await Promise.all([
           fetchStaffList(),
           fetchMechanics(),
@@ -414,21 +379,9 @@ export default function InvoiceCCreate() {
     initializeData();
   }, []);
 
-  // Broadcast listener for customer creation
+  // Fetch invoice data when edit mode is detected
   useEffect(() => {
-    const unsubscribe = subscribeBroadcast((message) => {
-      if (message.type === 'created' && message.resource === 'customers') {
-        console.log('📡 Received broadcast: New customer created, refetching customers...');
-        fetchCustomers();
-      }
-    });
-
-    return unsubscribe;
-  }, []);
-
-  // Fetch invoice data when edit mode is detected and customers are loaded
-  useEffect(() => {
-    if (customersLoaded && isEditMode && editInvoiceId) {
+    if (isEditMode && editInvoiceId) {
       console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
 
       // First try to get data from sessionStorage
@@ -472,10 +425,6 @@ export default function InvoiceCCreate() {
           pin_code: ''
         });
 
-        // Set customer data from billingDetails and select customer immediately
-        console.log("setting customer id ")
-        selectCustomerById(invoiceData?.customer_id.toString())
-
         // Set other IDs
         if (invoiceData.staff_id) {
           setSelectedStaffId(invoiceData.staff_id.toString());
@@ -501,7 +450,7 @@ export default function InvoiceCCreate() {
       fetchInvoiceForEdit(editInvoiceId);
     }
 
-  }, [customersLoaded, isEditMode, editInvoiceId]);
+  }, [isEditMode, editInvoiceId]);
 
   // Fetch last invoice number only in create mode
   useEffect(() => {
@@ -540,51 +489,6 @@ export default function InvoiceCCreate() {
 
 
 
-  // Consolidated customer selection function
-  const selectCustomerById = (customerId: string) => {
-    console.log('🔄 selectCustomerById called with customerId:', customerId);
-    console.log('📋 Current customers list length:', customers.length);
-    console.log('📋 Current customers:', customers.map(c => ({ id: c.id, name: c.billing_name })));
-
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      console.log('✅ Customer found in loaded list, setting customer data:', customer.billing_name);
-      console.log('📊 Customer details:', {
-        id: customer.id,
-        billing_name: customer.billing_name,
-        contact_no: customer.contact_no,
-        billing_address: customer.billing_address
-      });
-
-      // Set selection state
-      console.log('🔄 Calling setSelectedCustomerId with:', customerId);
-      setSelectedCustomerId(customerId);
-
-      console.log('🔄 Calling setSelectedCustomer with customer object');
-      setSelectedCustomer(customer);
-
-      console.log('🔄 Calling setVendorIdToSave with:', parseInt(customerId));
-      setVendorIdToSave(parseInt(customerId));
-
-      // Populate form fields with customer data
-      console.log('🔄 Updating formData with customer details');
-      setFormData(prev => ({
-        ...prev,
-        customer_name: customer.billing_name,
-        contact_number: customer.contact_no || '',
-        address: customer.billing_address || '',
-        city: customer.billing_city || '',
-        state: customer.billing_state?.toString() || '',
-        gst_number: customer.billing_gstin || '',
-        email_id: customer.email || ''
-      }));
-
-      console.log('✅ selectCustomerById completed successfully');
-    } else {
-      console.warn(`❌ Customer with ID ${customerId} not found in loaded customers list`);
-      console.log('📋 Available customer IDs:', customers.map(c => c.id));
-    }
-  };
 
   useEffect(() => {
     fetchSubcategoriesForTable(productRowFilters.category);
@@ -730,23 +634,6 @@ export default function InvoiceCCreate() {
     }
   }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/customers?dropdown=true');
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
-        setCustomersLoaded(true);
-      } else {
-        setCustomers([]); // Set empty array on error
-        setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-      setCustomers([]); // Set empty array on error
-      setCustomersLoaded(true); // Set to true even on error so edit logic can proceed
-    }
-  };
 
   const fetchStaffList = async () => {
     try {
@@ -975,42 +862,6 @@ export default function InvoiceCCreate() {
         console.log('📝 SETTING API FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
 
-        // Set customer data - find customer in loaded customers list
-        if (invoice.select_customer || invoice.customer_id) {
-          setSelectedCustomerId(invoice.select_customer.toString());
-          setVendorIdToSave(parseInt(invoice.select_customer.toString()));
-
-          // Find customer in loaded customers list for proper data population
-          const existingCustomer = customers.find(c => c.id === invoice.select_customer.toString() || invoice.customer_id);
-          if (existingCustomer) {
-            setSelectedCustomer(existingCustomer);
-            handleCustomerSelect(existingCustomer.id);
-          } else {
-            // This should not happen since we wait for customers to load, but if it does, create from invoice data
-            console.warn('Customer not found in loaded list after customers loaded, creating from invoice data');
-            const customer = {
-              id: invoice.select_customer.toString(),
-              billing_name: invoice.customer_name || '',
-              shipping_name: '',
-              billing_address: invoice.address || '',
-              billing_address_2: '',
-              billing_city: invoice.city || '',
-              billing_state: 0,
-              billing_state_code: 0,
-              shipping_address: '',
-              shipping_address_2: '',
-              shipping_city: '',
-              shipping_state: 0,
-              shipping_state_code: 0,
-              billing_gstin: invoice.gst_number || '',
-              shipping_gstin: '',
-              contact_no: invoice.contact_number || '',
-              email: invoice.email_id || ''
-            };
-            setSelectedCustomer(customer);
-          }
-        }
-
         // Set other related entity IDs
         if (invoice.staff_id) {
           setSelectedStaffId(invoice.staff_id.toString());
@@ -1050,73 +901,6 @@ export default function InvoiceCCreate() {
     }
   };
 
-  const handleCustomerSelect = (customerId: string) => {
-    console.log('🔄 handleCustomerSelect called with customerId:', customerId);
-    console.log('📋 Current customers list state:', customersLoaded ? 'loaded' : 'not loaded');
-
-    if (customerId === '0') {
-      // "Other" selected
-      console.log('🔄 "Other" customer selected');
-      setSelectedCustomerId('0');
-      setSelectedCustomer(null);
-      setIsOtherCustomerSelected(true);
-      setVendorIdToSave(0);
-
-      // Clear existing customer data and make fields editable
-      setFormData(prev => ({
-        ...prev,
-        customer_name: '',
-        contact_number: '',
-        address: '',
-        address_2: '',
-        city: '',
-        state: '',
-        state_code: undefined,
-        gst_number: '',
-        email_id: ''
-      }));
-
-      return;
-    }
-
-    // Regular customer selected
-    setIsOtherCustomerSelected(false);
-    const customer = customers.find(c => c.id === customerId);
-    if (customer) {
-      console.log('✅ handleCustomerSelect found customer:', customer.billing_name);
-      console.log('📊 handleCustomerSelect setting selectedCustomer');
-      setSelectedCustomer(customer);
-      setSelectedCustomerId(customerId);
-      setVendorIdToSave(parseInt(customerId));
-
-      // Populate form fields with customer data
-      setFormData(prev => ({
-        ...prev,
-        customer_name: customer.billing_name,
-        contact_number: customer.contact_no || '',
-        address: customer.billing_address || '',
-        address_2: customer.billing_address_2 || '',
-        city: customer.billing_city || '',
-        state: customer.billing_state?.toString() || '',
-        state_code: customer.billing_state_code,
-        gst_number: customer.billing_gstin || '',
-        email_id: customer.email || ''
-      }));
-
-      // Update state dropdown selection
-      if (customer.billing_state_code) {
-        handleInputChange('state_code', customer.billing_state_code.toString());
-      }
-
-      // No GST calculations needed for salex - all tax values remain 0
-    } else {
-      console.log('❌ handleCustomerSelect customer not found, setting selectedCustomer to null');
-      console.log('📋 Available customer IDs for reference:', customers.map(c => c.id));
-      setSelectedCustomer(null);
-      setSelectedCustomerId('');
-      setVendorIdToSave(null);
-    }
-  };
 
   const handleEditProduct = (item: InvoiceItem) => {
     // Enable inline editing for this specific row
@@ -1289,16 +1073,13 @@ export default function InvoiceCCreate() {
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
-    if (!selectedCustomerId || (!selectedCustomer && !isOtherCustomerSelected)) {
-      newErrors.customer_name = 'Please select a customer';
+    if (!formData.customer_name.trim()) {
+      newErrors.customer_name = 'Customer name is required';
     }
-    if (isOtherCustomerSelected && !formData.customer_name.trim()) {
-      newErrors.customer_name = 'Customer name is required when "Other" is selected';
-    }
-    if (isOtherCustomerSelected && !formData.state.trim()) {
+    if (!formData.state.trim()) {
       newErrors.state = 'State is required';
     }
-    if (isOtherCustomerSelected && !formData.contact_number.trim()) {
+    if (!formData.contact_number.trim()) {
       newErrors.contact_number = 'Phone number is required';
     }
     if (selectedProducts.length === 0) {
@@ -1328,19 +1109,19 @@ export default function InvoiceCCreate() {
         // Main invoice fields
         invoice_no: formData.invoice_number,
         invoice_date: formData.date,
-        select_customer: parseInt(selectedCustomerId),
+        select_customer: 0, // Always 0 for salex - no customer selection
         staff_id: formData.staff_id,
         staff_details: staffList.find(e => e.id === formData?.staff_id?.toString())?.staff_name,
 
-        // ===== CUSTOMER DETAILS (Always included) =====
-        customer_name: isOtherCustomerSelected ? formData.customer_name : (selectedCustomer?.billing_name || ''),
-        contact_number: isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || ''),
-        email_id: isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || ''),
-        address: isOtherCustomerSelected ? formData.address : (selectedCustomer?.billing_address || ''),
-        city: isOtherCustomerSelected ? formData.city : (selectedCustomer?.billing_city || ''),
-        state: isOtherCustomerSelected ? formData.state : (selectedCustomer?.billing_state?.toString() || ''),
-        gst_number: isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || ''),
-        pin_code: isOtherCustomerSelected ? formData.pin_code : '',
+        // ===== CUSTOMER DETAILS (Always included from formData) =====
+        customer_name: formData.customer_name,
+        contact_number: formData.contact_number,
+        email_id: formData.email_id,
+        address: formData.address,
+        city: formData.city,
+        state: formData.state,
+        gst_number: formData.gst_number,
+        pin_code: formData.pin_code,
 
         // Invoice items
         invoiceItems: selectedProducts.map(item => ({
@@ -1359,17 +1140,17 @@ export default function InvoiceCCreate() {
           subcategory_id: item.subcategory_id,
         })),
 
-        // Customer ID instead of billing details object
-        customer_id: selectedCustomerId,
+        // Customer ID - always 0 for salex
+        customer_id: 0,
 
-        // Shipping details
-        shippingDetails: selectedCustomer ? {
-          user_name: selectedCustomer.shipping_name || selectedCustomer.billing_name,
-          address: selectedCustomer.shipping_address || selectedCustomer.billing_address,
-          state: selectedCustomer.shipping_state ? parseInt(selectedCustomer.shipping_state.toString()) : (selectedCustomer.billing_state ? parseInt(selectedCustomer.billing_state.toString()) : null),
-          state_code: selectedCustomer.shipping_state_code ? parseInt(selectedCustomer.shipping_state_code.toString()) : (selectedCustomer.billing_state_code ? parseInt(selectedCustomer.billing_state_code.toString()) : null),
-          gstin: selectedCustomer.shipping_gstin || selectedCustomer.billing_gstin
-        } : null,
+        // Shipping details - use formData directly
+        shippingDetails: {
+          user_name: formData.customer_name,
+          address: formData.address,
+          state: formData.state ? parseInt(formData.state) : null,
+          state_code: formData.state_code || null,
+          gstin: formData.gst_number
+        },
 
         // Transport details (optional)
         transportDetails: {
@@ -1584,133 +1365,73 @@ export default function InvoiceCCreate() {
 
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-
-              <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
-                <div className="flex flex-row-reverse mt-1">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useShippingAddress}
-                      onChange={(e) => setUseShippingAddress(e.target.checked)}
-                      className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
-                    />
-                    <span className="text-sm text-slate-300">Use shipping address</span>
-                  </label>
-                </div>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
-                    <Link
-                      href="/customers/create?from=salex"
-                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
-                    >
-                      + Add New Customer
-                    </Link>
-                  </div>
-                  <SearchableSelect
-                    options={[
-                      { id: '', name: 'Select Customer' },
-                      { id: '0', name: 'Other' },
-                      ...customers.map((customer) => ({
-                        id: customer.id,
-                        name: customer.billing_name
-                      }))
-                    ]}
-                    selectedValue={selectedCustomerId || ''}
-                    onSelectionChange={(value) => {
-                      const customerId = value || '';
-                      console.log('Customer dropdown manual change:', customerId);
-                      setSelectedCustomerId(customerId);
-                      handleCustomerSelect(customerId);
-                    }}
-                    placeholder="Select Customer"
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CUSTOMER NAME *</label>
+                  <input
+                    type="text"
+                    value={formData.customer_name}
+                    onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter customer name"
                   />
-                  {isOtherCustomerSelected && (
-                    <input
-                      type="text"
-                      value={formData.customer_name}
-                      onChange={(e) => handleInputChange('customer_name', e.target.value)}
-                      className="input w-full mt-2"
-                      placeholder="Enter customer name"
-                    />
-                  )}
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER *</label>
                   <input
                     type="text"
-                    value={isOtherCustomerSelected ? formData.contact_number : (selectedCustomer?.contact_no || '')}
+                    value={formData.contact_number}
                     onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter contact number" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    className="input w-full"
+                    placeholder="Enter contact number"
                     maxLength={10}
                   />
+                  {errors.contact_number && <p className="text-red-400 text-xs mt-1">{errors.contact_number}</p>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={isOtherCustomerSelected ? formData.email_id : (selectedCustomer?.email || '')}
+                    value={formData.email_id}
                     onChange={(e) => handleInputChange('email_id', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter email address" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    className="input w-full"
+                    placeholder="Enter email address"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={isOtherCustomerSelected ? formData.gst_number : (selectedCustomer?.billing_gstin || '')}
+                    value={formData.gst_number}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
-                    className={`input w-full ${isOtherCustomerSelected ? '' : 'bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed'}`}
-                    placeholder={isOtherCustomerSelected ? "Enter GST number" : "Auto-filled from customer"}
-                    readOnly={!isOtherCustomerSelected}
-                    disabled={!isOtherCustomerSelected}
+                    className="input w-full"
+                    placeholder="Enter GST number"
                   />
                 </div>
 
-                <div className="md:col-span-1">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_address || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS LINE 2</label>
-                  <input
-                    type="text"
-                    value={selectedCustomer?.billing_address_2 || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={formData.address}
+                    onChange={(e) => handleInputChange('address', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter address"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={selectedCustomer?.billing_city || ''}
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    placeholder="Auto-filled from customer"
-                    readOnly
-                    disabled
+                    value={formData.city}
+                    onChange={(e) => handleInputChange('city', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter city"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">STATE *</label>
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select State' },
@@ -1720,25 +1441,18 @@ export default function InvoiceCCreate() {
                       }))
                     ]}
                     selectedValue={(() => {
-                      // Find the state ID that matches the current state code
-                      if (selectedCustomer?.billing_state_code) {
-                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
-                        return matchingState ? matchingState.id : '';
-                      }
-                      // Fallback to state name matching if no state code
-                      if (formData.state || selectedCustomer?.billing_state) {
-                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
-                        const matchingState = states.find(state => state.name === currentStateName);
+                      if (formData.state) {
+                        const matchingState = states.find(state => state.name === formData.state);
                         return matchingState ? matchingState.id : '';
                       }
                       return '';
                     })()}
                     onSelectionChange={(value) => {
                       if (value) {
-                        // Find the state name from the selected ID
                         const selectedState = states.find(state => state.id === value);
                         if (selectedState) {
                           handleInputChange('state', selectedState.name);
+                          handleInputChange('state_code', selectedState.code.toString());
                         }
                       } else {
                         handleInputChange('state', '');
@@ -1746,6 +1460,7 @@ export default function InvoiceCCreate() {
                     }}
                     placeholder="Select State"
                   />
+                  {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
                 </div>
               </div>
             </div>
@@ -1886,20 +1601,11 @@ export default function InvoiceCCreate() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (!selectedCustomerId) {
-                              setErrors({ customer_name: 'Please select a customer first' });
-                              return;
-                            }
                             setErrors({});
                             setProductSearchTerm('');
                             setIsProductPanelOpen(true);
                           }}
-                          disabled={!selectedCustomerId}
-                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedCustomerId
-                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
-                            }`}
-                          title={!selectedCustomerId ? 'Please select a customer first' : ''}
+                          className="w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600"
                         >
                           {selectedRowProduct ? (
                             productRowFilters.carModels.length > 0
@@ -2522,9 +2228,6 @@ export default function InvoiceCCreate() {
                 </table>
               </div>
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
-              {!selectedCustomerId && (
-                <p className="text-xs text-amber-400 mt-1">Select a customer first</p>
-              )}
             </div>
 
             {/* Additional Information */}
