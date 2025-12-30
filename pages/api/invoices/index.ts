@@ -426,7 +426,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     res.status(201).json({
       status: "success",
-      message: "Invoice created successfully"
+      message: "Invoice created successfully",
+      sale: {
+        id: result.id,
+        invoice_no: result.invoice_no,
+        total: result.total
+      }
     })
   } catch (error) {
     console.error('Invoice creation error:', error)

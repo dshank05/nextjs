@@ -475,7 +475,14 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
       }
     })
 
-    res.status(200).json(updatedInvoice)
+    res.status(200).json({
+      message: 'Invoice updated successfully',
+      sale: {
+        id: updatedInvoice.id,
+        invoice_no: updatedInvoice.invoice_no,
+        total: updatedInvoice.total
+      }
+    })
   } catch (error) {
     console.error('Invoice update error:', error)
     res.status(500).json({
