@@ -60,7 +60,7 @@ const formatValue = (value: any, format?: string, data?: any, forPDF: boolean = 
     case 'currency':
       // Use "Rs." for PDF to avoid Unicode issues with rupee symbol
       const currencySymbol = forPDF ? 'Rs.' : '₹';
-      return `${currencySymbol}${Number(value).toLocaleString('en-IN')}`;
+      return `${currencySymbol}${Number(value)?.toLocaleString('en-IN')}`;
     
     case 'date':
       if (typeof value === 'number') {
@@ -75,7 +75,7 @@ const formatValue = (value: any, format?: string, data?: any, forPDF: boolean = 
       return value.toString();
     
     case 'number':
-      return Number(value).toLocaleString('en-IN');
+      return Number(value)?.toLocaleString('en-IN');
     
     case 'status':
       return value === 1 ? 'Paid' : 'Unpaid';

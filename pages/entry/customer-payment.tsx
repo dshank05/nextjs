@@ -297,7 +297,7 @@ export default function CustomerPaymentPage() {
                 <SearchableSelect
                   options={customers.map(c => ({
                     id: c.id,
-                    name: `${c.billing_name}${c.total_outstanding ? ` (Outstanding: ₹${c.total_outstanding.toLocaleString()})` : ''}`
+                    name: `${c.billing_name}${c.total_outstanding ? ` (Outstanding: ₹${c.total_outstanding?.toLocaleString()})` : ''}`
                   }))}
                   selectedValue={selectedCustomer?.id || null}
                   onSelectionChange={handleCustomerSelect}
@@ -317,7 +317,7 @@ export default function CustomerPaymentPage() {
                     <div>
                       <p className="text-slate-400">Total Outstanding</p>
                       <p className="text-yellow-400 font-medium">
-                        ₹{outstandingInvoices.reduce((sum, inv) => sum + inv.outstanding, 0).toLocaleString()}
+                        ₹{outstandingInvoices.reduce((sum, inv) => sum + inv.outstanding, 0)?.toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -387,18 +387,18 @@ export default function CustomerPaymentPage() {
               <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Payment Amount</p>
-                  <p className="text-white font-medium">₹{allocationSummary.paymentAmount.toLocaleString()}</p>
+                  <p className="text-white font-medium">₹{allocationSummary.paymentAmount?.toLocaleString()}</p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Total Allocated</p>
                   <p className={`font-medium ${allocationSummary.isOverAllocated ? 'text-red-400' : 'text-green-400'}`}>
-                    ₹{allocationSummary.totalAllocated.toLocaleString()}
+                    ₹{allocationSummary.totalAllocated?.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Remaining</p>
                   <p className={`font-medium ${allocationSummary.remainingToAllocate > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                    ₹{allocationSummary.remainingToAllocate.toLocaleString()}
+                    ₹{allocationSummary.remainingToAllocate?.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
@@ -461,15 +461,15 @@ export default function CustomerPaymentPage() {
                         <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
                           <div>
                             <p className="text-slate-400">Total Amount</p>
-                            <p className="text-white">₹{allocation.total_amount.toLocaleString()}</p>
+                            <p className="text-white">₹{allocation.total_amount?.toLocaleString()}</p>
                           </div>
                           <div>
                             <p className="text-slate-400">Outstanding</p>
-                            <p className="text-yellow-400">₹{allocation.outstanding_amount.toLocaleString()}</p>
+                            <p className="text-yellow-400">₹{allocation.outstanding_amount?.toLocaleString()}</p>
                           </div>
                           <div>
                             <p className="text-slate-400">Allocated</p>
-                            <p className="text-green-400 font-medium">₹{allocation.allocated_amount.toLocaleString()}</p>
+                            <p className="text-green-400 font-medium">₹{allocation.allocated_amount?.toLocaleString()}</p>
                           </div>
                         </div>
                       </div>
@@ -557,7 +557,7 @@ export default function CustomerPaymentPage() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title="Confirm Payment Processing"
-        message={`Process payment of ₹${allocationSummary.paymentAmount.toLocaleString()} allocated across ${allocations.filter(a => a.allocated_amount > 0).length} invoice(s)?`}
+        message={`Process payment of ₹${allocationSummary.paymentAmount?.toLocaleString()} allocated across ${allocations.filter(a => a.allocated_amount > 0).length} invoice(s)?`}
         confirmText="Process Payment"
         cancelText="Cancel"
         showLoading={processing}

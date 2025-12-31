@@ -364,10 +364,10 @@ export default function VendorRefundEntry() {
                         <tr key={ret.return_id}>
                           <td>{ret.return_no}</td>
                           <td>{new Date(ret.return_date * 1000).toLocaleDateString()}</td>
-                          <td className="text-right">₹{ret.total_return.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          <td className="text-right">₹{ret.total_refunded.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td className="text-right">₹{ret.total_return?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td className="text-right">₹{ret.total_refunded?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                           <td className="text-right font-semibold text-green-400">
-                            ₹{ret.outstanding_refund.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            ₹{ret.outstanding_refund?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="text-right">
                             <input
@@ -398,19 +398,19 @@ export default function VendorRefundEntry() {
                 <div className="bg-slate-700 rounded-lg p-4">
                   <p className="text-slate-400 text-sm mb-1">Refund Amount</p>
                   <p className="text-white text-xl font-semibold">
-                    ₹{refundAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{refundAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-4">
                   <p className="text-slate-400 text-sm mb-1">Total Allocated</p>
                   <p className="text-white text-xl font-semibold">
-                    ₹{totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className={`bg-slate-700 rounded-lg p-4 ${Math.abs(difference) < 0.01 ? 'border-2 border-green-500' : 'border-2 border-red-500'}`}>
                   <p className="text-slate-400 text-sm mb-1">Difference</p>
                   <p className={`text-xl font-semibold ${Math.abs(difference) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
-                    ₹{Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{Math.abs(difference)?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     {difference > 0.01 ? ' (Unallocated)' : difference < -0.01 ? ' (Over-allocated)' : ' '}
                     {Math.abs(difference) < 0.01 && <CheckCircle className="inline w-5 h-5 ml-2" />}
                   </p>
@@ -443,7 +443,7 @@ export default function VendorRefundEntry() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title="Confirm Refund Recording"
-        message={`Record vendor refund of ₹${refundAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingReturns.filter(r => r.allocated && r.allocated > 0).length} return(s)?`}
+        message={`Record vendor refund of ₹${refundAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingReturns.filter(r => r.allocated && r.allocated > 0).length} return(s)?`}
         confirmText="Record Refund"
         cancelText="Cancel"
         showLoading={loading}

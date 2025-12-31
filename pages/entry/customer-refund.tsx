@@ -297,7 +297,7 @@ export default function CustomerRefundPage() {
                 <SearchableSelect
                   options={customers.map(c => ({
                     id: c.id,
-                    name: `${c.billing_name}${c.total_pending_refund ? ` (Pending Refund: ₹${c.total_pending_refund.toLocaleString()})` : ''}`
+                    name: `${c.billing_name}${c.total_pending_refund ? ` (Pending Refund: ₹${c.total_pending_refund?.toLocaleString()})` : ''}`
                   }))}
                   selectedValue={selectedCustomer?.id || null}
                   onSelectionChange={handleCustomerSelect}
@@ -317,7 +317,7 @@ export default function CustomerRefundPage() {
                     <div>
                       <p className="text-slate-400">Total Pending Refund</p>
                       <p className="text-green-400 font-medium">
-                        ₹{pendingReturns.reduce((sum, ret) => sum + ret.outstanding_refund, 0).toLocaleString()}
+                        ₹{pendingReturns.reduce((sum, ret) => sum + ret.outstanding_refund, 0)?.toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -387,18 +387,18 @@ export default function CustomerRefundPage() {
               <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Refund Amount</p>
-                  <p className="text-white font-medium">₹{allocationSummary.refundAmount.toLocaleString()}</p>
+                  <p className="text-white font-medium">₹{allocationSummary.refundAmount?.toLocaleString()}</p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Total Allocated</p>
                   <p className={`font-medium ${allocationSummary.isOverAllocated ? 'text-red-400' : 'text-green-400'}`}>
-                    ₹{allocationSummary.totalAllocated.toLocaleString()}
+                    ₹{allocationSummary.totalAllocated?.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
                   <p className="text-slate-400 text-xs">Remaining</p>
                   <p className={`font-medium ${allocationSummary.remainingToAllocate > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                    ₹{allocationSummary.remainingToAllocate.toLocaleString()}
+                    ₹{allocationSummary.remainingToAllocate?.toLocaleString()}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-3 text-center">
@@ -461,15 +461,15 @@ export default function CustomerRefundPage() {
                         <div className="mt-2 grid grid-cols-3 gap-4 text-sm">
                           <div>
                             <p className="text-slate-400">Total Refund</p>
-                            <p className="text-white">₹{allocation.total_refund.toLocaleString()}</p>
+                            <p className="text-white">₹{allocation.total_refund?.toLocaleString()}</p>
                           </div>
                           <div>
                             <p className="text-slate-400">Outstanding</p>
-                            <p className="text-green-400">₹{allocation.outstanding_refund.toLocaleString()}</p>
+                            <p className="text-green-400">₹{allocation.outstanding_refund?.toLocaleString()}</p>
                           </div>
                           <div>
                             <p className="text-slate-400">Allocated</p>
-                            <p className="text-blue-400 font-medium">₹{allocation.allocated_amount.toLocaleString()}</p>
+                            <p className="text-blue-400 font-medium">₹{allocation.allocated_amount?.toLocaleString()}</p>
                           </div>
                         </div>
                       </div>
@@ -557,7 +557,7 @@ export default function CustomerRefundPage() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title="Confirm Refund Processing"
-        message={`Process refund of ₹${allocationSummary.refundAmount.toLocaleString()} allocated across ${allocations.filter(a => a.allocated_amount > 0).length} return(s)?`}
+        message={`Process refund of ₹${allocationSummary.refundAmount?.toLocaleString()} allocated across ${allocations.filter(a => a.allocated_amount > 0).length} return(s)?`}
         confirmText="Process Refund"
         cancelText="Cancel"
         showLoading={processing}

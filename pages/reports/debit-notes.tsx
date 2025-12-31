@@ -120,11 +120,11 @@ export default function DebitNotesReport() {
     setPagination(prev => ({ ...prev, page: 1 }));
   };
 
-  const getPaymentStatusBadge = (status: number) => {
-    if (status === 1) {
-      return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-    } else {
-      return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Unpaid</span>;
+ const getPaymentStatusBadge = (status: number) => {
+    switch (status) {
+      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
+      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
     }
   };
 
@@ -156,7 +156,7 @@ export default function DebitNotesReport() {
           <div className="text-center">
             <div className="text-3xl mb-2">💰</div>
             <div className="text-2xl font-bold text-white">
-              ₹{debitNotes.reduce((sum, dn) => sum + dn.refund_amount, 0).toLocaleString('en-IN')}
+              ₹{debitNotes.reduce((sum, dn) => sum + dn.refund_amount, 0)?.toLocaleString('en-IN')}
             </div>
             <div className="text-sm text-slate-400">Total Refund Amount</div>
           </div>
@@ -331,7 +331,7 @@ export default function DebitNotesReport() {
                       <span className="text-xs text-slate-400">items</span>
                     </div>
                   </td>
-                  <td className="text-slate-300 font-semibold">₹{note.refund_amount.toLocaleString('en-IN')}</td>
+                  <td className="text-slate-300 font-semibold">₹{note.refund_amount?.toLocaleString('en-IN')}</td>
                   <td className="text-slate-300">{note.formattedDate}</td>
                   <td>{getPaymentStatusBadge(note.payment_status)}</td>
                   <td className="text-slate-300">{getPaymentModeText(note.payment_mode)}</td>

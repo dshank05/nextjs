@@ -55,19 +55,19 @@ export default function PaymentHistory({ summary, history }: Props) {
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Total Bill</p>
                 <p className="text-white text-xl font-semibold">
-                  ₹{summary.total_bill.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.total_bill?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Total Paid</p>
                 <p className="text-green-400 text-xl font-semibold">
-                  ₹{summary.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.total_paid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Remaining</p>
                 <p className="text-orange-400 text-xl font-semibold">
-                  ₹{summary.remaining_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.remaining_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
@@ -104,16 +104,16 @@ export default function PaymentHistory({ summary, history }: Props) {
                           </span>
                         </td>
                         <td className="text-right">
-                          ₹{payment.payment_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{payment.payment_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="text-right font-semibold text-green-400">
-                          ₹{payment.allocated_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{payment.allocated_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="text-slate-400 text-sm">
                           {payment.allocation_notes || payment.payment_notes || '-'}
                         </td>
                         <td className="text-slate-400 text-sm">
-                          {new Date(payment.created_at).toLocaleDateString('en-IN')}
+                          {new Date(payment.created_at)?.toLocaleDateString('en-IN')}
                         </td>
                       </tr>
                     ))}
@@ -124,7 +124,7 @@ export default function PaymentHistory({ summary, history }: Props) {
                         Total Paid:
                       </td>
                       <td className="text-right font-bold text-green-400">
-                        ₹{summary.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{summary.total_paid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td colSpan={2}></td>
                     </tr>

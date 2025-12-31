@@ -289,11 +289,10 @@ export default function InvoiceCreate() {
     const qty = parseFloat(templateRow.qty) || 0;
     const rate = parseFloat(templateRow.rate) || 0;
     const gstPercent = enableTax ? parseFloat(templateRow.gst) || 0 : 0;
-    const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+    const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
     if (qty > 0 && rate > 0) {
       const subtotal = qty * rate;
-      const discountAmount = (subtotal * discountPercent) / 100;
       const taxableAmount = subtotal - discountAmount;
       const taxAmount = (taxableAmount * gstPercent) / 100;
       const total = taxableAmount + taxAmount;
@@ -1051,7 +1050,8 @@ export default function InvoiceCreate() {
 
       // Recalculate tax and total based on discount and tax toggles
       const subtotal = editingRowData.qty * editingRowData.rate;
-      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+      const discountAmount = enableDiscount ? editingRowData.discount_amount : 0;
+      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
       const taxableAmount = subtotal - discountAmount;
       const taxAmount = enableTax ? (taxableAmount * editingRowData.gst_percentage) / 100 : 0;
 
@@ -1064,6 +1064,7 @@ export default function InvoiceCreate() {
         tax: taxAmount,
         total: taxableAmount + taxAmount,
         discount_amount: discountAmount,
+        discount_percentage: discountPercentage,
         cgst: gstBreakdown.cgst,
         sgst: gstBreakdown.sgst,
         igst: gstBreakdown.igst
@@ -1573,7 +1574,7 @@ export default function InvoiceCreate() {
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER *</label>
                   <input
                     type="text"
                     value={formData.contact_number}
@@ -1730,7 +1731,7 @@ export default function InvoiceCreate() {
                 {/* <h3 className="text-lg font-medium text-slate-200">Discount & Tax</h3> */}
                 {enableDiscount && (
                   <div className="text-xs text-slate-400 mt-1">
-                    Percentage-based discount enabled
+                    Fixed amount discount enabled
                   </div>
                 )}
                 <label className="flex items-center space-x-2 cursor-pointer pr-4">
@@ -1798,7 +1799,7 @@ export default function InvoiceCreate() {
                       )}
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                          DISCOUNT (%)
+                          DISCOUNT (₹)
                         </th>
                       )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
@@ -2009,8 +2010,7 @@ export default function InvoiceCreate() {
                           <input
                             type="number"
                             min="0"
-                            max="100"
-                            step="1"
+                            step="0.01"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                             placeholder="0.00"
                             value={templateRow.discount}
@@ -2092,11 +2092,11 @@ export default function InvoiceCreate() {
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
                                 const gstPercent = enableTax ? parseFloat(templateRow.gst) || 0 : 0;
-                                const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+                                const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
                                 // Calculate amounts
                                 const subtotal = qty * rate;
-                                const discountAmount = (subtotal * discountPercent) / 100;
+                                const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
                                 const taxableAmount = subtotal - discountAmount;
                                 const tax = enableTax ? (taxableAmount * gstPercent) / 100 : 0; // Tax on discounted price, or 0 if tax disabled
 
@@ -2125,14 +2125,14 @@ export default function InvoiceCreate() {
                                   qty: qty,
                                   rate: rate,
                                   gst_percentage: gstPercent, // Store GST percentage
-                                  discount_percentage: discountPercent,
+                                  discount_percentage: discountPercentage,
                                   tax: tax,
                                   discount_amount: discountAmount,
                                   total: taxableAmount + tax,
                                   // New pricing fields
                                   hsn: selectedProduct.hsn || '',
                                   mrp: 0, // Default MRP
-                                  discount: discountPercent, // Store discount percentage
+                                  discount: discountPercentage, // Store discount percentage
                                   margin: 0, // Default margin
                                   // GST breakdown
                                   cgst: cgst,
@@ -2353,10 +2353,17 @@ export default function InvoiceCreate() {
                                 <input
                                   type="number"
                                   min="0"
-                                  max="100"
-                                  step="1"
-                                  value={editingRowData?.discount_percentage || ''}
-                                  onChange={(e) => setEditingRowData(prev => prev ? { ...prev, discount_percentage: parseFloat(e.target.value) || 0 } : null)}
+                                  step="0.01"
+                                  value={editingRowData?.discount_amount || ''}
+                                  onChange={(e) => {
+                                    const discountAmount = parseFloat(e.target.value) || 0;
+                                    setEditingRowData(prev => {
+                                      if (!prev) return null;
+                                      const subtotal = prev.qty * prev.rate;
+                                      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
+                                      return { ...prev, discount_amount: discountAmount, discount_percentage: discountPercentage };
+                                    });
+                                  }}
                                   className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                                   onWheel={(e) => e.preventDefault()}
                                   onKeyDown={(e) => {
@@ -2414,7 +2421,7 @@ export default function InvoiceCreate() {
                             )}
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                {Math.round(product.discount_percentage)}%
+                                ₹{Math.round(product.discount_amount)}
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">

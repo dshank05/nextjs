@@ -63,7 +63,7 @@ export default function QuickRefundModal({
       });
 
       if (response.ok) {
-        showSnackbar('success', `Refund of ₹${amount.toLocaleString()} recorded successfully!`);
+        showSnackbar('success', `Refund of ₹${amount?.toLocaleString()} recorded successfully!`);
         onSuccess();
         onClose();
       } else {
@@ -106,7 +106,7 @@ export default function QuickRefundModal({
           <div>
             <p className="text-sm text-slate-400">Outstanding Refund</p>
             <p className="text-orange-400 font-semibold text-lg">
-              ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{outstandingAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </p>
           </div>
 

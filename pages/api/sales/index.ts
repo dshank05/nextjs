@@ -939,7 +939,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Get bill_to data for "Other" customers (select_customer = 0)
     const otherCustomerInvoices = salesInvoices.filter((inv: any) => inv.select_customer === 0).map((inv: any) => inv.id)
 
-    const [customerData, itemCounts, billToData, paymentAllocations] = await Promise.all([
+    // Try to get payment allocations, but handle gracefully if table doesn't exist
+    let paymentAllocations: any[] = []
+    try {
+      if (invoiceIds.length > 0) {
+        paymentAllocations = await prisma.customer_payment_allocations.groupBy({
+          by: ['invoice_id'],
+          where: { invoice_id: { in: invoiceIds } },
+          _sum: { allocated_amount: true }
+        })
+      }
+    } catch (error) {
+      console.warn('customer_payment_allocations table not found, skipping payment data')
+    }
+
+    const [customerData, itemCounts, billToData] = await Promise.all([
       // Get customer IDs from invoices first
       prisma.invoice.findMany({
         where: { id: { in: invoiceIds } },
@@ -957,13 +971,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       otherCustomerInvoices.length > 0 ? prisma.bill_tosales.findMany({
         where: { invoice_no: { in: otherCustomerInvoices } },
         select: { invoice_no: true, billing_name: true, contact_no: true, email: true, billing_address: true, billing_address2: true, billing_city: true, billing_state: true, billing_gstin: true }
-      }) : Promise.resolve([]),
-
-      // Get payment allocations for all invoices
-      invoiceIds.length > 0 ? prisma.customer_payment_allocations.groupBy({
-        by: ['invoice_id'],
-        where: { invoice_id: { in: invoiceIds } },
-        _sum: { allocated_amount: true }
       }) : Promise.resolve([])
     ])
 
@@ -1050,7 +1057,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         outstanding_amount: outstandingAmount,
         // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
         // formattedDate,
-        // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+        // formattedTotal: invoice.total?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
 

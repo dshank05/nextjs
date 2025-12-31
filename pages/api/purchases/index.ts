@@ -337,7 +337,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         // OPTIMIZATION: Commented out unused fields - uncomment if needed
         // type: 'purchase',
         // formattedDate: formattedDate, // Frontend handles formatting
-        // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
+        // formattedTotal: invoice.total?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
       }
     })
 

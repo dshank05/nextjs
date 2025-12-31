@@ -962,7 +962,7 @@ export default function SaleReturnCreatePage() {
                                 Bill #{bill.invoice_no}
                               </h4>
                               <p className="text-sm text-slate-400">
-                                {bill.bill_reference} • {new Date(bill.invoice_date).toLocaleDateString()} • ₹{bill.total_amount.toLocaleString()}
+                                {bill.bill_reference} • {new Date(bill.invoice_date).toLocaleDateString()} • ₹{bill.total_amount?.toLocaleString()}
                                 {bill.has_tax && <span className="ml-2 px-2 py-0.5 bg-green-900 text-green-300 text-xs rounded">Tax</span>}
                               </p>
                             </div>
@@ -973,7 +973,7 @@ export default function SaleReturnCreatePage() {
                             </p>
                             {bill.outstanding_amount > 0 && (
                               <p className="text-sm text-yellow-400">
-                                Outstanding: ₹{bill.outstanding_amount.toLocaleString()}
+                                Outstanding: ₹{bill.outstanding_amount?.toLocaleString()}
                               </p>
                             )}
                           </div>

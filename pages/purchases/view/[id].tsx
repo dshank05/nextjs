@@ -288,7 +288,6 @@ export default function PurchaseView() {
       case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
       case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
       case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
-      default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
     }
   };
 
@@ -299,10 +298,7 @@ export default function PurchaseView() {
       case 'PARTIAL_RETURN':
         return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial Return</span>;
       case 'FULLY_RETURNED':
-        return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>;
-      default:
-        return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
-    }
+        return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>    }
   };
 
   const getPaymentModeText = (mode?: number) => {
@@ -632,7 +628,7 @@ export default function PurchaseView() {
                     </td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
-                      ₹{purchase.items?.reduce((sum, item) => sum + (item.qty * (item.rate || 0)), 0).toLocaleString('en-IN')}
+                      ₹{purchase.items?.reduce((sum, item) => sum + (item.qty * (item.rate || 0)), 0)?.toLocaleString('en-IN')}
                     </td>
                     <td></td>
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>

@@ -409,10 +409,10 @@ export default function VendorPaymentEntry() {
                         <tr key={bill.purchase_id}>
                           <td>{bill.invoice_no}</td>
                           <td>{new Date(bill.invoice_date * 1000).toLocaleDateString()}</td>
-                          <td className="text-right">₹{bill.total_bill.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          <td className="text-right">₹{bill.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td className="text-right">₹{bill.total_bill?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          <td className="text-right">₹{bill.total_paid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                           <td className="text-right font-semibold text-green-400">
-                            ₹{bill.outstanding_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            ₹{bill.outstanding_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
                           <td className="text-right">
                             <input
@@ -444,19 +444,19 @@ export default function VendorPaymentEntry() {
                 <div className="bg-slate-700 rounded-lg p-4">
                   <p className="text-slate-400 text-sm mb-1">Payment Amount</p>
                   <p className="text-white text-xl font-semibold">
-                    ₹{paymentAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{paymentAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="bg-slate-700 rounded-lg p-4">
                   <p className="text-slate-400 text-sm mb-1">Total Allocated</p>
                   <p className="text-white text-xl font-semibold">
-                    ₹{totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className={`bg-slate-700 rounded-lg p-4 ${Math.abs(difference) < 0.01 ? 'border-2 border-green-500' : 'border-2 border-red-500'}`}>
                   <p className="text-slate-400 text-sm mb-1">Difference</p>
                   <p className={`text-xl font-semibold ${Math.abs(difference) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
-                    ₹{Math.abs(difference).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{Math.abs(difference)?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     {difference > 0.01 ? ' (Unallocated)' : difference < -0.01 ? ' (Over-allocated)' : ' '}
                     {Math.abs(difference) < 0.01 && <CheckCircle className="inline w-5 h-5 ml-2" />}
                   </p>
@@ -489,7 +489,7 @@ export default function VendorPaymentEntry() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Confirm Payment"
-        message={`Record payment of ₹${paymentAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingBills.filter(b => b.allocated && b.allocated > 0).length} bill(s)?`}
+        message={`Record payment of ₹${paymentAmt?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${outstandingBills.filter(b => b.allocated && b.allocated > 0).length} bill(s)?`}
         confirmText="Record Payment"
         cancelText="Cancel"
         showLoading={loading}

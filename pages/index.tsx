@@ -173,7 +173,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-blue-100 truncate">Total Products</dt>
-                <dd className="text-xl font-bold text-white">{stats.totalProducts.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">{stats.totalProducts?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -189,7 +189,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-amber-100 truncate">Low Stock</dt>
-                <dd className="text-xl font-bold text-white">{stats.lowStockProducts.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">{stats.lowStockProducts?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -205,7 +205,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-emerald-100 truncate">Total Sales</dt>
-                <dd className="text-xl font-bold text-white">{stats.totalInvoices.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">{stats.totalInvoices?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -221,7 +221,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-red-100 truncate">Total Purchases</dt>
-                <dd className="text-xl font-bold text-white">{stats.totalPurchases.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">{stats.totalPurchases?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -237,7 +237,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-cyan-100 truncate">Today's Sales</dt>
-                <dd className="text-xl font-bold text-white">₹{stats.todaysSales.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">₹{stats.todaysSales?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -253,7 +253,7 @@ export default function Dashboard() {
             <div className="ml-4 w-0 flex-1">
               <dl>
                 <dt className="text-sm font-medium text-purple-100 truncate">Today's Purchases</dt>
-                <dd className="text-xl font-bold text-white">₹{stats.todaysPurchases.toLocaleString()}</dd>
+                <dd className="text-xl font-bold text-white">₹{stats.todaysPurchases?.toLocaleString()}</dd>
               </dl>
             </div>
           </div>
@@ -289,7 +289,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div className="text-3xl font-bold text-emerald-400 mb-2">
-                ₹{(dailySalesStats?.sales || 0).toLocaleString()}
+                ₹{(dailySalesStats?.sales || 0)?.toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm">
                 Sales for {last5Days.find(d => d.date === selectedSalesDate)?.label || format(new Date(selectedSalesDate), 'MMM d')}
@@ -323,7 +323,7 @@ export default function Dashboard() {
           ) : (
             <div>
               <div className="text-3xl font-bold text-blue-400 mb-2">
-                ₹{(dailyPurchasesStats?.purchases || 0).toLocaleString()}
+                ₹{(dailyPurchasesStats?.purchases || 0)?.toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm">
                 Purchases for {last5Days.find(d => d.date === selectedPurchasesDate)?.label || format(new Date(selectedPurchasesDate), 'MMM d')}
@@ -340,7 +340,7 @@ export default function Dashboard() {
           {stats.lastSale ? (
             <div>
               <div className="text-2xl font-bold text-emerald-400 mb-2">
-                ₹{stats.lastSale.amount.toLocaleString()}
+                ₹{stats.lastSale.amount?.toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm mb-1">
                 Invoice #{stats.lastSale.invoiceNo}
@@ -368,7 +368,7 @@ export default function Dashboard() {
           {stats.lastPurchase ? (
             <div>
               <div className="text-2xl font-bold text-blue-400 mb-2">
-                ₹{stats.lastPurchase.amount.toLocaleString()}
+                ₹{stats.lastPurchase.amount?.toLocaleString()}
               </div>
               <p className="text-slate-400 text-sm mb-1">
                 Invoice #{stats.lastPurchase.invoiceNo}

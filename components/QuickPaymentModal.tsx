@@ -80,7 +80,7 @@ export default function QuickPaymentModal({
       });
 
       if (response.ok) {
-        showSnackbar('success', `Payment of ₹${amount.toLocaleString()} recorded successfully!`);
+        showSnackbar('success', `Payment of ₹${amount?.toLocaleString()} recorded successfully!`);
         onSuccess();
         onClose();
       } else {
@@ -125,19 +125,19 @@ export default function QuickPaymentModal({
             <div>
               <p className="text-xs text-slate-400 mb-1">Total Bill</p>
               <p className="text-white font-semibold">
-                ₹{(totalBill || outstandingAmount + totalPaid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                ₹{(totalBill || outstandingAmount + totalPaid)?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
             </div>
             <div>
               <p className="text-xs text-slate-400 mb-1">Paid</p>
               <p className="text-green-400 font-semibold">
-                ₹{totalPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                ₹{totalPaid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
             </div>
             <div>
               <p className="text-xs text-slate-400 mb-1">Outstanding</p>
               <p className="text-orange-400 font-semibold">
-                ₹{outstandingAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                ₹{outstandingAmount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -161,7 +161,7 @@ export default function QuickPaymentModal({
                       </span>
                     </div>
                     <span className="text-green-400 font-medium">
-                      ₹{payment.allocated_amount.toLocaleString('en-IN')}
+                      ₹{payment.allocated_amount?.toLocaleString('en-IN')}
                     </span>
                   </div>
                 ))}

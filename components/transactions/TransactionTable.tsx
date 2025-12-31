@@ -287,7 +287,7 @@ export const TransactionTable = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{transaction.total.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">₹{transaction.total?.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(transaction.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(transaction.payment_mode)}</td>
                 <td>{getStatusBadge(transaction.payment_status, transaction.type)}</td>

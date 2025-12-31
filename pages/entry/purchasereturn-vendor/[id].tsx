@@ -215,7 +215,7 @@ export default function PurchaseReturnDetailPage() {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-400">Total:</span>
-              <span className="text-white font-bold text-lg">₹{returnData.total_amount.toLocaleString()}</span>
+              <span className="text-white font-bold text-lg">₹{returnData.total_amount?.toLocaleString()}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Items:</span>

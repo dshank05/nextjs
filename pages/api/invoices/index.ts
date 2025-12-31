@@ -71,6 +71,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // OPTIMIZED: Get customer names and item counts in batch queries
     const invoiceIds = invoices.map((inv: { id: any }) => inv.id)
+    const invoiceNumbers = invoices.map((inv: any) => inv.invoice_no) // User-provided invoice numbers
     const customerIds = Array.from(new Set(invoices.map((inv: any) => inv.select_customer).filter(Boolean)))
 
     const [customerData, billToData, itemCounts] = await Promise.all([
@@ -80,10 +81,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         select: { id: true, billing_name: true }
       }) : Promise.resolve([]),
 
-      // Get bill_to data for "Other" customers (customer_id = 0)
-      prisma.bill_to.findMany({
+      // Get bill_tosales data for manual entry customers
+      // FIX: Query using database IDs (bill_tosales uses invoice.id)
+      prisma.bill_tosales.findMany({
         where: { invoice_no: { in: invoiceIds } },
-        select: { invoice_no: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
+        select: { invoice_no: true, billing_name: true, contact_no: true, email: true, billing_address: true, billing_city: true, billing_state: true, billing_gstin: true }
       }),
 
       // Get all item counts in one query
@@ -96,23 +98,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Create lookup maps for fast access
     const customerMap = new Map(customerData.map(customer => [customer.id, customer]))
-    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
+    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo])) // Maps by database ID
     const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
 
     // Enhanced invoices using maps (fast, no individual queries)
     const enhancedInvoices = invoices.map((invoice: any) => {
       // Get customer data - check both regular customers and "Other" customers
       const customerData = customerMap.get(invoice.select_customer)
-      const billToData = billToMap.get(invoice.id)
+      const billToData = billToMap.get(invoice.id) // FIX: Map using database ID
 
       return {
         ...invoice,
-        customerName: customerData?.billing_name || billToData?.vendor_name || 'Other',
+        customerName: customerData?.billing_name || billToData?.billing_name || 'Other',
         customer_id: invoice.select_customer || null,
         customer: customerData || null,
         itemCount: itemCountMap.get(invoice.id) || 0,
         formattedDate: new Date(invoice.invoice_date * 1000).toLocaleDateString('en-IN'),
-        formattedTotal: invoice.total.toLocaleString('en-IN', {
+        formattedTotal: invoice.total?.toLocaleString('en-IN', {
           style: 'currency',
           currency: 'INR'
         }),
@@ -274,26 +276,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       const customerId = 0;
       console.log('🎯 FINAL CUSTOMER ID FOR CREATION:', customerId);
 
-      // ===== CREATE BILL_TO RECORD =====
-      // Always create bill_to record with manual customer details
-      const billToOperations = [
-        tx.bill_to.create({
-          data: {
-            invoice_no: invoice_no,
-            vendor_name: req.body.customer_name,
-            contact_no: req.body.contact_number,
-            email: req.body.email_id || '',
-            address: req.body.address || '',
-            address2: req.body.address_2 || '',
-            city: req.body.city || '',
-            state: req.body.state || '',
-            state_code: req.body.state_code || null,
-            gstin: req.body.gst_number || '',
-            pin_code: req.body.pin_code || ''
-          }
-        })
-      ];
-
       // Create incexp, billing, shipping, and transport details in parallel
       const parallelOperations = [
         // Record income transaction in incexp table (MANDATORY - invoice creation fails if this fails)
@@ -307,6 +289,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             incexp_date: new Date().toISOString().split('T')[0],
             fy: invoice.fy,
             notes: `Invoice #${invoice.invoice_no} - Sale Transaction`
+            // customer_id: customerId, // REMOVED - field doesn't exist in schema
           }
         }),
 
@@ -314,7 +297,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tx.bill_tosales.create({
           data: {
             invoice_no: invoice.id,                       // BillToSales.invoice_no (FK to invoice)
-            customer_id: customerId,                      // BillToSales.customer_id (FK to customer_details)
+            // customer_id: customerId,                   // REMOVED - field doesn't exist in schema
             billing_name: req.body.customer_name,         // BillToSales.billing_name (required)
             contact_no: req.body.contact_number,          // BillToSales.contact_no
             email: req.body.email_id,                     // BillToSales.email
@@ -329,6 +312,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tx.shipto.create({
           data: {
             invoice_no: invoice.id,                        // shipto.invoice_no (FK to invoice)
+            // customer_id: customerId,                    // REMOVED - field doesn't exist in schema
             shipping_name: req.body.useShippingAddress
               ? shippingDetails?.user_name || req.body.customer_name
               : req.body.customer_name,                    // shipto.shipping_name
@@ -352,14 +336,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         transportDetails ? tx.transport_details.create({
           data: {
             invoice_id: invoice.id,                       // TransportDetails.invoice_id (FK to invoice)
+            // customer_id: customerId,                   // REMOVED - field doesn't exist in schema
             trans_mode: transportDetails.trans_mode || '', // TransportDetails.trans_mode
             vehicle_no: transportDetails.vehicle_no || ''  // TransportDetails.vehicle_no
             // supply_date and place_of_supply are optional and not provided in current payload
           }
-        }) : Promise.resolve(null),
-
-        // Bill_to record for "Other" customers
-        ...billToOperations
+        }) : Promise.resolve(null)
       ];
 
       // Execute all parallel operations

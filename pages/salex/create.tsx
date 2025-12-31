@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
-import { Search, Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
+import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
@@ -266,11 +265,10 @@ export default function InvoiceCCreate() {
     const qty = parseFloat(templateRow.qty) || 0;
     const rate = parseFloat(templateRow.rate) || 0;
     const gstPercent = parseFloat(templateRow.gst) || 0; // Always 0 for salex but kept for consistency
-    const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+    const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
     if (qty > 0 && rate > 0) {
       const subtotal = qty * rate;
-      const discountAmount = (subtotal * discountPercent) / 100;
       const total = subtotal - discountAmount; // No tax added for salex
 
       setTemplateRow(prev => ({
@@ -926,12 +924,14 @@ export default function InvoiceCCreate() {
 
       // Recalculate tax and total for salex (tax is always 0)
       const subtotal = editingRowData.qty * editingRowData.rate;
-      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+      const discountAmount = enableDiscount ? editingRowData.discount_amount : 0;
+      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
       const finalTotal = subtotal - discountAmount; // No tax added for salex
 
       const updatedItem = {
         ...editingRowData,
         discount_amount: discountAmount,
+        discount_percentage: discountPercentage,
         total: finalTotal,
         // Tax fields always 0 for salex
         tax: 0,
@@ -956,92 +956,6 @@ export default function InvoiceCCreate() {
     setEditingRowId(null);
     setEditingRowData(null);
     setErrors(prev => ({ ...prev, inlineEdit: '' }));
-  };
-
-  const addProductToInvoice = (product: Product) => {
-    const { companyId, companyName } = getCompanyInfo(product);
-
-    const qty = 1;
-    const rate = product.selling_price || product.rate || 0;
-    const subtotal = qty * rate;
-
-    const newItem: InvoiceItem = {
-      id: Date.now().toString(),
-      product_id: product.id,
-      product_name: product.product_name,
-      car_model_ids: product.car_model_ids ? product.car_model_ids.split(',').map(id => id.trim()) : [],
-      car_model_names: [],
-      category_id: product.product_category_id || 0,
-      category_name: product.category_name || '',
-      subcategory_id: product.product_subcategory_id || null,
-      subcategory_name: product.subcategory_name || '',
-      company_id: companyId,
-      company_name: companyName,
-      part_number: product.part_no || '',
-      qty: qty,
-      rate: rate,
-      gst_percentage: 0, // Always 0 for salex - no tax
-      discount_percentage: 0,
-      tax: 0, // Always 0 for salex - no tax
-      discount_amount: 0,
-      total: subtotal, // For salex: total = rate * qty (no tax)
-      // New pricing fields
-      hsn: product.hsn || '',
-      mrp: 0,
-      discount: 0,
-      margin: 0,
-      // GST breakdown - always 0 for salex
-      cgst: 0,
-      sgst: 0,
-      igst: 0
-    };
-
-    setSelectedProducts(prev => [...prev, newItem]);
-    setSearchTerm('');
-  };
-
-  const updateProductQuantity = (id: string, qty: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        const newSubtotal = qty * item.rate;
-        const newDiscountAmount = (newSubtotal * item.discount_percentage) / 100;
-        const taxableAmount = newSubtotal - newDiscountAmount;
-
-        return {
-          ...item,
-          qty,
-          discount_amount: newDiscountAmount,
-          tax: 0, // Always 0 for salex
-          total: taxableAmount, // For salex: total = taxable amount (no tax added)
-          cgst: 0,
-          sgst: 0,
-          igst: 0
-        };
-      }
-      return item;
-    }));
-  };
-
-  const updateProductDiscount = (id: string, discountPercentage: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        const subtotal = item.qty * item.rate;
-        const newDiscountAmount = (subtotal * discountPercentage) / 100;
-        const taxableAmount = subtotal - newDiscountAmount;
-
-        return {
-          ...item,
-          discount_percentage: discountPercentage,
-          discount_amount: newDiscountAmount,
-          tax: 0, // Always 0 for salex
-          total: taxableAmount, // For salex: total = taxable amount (no tax added)
-          cgst: 0,
-          sgst: 0,
-          igst: 0
-        };
-      }
-      return item;
-    }));
   };
 
   const removeProduct = (id: string) => {
@@ -1528,9 +1442,14 @@ export default function InvoiceCCreate() {
 
             {/* Discount Section */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="flex flex-row-reverse mb-3">
+              <div className="flex flex-row-reverse mb-3 space-x-6">
                 {/* <h3 className="text-lg font-medium text-slate-200">Discount</h3> */}
-                <label className="flex items-center space-x-2 cursor-pointer">
+                {enableDiscount && (
+                  <div className="text-xs text-slate-400 mt-1">
+                    Fixed amount discount enabled
+                  </div>
+                )}
+                <label className="flex items-center space-x-2 cursor-pointer pr-4">
                   <input
                     type="checkbox"
                     checked={enableDiscount}
@@ -1580,7 +1499,7 @@ export default function InvoiceCCreate() {
                       </th>
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                          DISCOUNT (%)
+                          DISCOUNT (₹)
                         </th>
                       )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
@@ -1749,9 +1668,8 @@ export default function InvoiceCCreate() {
                         <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-
                           min="0"
-                          max="100"
+                          step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0.00"
                           value={templateRow.discount}
@@ -1833,11 +1751,11 @@ export default function InvoiceCCreate() {
                                 // Use product details and template values
                                 const qty = parseFloat(templateRow.qty) || 1;
                                 const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
-                                const discountPercent = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+                                const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
 
                                 // Calculate amounts - NO TAX for salex
                                 const subtotal = qty * rate;
-                                const discountAmount = (subtotal * discountPercent) / 100;
+                                const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
                                 const finalTotal = subtotal - discountAmount; // No tax added
 
                                 const newItem: InvoiceItem = {
@@ -1856,14 +1774,14 @@ export default function InvoiceCCreate() {
                                   qty: qty,
                                   rate: rate,
                                   gst_percentage: 0, // Always 0 for salex
-                                  discount_percentage: discountPercent,
+                                  discount_percentage: discountPercentage,
                                   tax: 0, // Always 0 for salex
                                   discount_amount: discountAmount,
                                   total: finalTotal, // For salex: total = (rate * qty) - discount
                                   // New pricing fields
                                   hsn: selectedProduct.hsn || '',
                                   mrp: 0,
-                                  discount: discountPercent,
+                                  discount: discountPercentage,
                                   margin: 0,
                                   // GST breakdown - always 0 for salex
                                   cgst: 0,
@@ -1999,13 +1917,15 @@ export default function InvoiceCCreate() {
                                     // Recalculate totals based on changes
                                     if (editingRowData) {
                                       const subtotal = editingRowData.qty * editingRowData.rate;
-                                      const discountAmount = enableDiscount ? (subtotal * editingRowData.discount_percentage) / 100 : 0;
+                                      const discountAmount = enableDiscount ? editingRowData.discount_amount : 0;
+                                      const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
 
                                       const updatedItem = {
                                         ...editingRowData,
                                         car_model_names: newCarModelNames,
                                         product_name: updatedProductName,
                                         discount_amount: discountAmount,
+                                        discount_percentage: discountPercentage,
                                         total: subtotal - discountAmount, // No tax for salex
                                         // Tax fields always 0 for salex
                                         tax: 0,

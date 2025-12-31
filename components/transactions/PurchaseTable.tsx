@@ -718,8 +718,8 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{purchase.total.toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{(purchase.total_tax || 0).toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">₹{purchase.total?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(purchase.total_tax || 0)?.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(purchase.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(purchase.payment_mode)}</td>
                 <td>{getStatusBadge(purchase.payment_status)}</td>
@@ -732,7 +732,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                     <span className="px-2 py-1 bg-slate-600 text-white text-xs rounded-full">No Returns</span>
                   )}
                 </td>
-                <td className="text-slate-300">₹{(purchase.packing_forwarding_total || 0).toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(purchase.packing_forwarding_total || 0)?.toLocaleString('en-IN')}</td>
                 <td>
                   <div className="flex items-center space-x-2">
                     <Link

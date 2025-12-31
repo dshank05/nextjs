@@ -128,9 +128,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       updated_at: salex.updated_at
     }
 
-    res.status(200).json({
-      salex: enhancedSalex
-    })
+    res.status(200).json(enhancedSalex)
   } catch (error) {
     console.error('Salex fetch error:', error)
     res.status(500).json({

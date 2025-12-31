@@ -752,9 +752,9 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{sale.total.toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{(sale.total_tax || 0).toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{(sale.packing_forwarding_total || 0).toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">₹{sale.total?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(sale.total_tax || 0)?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(sale.packing_forwarding_total || 0)?.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(sale.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(sale.payment_mode)}</td>
                 <td>{getStatusBadge(sale.payment_status)}</td>

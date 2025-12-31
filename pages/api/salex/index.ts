@@ -270,6 +270,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         type: invoice.type || 'salex',
         item_count: itemCountMap.get(invoice.id) || 0,
         packing_forwarding_total: invoice.packing_forwarding_total || 0,
+        // Payment allocation summary (for consistency with Sale API)
+        total_paid: 0, // Salex doesn't have payment allocations yet
+        outstanding_amount: Number(invoice.total), // Full amount is outstanding
         // OPTIMIZATION: Commented out unused formatted fields - frontend handles formatting
         // formattedDate,
         // formattedTotal: invoice.total.toLocaleString('en-IN', { style: 'currency', currency: 'INR' })
@@ -494,6 +497,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await tx.bill_tosalesx.create({
         data: {
           invoice_no: invoice.id,
+          // customer_id: customerId,                   // REMOVED - field doesn't exist in schema
           billing_name: req.body.customer_name,
           contact_no: req.body.contact_number || '',
           email: req.body.email_id || '',
@@ -510,6 +514,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await tx.shiptox.create({
         data: {
           invoice_no: invoice.id,
+          // customer_id: customerId,                   // REMOVED - field doesn't exist in schema
           shipping_name: req.body.customer_name,
           shipping_address: req.body.address || '',
           shipping_address2: '',
@@ -526,6 +531,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         await tx.transport_detailsx.create({
           data: {
             invoice_id: invoice.id,
+            // customer_id: customerId,                   // REMOVED - field doesn't exist in schema
             trans_mode: transportDetails.trans_mode || null,
             vehicle_no: transportDetails.vehicle_no || null,
             supply_date: transportDetails.supply_date || null

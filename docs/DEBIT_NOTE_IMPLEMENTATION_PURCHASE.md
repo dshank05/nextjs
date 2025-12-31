@@ -225,7 +225,7 @@ const oldPaymentStatus = existingPurchase.payment_status
 const newPaymentStatus = parsedPaymentStatus
 const oldTotal = existingPurchase.total
 const newTotal = result.total
-const timestamp = new Date().toLocaleString('en-IN')
+const timestamp = new Date()?.toLocaleString('en-IN')
 
 // Case 1: Changed from PAID to UNPAID (unmarking)
 if (oldPaymentStatus === 1 && newPaymentStatus === 0) {

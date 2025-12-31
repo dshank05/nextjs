@@ -65,19 +65,19 @@ export default function RefundHistory({ summary, history }: Props) {
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Total Return</p>
                 <p className="text-white text-xl font-semibold">
-                  ₹{summary.total_return.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.total_return?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Total Refunded</p>
                 <p className="text-green-400 text-xl font-semibold">
-                  ₹{summary.total_refunded.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.total_refunded?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
                 <p className="text-slate-400 text-sm mb-1">Remaining</p>
                 <p className="text-orange-400 text-xl font-semibold">
-                  ₹{summary.remaining_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  ₹{summary.remaining_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="bg-slate-700 rounded-lg p-4">
@@ -114,10 +114,10 @@ export default function RefundHistory({ summary, history }: Props) {
                           </span>
                         </td>
                         <td className="text-right">
-                          ₹{refund.refund_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{refund.refund_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="text-right font-semibold text-green-400">
-                          ₹{refund.allocated_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ₹{refund.allocated_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="text-slate-400 text-sm">
                           {refund.allocation_notes || refund.refund_notes || '-'}
@@ -134,7 +134,7 @@ export default function RefundHistory({ summary, history }: Props) {
                         Total Refunded:
                       </td>
                       <td className="text-right font-bold text-green-400">
-                        ₹{summary.total_refunded.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        ₹{summary.total_refunded?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                       <td colSpan={2}></td>
                     </tr>

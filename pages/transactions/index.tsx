@@ -386,7 +386,7 @@ export default function TransactionsPage() {
             ₹{transactions
               .filter(t => t.type === 'sale' || t.type === 'salex')
               .reduce((sum, t) => sum + t.total, 0)
-              .toLocaleString('en-IN')}
+              ?.toLocaleString('en-IN')}
           </p>
         </div>
         <div className="card">
@@ -395,7 +395,7 @@ export default function TransactionsPage() {
             ₹{transactions
               .filter(t => t.type === 'purchase')
               .reduce((sum, t) => sum + t.total, 0)
-              .toLocaleString('en-IN')}
+              ?.toLocaleString('en-IN')}
           </p>
         </div>
         <div className="card">
@@ -404,7 +404,7 @@ export default function TransactionsPage() {
             ₹{transactions
               .filter(t => t.status === 0)
               .reduce((sum, t) => sum + t.total, 0)
-              .toLocaleString('en-IN')}
+              ?.toLocaleString('en-IN')}
           </p>
         </div>
       </div>

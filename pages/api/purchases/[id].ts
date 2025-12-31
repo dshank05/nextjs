@@ -730,7 +730,7 @@ export default async function handler(
         const newPaymentStatus = parsedPaymentStatus
         const oldTotal = existingPurchase.total
         const newTotal = result.total
-        const timestamp = new Date().toLocaleString('en-IN')
+        const timestamp = new Date()?.toLocaleString('en-IN')
 
         try {
           // Case 1: Changed from PAID to UNPAID (unmarking)

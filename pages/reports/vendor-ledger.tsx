@@ -170,10 +170,10 @@ export default function VendorLedgerPage() {
   };
 
   const getPaymentStatusBadge = (status: number) => {
-    if (status === 1) {
-      return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-    } else {
-      return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Unpaid</span>;
+    switch (status) {
+      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
+      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
     }
   };
 
@@ -357,7 +357,7 @@ export default function VendorLedgerPage() {
                   <tr key={vendor.id}>
                     <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                     <td className="font-medium text-white">{vendor.vendor_name}</td>
-                    <td className="text-slate-300 font-semibold">₹{vendor.balance.toLocaleString('en-IN')}</td>
+                    <td className="text-slate-300 font-semibold">₹{vendor.balance?.toLocaleString('en-IN')}</td>
                     <td className="text-slate-300">{vendor.formattedDate}</td>
                     <td className="text-slate-300">{vendor.last_transaction_type}</td>
                     <td className="text-slate-300">
@@ -405,7 +405,7 @@ export default function VendorLedgerPage() {
                     <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                     <td className="font-medium text-white">{note.debit_note_no}</td>
                     <td className="text-slate-300">{note.vendor_name}</td>
-                    <td className="text-slate-300 font-semibold">₹{note.refund_amount.toLocaleString('en-IN')}</td>
+                    <td className="text-slate-300 font-semibold">₹{note.refund_amount?.toLocaleString('en-IN')}</td>
                     <td className="text-slate-300">{note.formattedDate}</td>
                     <td>{getPaymentStatusBadge(note.payment_status)}</td>
                     <td className="text-slate-300">

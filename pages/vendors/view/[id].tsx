@@ -178,7 +178,6 @@ export default function VendorView() {
       case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
       case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
       case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
-      default: return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">Unknown</span>;
     }
   };
 
@@ -329,7 +328,7 @@ export default function VendorView() {
                       <tr key={purchase.id}>
                         <td>{i + 1}</td>
                         <td className="text-white font-medium">{purchase.invoice_no}</td>
-                        <td className="text-slate-300 font-semibold">₹{purchase.total.toLocaleString('en-IN')}</td>
+                        <td className="text-slate-300 font-semibold">₹{purchase.total?.toLocaleString('en-IN')}</td>
                         <td>-</td>
                       </tr>
                     ))
@@ -398,7 +397,7 @@ export default function VendorView() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <span className="text-slate-400">Total Outstanding:</span>
-                <span className="text-red-400 font-semibold">₹{accountSummary.totalOutstanding.toLocaleString('en-IN')}</span>
+                <span className="text-red-400 font-semibold">₹{accountSummary.totalOutstanding?.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-400">Last Transaction:</span>

@@ -100,7 +100,7 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
   const col1 = document.createElement('div');
   col1.innerHTML = `
     <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Basic Information</h3>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total:</span><span>₹${(purchase.total || 0).toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total:</span><span>₹${(purchase.total || 0)?.toLocaleString('en-IN')}</span></div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Items:</span><span>${purchase.items?.length || 0}</span></div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Invoice:</span><span>${purchase.invoice_number || purchase.invoice_no}</span></div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Date:</span><span>${formatDate(purchase.date || purchase.invoice_date)}</span></div>
@@ -123,14 +123,14 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
   const col3 = document.createElement('div');
   col3.innerHTML = `
     <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Financial Summary</h3>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Items Total:</span><span>₹${(purchase.items_total || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Freight:</span><span>₹${(purchase.freight || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Taxable Value:</span><span>₹${(purchase.total_taxable_value || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total Tax:</span><span>₹${(purchase.total_tax || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; font-size: 11px;"><span>Grand Total:</span><span>₹${(purchase.total || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>CGST:</span><span>₹${(purchase.total_cgst || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>SGST:</span><span>₹${(purchase.total_sgst || 0).toLocaleString('en-IN')}</span></div>
-    <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>IGST:</span><span>₹${(purchase.total_igst || 0).toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Items Total:</span><span>₹${(purchase.items_total || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Freight:</span><span>₹${(purchase.freight || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Taxable Value:</span><span>₹${(purchase.total_taxable_value || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total Tax:</span><span>₹${(purchase.total_tax || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-weight: bold; font-size: 11px;"><span>Grand Total:</span><span>₹${(purchase.total || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>CGST:</span><span>₹${(purchase.total_cgst || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>SGST:</span><span>₹${(purchase.total_sgst || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>IGST:</span><span>₹${(purchase.total_igst || 0)?.toLocaleString('en-IN')}</span></div>
   `;
 
   // Column 4: Transport & Notes
@@ -139,7 +139,7 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
     <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Transport Information</h3>
     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Transport:</span><span>${purchase.transport_name || 'N/A'}</span></div>
     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Vehicle:</span><span>${purchase.vehicle_number || 'N/A'}</span></div>
-    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 11px;"><span>Freight:</span><span>₹${(purchase.freight || 0).toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 11px;"><span>Freight:</span><span>₹${(purchase.freight || 0)?.toLocaleString('en-IN')}</span></div>
     ${purchase.notes ? `<div style="margin-bottom: 8px; font-size: 10px;"><strong>Notes:</strong><br>${purchase.notes}</div>` : ''}
     ${purchase.descriptions ? `<div style="font-size: 10px;"><strong>Descriptions:</strong><br>${purchase.descriptions}</div>` : ''}
   `;
@@ -179,10 +179,10 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
                 <td style="border: 1px solid #ccc; padding: 8px;">${item.part || 'N/A'}</td>
                 <td style="border: 1px solid #ccc; padding: 8px;">${item.hsn || 'N/A'}</td>
                 <td style="border: 1px solid #ccc; padding: 8px;">${item.qty || 0}</td>
-                <td style="border: 1px solid #ccc; padding: 8px;">₹${(item.rate || 0).toLocaleString('en-IN')}</td>
+                <td style="border: 1px solid #ccc; padding: 8px;">₹${(item.rate || 0)?.toLocaleString('en-IN')}</td>
                 <td style="border: 1px solid #ccc; padding: 8px;">${item.gst_percentage || item.tax || 0}%</td>
-                <td style="border: 1px solid #ccc; padding: 8px;">₹${taxAmount.toLocaleString('en-IN')}</td>
-                <td style="border: 1px solid #ccc; padding: 8px;">₹${(item.total || item.subtotal || 0).toLocaleString('en-IN')}</td>
+                <td style="border: 1px solid #ccc; padding: 8px;">₹${taxAmount?.toLocaleString('en-IN')}</td>
+                <td style="border: 1px solid #ccc; padding: 8px;">₹${(item.total || item.subtotal || 0)?.toLocaleString('en-IN')}</td>
               </tr>
             `;
           }).join('')}
@@ -192,8 +192,8 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
             <td colspan="3" style="border: 1px solid #ccc; padding: 8px; text-align: right;">Total Qty:</td>
             <td style="border: 1px solid #ccc; padding: 8px;">${purchase.items.reduce((sum: number, item: any) => sum + (item.qty || 0), 0)}</td>
             <td colspan="3" style="border: 1px solid #ccc; padding: 8px; text-align: right;">Total Tax:</td>
-            <td style="border: 1px solid #ccc; padding: 8px;">₹${(purchase.total_tax || 0).toLocaleString('en-IN')}</td>
-            <td style="border: 1px solid #ccc; padding: 8px;">₹${(purchase.items_total || 0).toLocaleString('en-IN')}</td>
+            <td style="border: 1px solid #ccc; padding: 8px;">₹${(purchase.total_tax || 0)?.toLocaleString('en-IN')}</td>
+            <td style="border: 1px solid #ccc; padding: 8px;">₹${(purchase.items_total || 0)?.toLocaleString('en-IN')}</td>
           </tr>
         </tfoot>
       </table>
