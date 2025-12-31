@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import {
   validatePaymentAllocation,
-  calculatePurchasePaymentStatus
+  calculatePaymentStatus
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 

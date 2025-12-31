@@ -943,7 +943,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     let paymentAllocations: any[] = []
     try {
       if (invoiceIds.length > 0) {
-        paymentAllocations = await prisma.customer_payment_allocations.groupBy({
+        paymentAllocations = await (prisma.customer_payment_allocations.groupBy as any)({
           by: ['invoice_id'],
           where: { invoice_id: { in: invoiceIds } },
           _sum: { allocated_amount: true }

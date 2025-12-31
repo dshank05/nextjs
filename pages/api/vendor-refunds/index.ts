@@ -4,7 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import {
   validateRefundAllocation,
-  calculateReturnRefundStatus
+  calculateRefundStatus
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 

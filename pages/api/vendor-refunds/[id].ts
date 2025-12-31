@@ -2,7 +2,6 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
-import { getRefundHistory } from '../../../lib/payment-allocation-service';
 
 const prisma = new PrismaClient();
 
