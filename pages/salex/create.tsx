@@ -1324,8 +1324,8 @@ export default function InvoiceCCreate() {
                   />
                 </div>
 
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">ADDRESS</label>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
                     type="text"
                     value={formData.address}
@@ -1334,6 +1334,7 @@ export default function InvoiceCCreate() {
                     placeholder="Enter address"
                   />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
@@ -1354,27 +1355,24 @@ export default function InvoiceCCreate() {
                         name: state.name
                       }))
                     ]}
-                    selectedValue={(() => {
-                      if (formData.state) {
-                        const matchingState = states.find(state => state.name === formData.state);
-                        return matchingState ? matchingState.id : '';
-                      }
-                      return '';
-                    })()}
+                    selectedValue={formData.state || ''}
                     onSelectionChange={(value) => {
-                      if (value) {
-                        const selectedState = states.find(state => state.id === value);
-                        if (selectedState) {
-                          handleInputChange('state', selectedState.name);
-                          handleInputChange('state_code', selectedState.code.toString());
-                        }
-                      } else {
-                        handleInputChange('state', '');
-                      }
+                      handleInputChange('state', value);
                     }}
                     placeholder="Select State"
                   />
                   {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
+                  <input
+                    type="text"
+                    value={formData.pin_code}
+                    onChange={(e) => handleInputChange('pin_code', e.target.value)}
+                    className="input w-full"
+                    placeholder="Enter pin code"
+                  />
                 </div>
               </div>
             </div>

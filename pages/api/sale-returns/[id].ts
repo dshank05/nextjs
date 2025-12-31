@@ -172,7 +172,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       // Determine CGST/SGST vs IGST based on customer state
       const BUSINESS_STATE_CODE = 9 // Uttar Pradesh
       let cgst = 0, sgst = 0, igst = 0
-      if (customer?.state_code === BUSINESS_STATE_CODE) {
+      if (customer?.billing_state_code === BUSINESS_STATE_CODE) {
         cgst = taxAmount / 2
         sgst = taxAmount / 2
       } else {
