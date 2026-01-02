@@ -242,15 +242,18 @@ export default function SaleReturnPage() {
   // Handle Process Return - navigate to return creation form
   const handleProcessReturn = (transaction: Sale) => {
     console.log('Process return for sale:', transaction);
+    // Determine query parameter based on type
+    const queryParam = transaction.type === 'invoicex' ? 'invoicex' : 'invoice';
     // Store invoice ID in sessionStorage for the return form
     sessionStorage.setItem('returnInvoice', JSON.stringify({
       id: transaction.id,
       invoice_no: transaction.invoice_no,
       customer_name: transaction.customer_name,
       total: transaction.total,
-      invoice_date: transaction.invoice_date
+      invoice_date: transaction.invoice_date,
+      type: transaction.type
     }));
-    router.push(`/entry/salereturn-create?invoice=${transaction.id}`);
+    router.push(`/entry/salereturn-create?${queryParam}=${transaction.id}`);
   };
 
   // Handle Return Whole Order - show confirmation modal
@@ -266,15 +269,19 @@ export default function SaleReturnPage() {
 
     setProcessingReturn(true);
     try {
-      // Call the sale returns API to create a full return
+      // Determine field names based on type
+      const isInvoicex = selectedTransaction.type === 'invoicex';
+      const invoiceIdField = isInvoicex ? 'invoicex_id' : 'invoice_id';
+      
+      // Call the unified sale returns API to create a full return
       const response = await fetch('/api/sale-returns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          invoice_id: selectedTransaction.id,
-          return_type: String(selectedTransaction.type) === 'invoice' ? 'sale' : 'salex',
+          [invoiceIdField]: selectedTransaction.id,
+          invoice_type: selectedTransaction.type,
           full_return: true, // Flag for full return
           return_date: Math.floor(Date.now() / 1000), // Current timestamp
           notes: 'Full order return processed automatically'

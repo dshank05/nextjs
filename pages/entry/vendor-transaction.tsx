@@ -1,0 +1,660 @@
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/router'
+import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
+import { SearchableSelect } from '../../components/common/SearchableSelect'
+import { ConfirmationModal } from '../../components/ConfirmationModal'
+import { useSnackbar } from '../../components/SnackbarProvider'
+
+interface OutstandingBill {
+  purchase_id: number
+  invoice_no: number
+  invoice_date: number
+  total_bill: number
+  total_paid: number
+  outstanding_amount: number
+  payment_status: number
+  allocated?: number
+}
+
+interface OutstandingReturn {
+  return_id: number
+  return_no: string
+  return_date: number
+  total_return: number
+  total_refunded: number
+  outstanding_refund: number
+  payment_status: number
+  allocated?: number
+}
+
+interface Vendor {
+  id: number
+  vendor_name: string
+}
+
+type OperationType = 'EXPENSE' | 'INCOME' | ''
+
+export default function VendorTransactionEntry() {
+  const router = useRouter()
+  const { showSnackbar } = useSnackbar()
+  const [loading, setLoading] = useState(false)
+  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [selectedVendor, setSelectedVendor] = useState<number>(0)
+  const [operationType, setOperationType] = useState<OperationType>('')
+  const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
+  const [outstandingReturns, setOutstandingReturns] = useState<OutstandingReturn[]>([])
+  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [mode, setMode] = useState<number>(1)
+  const [amount, setAmount] = useState<string>('')
+  const [notes, setNotes] = useState<string>('')
+  const [currentFY, setCurrentFY] = useState<number>(2024)
+  const [error, setError] = useState<string>('')
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false)
+
+  useEffect(() => {
+    fetchVendors()
+    fetchCurrentFY()
+  }, [])
+
+  useEffect(() => {
+    if (selectedVendor > 0 && operationType) {
+      if (operationType === 'EXPENSE') {
+        fetchOutstandingBills(selectedVendor)
+        setOutstandingReturns([])
+      } else if (operationType === 'INCOME') {
+        fetchOutstandingReturns(selectedVendor)
+        setOutstandingBills([])
+      }
+    } else {
+      setOutstandingBills([])
+      setOutstandingReturns([])
+    }
+  }, [selectedVendor, operationType])
+
+  const fetchVendors = async () => {
+    try {
+      const res = await fetch('/api/vendors')
+      const data = await res.json()
+      setVendors(data.vendors || [])
+    } catch (error) {
+      console.error('Error fetching vendors:', error)
+    }
+  }
+
+  const fetchCurrentFY = async () => {
+    try {
+      const res = await fetch('/api/financial-years')
+      const data = await res.json()
+      if (data.currentFyId) {
+        setCurrentFY(data.currentFyId)
+      }
+    } catch (error) {
+      console.error('Error fetching FY:', error)
+    }
+  }
+
+  const fetchOutstandingBills = async (vendorId: number) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/purchases?vendor=${vendorId}&status=0,2&limit=1000`)
+      const data = await res.json()
+      
+      if (data.purchases) {
+        const bills: OutstandingBill[] = data.purchases
+          .filter((p: any) => p.remaining_amount > 0)
+          .map((p: any) => ({
+            purchase_id: p.id,
+            invoice_no: p.invoice_no,
+            invoice_date: p.invoice_date,
+            total_bill: p.total,
+            total_paid: p.total_paid || 0,
+            outstanding_amount: p.remaining_amount,
+            payment_status: p.payment_status,
+            allocated: 0
+          }))
+        
+        setOutstandingBills(bills)
+      }
+    } catch (error) {
+      console.error('Error fetching outstanding bills:', error)
+      setError('Failed to load outstanding bills')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchOutstandingReturns = async (vendorId: number) => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/purchase-returns?vendor=${vendorId}&limit=1000`)
+      const data = await res.json()
+      
+      if (data.returns) {
+        const returns: OutstandingReturn[] = data.returns
+          .filter((r: any) => r.remaining_refund > 0)
+          .map((r: any) => ({
+            return_id: r.id,
+            return_no: r.return_no,
+            return_date: r.return_date,
+            total_return: r.refund_amount,
+            total_refunded: r.total_refunded || 0,
+            outstanding_refund: r.remaining_refund,
+            payment_status: r.payment_status,
+            allocated: 0
+          }))
+        
+        setOutstandingReturns(returns)
+      }
+    } catch (error) {
+      console.error('Error fetching outstanding returns:', error)
+      setError('Failed to load outstanding returns')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBillAllocationChange = (purchaseId: number, value: string) => {
+    const allocAmount = parseFloat(value) || 0
+    setOutstandingBills(prev => prev.map(bill => 
+      bill.purchase_id === purchaseId 
+        ? { ...bill, allocated: allocAmount }
+        : bill
+    ))
+  }
+
+  const handleReturnAllocationChange = (returnId: number, value: string) => {
+    const allocAmount = parseFloat(value) || 0
+    setOutstandingReturns(prev => prev.map(ret => 
+      ret.return_id === returnId 
+        ? { ...ret, allocated: allocAmount }
+        : ret
+    ))
+  }
+
+  const handleAutoAllocate = () => {
+    let remaining = parseFloat(amount) || 0
+    
+    if (operationType === 'EXPENSE') {
+      const updated = outstandingBills.map(bill => {
+        if (remaining <= 0) return { ...bill, allocated: 0 }
+        const toAllocate = Math.min(remaining, bill.outstanding_amount)
+        remaining -= toAllocate
+        return { ...bill, allocated: toAllocate }
+      })
+      setOutstandingBills(updated)
+    } else if (operationType === 'INCOME') {
+      const updated = outstandingReturns.map(ret => {
+        if (remaining <= 0) return { ...ret, allocated: 0 }
+        const toAllocate = Math.min(remaining, ret.outstanding_refund)
+        remaining -= toAllocate
+        return { ...ret, allocated: toAllocate }
+      })
+      setOutstandingReturns(updated)
+    }
+  }
+
+  const handleClearAllocations = () => {
+    if (operationType === 'EXPENSE') {
+      setOutstandingBills(prev => prev.map(bill => ({ ...bill, allocated: 0 })))
+    } else if (operationType === 'INCOME') {
+      setOutstandingReturns(prev => prev.map(ret => ({ ...ret, allocated: 0 })))
+    }
+  }
+
+  const getTotalAllocated = () => {
+    if (operationType === 'EXPENSE') {
+      return outstandingBills.reduce((sum, bill) => sum + (bill.allocated || 0), 0)
+    } else if (operationType === 'INCOME') {
+      return outstandingReturns.reduce((sum, ret) => sum + (ret.allocated || 0), 0)
+    }
+    return 0
+  }
+
+  const isRecordDisabled = (): boolean => {
+    if (loading) return true
+    if (!selectedVendor) return true
+    if (!operationType) return true
+    if (!amount || parseFloat(amount) <= 0) return true
+    
+    const allocated = getTotalAllocated()
+    if (allocated === 0) return true
+    
+    const amountNum = parseFloat(amount) || 0
+    const difference = amountNum - allocated
+    if (Math.abs(difference) > 0.01) return true
+    
+    return false
+  }
+
+  const handleRecordTransaction = () => {
+    setError('')
+    
+    if (!selectedVendor) {
+      setError('Please select a vendor')
+      return
+    }
+    
+    if (!operationType) {
+      setError('Please select operation type')
+      return
+    }
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      setError('Please enter a valid amount')
+      return
+    }
+    
+    const totalAllocated = getTotalAllocated()
+    const amountNum = parseFloat(amount)
+    
+    if (Math.abs(totalAllocated - amountNum) > 0.01) {
+      setError(`Total allocated (₹${totalAllocated.toFixed(2)}) must equal amount (₹${amountNum.toFixed(2)})`)
+      return
+    }
+    
+    const hasAllocations = operationType === 'EXPENSE' 
+      ? outstandingBills.some(b => b.allocated && b.allocated > 0)
+      : outstandingReturns.some(r => r.allocated && r.allocated > 0)
+    
+    if (!hasAllocations) {
+      setError('Please allocate amount to at least one item')
+      return
+    }
+
+    setShowConfirmationModal(true)
+  }
+
+  const confirmRecordTransaction = async () => {
+    setLoading(true)
+    try {
+      const amountNum = parseFloat(amount)
+      const timestamp = Math.floor(new Date(date).getTime() / 1000)
+      
+      let endpoint = ''
+      let payload: any = {}
+      
+      if (operationType === 'EXPENSE') {
+        endpoint = '/api/vendor-payments'
+        const allocations = outstandingBills
+          .filter(bill => bill.allocated && bill.allocated > 0)
+          .map(bill => ({
+            purchase_id: bill.purchase_id,
+            allocated_amount: bill.allocated,
+            notes: `Payment for Invoice ${bill.invoice_no}`
+          }))
+        
+        payload = {
+          vendor_id: selectedVendor,
+          payment_amount: amountNum,
+          payment_mode: mode,
+          payment_date: timestamp,
+          payment_type: 'BILL_SPECIFIC',
+          notes,
+          allocations,
+          fy: currentFY
+        }
+      } else {
+        endpoint = '/api/vendor-refunds'
+        const allocations = outstandingReturns
+          .filter(ret => ret.allocated && ret.allocated > 0)
+          .map(ret => ({
+            return_id: ret.return_id,
+            allocated_amount: ret.allocated,
+            notes: `Refund for ${ret.return_no}`
+          }))
+        
+        payload = {
+          vendor_id: selectedVendor,
+          refund_amount: amountNum,
+          refund_mode: mode,
+          refund_date: timestamp,
+          refund_type: 'RETURN_SPECIFIC',
+          notes,
+          allocations,
+          fy: currentFY
+        }
+      }
+      
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      
+      const data = await res.json()
+      
+      if (res.ok && data.success) {
+        const transactionType = operationType === 'EXPENSE' ? 'Payment' : 'Refund'
+        showSnackbar('success', `${transactionType} recorded successfully!`)
+        
+        // Reset form
+        setSelectedVendor(0)
+        setOperationType('')
+        setOutstandingBills([])
+        setOutstandingReturns([])
+        setAmount('')
+        setMode(1)
+        setDate(new Date().toISOString().split('T')[0])
+        setNotes('')
+        setError('')
+      } else {
+        setError(data.error || 'Failed to record transaction')
+      }
+    } catch (error) {
+      console.error('Error submitting transaction:', error)
+      setError('Failed to record transaction')
+    } finally {
+      setLoading(false)
+      setShowConfirmationModal(false)
+    }
+  }
+
+  const totalAllocated = getTotalAllocated()
+  const amountNum = parseFloat(amount) || 0
+  const difference = amountNum - totalAllocated
+  const outstandingItems = operationType === 'EXPENSE' ? outstandingBills : outstandingReturns
+
+  return (
+    <div className="space-y-6">
+      <div className="card">
+        <div className="p-6">
+          {/* Header */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold text-slate-200 flex items-center gap-2">
+              <DollarSign className="w-6 h-6" />
+              Record Vendor Transaction
+            </h1>
+          </div>
+
+          {error && (
+            <div className="mb-6 bg-red-900/20 border border-red-700/30 rounded-lg p-4">
+              <p className="text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Transaction Details */}
+          <div className="mb-6">
+            <h3 className="text-lg font-medium text-slate-200 mb-4">Transaction Details</h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Vendor <span className="text-red-400">*</span>
+                </label>
+                <SearchableSelect
+                  options={vendors.map(v => ({
+                    id: v.id.toString(),
+                    name: v.vendor_name
+                  }))}
+                  selectedValue={selectedVendor.toString()}
+                  onSelectionChange={(value) => setSelectedVendor(parseInt(value || '0'))}
+                  placeholder="Select vendor..."
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  Operation Type <span className="text-red-400">*</span>
+                </label>
+                <div className="flex gap-4 items-center h-10">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="operationType"
+                      value="EXPENSE"
+                      checked={operationType === 'EXPENSE'}
+                      onChange={(e) => setOperationType(e.target.value as OperationType)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-slate-300">EXPENSE (Pay Vendor)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="operationType"
+                      value="INCOME"
+                      checked={operationType === 'INCOME'}
+                      onChange={(e) => setOperationType(e.target.value as OperationType)}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-slate-300">INCOME (Receive Refund)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Date <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="input w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Amount <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="input w-full"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Mode <span className="text-red-400">*</span>
+                  </label>
+                  <SearchableSelect
+                    options={[
+                      { id: '1', name: 'Bank' },
+                      { id: '0', name: 'Cash' }
+                    ]}
+                    selectedValue={mode.toString()}
+                    onSelectionChange={(value) => setMode(parseInt(value || '1'))}
+                    placeholder="Select mode..."
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-300 mb-2">Notes</label>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className="input w-full"
+                  placeholder="Additional notes..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Allocation Section */}
+          {selectedVendor > 0 && operationType && (
+            <div className="border-t border-slate-600 pt-6 mb-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-slate-200 flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Allocate to {operationType === 'EXPENSE' ? 'Bills' : 'Returns'}
+                </h3>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleAutoAllocate}
+                    className="btn-primary text-sm"
+                    disabled={!amount || loading}
+                  >
+                    Auto Allocate
+                  </button>
+                  <button
+                    onClick={handleClearAllocations}
+                    className="btn-secondary text-sm"
+                    disabled={loading}
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                  <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                  <p>Loading outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'}...</p>
+                </div>
+              ) : outstandingItems.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">No outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'} for this vendor</div>
+              ) : (
+                <>
+                  {(!amount || parseFloat(amount) <= 0) && (
+                    <div className="mb-3 text-sm text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                      Please enter Amount above to enable allocation
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>{operationType === 'EXPENSE' ? 'Invoice No' : 'Return No'}</th>
+                          <th>Date</th>
+                          <th className="text-right">{operationType === 'EXPENSE' ? 'Total Bill' : 'Total Return'}</th>
+                          <th className="text-right">{operationType === 'EXPENSE' ? 'Paid' : 'Refunded'}</th>
+                          <th className="text-right">Outstanding</th>
+                          <th className="text-right">Allocate</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {operationType === 'EXPENSE' ? (
+                          outstandingBills.map(bill => (
+                            <tr key={bill.purchase_id}>
+                              <td>{bill.invoice_no}</td>
+                              <td>{new Date(bill.invoice_date * 1000).toLocaleDateString()}</td>
+                              <td className="text-right">₹{bill.total_bill?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">₹{bill.total_paid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right font-semibold text-green-400">
+                                ₹{bill.outstanding_amount?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="text-right">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={bill.allocated || ''}
+                                  onChange={(e) => handleBillAllocationChange(bill.purchase_id, e.target.value)}
+                                  max={bill.outstanding_amount}
+                                  disabled={!amount || parseFloat(amount) <= 0}
+                                  className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                                  placeholder="0.00"
+                                />
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          outstandingReturns.map(ret => (
+                            <tr key={ret.return_id}>
+                              <td>{ret.return_no}</td>
+                              <td>{new Date(ret.return_date * 1000).toLocaleDateString()}</td>
+                              <td className="text-right">₹{ret.total_return?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right">₹{ret.total_refunded?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td className="text-right font-semibold text-green-400">
+                                ₹{ret.outstanding_refund?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="text-right">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  value={ret.allocated || ''}
+                                  onChange={(e) => handleReturnAllocationChange(ret.return_id, e.target.value)}
+                                  max={ret.outstanding_refund}
+                                  disabled={!amount || parseFloat(amount) <= 0}
+                                  className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                                  placeholder="0.00"
+                                />
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Summary */}
+          {selectedVendor > 0 && operationType && outstandingItems.length > 0 && (
+            <div className="border-t border-slate-600 pt-6 mb-6">
+              <h3 className="text-lg font-medium text-slate-200 mb-4">Transaction Summary</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-slate-400 text-sm mb-1">Amount</p>
+                  <p className="text-white text-xl font-semibold">
+                    ₹{amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-slate-400 text-sm mb-1">Total Allocated</p>
+                  <p className="text-white text-xl font-semibold">
+                    ₹{totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className={`bg-slate-700 rounded-lg p-4 ${Math.abs(difference) < 0.01 ? 'border-2 border-green-500' : 'border-2 border-red-500'}`}>
+                  <p className="text-slate-400 text-sm mb-1">Difference</p>
+                  <p className={`text-xl font-semibold ${Math.abs(difference) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
+                    ₹{Math.abs(difference)?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {difference > 0.01 ? ' (Unallocated)' : difference < -0.01 ? ' (Over-allocated)' : ' '}
+                    {Math.abs(difference) < 0.01 && <CheckCircle className="inline w-5 h-5 ml-2" />}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-4">
+            <button
+              onClick={() => router.back()}
+              className="btn-secondary"
+              disabled={loading}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleRecordTransaction}
+              className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-600"
+              disabled={isRecordDisabled()}
+            >
+              {loading ? 'Recording...' : 'Record Transaction'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showConfirmationModal}
+        title="Confirm Transaction"
+        message={`Record ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${
+          operationType === 'EXPENSE' 
+            ? outstandingBills.filter(b => b.allocated && b.allocated > 0).length 
+            : outstandingReturns.filter(r => r.allocated && r.allocated > 0).length
+        } ${operationType === 'EXPENSE' ? 'bill(s)' : 'return(s)'}?`}
+        confirmText="Record Transaction"
+        cancelText="Cancel"
+        showLoading={loading}
+        loadingText="Recording Transaction..."
+        onConfirm={confirmRecordTransaction}
+        onCancel={() => setShowConfirmationModal(false)}
+      />
+    </div>
+  )
+}

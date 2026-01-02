@@ -262,7 +262,7 @@ export default function SalexPage() {
     const returnStatus = transaction.return_status || 0;
     if (returnStatus === 0 || returnStatus === 1) {
       console.log('Starting partial return for salex:', transaction.id);
-      router.push(`/entry/salexreturn-create?invoice=${transaction.id}&type=partial`);
+      router.push(`/entry/salereturn-create?invoicex=${transaction.id}&type=partial`);
     } else {
       alert('Full returns cannot be modified with partial returns.');
     }
@@ -279,7 +279,7 @@ export default function SalexPage() {
 
     setProcessingReturn(true);
     try {
-      const response = await fetch('/api/salex-returns', {
+      const response = await fetch('/api/sale-returns', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
