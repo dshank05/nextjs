@@ -300,7 +300,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
+        {/* TOP SEARCH BOX - COMMENTED OUT */}
+        {/* <div className="flex items-center gap-2">
           <div className="w-64">
             <ClearableInput
               type="text"
@@ -309,8 +310,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
               onChange={(e) => onSearchChange(e.target.value)}
             />
           </div>
-        </div>
-        <div className="flex items-center gap-2">
+        </div> */}
+        <div className="flex items-center gap-2 ml-auto">
           <ExportMenu
             data={sales}
             columns={[
@@ -339,7 +340,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-11 gap-4 mb-4">
+      <div className="grid grid-cols-10 gap-4 mb-4">
         {/* Invoice No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
@@ -488,8 +489,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
           />
         </div>
 
-        {/* TAX AMOUNT Filter */}
-        <div className="flex-1">
+        {/* TAX AMOUNT Filter - COMMENTED OUT */}
+        {/* <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">TAX AMOUNT (₹)</label>
           <ClearableInput
             type="number"
@@ -514,7 +515,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
             min="0"
             step="0.01"
           />
-        </div>
+        </div> */}
 
         {/* P/F Filter */}
         <div className="flex-1">
@@ -776,7 +777,8 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
-                    {onPartialReturn && (
+                    {/* RETURN BUTTONS - COMMENTED OUT */}
+                    {/* {onPartialReturn && (
                       <button
                         onClick={() => onPartialReturn(sale)}
                         title="Create Partial Return"
@@ -795,7 +797,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                       >
                         <Undo2 className="w-4 h-4" />
                       </button>
-                    )}
+                    )} */}
                   </div>
                 </td>
               </tr>

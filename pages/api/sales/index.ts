@@ -858,9 +858,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'invoice_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
-    // For customer_name sorting, we need to fetch all data first and sort in JavaScript
+    // For customer_name and item_count sorting, we need to fetch all data first and sort in JavaScript
+    // (item_count is not a database column, it's calculated from invoiceitems.groupBy)
     // For other fields, we can sort at database level
-    const needsPostSorting = sortField === 'customer_name'
+    const needsPostSorting = sortField === 'customer_name' || sortField === 'item_count'
 
     let salesInvoices: any[]
     let total: number
@@ -1066,15 +1067,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       enhancedSales = enhancedSales.filter(sale => (sale.item_count || 0) >= itemsFilter!)
     }
 
-    // Apply post-sorting for customer_name if needed
+    // Apply post-sorting for customer_name and item_count if needed
     if (needsPostSorting) {
       enhancedSales.sort((a, b) => {
-        const aValue = (a.customer_name || '').toString().toLowerCase()
-        const bValue = (b.customer_name || '').toString().toLowerCase()
+        if (sortField === 'item_count') {
+          // Numeric comparison for item_count
+          const aValue = Number(a.item_count) || 0
+          const bValue = Number(b.item_count) || 0
+          return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
+        } else {
+          // String comparison for customer_name
+          const aValue = (a.customer_name || '').toString().toLowerCase()
+          const bValue = (b.customer_name || '').toString().toLowerCase()
 
-        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-        return 0
+          if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+          if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+          return 0
+        }
       })
 
       // Apply pagination after sorting

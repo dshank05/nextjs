@@ -308,7 +308,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
+        {/* TOP SEARCH BOX - COMMENTED OUT */}
+        {/* <div className="flex items-center gap-2">
           <div className="w-64">
             <ClearableInput
               type="text"
@@ -317,8 +318,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               onChange={(e) => onSearchChange(e.target.value)}
             />
           </div>
-        </div>
-        <div className="flex items-center gap-2">
+        </div> */}
+        <div className="flex items-center gap-2 ml-auto">
           <ExportMenu
             data={salexs}
             columns={[
@@ -347,7 +348,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-12 gap-4 mb-4">
+      <div className="grid grid-cols-11 gap-4 mb-4">
         {/* Invoice No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
@@ -482,8 +483,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           />
         </div>
 
-        {/* TAX AMOUNT Filter */}
-        <div className="flex-1">
+        {/* TAX AMOUNT Filter - COMMENTED OUT */}
+        {/* <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">TAX AMOUNT (₹)</label>
           <ClearableInput
             type="number"
@@ -506,7 +507,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             min="0"
             step="0.01"
           />
-        </div>
+        </div> */}
 
         {/* NOTES Filter */}
         <div className="flex-1">
@@ -781,7 +782,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
-                    {onPartialReturn && (
+                    {/* RETURN BUTTONS - COMMENTED OUT */}
+                    {/* {onPartialReturn && (
                       <button
                         onClick={() => onPartialReturn(salex)}
                         title="Create Partial Return"
@@ -800,7 +802,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                       >
                         <Undo2 className="w-4 h-4" />
                       </button>
-                    )}
+                    )} */}
                   </div>
                 </td>
               </tr>
