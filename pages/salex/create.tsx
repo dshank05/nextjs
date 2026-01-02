@@ -1474,18 +1474,18 @@ export default function InvoiceCCreate() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PRODUCT NAME
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      {/* <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CATEGORY
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         SUB CATEGORY
-                      </th>
+                      </th> */}
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         CAR MODELS
                       </th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
+                      {/* <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         COMPANY
-                      </th>
+                      </th> */}
                       <th className="px-4 py-3 text-left text-xs font-medium text-slate-300 uppercase tracking-wider">
                         PART NO
                       </th>
@@ -1534,7 +1534,7 @@ export default function InvoiceCCreate() {
                         </button>
 
                       </td>
-                      <td className="px-4 py-3">
+                      {/* <td className="px-4 py-3">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Category' },
@@ -1572,7 +1572,7 @@ export default function InvoiceCCreate() {
                           placeholder={!productRowFilters.category ? "Please select a category first" : "Select Sub Category"}
                           disabled={!productRowFilters.category}
                         />
-                      </td>
+                      </td> */}
                       <td className="px-4 py-3">
                         <SearchableMultiSelect
                           options={filteredCarModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
@@ -1586,7 +1586,7 @@ export default function InvoiceCCreate() {
                           placeholder="Select car models..."
                         />
                       </td>
-                      <td className="px-4 py-3">
+                      {/* <td className="px-4 py-3">
                         <SearchableSelect
                           options={[
                             { id: '', name: 'Select Company' },
@@ -1604,7 +1604,7 @@ export default function InvoiceCCreate() {
                           }}
                           placeholder="Select Company"
                         />
-                      </td>
+                      </td> */}
                       <td className="px-4 py-3">
                         <input
                           type="text"
@@ -1860,12 +1860,12 @@ export default function InvoiceCCreate() {
                         <td className="px-3 py-2 text-xs text-slate-200">
                           {product.display_name || product.product_name}
                         </td>
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
+                        {/* <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.category_name || '-'}
                         </td>
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.subcategory_name || '-'}
-                        </td>
+                        </td> */}
                         {editingRowId === product.id ? (
                           <td className="px-3 py-2">
                             {(() => {
@@ -1945,9 +1945,9 @@ export default function InvoiceCCreate() {
                             {product.car_model_names.join(', ') || '-'}
                           </td>
                         )}
-                        <td className="px-3 py-2 text-center text-xs text-slate-200">
+                        {/* <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.company_name || '-'}
-                        </td>
+                        </td> */}
                         <td className="px-3 py-2 text-center text-xs text-slate-200">
                           {product.part_number || '-'}
                         </td>

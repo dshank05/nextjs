@@ -732,7 +732,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                     <span className="px-2 py-1 bg-slate-600 text-white text-xs rounded-full">No Returns</span>
                   )}
                 </td>
-                <td className="text-slate-300">₹{(purchase.packing_forwarding_total || 0)?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">₹{(purchase.packing_forwarding_total)?.toLocaleString('en-IN') || '0'}</td>
                 <td>
                   <div className="flex items-center space-x-2">
                     <Link

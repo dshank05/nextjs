@@ -32,6 +32,7 @@ interface Purchase {
   formattedDate?: string;
   bill_reference?: string;
   return_status?: number;
+  packing_forwarding_total?:number;
   type?: 'purchase';
   customer_vendor_name?: string;
   customer_vendor_address?: string;
@@ -224,6 +225,7 @@ export default function PurchasesPage() {
         total_sgst: purchase.total_sgst,
         total_igst: purchase.total_igst,
         total_tax: purchase.total_tax,
+        packing_forwarding_total:purchase.packing_forwarding_total,
         total: purchase.total,
         notes: purchase.notes,
         invoice_date: purchase.invoice_date,
