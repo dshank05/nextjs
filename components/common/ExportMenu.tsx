@@ -363,10 +363,38 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
             row[label] = item.total || item.total_amount || item['Total Amount'] || 0;
             break;
           case 'invoice_date':
-            row[label] = item.formattedDate || item.invoice_date || item['Invoice Date'] || '';
+            // Detect UTC timestamp and format it, otherwise use directly
+            const dateValue = item.invoice_date;
+            if (typeof dateValue === 'number' && dateValue > 1000000000) {
+              // UTC timestamp in seconds - convert to readable date
+              row[label] = new Date(dateValue * 1000).toLocaleDateString('en-IN');
+            } else if (typeof dateValue === 'string' && /^\d+$/.test(dateValue)) {
+              const timestamp = parseInt(dateValue);
+              if (timestamp > 1000000000) {
+                // UTC timestamp as string - convert to readable date
+                row[label] = new Date(timestamp * 1000).toLocaleDateString('en-IN');
+              } else {
+                // Regular string date
+                row[label] = dateValue;
+              }
+            } else {
+              // Use as-is (already formatted or not a timestamp)
+              row[label] = dateValue || '';
+            }
             break;
           case 'payment_status':
-            row[label] = item.payment_status === 1 ? 'Paid' : 'Unpaid';
+            switch (item.payment_status) {
+              case 1: row[label] = 'Paid'; break;
+              case 2: row[label] = 'Partially Paid'; break;
+              default: row[label] = 'Unpaid'; break;
+            }
+            break;
+          case 'payment_mode':
+            switch (item.payment_mode) {
+              case 0: row[label] = 'Cash'; break;
+              case 1: row[label] = 'Bank'; break;
+              default: row[label] = 'N/A'; break;
+            }
             break;
           case 'bill_reference':
             row[label] = item.bill_reference || item['Bill Reference'] || '';

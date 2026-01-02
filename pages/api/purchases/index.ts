@@ -93,12 +93,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }
 
     if (status && status !== '') {
-      if (status === '1' || status === '0') {
+      if (status === '0' || status === '1' || status === '2') {
         where.payment_status = parseInt(status)
       } else if (status === 'unknown') {
-        // For unknown status, we don't add a where clause since we want all statuses that are not 0 or 1
-        // But actually, we need to filter to show only non-standard statuses
-        where.payment_status = { notIn: [0, 1] }
+        // For unknown status, filter for statuses that are not 0, 1, or 2
+        where.payment_status = { notIn: [0, 1, 2] }
       }
     }
 

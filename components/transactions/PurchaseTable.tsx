@@ -308,17 +308,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-64">
-            <ClearableInput
-              type="text"
-              placeholder="Search purchases..."
-              value={searchTerm}
-              onChange={(e) => onSearchChange(e.target.value)}
-            />
-          </div>
-        </div>
+      <div className="flex items-center justify-end gap-2 mb-4">
         <div className="flex items-center gap-2">
           <ExportMenu
             data={purchases}
@@ -329,7 +319,6 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               { key: 'customer_vendor_name', label: 'Vendor Name', enabled: true },
               { key: 'item_count', label: 'Items Qty', enabled: true },
               { key: 'total', label: 'Total', enabled: true },
-              { key: 'total_tax', label: 'Tax Amount', enabled: true },
               { key: 'invoice_date', label: 'Date', enabled: true },
               { key: 'payment_mode', label: 'Payment Mode', enabled: true },
               { key: 'payment_status', label: 'Payment Status', enabled: true },
@@ -350,7 +339,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-11 gap-4 mb-4">
+      <div className="grid grid-cols-10 gap-4 mb-4">
         {/* Invoice No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
@@ -475,8 +464,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
           />
         </div>
 
-        {/* Total Tax Filter */}
-        <div className="flex-1">
+        {/* <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Tax Amount</label>
           <ClearableInput
             type="number"
@@ -497,7 +485,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
             }}
             min="0"
           />
-        </div>
+        </div> */}
 
         {/* Date Range Filter */}
         <div className="flex-1">
@@ -557,6 +545,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
             options={[
               { id: 'all', name: 'All Status' },
               { id: 'paid', name: 'Paid' },
+              { id: 'partial', name: 'Partial Paid' },
               { id: 'unpaid', name: 'Unpaid' }
             ]}
             selectedValue={filters.statusFilter}
@@ -568,6 +557,8 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                 let apiStatusValue = '';
                 if (newValue === 'paid') {
                   apiStatusValue = '1';
+                } else if (newValue === 'partial') {
+                  apiStatusValue = '2';
                 } else if (newValue === 'unpaid') {
                   apiStatusValue = '0';
                 } else if (newValue === 'all') {
@@ -677,9 +668,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total')}>
                 Total {getSortIcon('total')}
               </th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_tax')}>
+              {/* <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_tax')}>
                 Tax Amount {getSortIcon('total_tax')}
-              </th>
+              </th> */}
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_date')}>
                 Date {getSortIcon('invoice_date')}
               </th>
@@ -689,7 +680,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_status')}>
                 Payment Status {getSortIcon('payment_status')}
               </th>
-              <th>Return Status</th>
+              {/* <th>Return Status</th> */}
               <th>P/F</th>
               <th>Actions</th>
             </tr>
@@ -719,11 +710,11 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   </div>
                 </td>
                 <td className="text-slate-300 font-semibold">₹{purchase.total?.toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{(purchase.total_tax || 0)?.toLocaleString('en-IN')}</td>
+                {/* <td className="text-slate-300">₹{(purchase.total_tax || 0)?.toLocaleString('en-IN')}</td> */}
                 <td className="text-slate-300">{formatDate(purchase.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(purchase.payment_mode)}</td>
                 <td>{getStatusBadge(purchase.payment_status)}</td>
-                <td>
+                {/* <td>
                   {purchase.return_status === 2 ? (
                     <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>
                   ) : purchase.return_status === 1 ? (
@@ -731,7 +722,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                   ) : (
                     <span className="px-2 py-1 bg-slate-600 text-white text-xs rounded-full">No Returns</span>
                   )}
-                </td>
+                </td> */}
                 <td className="text-slate-300">₹{(purchase.packing_forwarding_total)?.toLocaleString('en-IN') || '0'}</td>
                 <td>
                   <div className="flex items-center space-x-2">

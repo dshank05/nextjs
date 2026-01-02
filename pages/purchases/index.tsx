@@ -63,6 +63,7 @@ export default function PurchasesPage() {
     paymentMode: string;
     total: string;
     totalTax: string;
+    packingForwardingTotal: string;
     sortBy: string;
     sortOrder: string;
   };
@@ -82,6 +83,7 @@ export default function PurchasesPage() {
       paymentMode: '',
       total: '',
       totalTax: '',
+      packingForwardingTotal: '',
       sortBy: 'invoice_no',
       sortOrder: 'asc'
     },
@@ -189,11 +191,12 @@ export default function PurchasesPage() {
         itemCount: filtersToUse.itemCount,
         paymentMode: filtersToUse.paymentMode,
         totalTax: filtersToUse.totalTax,
+        packingForwardingTotal: filtersToUse.packingForwardingTotal || '',
         // Note: 'total' filter is mapped to amountMin if provided (for exact amount search)
         ...(filtersToUse.total && !filtersToUse.amountMin ? { amountMin: filtersToUse.total, amountMax: filtersToUse.total } : {}),
         // Add sort parameters
-        sortBy: filtersToUse.sortBy || 'invoice_date',
-        sortOrder: filtersToUse.sortOrder || 'desc'
+        sortBy: filtersToUse.sortBy || 'invoice_no',
+        sortOrder: filtersToUse.sortOrder || 'asc'
       });
 
       console.log('🚀 Purchases fetchPurchases - API call with params:', Object.fromEntries(params));
@@ -299,6 +302,7 @@ export default function PurchasesPage() {
       filters.paymentMode === currentFilters.paymentMode &&
       filters.total === currentFilters.total &&
       filters.totalTax === currentFilters.totalTax &&
+      filters.packingForwardingTotal === currentFilters.packingForwardingTotal &&
       (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
     );
 
@@ -367,7 +371,8 @@ export default function PurchasesPage() {
           itemCount: currentFilters.itemCount,
           paymentMode: currentFilters.paymentMode,
           total: currentFilters.total,
-          totalTax: currentFilters.totalTax
+          totalTax: currentFilters.totalTax,
+          packingForwardingTotal: currentFilters.packingForwardingTotal
         }}
         actionButton={(
           <Link
