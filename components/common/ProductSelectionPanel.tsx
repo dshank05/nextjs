@@ -230,14 +230,22 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
 
                 {/* Product List */}
                 <div className="flex-1 overflow-y-auto">
-                    {isLoading ? (
+                {isLoading ? (
                         <div className="p-8 flex flex-col items-center justify-center">
                             <Loader className="w-8 h-8 text-blue-500 animate-spin mb-3" />
                             <p className="text-slate-400 text-sm">Loading products...</p>
                         </div>
                     ) : searchedProducts.length > 0 ? (
                         <div className="p-4 space-y-2">
-                            {searchedProducts.map((product) => (
+                            {searchedProducts
+                                .slice() // Create a copy to avoid mutating the original array
+                                .sort((a, b) => {
+                                    // Sort alphabetically by display_name or product_name (case-insensitive)
+                                    const nameA = (a.display_name || a.product_name || '').toLowerCase();
+                                    const nameB = (b.display_name || b.product_name || '').toLowerCase();
+                                    return nameA.localeCompare(nameB);
+                                })
+                                .map((product) => (
                                 <div
                                     key={product.id}
                                     className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
