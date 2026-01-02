@@ -2130,15 +2130,20 @@ export default function InvoiceCCreate() {
                         </td>
                       </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 9 : 8} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
-                          <button
+                          {/* Clear All Products button - COMMENTED OUT */}
+                          {/* <button
                             type="button"
                             onClick={() => setSelectedProducts([])}
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
                           >
                             Clear All Products
-                          </button>
+                          </button> */}
+                          {/* Display Subtotal instead */}
+                          <div className="text-sm font-semibold text-slate-200">
+                            Subtotal: ₹{subtotal.toFixed(2)}
+                          </div>
                         </td>
                       </tr>
                     </tfoot>

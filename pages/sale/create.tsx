@@ -282,7 +282,7 @@ export default function InvoiceCreate() {
   const [enableDiscount, setEnableDiscount] = useState(false);
 
   // State for tax toggle (Option A: Preserve Original Tax Setting)
-  const [enableTax, setEnableTax] = useState(true);
+  const [enableTax, setEnableTax] = useState(false);
 
   // Auto-calculate total when qty, rate, gst, or discount changes
   useEffect(() => {
@@ -2484,15 +2484,20 @@ export default function InvoiceCreate() {
                         </td>
                       </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount && enableTax ? 12 : enableDiscount || enableTax ? 11 : 10} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount && enableTax ? 11 : enableDiscount || enableTax ? 10 : 9} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
-                          <button
+                          {/* Clear All Products button - COMMENTED OUT */}
+                          {/* <button
                             type="button"
                             onClick={() => setSelectedProducts([])}
                             className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
                           >
                             Clear All Products
-                          </button>
+                          </button> */}
+                          {/* Display Subtotal instead */}
+                          <div className="text-sm font-semibold text-slate-200">
+                            Subtotal: ₹{subtotal.toFixed(2)}
+                          </div>
                         </td>
                       </tr>
                     </tfoot>
@@ -2538,60 +2543,62 @@ export default function InvoiceCreate() {
               <div className="space-y-6">
 
                 {/* Tax Breakdown */}
-                <div>
-                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Tax Breakdown</h4> */}
-                  <div className="grid grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
-                      <input
-                        type="number"
-
-                        value={formData.total_cgst}
-                        readOnly
-                        disabled
-                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
-                      <input
-                        type="number"
-
-                        value={formData.total_sgst}
-                        readOnly
-                        disabled
-                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
-                      <input
-                        type="number"
-
-                        value={formData.total_igst}
-                        readOnly
-                        disabled
-                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                        placeholder="0.00"
-                      />
-                    </div>
-                    <div className="grid gap-4">
+                {enableTax && (
+                  <div>
+                    {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Tax Breakdown</h4> */}
+                    <div className="grid grid-cols-4 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
                         <input
                           type="number"
 
-                          value={totalDiscount.toFixed(2)}
+                          value={formData.total_cgst}
                           readOnly
                           disabled
                           className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                          placeholder="0.00"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
+                        <input
+                          type="number"
+
+                          value={formData.total_sgst}
+                          readOnly
+                          disabled
+                          className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
+                        <input
+                          type="number"
+
+                          value={formData.total_igst}
+                          readOnly
+                          disabled
+                          className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="grid gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
+                          <input
+                            type="number"
+
+                            value={totalDiscount.toFixed(2)}
+                            readOnly
+                            disabled
+                            className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Calculations */}
                 <div className="grid grid-cols-2 gap-4">
@@ -2606,17 +2613,19 @@ export default function InvoiceCreate() {
                       className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL TAX</label>
-                    <input
-                      type="number"
+                  {enableTax && (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL TAX</label>
+                      <input
+                        type="number"
 
-                      value={totalTax.toFixed(2)}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    />
-                  </div>
+                        value={totalTax.toFixed(2)}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Packing & Forwarding */}
