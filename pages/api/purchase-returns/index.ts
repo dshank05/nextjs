@@ -28,6 +28,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       dateTo = '',
       amountMin = '',
       amountMax = '',
+      uid = '',
+      itemCount = '',
+      paymentMode = '',
+      packingForwardingTotal = '',
       fy = '',
       sortBy = 'return_date',
       sortOrder = 'desc'
@@ -90,13 +94,34 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
+    // Invoice No filter (uid) - filter by purchase invoice_no
+    if (uid && uid !== '') {
+      // This requires joining with purchases table, so we'll filter after data enhancement
+      // For now, we'll collect purchase_ids that match the invoice_no
+    }
+
+    // Item Count filter - filter by aggregated item count
+    if (itemCount && itemCount !== '') {
+      // This requires aggregation, so we'll filter after data enhancement
+    }
+
+    // Payment Mode filter
+    if (paymentMode && paymentMode !== '') {
+      where.payment_mode = parseInt(paymentMode as string)
+    }
+
+    // Packing/Forwarding Total filter
+    if (packingForwardingTotal && packingForwardingTotal !== '') {
+      where.packing_forwarding_amount = parseFloat(packingForwardingTotal as string)
+    }
+
     // Validate and set sort parameters
-    const validSortFields = ['id', 'return_date', 'total_amount', 'total_tax', 'status', 'fy', 'vendor_name']
+    const validSortFields = ['id', 'return_date', 'total_amount', 'total_tax', 'status', 'fy', 'vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount']
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'return_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
-    // For vendor_name sorting, we need to fetch all data first and sort in JavaScript
-    const needsPostSorting = sortField === 'vendor_name'
+    // For computed fields, we need to fetch all data first and sort in JavaScript
+    const needsPostSorting = ['vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount'].includes(sortField)
 
     let returns: any[] = []
     let total: number = 0
@@ -160,16 +185,34 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = result[1]
     }
 
-    // Get vendor info, item counts, and refund allocations in batch queries
+    // Get vendor info, item counts, refund allocations, and purchase info in batch queries
     const vendorIds = Array.from(new Set(returns.map(r => r.vendor_id).filter(Boolean)))
     const returnIds = returns.map(r => r.id)
+    const purchaseIds = Array.from(new Set(returns.map(r => r.purchase_id).filter(Boolean)))
 
-    // Get vendor details directly from returns
-    const [vendorData, itemCounts, refundAllocations] = await Promise.all([
+    // Get vendor details, purchase info, item counts, and refund allocations
+    const [vendorData, purchaseData, returnItemsData, itemCounts, refundAllocations] = await Promise.all([
       // Get vendor details using vendor_ids from returns
       vendorIds.length > 0 ? prisma.vendor_details.findMany({
         where: { id: { in: vendorIds } },
         select: { id: true, vendor_name: true, tax_id: true, address: true }
+      }) : Promise.resolve([]),
+
+      // Get purchase details for invoice numbers (for returns with single purchase_id)
+      purchaseIds.length > 0 ? prisma.purchase.findMany({
+        where: { id: { in: purchaseIds } },
+        select: { id: true, invoice_no: true }
+      }) : Promise.resolve([]),
+
+      // Get ALL purchase invoice numbers for returns (via return items -> purchase items)
+      returnIds.length > 0 ? prisma.purchase_return_items.findMany({
+        where: { purchase_return_id: { in: returnIds } },
+        select: {
+          purchase_return_id: true,
+          purchase_item: {
+            select: { invoice_no: true }
+          }
+        }
       }) : Promise.resolve([]),
 
       // Get item counts for each return
@@ -189,12 +232,29 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Create lookup maps
     const vendorMap = new Map(vendorData.map(v => [v.id, v]))
+    const purchaseMap = new Map(purchaseData.map(p => [p.id, p]))
     const itemCountMap = new Map(itemCounts.map(ic => [ic.purchase_return_id, ic._count.id]))
     const refundMap = new Map(refundAllocations.map((r: any) => [r.return_id, Number(r._sum.allocated_amount || 0)]))
+
+    // Create invoice numbers map for returns (collect all invoice numbers from return items)
+    const invoiceNumbersMap = new Map<number, Set<number>>()
+    returnItemsData.forEach((item: any) => {
+      const returnId = item.purchase_return_id
+      const invoiceNo = item.purchase_item?.invoice_no
+
+      if (!invoiceNumbersMap.has(returnId)) {
+        invoiceNumbersMap.set(returnId, new Set())
+      }
+
+      if (invoiceNo) {
+        invoiceNumbersMap.get(returnId)!.add(invoiceNo)
+      }
+    })
 
     // Enhanced returns with vendor info (direct relationship)
     let enhancedReturns = returns.map((returnRecord) => {
       const vendor = vendorMap.get(returnRecord.vendor_id)
+      const purchase = purchaseMap.get(returnRecord.purchase_id)
 
       // Format date
       let formattedDate: string | null = null
@@ -212,6 +272,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return {
         id: returnRecord.id,
         return_no: `PR-${String(returnRecord.id).padStart(3, '0')}`, // Generate return number
+        invoice_no: purchase?.invoice_no || undefined, // Invoice number from related purchase
         vendor_name: vendor?.vendor_name || 'Unknown Vendor',
         vendor_gstin: vendor?.tax_id || '',
         vendor_address: vendor?.address || '',
@@ -225,6 +286,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         return_date: returnRecord.return_date,
         formattedDate: formattedDate,
         item_count: itemCountMap.get(returnRecord.id) || 0,
+        packing_forwarding_total: returnRecord.packing_forwarding_amount || 0, // P/F amount
         notes: returnRecord.notes || '',
         fy: returnRecord.fy,
         created_at: returnRecord.created_at,
@@ -235,11 +297,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Apply vendor filter (after data enhancement)
+    // Apply additional filters (after data enhancement)
     if (vendor && vendor !== '') {
       const vendorStr = Array.isArray(vendor) ? vendor[0] : vendor;
       const vendorNum = parseInt(vendorStr);
-      
+
       // If it's a number, filter by vendor_id, otherwise by vendor_name
       if (!isNaN(vendorNum)) {
         // Filter by vendor ID
@@ -256,19 +318,66 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Apply post-sorting for vendor_name if needed
+    // Apply Invoice No filter (uid)
+    if (uid && uid !== '') {
+      const uidStr = Array.isArray(uid) ? uid[0] : uid;
+      enhancedReturns = enhancedReturns.filter(ret =>
+        ret.invoice_no && ret.invoice_no.toString().includes(uidStr)
+      );
+    }
+
+    // Apply Item Count filter
+    if (itemCount && itemCount !== '') {
+      const itemCountNum = parseInt(itemCount as string);
+      enhancedReturns = enhancedReturns.filter(ret =>
+        ret.item_count === itemCountNum
+      );
+    }
+
+    // Apply post-sorting for computed fields if needed
     if (needsPostSorting) {
       enhancedReturns.sort((a, b) => {
-        const aValue = (a.vendor_name || '').toString().toLowerCase()
-        const bValue = (b.vendor_name || '').toString().toLowerCase()
+        let aValue: any, bValue: any;
 
-        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-        return 0
-      })
+        switch (sortField) {
+          case 'vendor_name':
+            aValue = (a.vendor_name || '').toString().toLowerCase();
+            bValue = (b.vendor_name || '').toString().toLowerCase();
+            break;
+          case 'invoice_no':
+            aValue = a.invoice_no || '';
+            bValue = b.invoice_no || '';
+            break;
+          case 'item_count':
+            aValue = a.item_count || 0;
+            bValue = b.item_count || 0;
+            break;
+          case 'payment_mode':
+            aValue = a.payment_mode || 0;
+            bValue = b.payment_mode || 0;
+            break;
+          case 'packing_forwarding_amount':
+            aValue = a.packing_forwarding_total || 0;
+            bValue = b.packing_forwarding_total || 0;
+            break;
+          default:
+            aValue = '';
+            bValue = '';
+        }
+
+        // Handle string comparison
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          aValue = aValue.toLowerCase();
+          bValue = bValue.toLowerCase();
+        }
+
+        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
 
       // Apply pagination after sorting
-      enhancedReturns = enhancedReturns.slice(skip, skip + limitNum)
+      enhancedReturns = enhancedReturns.slice(skip, skip + limitNum);
     }
 
     const totalPages = Math.ceil(total / limitNum)

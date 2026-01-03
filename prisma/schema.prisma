@@ -79,6 +79,7 @@ model Product {
   rack                   warehouse_racks?     @relation(fields: [rack_id], references: [id], map: "product_rack_fkey")
   subcategory_ref        product_subcategory? @relation(fields: [product_subcategory_id], references: [id], map: "product_subcategory_fkey")
   warehouse              warehouse?           @relation(fields: [warehouse_id], references: [id], map: "product_warehouse_fkey")
+  deadstock_entries      deadstock[]          // Deadstock entries for this product
 
   @@index([product_name], map: "idx_product_name")
   @@index([part_no], map: "idx_product_part_no")
@@ -1051,4 +1052,25 @@ model refund_allocations {
   @@index([refund_id], map: "idx_refund_allocations_refund")
   @@index([return_id], map: "idx_refund_allocations_return")
   @@map("refund_allocations")
+}
+
+// ============================================================================
+// DEADSTOCK MANAGEMENT SYSTEM
+// ============================================================================
+
+model deadstock {
+  id          Int      @id @default(autoincrement())
+  product_id  Int      // FK to Product
+  quantity    Float    // Quantity marked as deadstock
+  reason      String   @db.VarChar(255) // Mandatory reason text
+  created_by  String?  @db.VarChar(100) // Optional user name (single user system)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relationships
+  product     Product  @relation(fields: [product_id], references: [id])
+
+  @@index([product_id], map: "idx_deadstock_product_id")
+  @@index([created_at], map: "idx_deadstock_created_at")
+  @@map("deadstock")
 }

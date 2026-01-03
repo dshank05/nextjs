@@ -190,6 +190,11 @@ const Layout = ({ children }: LayoutProps) => {
       return 'PURCHASE';
     }
 
+    // Purchase Returns routes
+    if (router.pathname.startsWith('/purchase-returns/')) {
+      return 'PURCHASE RETURNS';
+    }
+
     // Sale routes
     if (router.pathname === '/sale/create') {
       return hasEditParam ? 'SALE UPDATE' : 'SALE CREATE';

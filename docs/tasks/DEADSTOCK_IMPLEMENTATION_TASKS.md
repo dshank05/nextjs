@@ -11,9 +11,10 @@ Implementation of deadstock management system for handling faulty, obsolete, and
 3. **Automated Identification**: Future enhancement for automatic deadstock detection
 
 ### Inventory Impact
-- **Stock Reduction**: `inventory -= deadstock_qty` (permanent removal from active inventory)
-- **Separate Tracking**: Deadstock quantities tracked separately from regular stock
-- **No Restocking**: Deadstock items cannot be returned to active inventory
+- **Stock Reduction**: `inventory -= deadstock_qty` (temporary removal from active inventory)
+- **Reversible**: Deadstock can be removed, returning stock to inventory (`inventory += deadstock_qty`)
+- **Multiple Entries**: Same product can have multiple deadstock entries (separate operations)
+- **Flexible Management**: Add/remove deadstock entries as needed
 
 ### Financial Impact
 - **Write-offs**: Deadstock represents lost value/write-offs
@@ -24,37 +25,62 @@ Implementation of deadstock management system for handling faulty, obsolete, and
 
 ### Deadstock Tables
 ```sql
--- Main deadstock tracking table
+-- Simplified deadstock tracking table
 model deadstock {
-  id               Int      @id @default(autoincrement())
-  product_id       Int      // FK to Product
-  quantity         Float    // Quantity marked as deadstock
-  reason           String   @db.VarChar(255) // "Faulty", "Damaged", "Obsolete", "Expired"
-  source_type      String   @db.VarChar(20)  // "return", "direct", "write_off", "auto"
-  source_id        Int?     // FK to return record if from return, null for direct
-  disposal_method  String?  @db.VarChar(100) // "Scrap", "Donate", "Destroy", "Sell", "Recycle"
-  disposal_cost    Float?   // Cost associated with disposal
-  disposal_date    DateTime? // When disposal was completed
-  notes            String?  @db.Text // Additional details
-  fy               Int      // Financial year
-  created_by       Int?     // User who created the deadstock entry
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  product_id  Int      // FK to Product
+  quantity    Float    // Quantity marked as deadstock
+  reason      String   @db.VarChar(255) // Mandatory reason text
+  created_by  String?  @db.VarChar(100) // Optional user name (single user system)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
 
   // Relationships
-  product          Product  @relation(fields: [product_id], references: [id])
-}
-
--- Deadstock reasons catalog (reusable)
-model deadstock_reasons {
-  id           Int      @id @default(autoincrement())
-  reason_name  String   @db.VarChar(255) // "Faulty from manufacturer", "Customer return damaged", etc.
-  category     String   @db.VarChar(50)  // "Quality", "Damage", "Obsolete", "Expired"
-  status       String   @default("Active") @db.VarChar(20)
-  created_at   DateTime @default(now())
-  updated_at   DateTime @updatedAt
+  product     Product  @relation(fields: [product_id], references: [id])
 }
 ```
+
+**Note:** Simplified schema removes complex fields (source_type, source_id, disposal_method, disposal_cost, disposal_date, fy) and deadstock_reasons table for initial implementation.
+
+## Simplified Implementation (Current Approach)
+
+### Overview
+Building a minimal viable deadstock system with core functionality:
+
+### Features
+- ✅ **Multiple entries per product** (separate operations tracked individually)
+- ✅ **Reversible deadstock** (delete entry = return stock to inventory)
+- ✅ **Simple CRUD operations** with confirmation modals and snackbar notifications
+- ✅ **Reusable modal** for add/edit operations
+- ✅ **Table view** like products page with actions
+- ✅ **Mandatory reason field** (text input)
+- ✅ **Optional created_by field** (text, single user system)
+
+### Business Logic
+- **Add Deadstock**: `product.stock -= quantity`
+- **Remove Deadstock**: `product.stock += quantity` (delete entry)
+- **Validation**: Cannot exceed available inventory
+- **No disposal tracking** (simplified for initial version)
+
+### UI Components
+- **Deadstock Page**: `/deadstock` with table and add button
+- **Reusable Modal**: Form for creating/editing deadstock entries
+- **Confirmation Modal**: For delete operations
+- **Snackbar**: Success/error notifications
+- **Navigation**: Add to sidebar menu
+
+### API Endpoints
+- `GET /api/deadstock` - List all deadstock with product details
+- `POST /api/deadstock` - Create new deadstock entry
+- `PUT /api/deadstock/[id]` - Update deadstock entry
+- `DELETE /api/deadstock/[id]` - Delete deadstock entry (returns stock)
+
+### Implementation Steps
+1. **Database Migration** - Create deadstock table
+2. **API CRUD Operations** - Basic endpoints with inventory updates
+3. **Reusable Modal Component** - Form for add/edit
+4. **Deadstock Page** - Table view with actions
+5. **Navigation Integration** - Add to sidebar
 
 ### Integration with Existing Tables
 - **Product Table**: Reference for product details and current stock
@@ -162,9 +188,10 @@ Standalone Flow:
 
 ### Inventory Rules
 1. **Immediate Removal**: Stock reduced immediately upon deadstock creation
-2. **No Reversals**: Deadstock cannot be returned to active inventory
-3. **Separate Accounting**: Deadstock tracked separately from regular stock
-4. **Audit Trail**: Complete history of deadstock operations
+2. **Reversible**: Deadstock entries can be deleted, returning stock to inventory
+3. **Multiple Entries**: Same product can have multiple deadstock entries
+4. **Flexible Management**: Add/remove deadstock entries as business needs change
+5. **Audit Trail**: Complete history of all deadstock operations
 
 ### Disposal Rules
 1. **Method Tracking**: All disposal methods recorded

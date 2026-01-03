@@ -8,6 +8,7 @@ import { ClearableInput, ExportMenu } from '../common';
 interface PurchaseReturn {
   id: number;
   return_no: string;
+  invoice_no?: string; // Invoice number from the original purchase
   return_date: string;
   vendor_id: number;
   vendor_name: string;
@@ -23,6 +24,7 @@ interface PurchaseReturn {
   item_count: number;
   formattedDate?: string;
   statusText?: string;
+  packing_forwarding_total?: number; // P/F amount
 }
 
 interface Pagination {
@@ -30,6 +32,10 @@ interface Pagination {
   limit: number;
   total: number;
   totalPages: number;
+}
+
+interface FilterOptions {
+  vendors: { id: string; name?: string; vendor_name?: string; gstin?: string; contact?: string; email?: string }[];
 }
 
 interface PurchaseReturnTableProps {
@@ -50,6 +56,10 @@ interface PurchaseReturnTableProps {
     dateTo: string;
     amountMin: string;
     amountMax: string;
+    uidFilter: string;
+    itemCount: string;
+    paymentMode: string;
+    packingForwardingTotal: string;
     sortBy: string;
     sortOrder: string;
   }) => void;
@@ -63,10 +73,14 @@ interface PurchaseReturnTableProps {
     dateTo: string;
     amountMin: string;
     amountMax: string;
+    uidFilter: string;
+    itemCount: string;
+    paymentMode: string;
+    packingForwardingTotal: string;
   };
 }
 
-type SortField = 'return_no' | 'vendor_name' | 'total_amount' | 'return_date' | 'status' | 'item_count';
+type SortField = 'return_no' | 'invoice_no' | 'vendor_name' | 'total_amount' | 'return_date' | 'status' | 'item_count' | 'payment_mode' | 'packing_forwarding_total';
 type SortOrder = 'asc' | 'desc';
 
 export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
@@ -93,26 +107,34 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
     dateFrom: initialFilters?.dateFrom || '',
     dateTo: initialFilters?.dateTo || '',
     amountMin: initialFilters?.amountMin || '',
-    amountMax: initialFilters?.amountMax || ''
+    amountMax: initialFilters?.amountMax || '',
+    uidFilter: initialFilters?.uidFilter || '',
+    itemCount: initialFilters?.itemCount || '',
+    paymentMode: initialFilters?.paymentMode || '',
+    packingForwardingTotal: initialFilters?.packingForwardingTotal || ''
   });
+  const [filterOptions, setFilterOptions] = useState<FilterOptions>({ vendors: [] });
 
   // Use props for sorting state (controlled component)
   const sortBy = propSortBy;
   const sortOrder = propSortOrder;
 
-  // Update filters when initialFilters change
+  // Fetch filter options on mount
   useEffect(() => {
-    if (initialFilters) {
-      setFilters({
-        vendorFilter: initialFilters.vendorFilter || '',
-        statusFilter: initialFilters.statusFilter || 'all',
-        dateFrom: initialFilters.dateFrom || '',
-        dateTo: initialFilters.dateTo || '',
-        amountMin: initialFilters.amountMin || '',
-        amountMax: initialFilters.amountMax || ''
-      });
+    fetchFilterOptions();
+  }, []);
+
+  const fetchFilterOptions = async () => {
+    try {
+      const response = await fetch('/api/vendors');
+      if (response.ok) {
+        const data = await response.json();
+        setFilterOptions({ vendors: data.vendors || [] });
+      }
+    } catch (error) {
+      console.error('Error fetching filter options:', error);
     }
-  }, [initialFilters]);
+  };
 
   const clearFilters = () => {
     onSearchChange('');
@@ -122,7 +144,11 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
       dateFrom: '',
       dateTo: '',
       amountMin: '',
-      amountMax: ''
+      amountMax: '',
+      uidFilter: '',
+      itemCount: '',
+      paymentMode: '',
+      packingForwardingTotal: ''
     });
   };
 
@@ -139,6 +165,10 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
         dateTo: filters.dateTo,
         amountMin: filters.amountMin,
         amountMax: filters.amountMax,
+        uidFilter: filters.uidFilter,
+        itemCount: filters.itemCount,
+        paymentMode: filters.paymentMode,
+        packingForwardingTotal: filters.packingForwardingTotal,
         sortBy: field,
         sortOrder: newSortOrder
       };
@@ -188,13 +218,15 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
             columns={[
               { key: 'id', label: 'ID', enabled: true },
               { key: 'return_no', label: 'Return No', enabled: true },
+              { key: 'invoice_no', label: 'Invoice No', enabled: true },
               { key: 'vendor_name', label: 'Vendor Name', enabled: true },
               { key: 'item_count', label: 'Items Qty', enabled: true },
-              { key: 'total_amount', label: 'Total Amount', enabled: true },
-              { key: 'total_tax', label: 'Tax Amount', enabled: true },
-              { key: 'refund_amount', label: 'Refund Amount', enabled: true },
+              { key: 'total_amount', label: 'Total', enabled: true },
+              // { key: 'total_tax', label: 'Tax Amount', enabled: true },
               { key: 'formattedDate', label: 'Date', enabled: true },
-              { key: 'statusText', label: 'Status', enabled: true },
+              { key: 'payment_mode', label: 'Payment Mode', enabled: true },
+              { key: 'status', label: 'Return Status', enabled: true },
+              { key: 'packing_forwarding_total', label: 'P/F', enabled: true },
               { key: 'notes', label: 'Notes', enabled: true },
             ]}
             config={{
@@ -211,7 +243,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
       </div>
 
       {/* Filters Section */}
-      <div className="grid grid-cols-6 gap-4 mb-4">
+      <div className="grid grid-cols-10 gap-4 mb-4">
         {/* Return No Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Return No</label>
@@ -223,15 +255,43 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
           />
         </div>
 
+        {/* Invoice No Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
+          <ClearableInput
+            type="text"
+            placeholder="Enter invoice no"
+            value={filters.uidFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, uidFilter: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  uidFilter: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+          />
+        </div>
+
         {/* Vendor Filter */}
         <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Vendor</label>
-          <ClearableInput
-            type="text"
-            placeholder="Filter by vendor"
-            value={filters.vendorFilter}
-            onChange={(e) => {
-              const newValue = e.target.value;
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Vendors' },
+              ...filterOptions.vendors.map(vendor => ({
+                id: vendor.id,
+                name: vendor.name || vendor.vendor_name || ''
+              }))
+            ]}
+            selectedValue={filters.vendorFilter}
+            onSelectionChange={(value) => {
+              const newValue = value || '';
               setFilters(prev => ({ ...prev, vendorFilter: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
@@ -243,48 +303,25 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                 });
               }
             }}
+            placeholder="Select vendor..."
           />
         </div>
 
-        {/* Amount Min Filter */}
+        {/* Items Qty Filter */}
         <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Items Qty</label>
           <ClearableInput
             type="number"
-            placeholder="Min amount"
-            value={filters.amountMin}
+            placeholder="Enter item count"
+            value={filters.itemCount}
             onChange={(e) => {
               const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, amountMin: newValue }));
+              setFilters(prev => ({ ...prev, itemCount: newValue }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
                   ...filters,
-                  amountMin: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
-            }}
-            min="0"
-          />
-        </div>
-
-        {/* Amount Max Filter */}
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount</label>
-          <ClearableInput
-            type="number"
-            placeholder="Max amount"
-            value={filters.amountMax}
-            onChange={(e) => {
-              const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, amountMax: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  amountMax: newValue,
+                  itemCount: newValue,
                   sortBy,
                   sortOrder
                 });
@@ -296,7 +333,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
 
         {/* Date Range Filter */}
         <div className="flex-1">
-          <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
+          <label className="block text-sm font-medium text-slate-300 mb-2">Date</label>
           <DateRangeFilter
             startDate={filters.dateFrom}
             endDate={filters.dateTo}
@@ -317,6 +354,84 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
           />
         </div>
 
+        {/* Payment Mode Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Modes' },
+              { id: '0', name: 'Cash' },
+              { id: '1', name: 'Bank' }
+            ]}
+            selectedValue={filters.paymentMode}
+            onSelectionChange={(value) => {
+              const newValue = value || '';
+              setFilters(prev => ({ ...prev, paymentMode: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  paymentMode: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            placeholder="Select payment mode..."
+          />
+        </div>
+
+        {/* Return Status Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Return Status</label>
+          <SearchableSelect
+            options={[
+              { id: 'all', name: 'All Status' },
+              { id: '1', name: 'Complete' },
+              { id: '0', name: 'Pending' }
+            ]}
+            selectedValue={filters.statusFilter}
+            onSelectionChange={(value) => {
+              const newValue = value || 'all';
+              setFilters(prev => ({ ...prev, statusFilter: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  statusFilter: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            placeholder="Select status..."
+          />
+        </div>
+
+        {/* P/F Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">P/F</label>
+          <ClearableInput
+            type="number"
+            placeholder="Enter P/F total"
+            value={filters.packingForwardingTotal}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, packingForwardingTotal: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  packingForwardingTotal: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
+            min="0"
+          />
+        </div>
+
         {/* Clear Filters Button */}
         <div className="flex items-end">
           <button
@@ -331,6 +446,10 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                   dateTo: '',
                   amountMin: '',
                   amountMax: '',
+                  uidFilter: '',
+                  itemCount: '',
+                  paymentMode: '',
+                  packingForwardingTotal: '',
                   sortBy,
                   sortOrder
                 });
@@ -365,22 +484,31 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('return_no')}>
                 Return No {getSortIcon('return_no')}
               </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_no')}>
+                Invoice No. {getSortIcon('invoice_no')}
+              </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('vendor_name')}>
                 Vendor {getSortIcon('vendor_name')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('item_count')}>
-                Items Qty
+                Items Qty {getSortIcon('item_count')}
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_amount')}>
-                Refund Amount {getSortIcon('total_amount')}
+                Total {getSortIcon('total_amount')}
               </th>
+              {/* <th>Tax Amount</th> */}
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('return_date')}>
                 Date {getSortIcon('return_date')}
               </th>
-              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                Status {getSortIcon('status')}
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('payment_mode')}>
+                Payment Mode {getSortIcon('payment_mode')}
               </th>
-              <th>Payment</th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
+                Return Status {getSortIcon('status')}
+              </th>
+              <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('packing_forwarding_total')}>
+                P/F {getSortIcon('packing_forwarding_total')}
+              </th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -392,6 +520,9 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                   {returnItem.return_no}
                 </td>
                 <td className="text-slate-300">
+                  {returnItem.invoice_no || 'N/A'}
+                </td>
+                <td className="text-slate-300">
                   <div className="font-medium">{returnItem.vendor_name}</div>
                 </td>
                 <td className="text-slate-300">
@@ -400,10 +531,14 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{returnItem.refund_amount?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">₹{returnItem.total_amount?.toLocaleString('en-IN')}</td>
+                {/* <td className="text-slate-300">₹{returnItem.total_tax?.toLocaleString('en-IN')}</td> */}
                 <td className="text-slate-300">{returnItem.formattedDate}</td>
+                <td className="text-slate-300">
+                  {returnItem.payment_mode === 0 ? 'Cash' : returnItem.payment_mode === 1 ? 'Bank' : 'N/A'}
+                </td>
                 <td>{getStatusBadge(returnItem.status)}</td>
-                <td>{getPaymentStatusBadge(returnItem.payment_status)}</td>
+                <td className="text-slate-300">₹{returnItem.packing_forwarding_total?.toLocaleString('en-IN') || '0'}</td>
                 <td>
                   <div className="flex items-center space-x-2">
                     <Link

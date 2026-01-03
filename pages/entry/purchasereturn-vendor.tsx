@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/router';
 import useStorageState from 'use-storage-state';
 import { PurchaseReturnTable } from '../../components/transactions/PurchaseReturnTable';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -8,6 +7,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 interface PurchaseReturn {
   id: number;
   return_no: string;
+  invoice_no?: string; // Invoice number from the original purchase
   return_date: string;
   vendor_id: number;
   vendor_name: string;
@@ -23,6 +23,7 @@ interface PurchaseReturn {
   item_count: number;
   formattedDate?: string;
   statusText?: string;
+  packing_forwarding_total?: number; // P/F amount
 }
 
 interface Pagination {
@@ -33,7 +34,6 @@ interface Pagination {
 }
 
 export default function PurchaseReturnIndexPage() {
-  const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
   // Define filter type
@@ -44,13 +44,16 @@ export default function PurchaseReturnIndexPage() {
     dateTo: string;
     amountMin: string;
     amountMax: string;
-    fy: string;
+    uidFilter: string;
+    itemCount: string;
+    paymentMode: string;
+    packingForwardingTotal: string;
     sortBy: string;
     sortOrder: string;
   };
 
   // Create persistent filter state using use-storage-state (sessionStorage - clears on tab close)
-  const [currentFilters, setCurrentFilters] = useStorageState<ReturnFilterState>('purchase-returns-page-filters', {
+  const [currentFilters, setCurrentFilters] = useStorageState<ReturnFilterState>('purchase-returns-page-filters-v2', {
     defaultValue: {
       vendorFilter: '',
       statusFilter: 'all',
@@ -58,7 +61,10 @@ export default function PurchaseReturnIndexPage() {
       dateTo: '',
       amountMin: '',
       amountMax: '',
-      fy: '',
+      uidFilter: '',
+      itemCount: '',
+      paymentMode: '',
+      packingForwardingTotal: '',
       sortBy: 'return_date',
       sortOrder: 'desc'
     },
@@ -82,8 +88,6 @@ export default function PurchaseReturnIndexPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Modal states - removed since delete functionality is not used in index
-
   // Debounced fetch function with abort controller
   const debouncedFetchReturns = useCallback((filtersToUse?: typeof currentFilters) => {
     // Clear previous timeout
@@ -103,9 +107,9 @@ export default function PurchaseReturnIndexPage() {
     debounceTimeoutRef.current = setTimeout(() => {
       fetchReturns(abortControllerRef.current?.signal, filtersToUse);
     }, 300); // 300ms debounce delay
-  }, [currentFilters]);
+  }, [currentFilters]); // Add currentFilters to dependencies
 
-  // Fetch returns when pagination or search change
+  // Fetch returns when pagination or search change (but not filters - handled by handleApplyFilters)
   useEffect(() => {
     debouncedFetchReturns();
   }, [pagination.page, pagination.limit, searchTerm, debouncedFetchReturns]);
@@ -138,7 +142,7 @@ export default function PurchaseReturnIndexPage() {
       // Use override filters if provided, otherwise use current state
       const filtersToUse = overrideFilters || currentFilters;
 
-      // Build API query parameters
+      // Build API query parameters - Send ALL parameters like purchase page
       const queryParams = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -149,16 +153,12 @@ export default function PurchaseReturnIndexPage() {
         dateTo: filtersToUse.dateTo,
         amountMin: filtersToUse.amountMin,
         amountMax: filtersToUse.amountMax,
-        fy: filtersToUse.fy || '',
+        uid: filtersToUse.uidFilter,
+        itemCount: filtersToUse.itemCount,
+        paymentMode: filtersToUse.paymentMode,
+        packingForwardingTotal: filtersToUse.packingForwardingTotal,
         sortBy: filtersToUse.sortBy,
         sortOrder: filtersToUse.sortOrder
-      });
-
-      // Remove empty parameters
-      Array.from(queryParams.entries()).forEach(([key, value]) => {
-        if (!value || value === '') {
-          queryParams.delete(key);
-        }
       });
 
       const response = await fetch(`/api/purchase-returns?${queryParams}`, {
@@ -178,6 +178,7 @@ export default function PurchaseReturnIndexPage() {
       const transformedReturns: PurchaseReturn[] = data.returns.map((ret: any) => ({
         id: ret.id,
         return_no: ret.return_no,
+        invoice_no: ret.purchase?.invoice_no || undefined, // Get invoice number from related purchase
         return_date: ret.return_date ? new Date(ret.return_date * 1000).toISOString().split('T')[0] : '',
         vendor_id: 0, // Not needed in UI
         vendor_name: ret.vendor_name,
@@ -192,7 +193,8 @@ export default function PurchaseReturnIndexPage() {
         notes: ret.notes,
         item_count: ret.item_count,
         formattedDate: ret.formattedDate,
-        statusText: ret.status
+        statusText: ret.status,
+        packing_forwarding_total: ret.packing_forwarding_total || 0
       }));
 
       setReturns(transformedReturns);
@@ -226,17 +228,34 @@ export default function PurchaseReturnIndexPage() {
     setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
   };
 
-  const handleViewDetails = (returnItem: PurchaseReturn) => {
-    router.push(`/entry/purchasereturn-vendor/${returnItem.id}`);
-  };
-
-
-
   // Handle filter application
   const handleApplyFilters = (filters: ReturnFilterState) => {
+    console.log('📥 Purchase Returns handleApplyFilters received:', filters);
+
+    // Check if this is a sort operation (only sortBy/sortOrder changed)
+    const isSortOperation = (
+      filters.vendorFilter === currentFilters.vendorFilter &&
+      filters.statusFilter === currentFilters.statusFilter &&
+      filters.dateFrom === currentFilters.dateFrom &&
+      filters.dateTo === currentFilters.dateTo &&
+      filters.amountMin === currentFilters.amountMin &&
+      filters.amountMax === currentFilters.amountMax &&
+      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
+    );
+
     setCurrentFilters(filters);
+    // Reset to first page when applying filters
     setPagination(prev => ({ ...prev, page: 1 }));
-    debouncedFetchReturns(filters);
+
+    // For sort operations, fetch immediately without debouncing
+    if (isSortOperation) {
+      console.log('🎯 Sort operation detected - fetching immediately');
+      fetchReturns(undefined, filters);
+    } else {
+      console.log('🔄 Filter operation detected - using debounced fetch');
+      // For other filter changes, use debounced fetch with new filters
+      debouncedFetchReturns(filters);
+    }
   };
 
   return (
@@ -272,7 +291,6 @@ export default function PurchaseReturnIndexPage() {
         onItemsPerPageChange={handleLimitChange}
         onExport={() => {}} // Export handled internally by PurchaseReturnTable
         onApplyFilters={handleApplyFilters}
-        onViewDetails={handleViewDetails}
         sortBy={currentFilters.sortBy as 'return_no' | 'vendor_name' | 'total_amount' | 'return_date' | 'status' | 'item_count'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         initialFilters={{
@@ -281,14 +299,18 @@ export default function PurchaseReturnIndexPage() {
           dateFrom: currentFilters.dateFrom,
           dateTo: currentFilters.dateTo,
           amountMin: currentFilters.amountMin,
-          amountMax: currentFilters.amountMax
+          amountMax: currentFilters.amountMax,
+          uidFilter: currentFilters.uidFilter,
+          itemCount: currentFilters.itemCount,
+          paymentMode: currentFilters.paymentMode,
+          packingForwardingTotal: currentFilters.packingForwardingTotal
         }}
         actionButton={(
           <Link
             href="/entry/purchasereturn-vendor-create"
             className="btn-primary"
           >
-            + Create Return
+            Create Return
           </Link>
         )}
       />
