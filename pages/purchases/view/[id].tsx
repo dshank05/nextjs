@@ -152,6 +152,7 @@ export default function PurchaseView() {
   const [loading, setLoading] = useState(true);
   const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
   const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false);
+  const [enableTax, setEnableTax] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -178,6 +179,8 @@ export default function PurchaseView() {
         const data = await response.json();
         const purchaseData = data.purchase || data;
         setPurchase(purchaseData);
+        // Set tax display flag based on whether purchase has taxes
+        setEnableTax((purchaseData.total_tax || 0) > 0);
       }
     } catch (error) {
       console.error('Error fetching purchase:', error);
@@ -294,11 +297,12 @@ export default function PurchaseView() {
   const getReturnStatusBadge = (status: string) => {
     switch (status) {
       case 'NO_RETURNS':
-        return <span className="px-2 py-1 bg-gray-600 text-white text-xs rounded-full">No Returns</span>;
+        return null; // Don't show anything for no returns
       case 'PARTIAL_RETURN':
         return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial Return</span>;
       case 'FULLY_RETURNED':
-        return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>    }
+        return <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Return</span>;
+    }
   };
 
   const getPaymentModeText = (mode?: number) => {
@@ -337,16 +341,14 @@ export default function PurchaseView() {
         <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4 mb-6">
           <div className="text-center space-y-2">
             <h1 className="text-xl font-bold text-blue-100">
-              Purchase #{purchase.invoice_number || purchase.invoice_no} • {purchase.vendor?.vendor_name}
+              Purchase {purchase.invoice_number || purchase.invoice_no} • {purchase.vendor?.vendor_name}
             </h1>
-            {purchase.return_status && (
+            {purchase.return_status && purchase.return_status.has_returns && (
               <div className="flex justify-center gap-2">
                 {getReturnStatusBadge(purchase.return_status.status)}
-                {purchase.return_status.has_returns && (
-                  <span className="text-xs text-blue-200 bg-blue-800/50 px-2 py-1 rounded-full">
-                    {purchase.return_status.fully_returned_items}/{purchase.return_status.total_items} items returned
-                  </span>
-                )}
+                <span className="text-xs text-blue-200 bg-blue-800/50 px-2 py-1 rounded-full">
+                  {purchase.return_status.fully_returned_items}/{purchase.return_status.total_items} items returned
+                </span>
               </div>
             )}
           </div>
@@ -444,26 +446,32 @@ export default function PurchaseView() {
               <span className="text-slate-400">Taxable Value:</span>
               <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Total Tax:</span>
-              <span className="text-white font-medium">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</span>
-            </div>
+            {enableTax && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Total Tax:</span>
+                <span className="text-white font-medium">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</span>
+              </div>
+            )}
             <div className="flex justify-between font-semibold">
               <span className="text-slate-400">Grand Total:</span>
               <span className="text-white font-bold">₹{purchase.total?.toLocaleString('en-IN')}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">CGST:</span>
-              <span className="text-white font-medium">₹{purchase.total_cgst?.toLocaleString('en-IN') || '0'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">SGST:</span>
-              <span className="text-white font-medium">₹{purchase.total_sgst?.toLocaleString('en-IN') || '0'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">IGST:</span>
-              <span className="text-white font-medium">₹{purchase.total_igst?.toLocaleString('en-IN') || '0'}</span>
-            </div>
+            {enableTax && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">CGST:</span>
+                  <span className="text-white font-medium">₹{purchase.total_cgst?.toLocaleString('en-IN') || '0'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">SGST:</span>
+                  <span className="text-white font-medium">₹{purchase.total_sgst?.toLocaleString('en-IN') || '0'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">IGST:</span>
+                  <span className="text-white font-medium">₹{purchase.total_igst?.toLocaleString('en-IN') || '0'}</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Column 4: Transport & Additional */}
@@ -581,8 +589,8 @@ export default function PurchaseView() {
                   <th>Qty</th>
                   <th>Rate</th>
                   <th>Taxable Value</th>
-                  <th>Tax %</th>
-                  <th>Tax Amount</th>
+                  {enableTax && <th>Tax %</th>}
+                  {enableTax && <th>Tax Amount</th>}
                   <th>Total Amount</th>
                 </tr>
               </thead>
@@ -604,14 +612,14 @@ export default function PurchaseView() {
                       <td className="text-slate-300 font-medium">{item.qty}</td>
                       <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
                       <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300">{item.gst_percentage || 0}%</td>
-                      <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>
+                      {enableTax && <td className="text-slate-300">{item.gst_percentage || 0}%</td>}
+                      {enableTax && <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>}
                       <td className="text-slate-300 font-semibold">₹{totalAmount?.toLocaleString('en-IN')}</td>
                     </tr>
                   );
                 }) || (
                   <tr>
-                    <td colSpan={9} className="text-center text-slate-400 py-4">
+                    <td colSpan={enableTax ? 9 : 7} className="text-center text-slate-400 py-4">
                       No items found for this purchase
                     </td>
                   </tr>
@@ -630,8 +638,8 @@ export default function PurchaseView() {
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
                       ₹{purchase.items?.reduce((sum, item) => sum + (item.qty * (item.rate || 0)), 0)?.toLocaleString('en-IN')}
                     </td>
-                    <td></td>
-                    <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>
+                    {enableTax && <td></td>}
+                    {enableTax && <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>}
                     <td className="text-white font-bold text-left px-1 py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>

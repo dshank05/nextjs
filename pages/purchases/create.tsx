@@ -2095,60 +2095,63 @@ export default function PurchaseCreate() {
                         {/* Hidden SN column to maintain alignment */}
                       </td>
                       <td className="px-2 py-2">
-                        <div className="flex items-center space-x-2">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-slate-300">
-                              <span className="truncate">
-                                {selectedRowProduct ? (selectedRowProduct.display_name || selectedRowProduct.product_name) : 'No product selected'}
-                              </span>
-                              {selectedRowProduct && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedRowProduct(null);
-                                    setProductRowFilters({
-                                      category: 0,
-                                      categoryName: '',
-                                      subcategory: null,
-                                      subcategoryName: '',
-                                      carModels: [],
-                                      company: 0,
-                                      companyName: '',
-                                      partNo: ''
-                                    });
-                                    setTemplateRow({
-                                      qty: '1',
-                                      rate: '',
-                                      gst: '0',
-                                      total: ''
-                                    });
-                                  }}
-                                  className="text-slate-400 hover:text-white ml-2"
-                                  title="Clear selection"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={selectedRowProduct ? (selectedRowProduct.display_name || selectedRowProduct.product_name) : ''}
+                            onChange={(e) => {
+                              const searchValue = e.target.value;
+                              if (!selectedRowProduct) {
+                                // If no product selected, treat as search
+                                setProductSearchTerm(searchValue);
+                                if (searchValue.trim()) {
+                                  setIsProductPanelOpen(true);
+                                }
+                              }
+                            }}
                             onClick={() => {
-                              // Clear any existing validation errors when opening panel
-                              setErrors({});
-                              setProductSearchTerm(''); // Clear search when opening panel
-                              setIsProductPanelOpen(true);
+                              if (!selectedRowProduct) {
+                                // Clear any existing validation errors when opening panel
+                                setErrors({});
+                                setProductSearchTerm(''); // Clear search when opening panel
+                                setIsProductPanelOpen(true);
+                              }
                             }}
                             disabled={!selectedVendorId}
-                            className={`p-3 rounded text-xs transition-colors ${
-                              selectedVendorId
-                                ? 'bg-slate-600 hover:bg-slate-500 text-white'
-                                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                            className={`w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-white placeholder-slate-400 ${
+                              !selectedVendorId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
                             }`}
-                            title={!selectedVendorId ? 'Please select a vendor first' : 'Browse products'}
-                          >
-                            <Search className="w-4 h-4" />
-                          </button>
+                            placeholder={!selectedVendorId ? 'Select vendor first' : 'Click to search products...'}
+                            title={!selectedVendorId ? 'Please select a vendor first' : selectedRowProduct ? 'Selected product - click ✕ to clear' : 'Click to search products'}
+                          />
+                          {selectedRowProduct && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedRowProduct(null);
+                                setProductRowFilters({
+                                  category: 0,
+                                  categoryName: '',
+                                  subcategory: null,
+                                  subcategoryName: '',
+                                  carModels: [],
+                                  company: 0,
+                                  companyName: '',
+                                  partNo: ''
+                                });
+                                setTemplateRow({
+                                  qty: '1',
+                                  rate: '',
+                                  gst: '0',
+                                  total: ''
+                                });
+                              }}
+                              className="absolute right-2 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-white"
+                              title="Clear selection"
+                            >
+                              ✕
+                            </button>
+                          )}
                         </div>
                       </td>
                         {/* <td className="px-2 py-2">

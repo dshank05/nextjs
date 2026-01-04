@@ -4,7 +4,7 @@ export const purchaseViewExportLayout: ExportLayout = {
   sections: [
     {
       type: 'banner',
-      template: 'Purchase #{{invoice_number}} • {{vendor.vendor_name}}'
+      template: 'Purchase {{invoice_number}} • {{vendor.vendor_name}}'
     },
     {
       type: 'grid',
@@ -72,6 +72,33 @@ export const purchaseViewExportLayout: ExportLayout = {
         { label: 'Rate', key: 'rate', format: 'currency', width: 25 },
         { label: 'Tax %', key: 'gst_percentage', format: 'number', width: 15 },
         { label: 'Total', key: 'total', format: 'currency', width: 30 },
+      ]
+    },
+    {
+      type: 'table',
+      title: 'Purchase Returns',
+      dataKey: 'returns',
+      columns: [
+        { label: 'Return No', key: 'return_no', format: 'text', width: 20 },
+        { label: 'Date', key: 'return_date', format: 'date', width: 15 },
+        { label: 'Total Amount', key: 'total_amount', format: 'currency', width: 20 },
+        { label: 'Refund Amount', key: 'refund_amount', format: 'currency', width: 20 },
+        { label: 'Payment Status', key: 'payment_status', format: 'text', width: 15 },
+        { label: 'Payment Mode', key: 'payment_mode', format: 'text', width: 15 },
+        { label: 'Items Count', key: 'items_count', format: 'number', width: 15 },
+      ]
+    },
+    {
+      type: 'table',
+      title: 'Payment History',
+      dataKey: 'payment_history',
+      columns: [
+        { label: 'Date', key: 'allocation_date', format: 'date', width: 15 },
+        { label: 'Payment Date', key: 'payment_date', format: 'date', width: 15 },
+        { label: 'Amount', key: 'allocated_amount', format: 'currency', width: 20 },
+        { label: 'Payment Mode', key: 'payment_mode_text', format: 'text', width: 15 },
+        { label: 'Payment Type', key: 'payment_type', format: 'text', width: 15 },
+        { label: 'Notes', key: 'allocation_notes', format: 'text', width: 30 },
       ]
     }
   ]

@@ -167,15 +167,14 @@ export const exportToExcelWithLayout = async (
           sheet.mergeCells(currentRow, 1, currentRow, 6);
           currentRow += 2;
         } else if (section.type === 'grid') {
-          // Add grid section with multiple columns
+          // Create 4-column layout matching HTML page structure
           const numGroups = section.groups.length;
-          const colsPerGroup = Math.floor(6 / numGroups);
 
-          // Add group headers
+          // Add group headers in a single row
           const headerRow = sheet.getRow(currentRow);
           section.groups.forEach((group, groupIdx) => {
-            const startCol = groupIdx * colsPerGroup + 1;
-            const cell = headerRow.getCell(startCol);
+            const col = groupIdx + 1;
+            const cell = headerRow.getCell(col);
             cell.value = group.title || '';
             cell.font = { bold: true, size: 11 };
             cell.fill = {
@@ -183,92 +182,82 @@ export const exportToExcelWithLayout = async (
               pattern: 'solid',
               fgColor: { argb: 'FF1E88E5' }
             };
-            if (colsPerGroup > 1) {
-              sheet.mergeCells(currentRow, startCol, currentRow, startCol + colsPerGroup - 1);
-            }
           });
           currentRow++;
 
-          // Find max fields in any group
+          // Find max fields in any group to determine how many rows needed
           const maxFields = Math.max(...section.groups.map(g => g.fields.length));
 
-          // Add fields row by row
+          // Add fields - each field gets its own row with label and value in same cell
           for (let fieldIdx = 0; fieldIdx < maxFields; fieldIdx++) {
             const fieldRow = sheet.getRow(currentRow);
-            
+
             section.groups.forEach((group, groupIdx) => {
               const field = group.fields[fieldIdx];
-              const startCol = groupIdx * colsPerGroup + 1;
-              
+              const col = groupIdx + 1;
+
               if (field) {
-                // Label cell
-                const labelCell = fieldRow.getCell(startCol);
-                labelCell.value = field.label + ':';
-                labelCell.font = { bold: true, size: 10 };
-                labelCell.fill = {
+                const cell = fieldRow.getCell(col);
+                const label = field.label + ':';
+                const rawValue = field.transform
+                  ? field.transform(getNestedValue(data, field.key), data)
+                  : getNestedValue(data, field.key);
+                const value = formatValue(rawValue, field.format, data);
+                cell.value = `${label} ${value}`;
+                cell.font = { size: 10 };
+                cell.fill = {
                   type: 'pattern',
                   pattern: 'solid',
                   fgColor: { argb: 'FFE3F2FD' }
                 };
-
-                // Value cell
-                if (colsPerGroup > 1) {
-                  const valueCell = fieldRow.getCell(startCol + 1);
-                  const rawValue = field.transform 
-                    ? field.transform(getNestedValue(data, field.key), data)
-                    : getNestedValue(data, field.key);
-                  valueCell.value = formatValue(rawValue, field.format, data);
-                  valueCell.font = { size: 10 };
-                  
-                  if (colsPerGroup > 2) {
-                    sheet.mergeCells(currentRow, startCol + 1, currentRow, startCol + colsPerGroup - 1);
-                  }
-                }
               }
             });
-            
+
             currentRow++;
           }
 
           currentRow++; // Empty row after grid
         } else if (section.type === 'table') {
-          // Add table section
-          const titleRow = sheet.getRow(currentRow);
-          titleRow.getCell(1).value = section.title;
-          titleRow.getCell(1).font = { bold: true, size: 12 };
-          sheet.mergeCells(currentRow, 1, currentRow, section.columns.length);
-          currentRow++;
-
-          // Add table headers
-          const headerRow = sheet.getRow(currentRow);
-          section.columns.forEach((col, colIdx) => {
-            const cell = headerRow.getCell(colIdx + 1);
-            cell.value = col.label;
-            cell.font = { bold: true, size: 10 };
-            cell.fill = {
-              type: 'pattern',
-              pattern: 'solid',
-              fgColor: { argb: 'FF1E88E5' }
-            };
-          });
-          currentRow++;
-
-          // Get table data
+          // Get table data first
           const tableData = getNestedValue(data, section.dataKey) || [];
-          
-          // Add table rows
-          tableData.forEach((item: any, rowIdx: number) => {
-            const dataRow = sheet.getRow(currentRow);
+
+          // Only add table section if it has data
+          if (tableData.length > 0) {
+            // Add table section
+            const titleRow = sheet.getRow(currentRow);
+            titleRow.getCell(1).value = section.title;
+            titleRow.getCell(1).font = { bold: true, size: 12 };
+            sheet.mergeCells(currentRow, 1, currentRow, section.columns.length);
+            currentRow++;
+
+            // Add table headers
+            const headerRow = sheet.getRow(currentRow);
             section.columns.forEach((col, colIdx) => {
-              const cell = dataRow.getCell(colIdx + 1);
-              const rawValue = getNestedValue(item, col.key);
-              cell.value = formatValue(rawValue, col.format, item);
-              cell.font = { size: 10 };
+              const cell = headerRow.getCell(colIdx + 1);
+              cell.value = col.label;
+              cell.font = { bold: true, size: 10 };
+              cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF1E88E5' }
+              };
             });
             currentRow++;
-          });
 
-          currentRow++; // Empty row after table
+            // Add table rows
+            tableData.forEach((item: any, rowIdx: number) => {
+              const dataRow = sheet.getRow(currentRow);
+              section.columns.forEach((col, colIdx) => {
+                const cell = dataRow.getCell(colIdx + 1);
+                const rawValue = getNestedValue(item, col.key);
+                cell.value = formatValue(rawValue, col.format, item);
+                cell.font = { size: 10 };
+              });
+              currentRow++;
+            });
+
+            currentRow++; // Empty row after table
+          }
         }
       }
     }
@@ -406,11 +395,24 @@ export const exportToPDFWithLayout = async (
 
                 // Value (normal) - positioned right after label with 2px spacing
                 doc.setFont('helvetica', 'normal');
-                const rawValue = field.transform 
+                const rawValue = field.transform
                   ? field.transform(getNestedValue(data, field.key), data)
                   : getNestedValue(data, field.key);
                 const value = formatValue(rawValue, field.format, data, true);
-                doc.text(value, x + 4 + labelWidth + 2, yPosition + 4.5, { maxWidth: colWidth - 8 - labelWidth - 2 });
+
+                // Handle long text by splitting into multiple lines if needed
+                const maxValueWidth = colWidth - 8 - labelWidth - 2;
+                const valueLines = doc.splitTextToSize(value, maxValueWidth);
+                const lineHeight = 4.5;
+
+                // Draw each line of the value
+                valueLines.forEach((line: string, lineIdx: number) => {
+                  const yOffset = yPosition + 4.5 + (lineIdx * lineHeight);
+                  // Only draw if it fits within the current row height, otherwise truncate
+                  if (yOffset <= yPosition + rowHeight - 2) {
+                    doc.text(line, x + 4 + labelWidth + 2, yOffset);
+                  }
+                });
               }
             });
             yPosition += rowHeight;
@@ -440,27 +442,23 @@ export const exportToPDFWithLayout = async (
               head: [headers],
               body: body,
               theme: 'grid',
-              styles: { 
-                fontSize: 7,
-                cellPadding: 3,
-                halign: 'left', // Left align table content
-                overflow: 'linebreak' // Wrap text instead of cutting it off
+              styles: {
+                fontSize: 6,
+                cellPadding: 2,
+                halign: 'left',
+                overflow: 'linebreak',
+                cellWidth: 'auto' // Let columns auto-size to fill available space
               },
               headStyles: {
-                fillColor: [220, 220, 220], // Light gray instead of blue
-                textColor: [0, 0, 0], // Black text
+                fillColor: [220, 220, 220],
+                textColor: [0, 0, 0],
                 fontStyle: 'bold',
-                fontSize: 7,
-                halign: 'left' // Left align headers
+                fontSize: 6,
+                halign: 'left'
               },
-              margin: { left: 15, right: 15 }, // Proper margins on both sides
-              tableWidth: 'wrap', // Respects margins and wraps content properly
-              columnStyles: section.columns.reduce((acc, col, idx) => {
-                if (col.width) {
-                  acc[idx] = { cellWidth: col.width };
-                }
-                return acc;
-              }, {} as any)
+              margin: { left: 15, right: 15 },
+              tableWidth: 'auto', // Use full available width
+              // Remove restrictive column width caps to allow proper auto-sizing
             });
 
             yPosition = (doc as any).lastAutoTable.finalY + 10;
