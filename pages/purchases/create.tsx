@@ -207,7 +207,7 @@ export default function PurchaseCreate() {
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
-    qty: '1',
+    qty: '',
     rate: '',
     gst: '0',
     total: ''
@@ -216,8 +216,8 @@ export default function PurchaseCreate() {
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
-  // Tax is now enabled for purchase calculations
-  const enableTax = true;
+  // Tax toggle state
+  const [enableTax, setEnableTax] = useState(false);
 
   // State for barcode scanning toggle
   const [enableBarcodeScanning, setEnableBarcodeScanning] = useState(false);
@@ -1205,58 +1205,7 @@ export default function PurchaseCreate() {
     }
   };
 
-  const addProductToPurchase = (product: Product) => {
-    // Determine if intra-state or inter-state
-    const businessState = 'Uttar Pradesh'; // TODO: Make this a configurable business setting
-    const isIntraState = vendorStateForTax === businessState;
 
-    const qty = 1;
-    const rate = product.selling_price || product.rate || 0;
-    const taxPercent = product.gst_rate_percentage || product.gst_rate || 0;
-    const subtotal = qty * rate;
-    const totalTaxAmount = (subtotal * taxPercent) / 100;
-
-    // Split tax based on intra/inter-state
-    let cgst = 0, sgst = 0, igst = 0;
-    if (isIntraState) {
-      cgst = totalTaxAmount / 2;
-      sgst = totalTaxAmount / 2;
-    } else {
-      igst = totalTaxAmount;
-    }
-
-    const newItem: PurchaseItem = {
-      id: Date.now().toString(),
-      product_id: product.id,
-      product_name: product.product_name,
-      car_model: '',
-      category: product.category_name || '',
-      sub_category: product.subcategory_name || '',
-      company: product.company || '',
-      part_number: product.part_no || '',
-      qty: qty,
-      rate: rate,
-      gst_percentage: taxPercent,
-      tax: totalTaxAmount,
-      cgst: cgst,
-      sgst: sgst,
-      igst: igst,
-      total: subtotal + totalTaxAmount
-    };
-
-    setSelectedProducts(prev => [...prev, newItem]);
-    setSearchTerm('');
-  };
-
-  const updateProductQuantity = (id: string, qty: number) => {
-    setSelectedProducts(prev => prev.map(item => {
-      if (item.id === id) {
-        const total = qty * item.rate;
-        return { ...item, qty, total };
-      }
-      return item;
-    }));
-  };
 
   const handleEditProduct = (item: PurchaseItem) => {
     // Enable inline editing for this specific row
@@ -1327,12 +1276,12 @@ export default function PurchaseCreate() {
       companyName: '',
       partNo: ''
     });
-    setTemplateRow({
-      qty: '1',
-      rate: '',
-      gst: '0',
-      total: ''
-    });
+                                setTemplateRow({
+                                  qty: '',
+                                  rate: '',
+                                  gst: '0',
+                                  total: ''
+                                });
   };
 
   const handleConfirmDelete = (item: PurchaseItem) => {
@@ -1947,10 +1896,11 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">TRANSPORT COST</label>
                   <input
                     type="number"
+                    step="1"
                     value={formData.transport_cost}
                     onChange={(e) => handleInputChange('transport_cost', e.target.value)}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
                 <div></div> {/* Empty column for 4-column layout */}
@@ -1958,6 +1908,21 @@ export default function PurchaseCreate() {
             </div>
 
 
+
+            {/* Tax Section */}
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              <div className="flex flex-row-reverse mb-3 space-x-6">
+                <label className="flex items-center space-x-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={enableTax}
+                    onChange={(e) => setEnableTax(e.target.checked)}
+                    className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
+                  />
+                  <span className="text-sm text-slate-300 pr-4">Enable Tax</span>
+                </label>
+              </div>
+            </div>
 
             {/* Product Selection */}
             <div className="mb-5 border-t border-slate-600 pt-4">
@@ -2140,7 +2105,7 @@ export default function PurchaseCreate() {
                                   partNo: ''
                                 });
                                 setTemplateRow({
-                                  qty: '1',
+                                  qty: '',
                                   rate: '',
                                   gst: '0',
                                   total: ''
@@ -2276,7 +2241,7 @@ export default function PurchaseCreate() {
                           type="number"
                           min="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="1"
+                          placeholder=""
                           value={templateRow.qty}
                           onChange={(e) => {
                             const newQty = e.target.value;
@@ -2314,13 +2279,14 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2 text-center w-32">
                         <input
                           type="number"
+                          step="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.rate}
                           onChange={(e) => {
                             const newRate = e.target.value;
-                            const qty = parseFloat(templateRow.qty) || 0;
-                            const rate = parseFloat(newRate) || 0;
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const rate = parseInt(newRate) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
                             if (qty > 0 && rate > 0) {
@@ -2332,7 +2298,7 @@ export default function PurchaseCreate() {
                               setTemplateRow(prev => ({
                                 ...prev,
                                 rate: newRate,
-                                total: total.toFixed(2)
+                                total: Math.round(total).toString()
                               }));
                             } else {
                               setTemplateRow(prev => ({
@@ -2375,13 +2341,14 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2 text-center w-32">
                         <input
                           type="number"
+                          step="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
-                            const qty = parseFloat(templateRow.qty) || 0;
-                            const enteredTotal = parseFloat(newTotal) || 0;
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const enteredTotal = parseInt(newTotal) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
                             if (qty > 0 && enteredTotal > 0) {
@@ -2394,7 +2361,7 @@ export default function PurchaseCreate() {
                               setTemplateRow(prev => ({
                                 ...prev,
                                 total: newTotal,
-                                rate: rate.toFixed(2)
+                                rate: Math.round(rate).toString()
                               }));
                             } else {
                               setTemplateRow(prev => ({
@@ -2429,9 +2396,6 @@ export default function PurchaseCreate() {
                               if (productRowFilters.company <= 0) {
                                 validationErrors.push('Company is required');
                               }
-                              if (!templateRow.rate || parseFloat(templateRow.rate) <= 0) {
-                                validationErrors.push('Valid rate is required');
-                              }
 
                               if (validationErrors.length > 0) {
                                 setErrors({ addProduct: validationErrors.join(', ') });
@@ -2442,7 +2406,7 @@ export default function PurchaseCreate() {
                                 const selectedProduct = selectedRowProduct;
                                 if (selectedProduct) {
                                   // Use product details and template values
-                                  const qty = parseFloat(templateRow.qty) || 1;
+                                  const qty = parseFloat(templateRow.qty) || 0;
                                   const rate = parseFloat(templateRow.rate) || selectedProduct.selling_price || 0;
                                   const gstPercent = enableTax ? (templateRow.gst !== '0' ? parseFloat(templateRow.gst) : 0) : 0;
                                   const subtotal = qty * rate;
@@ -2515,12 +2479,12 @@ export default function PurchaseCreate() {
                                     companyName: '',
                                     partNo: ''
                                   });
-                                  setTemplateRow({
-                                    qty: '1',
-                                    rate: '',
-                                    gst: '0',
-                                    total: ''
-                                  });
+                                setTemplateRow({
+                                  qty: '',
+                                  rate: '',
+                                  gst: '0',
+                                  total: ''
+                                });
                                 }
                               }
                             }}
@@ -2550,7 +2514,7 @@ export default function PurchaseCreate() {
                                   partNo: ''
                                 });
                                 setTemplateRow({
-                                  qty: '1',
+                                  qty: '',
                                   rate: '',
                                   gst: '0',
                                   total: ''
@@ -2712,14 +2676,14 @@ export default function PurchaseCreate() {
                               <td className="px-2 py-2 text-center w-24">
                                 <input
                                   type="number"
-                                  inputMode="numeric"
+                                  step="1"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0.00"
+                                  placeholder="0"
                                   value={editingRowData?.rate || ''}
                                   onChange={(e) => {
                                     const newRate = e.target.value;
                                     const qty = editingRowData?.qty || 0;
-                                    const rate = parseFloat(newRate) || 0;
+                                    const rate = parseInt(newRate) || 0;
                                     const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
 
                                     if (qty > 0 && rate > 0) {
@@ -2729,13 +2693,13 @@ export default function PurchaseCreate() {
 
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        rate: parseFloat(newRate) || 0,
-                                        total: total
+                                        rate: parseInt(newRate) || 0,
+                                        total: Math.round(total)
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        rate: parseFloat(newRate) || 0
+                                        rate: parseInt(newRate) || 0
                                       } : null);
                                     }
                                   }}
@@ -2787,25 +2751,26 @@ export default function PurchaseCreate() {
                               <td className="px-2 py-2 text-center w-20">
                                 <input
                                   type="number"
+                                  step="1"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0.00"
+                                  placeholder="0"
                                   value={editingRowData?.total || ''}
                                   onChange={(e) => {
                                     const newTotal = e.target.value;
                                     const qty = editingRowData?.qty || 0;
-                                    const enteredTotal = parseFloat(newTotal) || 0;
+                                    const enteredTotal = parseInt(newTotal) || 0;
 
                                     if (qty > 0 && enteredTotal > 0) {
                                       const rate = enteredTotal / qty;
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        total: parseFloat(newTotal) || 0,
-                                        rate: rate
+                                        total: parseInt(newTotal) || 0,
+                                        rate: Math.round(rate)
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        total: parseFloat(newTotal) || 0
+                                        total: parseInt(newTotal) || 0
                                       } : null);
                                     }
                                   }}
@@ -2921,25 +2886,26 @@ export default function PurchaseCreate() {
                               <td className="px-2 py-2 text-center w-20">
                                 <input
                                   type="number"
+                                  step="1"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0.00"
+                                  placeholder="0"
                                   value={editingRowData?.total || ''}
                                   onChange={(e) => {
                                     const newTotal = e.target.value;
                                     const qty = editingRowData?.qty || 0;
-                                    const enteredTotal = parseFloat(newTotal) || 0;
+                                    const enteredTotal = parseInt(newTotal) || 0;
 
                                     if (qty > 0 && enteredTotal > 0) {
                                       const rate = enteredTotal / qty;
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        total: parseFloat(newTotal) || 0,
-                                        rate: rate
+                                        total: parseInt(newTotal) || 0,
+                                        rate: Math.round(rate)
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        total: parseFloat(newTotal) || 0
+                                        total: parseInt(newTotal) || 0
                                       } : null);
                                     }
                                   }}
@@ -3057,26 +3023,28 @@ export default function PurchaseCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      {/* <tr>
-                        <td colSpan={enableTax ? 10 : 9} className="px-2 py-2"></td>
-                        <td className="px-2 py-2 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
-                          SUBTOTAL
-                        </td>
-                        <td className="px-2 py-2 text-center text-sm font-semibold text-slate-200">
-                          ₹{subtotal.toFixed(2)}
-                        </td>
-                      </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableTax ? 7 : 6} className="px-2 py-2"></td>
-                        <td colSpan={2} className="px-2 py-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedProducts([])}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
-                          >
-                            Clear All Products
-                          </button>
+                        {/* Empty cells for SN, PRODUCT NAME, CAR MODELS, PART NO */}
+                        <td colSpan="4" className="px-2 py-2"></td>
+
+                        {/* Quantity Total aligned with QTY column */}
+                        <td className="px-2 py-2 text-center font-semibold text-slate-200">
+                          {selectedProducts.reduce((sum, item) => sum + item.qty, 0)}
                         </td>
+
+                        {/* Empty cell for RATE column */}
+                        <td className="px-2 py-2"></td>
+
+                        {/* Empty cell for TAX column if enabled */}
+                        {enableTax && <td className="px-2 py-2"></td>}
+
+                        {/* Sub Total aligned with TOTAL column */}
+                        <td className="px-2 py-2 text-center font-semibold text-slate-200">
+                          ₹{Math.round(selectedProducts.reduce((sum, item) => sum + (item.qty * item.rate), 0)).toString()}
+                        </td>
+
+                        {/* Empty cell for ACTION column */}
+                        <td className="px-2 py-2"></td>
                       </tr>
                     </tfoot>
                   )}
@@ -3124,19 +3092,19 @@ export default function PurchaseCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                   <input
                     type="number"
-                    inputMode="numeric"
+                    step="1"
                     value={formData.packing_forwarding_qty}
                     onChange={(e) => {
                       const newQty = e.target.value;
-                      const qty = parseFloat(newQty) || 0;
-                      const rate = parseFloat(formData.packing_forwarding_rate) || 0;
+                      const qty = parseInt(newQty) || 0;
+                      const rate = parseInt(formData.packing_forwarding_rate) || 0;
 
                       if (qty > 0 && rate > 0) {
                         const total = qty * rate;
                         setFormData(prev => ({
                           ...prev,
                           packing_forwarding_qty: newQty,
-                          packing_forwarding_total: total.toFixed(2)
+                          packing_forwarding_total: Math.round(total).toString()
                         }));
                       } else {
                         setFormData(prev => ({
@@ -3153,26 +3121,26 @@ export default function PurchaseCreate() {
                       }
                     }}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                   <input
                     type="number"
-                    inputMode="numeric"
+                    step="1"
                     value={formData.packing_forwarding_rate}
                     onChange={(e) => {
                       const newRate = e.target.value;
-                      const qty = parseFloat(formData.packing_forwarding_qty) || 0;
-                      const rate = parseFloat(newRate) || 0;
+                      const qty = parseInt(formData.packing_forwarding_qty) || 0;
+                      const rate = parseInt(newRate) || 0;
 
                       if (qty > 0 && rate > 0) {
                         const total = qty * rate;
                         setFormData(prev => ({
                           ...prev,
                           packing_forwarding_rate: newRate,
-                          packing_forwarding_total: total.toFixed(2)
+                          packing_forwarding_total: Math.round(total).toString()
                         }));
                       } else {
                         setFormData(prev => ({
@@ -3189,25 +3157,26 @@ export default function PurchaseCreate() {
                       }
                     }}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                   <input
                     type="number"
+                    step="1"
                     value={formData.packing_forwarding_total}
                     onChange={(e) => {
                       const newTotal = e.target.value;
-                      const qty = parseFloat(formData.packing_forwarding_qty) || 0;
-                      const enteredTotal = parseFloat(newTotal) || 0;
+                      const qty = parseInt(formData.packing_forwarding_qty) || 0;
+                      const enteredTotal = parseInt(newTotal) || 0;
 
                       if (qty > 0 && enteredTotal > 0) {
                         const rate = enteredTotal / qty;
                         setFormData(prev => ({
                           ...prev,
                           packing_forwarding_total: newTotal,
-                          packing_forwarding_rate: rate.toFixed(2)
+                          packing_forwarding_rate: Math.round(rate).toString()
                         }));
                       } else {
                         setFormData(prev => ({
@@ -3224,7 +3193,7 @@ export default function PurchaseCreate() {
                       }
                     }}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
               </div>
@@ -3236,52 +3205,55 @@ export default function PurchaseCreate() {
               <div className="space-y-4">
 
 
-                <div className="grid grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
-                    <input
-                      type="number"
-                      value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-calculated tax"
-                    />
+                {/* Tax Breakdown - Only show when tax is enabled */}
+                {enableTax && (
+                  <div className="grid grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
+                      <input
+                        type="number"
+                        value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        placeholder="Auto-calculated tax"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
+                      <input
+                        type="number"
+                        value={formData.total_cgst}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        placeholder="Auto-calculated CGST"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
+                      <input
+                        type="number"
+                        value={formData.total_sgst}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        placeholder="Auto-calculated SGST"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
+                      <input
+                        type="number"
+                        value={formData.total_igst}
+                        readOnly
+                        disabled
+                        className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                        placeholder="Auto-calculated IGST"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL CGST</label>
-                    <input
-                      type="number"
-                      value={formData.total_cgst}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-calculated CGST"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL SGST</label>
-                    <input
-                      type="number"
-                      value={formData.total_sgst}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-calculated SGST"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL IGST</label>
-                    <input
-                      type="number"
-                      value={formData.total_igst}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                      placeholder="Auto-calculated IGST"
-                    />
-                  </div>
-                </div>
+                )}
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
@@ -3386,8 +3358,10 @@ export default function PurchaseCreate() {
         onProductSelect={(product) => {
           handleProductSelection(product);
           setTemplateRow({
-            qty: '1',
-            rate: product.latest_purchase_rate?.toString() || product.opening_rate?.toString() || '',
+            qty: '',
+            rate: product.latest_purchase_rate?.toString() ||
+                  product.opening_rate?.toString() ||
+                  product.rate?.toString() || '',
             gst: product.gst_rate_percentage?.toString() || '0',
             total: ''
           });

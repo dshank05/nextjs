@@ -433,13 +433,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    for (const item of items) {
-      if (!item.rate || item.rate <= 0) {
-        return res.status(400).json({
-          message: `Invalid purchase rate for item "${item.product_name}": rate must be greater than 0`
-        })
-      }
-    }
+    // Removed rate validation to allow 0 or empty rates
 
     const validPaymentStatuses = [0, 1];
     const validPaymentModes = [0, 1];
@@ -666,15 +660,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-function getPaymentModeId(paymentMode: string): number {
-  const paymentModes: { [key: string]: number } = {
-    'cash': 1,
-    'card': 2,
-    'bank_transfer': 3,
-    'cheque': 4
-  }
-  return paymentModes[paymentMode] || 1
-}
+
 
 
 

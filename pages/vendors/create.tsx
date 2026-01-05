@@ -107,7 +107,7 @@ export default function CreateVendor() {
       setFormData(prev => ({
         ...prev,
         state: selectedState.state_name,
-        state_code: selectedState.id.toString()
+        state_code: selectedState.code.toString() // Fix: Use state code, not state ID
       }));
     }
   };

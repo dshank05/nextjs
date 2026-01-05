@@ -399,11 +399,11 @@ export default function PurchaseView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Bill Reference:</span>
-              <span className="text-white font-medium">{purchase.bill_reference || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.bill_reference || ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Bill Reference Date:</span>
-              <span className="text-white font-medium">{(purchase as any).bill_reference_date || 'N/A'}</span>
+              <span className="text-white font-medium">{(purchase as any).bill_reference_date || ''}</span>
             </div>
           </div>
 
@@ -415,19 +415,19 @@ export default function PurchaseView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Contact:</span>
-              <span className="text-white font-medium">{purchase.vendor?.contact_no || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vendor?.contact_no || ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Email:</span>
-              <span className="text-white font-medium">{purchase.vendor?.email || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vendor?.email || ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">GSTIN:</span>
-              <span className="text-white font-medium">{purchase.vendor?.tax_id || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vendor?.tax_id || ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Staff:</span>
-              <span className="text-white font-medium">{purchase.staff?.name || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.staff?.name || ''}</span>
             </div>
           </div>
 
@@ -442,10 +442,12 @@ export default function PurchaseView() {
               <span className="text-white font-medium">₹{purchase.packing_forwarding_total?.toLocaleString('en-IN') || '0'}</span>
             </div>
            
-            <div className="flex justify-between">
-              <span className="text-slate-400">Taxable Value:</span>
-              <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
-            </div>
+            {enableTax && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Taxable Value:</span>
+                <span className="text-white font-medium">₹{purchase.total_taxable_value?.toLocaleString('en-IN')}</span>
+              </div>
+            )}
             {enableTax && (
               <div className="flex justify-between">
                 <span className="text-slate-400">Total Tax:</span>
@@ -478,11 +480,11 @@ export default function PurchaseView() {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-400">Transport:</span>
-              <span className="text-white font-medium">{purchase.transport_name || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.transport_name || ''}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Vehicle:</span>
-              <span className="text-white font-medium">{purchase.vehicle_number || 'N/A'}</span>
+              <span className="text-white font-medium">{purchase.vehicle_number || ''}</span>
             </div>
              <div className="flex justify-between">
               <span className="text-slate-400">Freight:</span>
@@ -588,7 +590,7 @@ export default function PurchaseView() {
                   <th>Part No</th>
                   <th>Qty</th>
                   <th>Rate</th>
-                  <th>Taxable Value</th>
+                  {enableTax && <th>Taxable Value</th>}
                   {enableTax && <th>Tax %</th>}
                   {enableTax && <th>Tax Amount</th>}
                   <th>Total Amount</th>
@@ -608,10 +610,10 @@ export default function PurchaseView() {
                     <tr key={item.id}>
                       <td>{index + 1}</td>
                       <td className="font-medium text-white">{item.display_name || item.product_name}</td>
-                      <td className="text-slate-300">{item.part || 'N/A'}</td>
+                      <td className="text-slate-300">{item.part || ''}</td>
                       <td className="text-slate-300 font-medium">{item.qty}</td>
                       <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
-                      <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>
+                      {enableTax && <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>}
                       {enableTax && <td className="text-slate-300">{item.gst_percentage || 0}%</td>}
                       {enableTax && <td className="text-slate-300">₹{taxAmount?.toLocaleString('en-IN')}</td>}
                       <td className="text-slate-300 font-semibold">₹{totalAmount?.toLocaleString('en-IN')}</td>
@@ -711,7 +713,7 @@ export default function PurchaseView() {
                       </div>
                       <div>
                         <span className="text-slate-400 text-sm">Payment Date:</span>
-                        <div className="text-white font-medium">{ret.payment_date ? formatDate(ret.payment_date) : 'N/A'}</div>
+                        <div className="text-white font-medium">{ret.payment_date ? formatDate(ret.payment_date) : ''}</div>
                       </div>
                       <div>
                         <span className="text-slate-400 text-sm">Items:</span>
@@ -746,7 +748,7 @@ export default function PurchaseView() {
                                 <tr key={index} className="bg-red-900/10">
                                   <td>{index + 1}</td>
                                   <td className="font-medium text-white">{item.display_name || item.product_name}</td>
-                                  <td className="text-slate-300">{item.part || 'N/A'}</td>
+                                  <td className="text-slate-300">{item.part || ''}</td>
                                   <td className="text-slate-300 font-medium">{item.return_qty}</td>
                                   <td className="text-slate-300">₹{item.return_unit_price?.toLocaleString('en-IN')}</td>
                                   <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>
