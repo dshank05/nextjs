@@ -472,7 +472,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // ===== STEP 3: DATA PREPARATION =====
     const invoiceDate = new Date(date).getTime() / 1000
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
-    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (req.body.transport_cost || 0) + (total_tax || 0)
+    const calculatedGrandTotal = itemsTotal +
+      parseFloat(packing_forwarding_total?.toString()) +
+      parseFloat(req.body.transport_cost?.toString()) +
+      parseFloat(total_tax?.toString())
 
     // ===== STEP 4: OPTIMIZED DATABASE TRANSACTION =====
     const purchase = await prisma.$transaction(async (tx) => {
@@ -485,18 +488,18 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           staff_id: staff_id ? parseInt(staff_id) : null,
           vendor_id: parseInt(vendor_id),
           items_total: itemsTotal,
-          freight: req.body.transport_cost || 0,
+          freight: parseFloat(req.body.transport_cost?.toString()) || 0,
           total_taxable_value: itemsTotal,
-          total_cgst: total_cgst || 0,
-          total_sgst: total_sgst || 0,
-          total_igst: total_igst || 0,
-          total_tax: total_tax || 0,
+          total_cgst: parseFloat(total_cgst?.toString()) || 0,
+          total_sgst: parseFloat(total_sgst?.toString()) || 0,
+          total_igst: parseFloat(total_igst?.toString()) || 0,
+          total_tax: parseFloat(total_tax?.toString()) || 0,
           total: calculatedGrandTotal,
           notes: notes || '',
           descriptions: descriptions,
-          packing_forwarding_qty: packing_forwarding_qty || 0,
-          packing_forwarding_rate: packing_forwarding_rate || 0,
-          packing_forwarding_total: packing_forwarding_total || 0,
+          packing_forwarding_qty: parseFloat(packing_forwarding_qty?.toString()) || 0,
+          packing_forwarding_rate: parseFloat(packing_forwarding_rate?.toString()) || 0,
+          packing_forwarding_total: parseFloat(packing_forwarding_total?.toString()) || 0,
           invoice_date: Math.floor(invoiceDate),
           updated_at: new Date().toISOString().split('T')[0],
           payment_status: payment_status || 0,
