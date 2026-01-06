@@ -481,7 +481,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: {
           invoice_no: nextInvoiceNo,
           bill_reference: bill_reference,
-          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString().split('T')[0] : null,
+          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
           staff_id: staff_id ? parseInt(staff_id) : null,
           vendor_id: parseInt(vendor_id),
           items_total: itemsTotal,

@@ -261,6 +261,7 @@ export default async function handler(
           id: purchase.id,
           invoice_number: purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
+          bill_reference_date: purchase.bill_reference_date ? new Date(purchase.bill_reference_date).toISOString().split('T')[0] : '',
           staff_id: purchase.staff_id || null,
           date: purchase.invoice_date,  // Keep as number for proper formatting
           vendor_id: purchase.vendor_id,
@@ -345,19 +346,25 @@ export default async function handler(
 
         const {
           bill_reference,
-          // staff_details, // TODO: Field removed from schema
+          bill_reference_date,
+          staff_id,
+          date,
+          vendor_id,
           notes,
-          // descriptions, // TODO: Field removed from schema
           payment_status,
           payment_mode,
           transport_name,
+          vehicle_number,
           items, // Include items for update logic
           total_cgst,
           total_sgst,
           total_igst,
           total_tax,
           transport_cost,
-          descriptions
+          descriptions,
+          packing_forwarding_qty,
+          packing_forwarding_rate,
+          packing_forwarding_total
         } = req.body
 
         // ===== VALIDATION =====
@@ -541,11 +548,20 @@ export default async function handler(
             where: { id: purchaseId },
             data: {
               bill_reference: bill_reference || null,
+              bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
+              staff_id: staff_id ? parseInt(staff_id.toString()) : null,
+              invoice_date: date ? Math.floor(new Date(date).getTime() / 1000) : existingPurchase.invoice_date,
+              vendor_id: vendor_id ? parseInt(vendor_id.toString()) : existingPurchase.vendor_id,
               notes: notes || null,
               descriptions: descriptions || null,
               payment_status: parsedPaymentStatus,
               payment_mode: parsedPaymentMode,
               transport: transport_name || null,
+              transport_name: transport_name || null,
+              vehicle_number: vehicle_number || null,
+              packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty.toString()) : 0,
+              packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate.toString()) : 0,
+              packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total.toString()) : 0,
               items_total: calculatedItemsTotal,
               total_taxable_value: calculatedItemsTotal,
               total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
@@ -703,15 +719,26 @@ export default async function handler(
                     }
                   })
 
+                  // Update product stock and latest purchase rate
+                  const productUpdateData: any = {}
+
                   // Adjust stock based on quantity difference
                   if (Math.abs(qtyDifference) > 0.001) {
+                    productUpdateData.stock = {
+                      increment: qtyDifference // Add the difference (can be negative)
+                    }
+                  }
+
+                  // Update latest purchase rate if rate changed
+                  if (rateChanged) {
+                    productUpdateData.latest_purchase_rate = parseFloat(newData.rate.toString())
+                    productUpdateData.last_purchase_date = updatedPurchase.invoice_date
+                  }
+
+                  if (Object.keys(productUpdateData).length > 0) {
                     await tx.product.update({
                       where: { id: productId },
-                      data: {
-                        stock: {
-                          increment: qtyDifference // Add the difference (can be negative)
-                        }
-                      }
+                      data: productUpdateData
                     })
                   }
                 }

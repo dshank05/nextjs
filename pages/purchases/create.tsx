@@ -1476,7 +1476,7 @@ export default function PurchaseCreate() {
     }
 
     setLoading(true);
-
+    // console.log("FormData DATA",formData)
     try {
       // ===== PAYLOAD CONSTRUCTION =====
       // For PUT requests, exclude invoice_number since API identifies by ID, not invoice number
@@ -1561,7 +1561,7 @@ export default function PurchaseCreate() {
         payment_status: formData.payment_status || 0,
         payment_mode: formData.payment_mode || 0,
       };
-
+      // console.log("SUBMIT DATA",baseSubmitData)
       // Add invoice_number only for POST (creation), exclude from PUT (update)
       const submitData = isEditMode
         ? baseSubmitData  // PUT: No invoice_number needed
@@ -1569,7 +1569,7 @@ export default function PurchaseCreate() {
 
       const method = isEditMode ? 'PUT' : 'POST';
       const url = isEditMode ? `/api/purchases/${editPurchaseId}` : '/api/purchases';
-
+      
       const response = await fetch(url, {
         method,
         headers: {
