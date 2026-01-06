@@ -621,7 +621,7 @@ export default function PurchaseView() {
                   );
                 }) || (
                   <tr>
-                    <td colSpan={enableTax ? 9 : 7} className="text-center text-slate-400 py-4">
+                    <td colSpan={enableTax ? 8 : 7} className="text-center text-slate-400 py-4">
                       No items found for this purchase
                     </td>
                   </tr>
@@ -632,7 +632,7 @@ export default function PurchaseView() {
                   <tr className="border-t border-slate-700 bg-slate-800/30">
                     <td></td>
                     <td></td>
-                    <td></td>
+                    {enableTax && <td></td>}
                     <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">
                       {purchase.items?.reduce((sum, item) => sum + (item.qty || 0), 0)}
                     </td>

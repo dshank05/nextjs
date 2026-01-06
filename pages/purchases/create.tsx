@@ -173,6 +173,8 @@ export default function PurchaseCreate() {
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
   const [purchaseReturnStatus, setPurchaseReturnStatus] = useState<PurchaseReturnStatus | null>(null);
+  const [isRouterReady, setIsRouterReady] = useState(false);
+  const [editDataLoading, setEditDataLoading] = useState(false);
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -313,8 +315,17 @@ export default function PurchaseCreate() {
     // grand_total: '' // @deprecated - calculated field, removed from payload
   });
 
-  // Check for edit mode and fetch data
+  // Set router ready state
   useEffect(() => {
+    if (router.isReady) {
+      setIsRouterReady(true);
+    }
+  }, [router.isReady]);
+
+  // Check for edit mode and fetch data - wait for router to be ready
+  useEffect(() => {
+    if (!router.isReady) return;
+
     const { edit } = router.query;
     if (edit && typeof edit === 'string') {
       setIsEditMode(true);
@@ -329,11 +340,26 @@ export default function PurchaseCreate() {
         // Remove the cached data after using it
         SessionStorageService.remove('purchases', edit);
       } else {
-        // Fallback to API call if no cached data
+        // No cached data - show loader and make API call
+        console.log('📡 No cached data found, fetching from API...');
+        setEditDataLoading(true);
         fetchPurchaseForEdit(parseInt(edit));
       }
     }
-  }, [router.query]);
+  }, [router.isReady, router.query]);
+
+  // Synchronous edit mode detection to prevent race condition - wait for router to be ready
+  const editParam = router.query.edit;
+  const isEditModeDetected = router.isReady && editParam && typeof editParam === 'string';
+
+  // Set edit mode immediately if detected synchronously
+  useEffect(() => {
+    if (router.isReady && isEditModeDetected && !isEditMode && typeof editParam === 'string') {
+      setIsEditMode(true);
+      setEditPurchaseId(parseInt(editParam));
+      setInvoiceNumberLoading(false);
+    }
+  }, [router.isReady, isEditModeDetected, isEditMode, editParam]);
 
   // Set selected vendor when vendors are loaded in edit mode
   useEffect(() => {
@@ -779,7 +805,8 @@ export default function PurchaseCreate() {
   };
 
   const fetchLastInvoiceNumber = async () => {
-    if (isEditMode) return;
+    // Double safeguard: never run in edit mode
+    if (isEditMode || isEditModeDetected) return;
 
     try {
       const response = await fetch('/api/purchases/last-invoice');
@@ -864,7 +891,7 @@ export default function PurchaseCreate() {
         address_2: purchase.bill_to.address2 || prev.address_2,
         city: purchase.bill_to.city || prev.city,
         state: purchase.bill_to.state || prev.state,
-        state_code: purchase.bill_to.state_code || prev.state_code,
+        state_code: purchase.bill_to.state_code ? parseInt(purchase.bill_to.state_code.toString()) : prev.state_code,
         gst_number: purchase.bill_to.gstin || prev.gst_number,
         pin_code: purchase.bill_to.pin_code || prev.pin_code,
       }));
@@ -1113,6 +1140,7 @@ export default function PurchaseCreate() {
       showSnackbar('error', 'Failed to load purchase data. Please try again.');
     } finally {
       setInvoiceNumberLoading(false);
+      setEditDataLoading(false); // Stop the edit data loading regardless of success/error
     }
   };
 
@@ -1220,8 +1248,8 @@ export default function PurchaseCreate() {
   const saveInlineEdit = () => {
     if (editingRowId && editingRowData) {
       // Validate the editing data
-      if (!editingRowData.qty || editingRowData.qty < 1) {
-        setErrors({ inlineEdit: 'Quantity must be at least 1' });
+      if (editingRowData.qty < 0) {
+        setErrors({ inlineEdit: 'Quantity cannot be negative' });
         return;
       }
       if (!editingRowData.rate || editingRowData.rate <= 0) {
@@ -1335,9 +1363,20 @@ export default function PurchaseCreate() {
     if (!isEditMode || !originalData) return true; // Always allow in create mode
 
     // Compare form fields
-    const formFieldsChanged = 
+    const formFieldsChanged =
       formData.bill_reference !== originalData.formData.bill_reference ||
+      formData.bill_reference_date !== originalData.formData.bill_reference_date ||
+      formData.date !== originalData.formData.date ||
       formData.staff_id !== originalData.formData.staff_id ||
+      formData.vendor_name !== originalData.formData.vendor_name ||
+      formData.contact_number !== originalData.formData.contact_number ||
+      formData.email_id !== originalData.formData.email_id ||
+      formData.address !== originalData.formData.address ||
+      formData.address_2 !== originalData.formData.address_2 ||
+      formData.city !== originalData.formData.city ||
+      formData.state !== originalData.formData.state ||
+      formData.gst_number !== originalData.formData.gst_number ||
+      formData.pin_code !== originalData.formData.pin_code ||
       formData.transport_name !== originalData.formData.transport_name ||
       formData.vehicle_number !== originalData.formData.vehicle_number ||
       formData.transport_cost !== originalData.formData.transport_cost ||
@@ -1353,11 +1392,11 @@ export default function PurchaseCreate() {
     const vendorChanged = vendorIdToSave !== originalData.vendor_id;
 
     // Compare items (check length and content)
-    const itemsChanged = 
+    const itemsChanged =
       selectedProducts.length !== originalData.items.length ||
       selectedProducts.some((item, index) => {
         const origItem = originalData.items[index];
-        return !origItem || 
+        return !origItem ||
           item.product_id !== origItem.product_id ||
           item.qty !== origItem.qty ||
           item.rate !== origItem.rate ||
@@ -1444,6 +1483,7 @@ export default function PurchaseCreate() {
       // For POST requests, include invoice_number as it's required for creation
       const baseSubmitData = {
         bill_reference: formData.bill_reference,
+        bill_reference_date: formData.bill_reference_date,
         staff_id: formData.staff_id,
         date: formData.date,
         vendor_id: vendorIdToSave,
@@ -1499,14 +1539,14 @@ export default function PurchaseCreate() {
             model_id: modelId,
             car_model: carModelNames || item.car_model || '',
             part: item.part_number,
-            qty: item.qty,
-            rate: item.rate,
-            gst_percentage: item.gst_percentage || 0,
-            cgst: item.cgst || 0,
-            sgst: item.sgst || 0,
-            igst: item.igst || 0,
-            tax: item.tax || 0,
-            total: item.total,
+            qty: item.qty.toString(),
+            rate: item.rate.toString(),
+            gst_percentage: (item.gst_percentage || 0).toString(),
+            cgst: (item.cgst || 0).toString(),
+            sgst: (item.sgst || 0).toString(),
+            igst: (item.igst || 0).toString(),
+            tax: (item.tax || 0).toString(),
+            total: item.total.toString(),
           };
         }),
         descriptions: formData.descriptions,
@@ -1517,7 +1557,7 @@ export default function PurchaseCreate() {
         total_sgst: parseFloat(formData.total_sgst) || 0,
         total_igst: parseFloat(formData.total_igst) || 0,
         notes: formData.notes,
-        total_tax: totalTax,
+        total_tax: totalTax.toString(),
         payment_status: formData.payment_status || 0,
         payment_mode: formData.payment_mode || 0,
       };
@@ -1598,6 +1638,18 @@ export default function PurchaseCreate() {
 
   return (
     <div className="space-y-3">
+      {/* Edit Data Loading Spinner */}
+      {editDataLoading && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+            <Loader className="w-8 h-8 animate-spin text-blue-400" />
+            <div className="text-center">
+              <p className="text-slate-200 font-medium">Loading Purchase Data</p>
+              <p className="text-slate-400 text-sm">Please wait while we fetch the purchase details...</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         {/* Return Warning Banner */}
@@ -1655,9 +1707,10 @@ export default function PurchaseCreate() {
                       type="text"
                       value={formData.invoice_number}
                       onChange={(e) => handleInputChange('invoice_number', e.target.value)}
-                      className="input w-full"
+                      className={`input w-full ${isEditMode ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                       placeholder="Enter invoice number"
-                      disabled={invoiceNumberLoading}
+                      disabled={invoiceNumberLoading || isEditMode}
+                      readOnly={isEditMode}
                     />
                   )}
                   {errors.invoice_number && <p className="text-red-400 text-xs mt-1">{errors.invoice_number}</p>}
@@ -2532,15 +2585,15 @@ export default function PurchaseCreate() {
                     </tr>
 
                     {/* Added Products Rows */}
-                    {selectedProducts.map((product, index) => {
+                    {selectedProducts.map((product, arrayIndex) => {
                       const isFullyReturned = product.is_fully_returned;
-                      const hasReturns = product.returned_qty && product.returned_qty > 0;
-                      const availableQty = product.available_qty || product.qty;
-
+                      const hasReturns = typeof product.returned_qty === 'number' && product.returned_qty > 0;
+                      const serialNumber = `${arrayIndex + 1}`; // Temp variable for proper SN numbering
+                      console.log(product, arrayIndex, serialNumber)
                       return (
-                        <tr key={product.id} className={`${editingRowId === product.id ? 'bg-yellow-900' : isFullyReturned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
-                          <td className="px-2 py-2 text-center text-xs text-slate-300">
-                            {index + 1}
+                        <tr key={`${product.id}-${arrayIndex}`} className={`${editingRowId === product.id ? 'bg-yellow-900' : isFullyReturned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
+                          <td className="px-2 py-2 text-center text-xs text-slate-300" id="idx">
+                            {serialNumber}
                             {isFullyReturned && (
                               <div className="text-red-400 text-xs font-bold">🔒</div>
                             )}
@@ -2551,11 +2604,6 @@ export default function PurchaseCreate() {
                           <td className="px-2 py-2 text-xs text-slate-200">
                             <div className="space-y-1">
                               <div>{editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}</div>
-                              {hasReturns && (
-                                <div className="text-xs text-slate-400">
-                                  Original: {product.original_qty || product.qty} | Returned: {product.returned_qty} | Available: {availableQty}
-                                </div>
-                              )}
                             </div>
                           </td>
                         {/* <td className="px-2 py-2 text-xs text-slate-200">
@@ -2638,9 +2686,8 @@ export default function PurchaseCreate() {
                               <td className="px-2 py-2 text-center w-24">
                                 <input
                                   type="number"
-                                  min="1"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="1"
+                                  placeholder="0"
                                   value={editingRowData?.qty || ''}
                                   onChange={(e) => {
                                     const newQty = e.target.value;
@@ -2655,13 +2702,13 @@ export default function PurchaseCreate() {
 
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        qty: parseFloat(newQty) || 1,
+                                        qty: parseFloat(newQty) || 0,
                                         total: total
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        qty: parseFloat(newQty) || 1
+                                        qty: parseFloat(newQty) || 0
                                       } : null);
                                     }
                                   }}
@@ -3025,7 +3072,7 @@ export default function PurchaseCreate() {
                     <tfoot className="bg-slate-700">
                       <tr className="border-t border-slate-600">
                         {/* Empty cells for SN, PRODUCT NAME, CAR MODELS, PART NO */}
-                        <td colSpan="4" className="px-2 py-2"></td>
+                        <td colSpan={4} className="px-2 py-2"></td>
 
                         {/* Quantity Total aligned with QTY column */}
                         <td className="px-2 py-2 text-center font-semibold text-slate-200">
