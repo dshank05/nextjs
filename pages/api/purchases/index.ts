@@ -573,14 +573,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           car_model: item.car_model || '',
           vendor_id: parseInt(vendor_id),
           part: item.part || '',
-          qty: item.qty,
-          rate: item.rate,
-          subtotal: item.total,
-          gst_percentage: item.gst_percentage || 0,
-          cgst: item.cgst || 0,
-          sgst: item.sgst || 0,
-          igst: item.igst || 0,
-          tax: item.tax || 0,
+          qty: parseFloat(item.qty),
+          rate: parseFloat(item.rate),
+          subtotal: parseFloat(item.total),
+          gst_percentage: parseFloat(item.gst_percentage) || 0,
+          cgst: parseFloat(item.cgst) || 0,
+          sgst: parseFloat(item.sgst) || 0,
+          igst: parseFloat(item.igst) || 0,
+          tax: parseFloat(item.tax) || 0,
           fy: currentFy,
           invoice_date: invoiceDate
         };
@@ -603,7 +603,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
               stock: {
                 increment: validatedQty
               },
-              latest_purchase_rate: item.rate,
+              latest_purchase_rate: parseFloat(item.rate) || 0,
               last_purchase_date: invoiceDate
             }
           });

@@ -740,7 +740,7 @@ model purchase_returns {
   return_date                Int
   total_amount               Float
   total_tax                  Float
-  status                     String                  @default("Completed") @db.VarChar(20)
+  status                     Int                     @default(1)
   notes                      String?                 @db.Text
   fy                         Int
   payment_status             Int?                    @default(0) // 0=Unpaid/Pending Refund, 1=Paid/Refunded

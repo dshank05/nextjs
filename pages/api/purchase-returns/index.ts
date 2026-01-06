@@ -50,6 +50,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const searchNum = parseInt(searchStr);
       where.OR = [
         !isNaN(searchNum) ? { id: searchNum } : undefined,
+        { return_no: { contains: searchStr } },  // Add return_no search
         { notes: { contains: searchStr } },
       ].filter(Boolean) // Remove undefined values
     }
@@ -59,9 +60,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       where.fy = parseInt(fy as string)
     }
 
-    // Status filter
+    // Status filter - convert UI strings to DB integers
     if (status && status !== '') {
-      where.status = status as string
+      where.status = parseInt(status as string);
     }
 
     // Amount range filters
@@ -269,17 +270,26 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         console.warn('Invalid date format for return:', returnRecord.return_date, error)
       }
 
+      // Get all invoice numbers for this return (from return items)
+      const allInvoiceNumbers = invoiceNumbersMap.get(returnRecord.id)
+      const invoiceNumbersArray = allInvoiceNumbers ? Array.from(allInvoiceNumbers).sort() : []
+
+      // Join with commas, or use single invoice, or undefined
+      const displayInvoiceNo = invoiceNumbersArray.length > 0
+        ? invoiceNumbersArray.join(', ')
+        : purchase?.invoice_no || undefined
+
       return {
         id: returnRecord.id,
         return_no: `PR-${String(returnRecord.id).padStart(3, '0')}`, // Generate return number
-        invoice_no: purchase?.invoice_no || undefined, // Invoice number from related purchase
+        invoice_no: displayInvoiceNo, // Show all invoice numbers joined with commas
         vendor_name: vendor?.vendor_name || 'Unknown Vendor',
         vendor_gstin: vendor?.tax_id || '',
         vendor_address: vendor?.address || '',
         total_amount: returnRecord.total_amount || 0,
         total_tax: returnRecord.total_tax || 0,
         refund_amount: returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax),
-        status: returnRecord.status || 'Completed',
+        status: returnRecord.status || 1,
         payment_status: returnRecord.payment_status ?? 0,
         payment_mode: returnRecord.payment_mode ?? 1,
         payment_date: returnRecord.payment_date,
