@@ -725,15 +725,17 @@ export default function PurchaseCreate() {
   };
 
   const fetchProducts = async (
-    modelFilter: string = '', 
-    searchTerm: string = '', 
-    categoryFilter: string = '', 
-    subcategoryFilter: string = '', 
+    modelFilter: string = '',
+    searchTerm: string = '',
+    categoryFilter: string = '',
+    subcategoryFilter: string = '',
     companyFilter: string = ''
   ) => {
     setProductsLoading(true);
     try {
       const params = new URLSearchParams();
+      // Always fetch all products for side panel (no pagination limit)
+      params.append('fetchAll', 'true');
       if (modelFilter) params.append('modelFilter', modelFilter);
       if (searchTerm) params.append('search', searchTerm);
       if (categoryFilter) params.append('categoryFilter', categoryFilter);
@@ -1936,7 +1938,7 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">VEHICLE NUMBER</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BOX Quantity</label>
                   <input
                     type="text"
                     value={formData.vehicle_number}

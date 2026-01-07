@@ -669,7 +669,7 @@ export default function InvoiceCCreate() {
   };
 
   const fetchProducts = async (
-    modelFilter: string = '', 
+    modelFilter: string = '',
     searchTerm: string = '',
     categoryFilter: string = '',
     subcategoryFilter: string = '',
@@ -678,6 +678,8 @@ export default function InvoiceCCreate() {
     setProductsLoading(true);
     try {
       const params = new URLSearchParams();
+      // Always fetch all products for side panel (no pagination limit)
+      params.append('fetchAll', 'true');
       if (modelFilter) params.append('modelFilter', modelFilter);
       if (searchTerm) params.append('search', searchTerm);
       if (categoryFilter) params.append('categoryFilter', categoryFilter);

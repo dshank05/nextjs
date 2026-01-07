@@ -122,6 +122,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const {
       page = '1',
       limit = '50',
+      fetchAll = 'false',
       search = '',
       category = '',
       includeInactive = 'false',
@@ -139,7 +140,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     const pageNum = parseInt(page as string);
     const limitNum = parseInt(limit as string);
-    const skip = (pageNum - 1) * limitNum;
+    const isFetchAll = fetchAll === 'true';
+    const skip = isFetchAll ? 0 : (pageNum - 1) * limitNum;
+    const actualLimit = isFetchAll ? undefined : limitNum;
 
     const where: any = {};
     if (includeInactive !== 'true') where.is_active = true;
@@ -240,6 +243,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Use raw SQL only for low stock filter
+      const limitClause = isFetchAll ? '' : `LIMIT ${limitNum} OFFSET ${skip}`;
       const lowStockProducts = await prisma.$queryRaw`
         SELECT p.*, g.rate as gst_rate_value
         FROM product p
@@ -254,7 +258,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           ${modelConditions}
           ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
         ORDER BY p.id DESC
-        LIMIT ${limitNum} OFFSET ${skip}
+        ${limitClause}
       ` as any[];
 
       // Get total count for low stock
@@ -276,14 +280,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total = parseInt(totalResult[0].count);
     } else {
       // Normal Prisma query for all other cases (including model filter)
+      const queryOptions: any = {
+        where,
+        orderBy: { id: 'desc' },
+        include: { gst_rate: true },
+      };
+
+      // Only add pagination if not fetching all
+      if (!isFetchAll) {
+        queryOptions.skip = skip;
+        queryOptions.take = limitNum;
+      }
+
       [products, total] = await Promise.all([
-        prisma.product.findMany({
-          where,
-          skip,
-          take: limitNum,
-          orderBy: { id: 'desc' },
-          include: { gst_rate: true },
-        }),
+        prisma.product.findMany(queryOptions),
         prisma.product.count({ where }),
       ]);
     }
