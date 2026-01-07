@@ -284,12 +284,12 @@ export default function PurchaseReturnVendorCreatePage() {
       
       setVendor(selectedVendor);
 
-      // Set default 3-month date range
+      // Set default 1-month date range
       const today = new Date();
-      const threeMonthsAgo = new Date(today);
-      threeMonthsAgo.setMonth(today.getMonth() - 3);
+      const oneMonthAgo = new Date(today);
+      oneMonthAgo.setMonth(today.getMonth() - 1);
 
-      const fromDate = threeMonthsAgo.toISOString().split('T')[0];
+      const fromDate = oneMonthAgo.toISOString().split('T')[0];
       const toDate = today.toISOString().split('T')[0];
 
       setDateFrom(fromDate);
