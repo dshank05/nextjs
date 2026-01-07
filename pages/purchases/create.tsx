@@ -1938,7 +1938,7 @@ export default function PurchaseCreate() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">BOX Quantity</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">BOX QUANTITY</label>
                   <input
                     type="text"
                     value={formData.vehicle_number}
@@ -2338,31 +2338,31 @@ export default function PurchaseCreate() {
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.rate}
-                          onChange={(e) => {
-                            const newRate = e.target.value;
-                            const qty = parseInt(templateRow.qty) || 0;
-                            const rate = parseInt(newRate) || 0;
-                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                            onChange={(e) => {
+                              const newRate = e.target.value;
+                              const qty = parseFloat(templateRow.qty) || 0;
+                              const rate = parseFloat(newRate) || 0;
+                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
-                            if (qty > 0 && rate > 0) {
-                              // Calculate total = qty * rate
-                              const subtotal = qty * rate;
-                              const taxAmount = (subtotal * gstPercent) / 100;
-                              const total = subtotal + taxAmount;
+                              if (qty > 0 && rate > 0) {
+                                // Calculate total = qty * rate
+                                const subtotal = qty * rate;
+                                const taxAmount = (subtotal * gstPercent) / 100;
+                                const total = subtotal + taxAmount;
 
-                              setTemplateRow(prev => ({
-                                ...prev,
-                                rate: newRate,
-                                total: Math.round(total).toString()
-                              }));
-                            } else {
-                              setTemplateRow(prev => ({
-                                ...prev,
-                                rate: newRate,
-                                total: ''
-                              }));
-                            }
-                          }}
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  rate: newRate,
+                                  total: total.toFixed(2)
+                                }));
+                              } else {
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  rate: newRate,
+                                  total: ''
+                                }));
+                              }
+                            }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2402,8 +2402,8 @@ export default function PurchaseCreate() {
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
-                            const qty = parseInt(templateRow.qty) || 0;
-                            const enteredTotal = parseInt(newTotal) || 0;
+                            const qty = parseFloat(templateRow.qty) || 0;
+                            const enteredTotal = parseFloat(newTotal) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
                             if (qty > 0 && enteredTotal > 0) {
@@ -2416,7 +2416,7 @@ export default function PurchaseCreate() {
                               setTemplateRow(prev => ({
                                 ...prev,
                                 total: newTotal,
-                                rate: Math.round(rate).toString()
+                                rate: rate.toFixed(2)
                               }));
                             } else {
                               setTemplateRow(prev => ({
