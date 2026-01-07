@@ -3173,7 +3173,7 @@ export default function PurchaseCreate() {
                     placeholder="0"
                   />
                 </div>
-                <div>
+                {/* <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                   <input
                     type="number"
@@ -3208,7 +3208,7 @@ export default function PurchaseCreate() {
                     className="input w-full"
                     placeholder="0"
                   />
-                </div>
+                </div> */}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                   <input
