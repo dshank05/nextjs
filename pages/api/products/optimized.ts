@@ -402,7 +402,7 @@ async function handler(
       }
 
       const carModelsDisplay = carModelNames.join(', ') || undefined;
-      const latestPurchaseRate = purchaseRates.get(product.id.toString()) || product.opening_rate || 0;
+      const latestPurchaseRate = purchaseRates.get(product.id.toString()) || product.latest_purchase_rate || product.opening_rate || 0;
 
       return {
         id: product.id,
