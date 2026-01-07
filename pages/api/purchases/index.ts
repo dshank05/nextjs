@@ -474,8 +474,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal +
       parseFloat(packing_forwarding_total?.toString()) +
-      parseFloat(req.body.transport_cost?.toString()) +
       parseFloat(total_tax?.toString())
+    // Note: Freight (transport_cost) is stored separately but NOT included in total
 
     // ===== STEP 4: OPTIMIZED DATABASE TRANSACTION =====
     const purchase = await prisma.$transaction(async (tx) => {
