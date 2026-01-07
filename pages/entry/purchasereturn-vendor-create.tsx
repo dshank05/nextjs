@@ -74,6 +74,9 @@ export default function PurchaseReturnVendorCreatePage() {
   // Ref to track if we're initializing vendor (to prevent multiple API calls)
   const isInitializingVendor = useRef(false);
 
+  // Ref to track current abort controller for request cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
@@ -127,26 +130,40 @@ export default function PurchaseReturnVendorCreatePage() {
   // Selected items for return
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedReturnItem>>(new Map());
 
-  // Debounced bill search effect (API call)
+  // Consolidated search and filter effect (API call)
   useEffect(() => {
     // Skip if no vendor selected
     if (!vendor?.id) return;
-    
+
     // Skip if currently loading edit data
     if (isLoadingEditData) return;
-    
+
     // Skip if in edit mode and bills already loaded from session storage
     if (isEditMode && bills.length > 0) return;
-    
+
     // Skip if we're initializing vendor (prevents duplicate calls)
     if (isInitializingVendor.current) return;
+
+    // Cancel any previous request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create new abort controller for this request
+    abortControllerRef.current = new AbortController();
 
     const timer = setTimeout(() => {
       loadVendorBills(vendor.id, 1, billSearchTerm, dateFrom, dateTo);
     }, 300);
 
-    return () => clearTimeout(timer);
-  }, [billSearchTerm, dateFrom, dateTo, vendor?.id, isLoadingEditData, isEditMode, bills.length]);
+    return () => {
+      clearTimeout(timer);
+      // Cancel request if component unmounts or effect runs again
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [billSearchTerm, itemSearchTerm, dateFrom, dateTo, vendor?.id, isLoadingEditData, isEditMode]);
 
   // Load data on mount
   useEffect(() => {
@@ -192,6 +209,7 @@ export default function PurchaseReturnVendorCreatePage() {
         page: page.toString(),
         limit: '50', // Increased for bulk returns
         ...(search && { search }),
+        ...(itemSearchTerm && { item_search: itemSearchTerm }), // NEW: Item search parameter
         ...(fromDate && { from_date: fromDate }),
         ...(toDate && { to_date: toDate })
       });
@@ -785,40 +803,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
             {/* Enhanced Controls Row */}
             {vendor && (
-              <div className="mt-4 flex items-center justify-between bg-slate-800/50 rounded-lg p-4">
-                <div className="flex items-center gap-4">
-                  <div className="text-sm text-slate-300">
-                    Loaded: {loadedDateRange.from ? new Date(loadedDateRange.from).toLocaleDateString() : ''} - {loadedDateRange.to ? new Date(loadedDateRange.to).toLocaleDateString() : ''} ({allLoadedBills.length} bills, {allLoadedBills.reduce((sum, bill) => sum + bill.items.length, 0)} items)
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (!vendor?.id || !loadedDateRange.from) return;
-
-                      // Calculate 3 months earlier
-                      const currentFrom = new Date(loadedDateRange.from);
-                      const newFrom = new Date(currentFrom);
-                      newFrom.setMonth(currentFrom.getMonth() - 3);
-                      const newFromStr = newFrom.toISOString().split('T')[0];
-
-                      await loadVendorBills(vendor.id, 1, '', newFromStr, loadedDateRange.from, true);
-                    }}
-                    disabled={isLoadingMore}
-                    className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded flex items-center gap-2"
-                  >
-                    {isLoadingMore ? (
-                      <>
-                        <div className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                        Loading...
-                      </>
-                    ) : (
-                      <>
-                        <Calendar className="w-3 h-3" />
-                        Load More Bills
-                      </>
-                    )}
-                  </button>
-                </div>
-
+              <div className="mt-4 flex items-center justify-end bg-slate-800/50 rounded-lg p-4">
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                     <input
@@ -942,7 +927,7 @@ export default function PurchaseReturnVendorCreatePage() {
                                           type="number"
                                           step="0.01"
                                           min="0"
-                                          value={selectedItem?.unit_price || item.unit_price}
+                                          value={selectedItem ? selectedItem.unit_price : item.unit_price}
                                           onChange={(e) => {
                                             const newPrice = parseFloat(e.target.value) || 0;
                                             if (selectedItem) {

@@ -21,6 +21,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       page = '1',
       limit = '50', // Increased default for bulk returns
       search = '',
+      item_search = '', // NEW: Search within product names, part numbers
       from_date = '',
       to_date = ''
     } = req.query
@@ -55,12 +56,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return_status: { not: 2 } // Exclude fully returned purchases
     }
 
-    // Add search filter
+    // Add search filter - handle integer vs string fields properly
     if (search) {
+      const searchStr = Array.isArray(search) ? search[0] : search;
+      const searchNum = parseInt(searchStr);
       purchaseWhere.OR = [
-        { invoice_no: { contains: search as string } },
-        { bill_reference: { contains: search as string } }
-      ]
+        !isNaN(searchNum) ? { invoice_no: searchNum } : undefined, // Exact match for invoice numbers
+        { bill_reference: { contains: searchStr } } // Contains for bill references
+      ].filter(Boolean) // Remove undefined values
     }
 
     // Add date range filter

@@ -4,14 +4,10 @@ const prisma = new PrismaClient();
 
 const returnReasons = [
   // Purchase return reasons
-  { reason_name: 'Manufacturing Defect', type: 'purchase' },
-  { reason_name: 'Wrong Item Shipped', type: 'purchase' },
-  { reason_name: 'Poor Quality', type: 'purchase' },
-  { reason_name: 'Damaged in Transit', type: 'purchase' },
-  { reason_name: 'Expired Product', type: 'purchase' },
   { reason_name: 'Incorrect Quantity', type: 'purchase' },
+  { reason_name: 'Wrong Item Shipped', type: 'purchase' },
+  { reason_name: 'Manufacturing Defect', type: 'purchase' },
   { reason_name: 'Not as Described', type: 'purchase' },
-  { reason_name: 'Packaging Issues', type: 'purchase' },
 
   // Sale return reasons
   { reason_name: 'Customer Dissatisfaction', type: 'sale' },
