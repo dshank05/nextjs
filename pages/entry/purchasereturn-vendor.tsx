@@ -178,7 +178,7 @@ export default function PurchaseReturnIndexPage() {
       const transformedReturns: PurchaseReturn[] = data.returns.map((ret: any) => ({
         id: ret.id,
         return_no: ret.return_no,
-        invoice_no: ret.purchase?.invoice_no || undefined, // Get invoice number from related purchase
+        invoice_no: ret.invoice_no, 
         return_date: ret.return_date ? new Date(ret.return_date * 1000).toISOString().split('T')[0] : '',
         vendor_id: 0, // Not needed in UI
         vendor_name: ret.vendor_name,

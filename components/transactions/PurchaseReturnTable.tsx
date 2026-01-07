@@ -520,7 +520,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                   {returnItem.return_no}
                 </td>
                 <td className="text-slate-300">
-                  {returnItem.invoice_no || 'N/A'}
+                  {returnItem.invoice_no}
                 </td>
                 <td className="text-slate-300">
                   <div className="font-medium">{returnItem.vendor_name}</div>
