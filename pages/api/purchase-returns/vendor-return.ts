@@ -198,7 +198,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           return_date: returnDateTimestamp,
           total_amount: totalAmount,
           total_tax: totalTax,
-          status: 'Completed',
+          status: 1,
           notes: return_notes || '',
           fy: financialYear,
           payment_status: paymentStatusValue,
