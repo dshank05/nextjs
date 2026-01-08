@@ -133,7 +133,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Get product details separately
+    // Get product details separately (including current stock)
     const productIds = Array.from(new Set(purchaseItems.map(item => item.product_id).filter(Boolean)))
     const products = await prisma.product.findMany({
       where: {
@@ -143,7 +143,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         id: true,
         display_name: true,
         part_no: true,
-        stock: true
+        stock: true  // ✅ Current stock for validation
       }
     })
 
@@ -192,7 +192,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           unit_price: item.rate || 0,
           tax_rate: item.gst_percentage || 0,
           bill_reference: purchase.bill_reference || '',
-          invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : ''
+          invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
+          current_stock: product?.stock || 0  // ✅ Add current stock from product table
         }
       }).filter(item => item.available_qty > 0) // Only include items with available quantity
 

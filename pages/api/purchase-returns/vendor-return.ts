@@ -39,6 +39,86 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // ✅ Validate quantities and stock
+    const returnQtyByProduct = new Map<number, number>();
+    const purchaseItemIds = items.map((item: any) => parseInt(item.purchase_item_id));
+
+    // Get purchase items to get product_ids
+    const purchaseItemsForValidation = await prisma.purchaseitems.findMany({
+      where: { id: { in: purchaseItemIds } },
+      select: {
+        id: true,
+        product_id: true
+      }
+    });
+
+    // Get unique product IDs
+    const productIds = Array.from(new Set(purchaseItemsForValidation.map(pi => pi.product_id).filter(Boolean)));
+    
+    // Fetch product details
+    const products = await prisma.product.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true,
+        stock: true,
+        product_name: true
+      }
+    });
+
+    // Build maps
+    const itemProductIdMap = new Map(
+      purchaseItemsForValidation.map(pi => [pi.id, pi.product_id])
+    );
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    // Validate each item
+    for (const item of items) {
+      const purchaseItemId = parseInt(item.purchase_item_id);
+      const productId = itemProductIdMap.get(purchaseItemId);
+      
+      if (!productId) {
+        return res.status(400).json({
+          message: `Purchase item not found: ${purchaseItemId}`
+        });
+      }
+
+      const product = productMap.get(productId);
+      if (!product) {
+        return res.status(400).json({
+          message: `Product not found for purchase item ${purchaseItemId}`
+        });
+      }
+      
+      // Check negative quantity
+      if (item.return_qty < 0) {
+        return res.status(400).json({
+          message: `Return quantity must be 0 or positive for ${product.product_name}, got: ${item.return_qty}`
+        });
+      }
+      
+      // Aggregate by product_id
+      const existing = returnQtyByProduct.get(productId) || 0;
+      returnQtyByProduct.set(productId, existing + item.return_qty);
+    }
+
+    // Check stock for each product
+    const returnQtyEntries = Array.from(returnQtyByProduct.entries());
+    for (const [productId, totalReturnQty] of returnQtyEntries) {
+      const product = productMap.get(productId);
+      
+      if (product && totalReturnQty > product.stock) {
+        return res.status(400).json({
+          message: `Cannot return ${totalReturnQty} units of "${product.product_name}". Only ${product.stock} units in stock. (Some units may have been sold)`,
+          error_code: 'INSUFFICIENT_STOCK',
+          details: {
+            product_name: product.product_name,
+            requested_qty: totalReturnQty,
+            current_stock: product.stock
+          }
+        });
+      }
+    }
+
     // Get current financial year
     const currentDate = new Date()
     const currentYear = currentDate.getFullYear()

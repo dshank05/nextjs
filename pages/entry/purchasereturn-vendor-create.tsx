@@ -42,6 +42,7 @@ interface PurchaseItem {
   invoice_date: string;
   return_qty?: number; // Added for edit mode
   return_reason_id?: number; // Added for edit mode
+  current_stock: number; // ✅ Current stock from product table
 }
 
 interface ReturnReasons {
@@ -607,6 +608,65 @@ export default function PurchaseReturnVendorCreatePage() {
       showSnackbar('warning', 'Please select at least one item to return');
       return;
     }
+
+    // ✅ Step 1: Aggregate return quantities by product_id
+    const returnQtyByProduct = new Map<number, { 
+      qty: number, 
+      name: string, 
+      current_stock: number 
+    }>();
+    
+    Array.from(selectedItems.values()).forEach(item => {
+      const existing = returnQtyByProduct.get(item.product_id);
+      
+      if (existing) {
+        // Product already exists, add to quantity
+        existing.qty += item.return_qty;
+      } else {
+        // First occurrence of this product
+        returnQtyByProduct.set(item.product_id, {
+          qty: item.return_qty,
+          name: item.product_name,
+          current_stock: item.current_stock
+        });
+      }
+    });
+
+    // ✅ Step 2: Validate each product against current stock
+    const stockIssues: Array<{name: string, returning: number, available: number}> = [];
+    
+    returnQtyByProduct.forEach((data, productId) => {
+      if (data.qty > data.current_stock) {
+        stockIssues.push({
+          name: data.name,
+          returning: data.qty,
+          available: data.current_stock
+        });
+      }
+    });
+    
+    // ✅ Step 3: Show error if any stock issues
+    if (stockIssues.length > 0) {
+      const errorMsg = stockIssues.map(issue => 
+        `${issue.name}: Returning ${issue.returning} but only ${issue.available} in stock`
+      ).join('\n');
+      
+      showSnackbar('error', `Insufficient stock:\n${errorMsg}`);
+      return;
+    }
+    
+    // ✅ Step 4: Check for negative quantities
+    const invalidItems = Array.from(selectedItems.values()).filter(
+      item => item.return_qty < 0
+    );
+    
+    if (invalidItems.length > 0) {
+      const itemNames = invalidItems.map(item => item.product_name).join(', ');
+      showSnackbar('error', `Invalid quantities. Must be 0 or positive for: ${itemNames}`);
+      return;
+    }
+    
+    // All validations passed - show confirmation modal
     setShowConfirmationModal(true);
   };
 
@@ -914,7 +974,6 @@ export default function PurchaseReturnVendorCreatePage() {
                                       <td className="px-4 py-3 text-center">
                                         <input
                                           type="number"
-                                          min="0"
                                           max={item.available_qty}
                                           value={selectedItem?.return_qty || ''}
                                           onChange={(e) => updateReturnQuantity(item.id, parseInt(e.target.value) || 0, item)}

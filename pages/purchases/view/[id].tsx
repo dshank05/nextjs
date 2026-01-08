@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2, FileText, Truck, Printer, FileSpreadsheet, Eye, DollarSign } from 'lucide-react';
+import { Edit, Eye, DollarSign } from 'lucide-react';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
@@ -546,7 +546,9 @@ export default function PurchaseView() {
                 }
               }}
             />
-            {(purchase as any).payment_summary && (purchase as any).payment_summary.remaining_amount > 0 && (
+            {(purchase as any).payment_summary && 
+             (purchase as any).payment_summary.remaining_amount > 0 && 
+             purchase.payment_status !== 1 && (
               <button
                 onClick={() => setShowQuickPaymentModal(true)}
                 className="btn-secondary flex items-center gap-2"
