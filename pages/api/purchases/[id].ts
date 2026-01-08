@@ -677,6 +677,7 @@ export default async function handler(
                     tax: parseFloat(newData.tax) || 0,
                     fy: updatedPurchase.fy,
                     invoice_date: updatedPurchase.invoice_date
+                  }
                 })
 
                 // Increase stock for new purchase
