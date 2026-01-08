@@ -355,7 +355,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
                 value={formData.mrp}
                 onChange={(e) => handleInputChange('mrp', e.target.value)}
                 className="input w-full"
-                placeholder="0.00"
+                placeholder="0"
               />
             </div>
 
@@ -367,7 +367,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
                 value={formData.discount}
                 onChange={(e) => handleInputChange('discount', e.target.value)}
                 className="input w-full"
-                placeholder="0.00"
+                placeholder="0"
               />
             </div>
           </div>
@@ -471,7 +471,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
                 value={formData.sale_price}
                 onChange={(e) => handleInputChange('sale_price', e.target.value)}
                 className="input w-full"
-                placeholder="0.00"
+                placeholder="0"
               />
             </div>
 
@@ -494,7 +494,7 @@ export const CreateProductModal = ({ isOpen, onClose, onSuccess, filterOptions }
                 value={formData.rate}
                 onChange={(e) => handleInputChange('rate', e.target.value)}
                 className="input w-full"
-                placeholder="0.00"
+                placeholder="0"
               />
             </div>
           </div>

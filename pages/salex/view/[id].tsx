@@ -341,7 +341,7 @@ export default function InvoiceCView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Total Tax:</span>
-              <span className="text-white font-medium">₹0.00</span>
+              <span className="text-white font-medium">₹0</span>
             </div>
             <div className="flex justify-between font-semibold">
               <span className="text-slate-400">Grand Total:</span>
@@ -349,15 +349,15 @@ export default function InvoiceCView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">CGST:</span>
-              <span className="text-white font-medium">₹0.00</span>
+              <span className="text-white font-medium">₹0</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">SGST:</span>
-              <span className="text-white font-medium">₹0.00</span>
+              <span className="text-white font-medium">₹0</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">IGST:</span>
-              <span className="text-white font-medium">₹0.00</span>
+              <span className="text-white font-medium">₹0</span>
             </div>
           </div>
 

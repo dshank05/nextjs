@@ -1434,7 +1434,7 @@ export default function InvoiceCCreate() {
                       }
                     }}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                   />
                 </div>
               </div>
@@ -1648,7 +1648,7 @@ export default function InvoiceCCreate() {
                           type="number"
                           
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.rate}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
@@ -1671,7 +1671,7 @@ export default function InvoiceCCreate() {
                           min="0"
                           step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.discount}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
@@ -1693,7 +1693,7 @@ export default function InvoiceCCreate() {
                           type="number"
 
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
@@ -2219,7 +2219,7 @@ export default function InvoiceCCreate() {
                       value={formData.discount}
                       onChange={(e) => handleInputChange('discount', e.target.value)}
                       className="input w-full"
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                   </div> */}
                 </div>
@@ -2242,7 +2242,7 @@ export default function InvoiceCCreate() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                     <div>
@@ -2259,7 +2259,7 @@ export default function InvoiceCCreate() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                     <div>
@@ -2276,7 +2276,7 @@ export default function InvoiceCCreate() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                   </div>

@@ -689,7 +689,7 @@ export default function ProductCreate() {
                   type="number"
                   value={formData.mrp}
                   onChange={(e) => handleInputChange('mrp', e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0"
                 />
               </div>
 
@@ -699,7 +699,7 @@ export default function ProductCreate() {
                   type="number"
                   value={formData.discount}
                   onChange={(e) => handleInputChange('discount', e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0"
                 />
               </div>
 
@@ -853,7 +853,7 @@ export default function ProductCreate() {
                   type="number"
                   value={formData.opening_rate}
                   onChange={(e) => handleInputChange('opening_rate', e.target.value)}
-                  placeholder="0.00"
+                  placeholder="0"
                 />
               </div>
             </div>

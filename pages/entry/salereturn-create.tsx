@@ -1040,7 +1040,7 @@ export default function SaleReturnCreatePage() {
                                           className={`w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm ${
                                             !selectedItem ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
                                           }`}
-                                          placeholder="0.00"
+                                          placeholder="0"
                                           disabled={!selectedItem}
                                         />
                                       </td>

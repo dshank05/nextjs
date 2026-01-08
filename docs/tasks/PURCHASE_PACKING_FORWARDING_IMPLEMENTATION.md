@@ -63,7 +63,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
         value={formData.packing_forwarding_qty}
         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
         className="input w-full"
-        placeholder="0.00"
+        placeholder="0"
       />
     </div>
     <div>
@@ -74,7 +74,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
         value={formData.packing_forwarding_rate}
         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
         className="input w-full"
-        placeholder="0.00"
+        placeholder="0"
       />
     </div>
     <div>
@@ -86,7 +86,7 @@ This document tracks the implementation of Package & Forwarding functionality fo
         readOnly
         disabled
         className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-        placeholder="0.00"
+        placeholder="0"
       />
     </div>
   </div>
@@ -126,7 +126,7 @@ const grandTotal = useMemo(() => {
 ```json
 {
   "packing_forwarding_qty": 2.5,
-  "packing_forwarding_rate": 10.00,
+  "packing_forwarding_rate": 10,
   "packing_forwarding_total": 25.00
 }
 ```

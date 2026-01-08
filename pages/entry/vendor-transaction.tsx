@@ -445,7 +445,7 @@ export default function VendorTransactionEntry() {
                     step="0.01"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="0.00"
+                    placeholder="0"
                     className="input w-full"
                   />
                 </div>
@@ -552,7 +552,7 @@ export default function VendorTransactionEntry() {
                                   max={bill.outstanding_amount}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                                  placeholder="0.00"
+                                  placeholder="0"
                                 />
                               </td>
                             </tr>
@@ -576,7 +576,7 @@ export default function VendorTransactionEntry() {
                                   max={ret.outstanding_refund}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                                  placeholder="0.00"
+                                  placeholder="0"
                                 />
                               </td>
                             </tr>

@@ -652,6 +652,7 @@ export default async function handler(
 
                 // Use model_id directly from frontend
                 const modelId = newData.model_id ? parseInt(newData.model_id) : null;
+                const companyId = newData.company_id ? parseInt(newData.company_id) : null;
 
                 await tx.purchaseitems.create({
                   data: {
@@ -661,22 +662,21 @@ export default async function handler(
                     category_id: newData.category_id || product.product_category_id || null,
                     subcategory_id: newData.subcategory_id || product.product_subcategory_id || null,
                     model_id: modelId,
-                    company_id: newData.company_id || product.company_id || null,
+                    company_id: companyId,
                     car_model: newData.car_model || '',
                     vendor_id: updatedPurchase.vendor_id,
                     hsn: product.hsn || '',
                     part: newData.part || '',
-                    qty: newData.qty,
-                    rate: newData.rate,
-                    subtotal: newData.qty * newData.rate, // Base amount without tax
-                    gst_percentage: newData.gst_percentage || 0,
-                    cgst: newData.cgst || 0,
-                    sgst: newData.sgst || 0,
-                    igst: newData.igst || 0,
-                    tax: newData.tax || 0,
+                    qty: parseFloat(newData.qty),
+                    rate: parseFloat(newData.rate),
+                    subtotal: parseFloat(newData.qty) * parseFloat(newData.rate), // Base amount without tax
+                    gst_percentage: parseFloat(newData.gst_percentage) || 0,
+                    cgst: parseFloat(newData.cgst) || 0,
+                    sgst: parseFloat(newData.sgst) || 0,
+                    igst: parseFloat(newData.igst) || 0,
+                    tax: parseFloat(newData.tax) || 0,
                     fy: updatedPurchase.fy,
                     invoice_date: updatedPurchase.invoice_date
-                  }
                 })
 
                 // Increase stock for new purchase
@@ -706,16 +706,16 @@ export default async function handler(
                   await tx.purchaseitems.update({
                     where: { id: existingData.id },
                     data: {
-                      qty: newData.qty,
-                      rate: newData.rate,
-                      subtotal: newData.qty * newData.rate, // Base amount without tax
+                      qty: parseFloat(newData.qty),
+                      rate: parseFloat(newData.rate),
+                      subtotal: parseFloat(newData.qty) * parseFloat(newData.rate), // Base amount without tax
                       name_of_product: newData.name_of_product,
                       car_model: newData.car_model,
-                      gst_percentage: newData.gst_percentage || 0,
-                      cgst: newData.cgst || 0,
-                      sgst: newData.sgst || 0,
-                      igst: newData.igst || 0,
-                      tax: newData.tax || 0
+                      gst_percentage: parseFloat(newData.gst_percentage) || 0,
+                      cgst: parseFloat(newData.cgst) || 0,
+                      sgst: parseFloat(newData.sgst) || 0,
+                      igst: parseFloat(newData.igst) || 0,
+                      tax: parseFloat(newData.tax) || 0
                     }
                   })
 

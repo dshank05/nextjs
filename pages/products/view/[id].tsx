@@ -273,15 +273,15 @@ export default function ProductView() {
             {/* Row 3 */}
             <div className="flex justify-between">
               <span className="text-slate-400">MRP:</span>
-              <span className="text-white font-medium">₹{product.mrp || '0.00'}</span>
+              <span className="text-white font-medium">₹{product.mrp || '0'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Discount:</span>
-              <span className="text-white font-medium">₹{product.discount || '0.00'}</span>
+              <span className="text-white font-medium">₹{product.discount || '0'}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Margin:</span>
-              <span className="text-white font-medium">₹{product.margin || '0.00'}</span>
+              <span className="text-white font-medium">₹{product.margin || '0'}</span>
             </div>
 
             {/* Row 4 */}

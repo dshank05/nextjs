@@ -1715,7 +1715,7 @@ export default function InvoiceCreate() {
                     value={formData.commission}
                     onChange={(e) => handleInputChange('commission', e.target.value)}
                     className="input w-full"
-                    placeholder="0.00"
+                    placeholder="0"
                     onWheel={(e) => e.preventDefault()}
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -1968,7 +1968,7 @@ export default function InvoiceCreate() {
                           type="number"
 
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.rate}
                           onChange={(e) => {
                             setTemplateRow(prev => ({
@@ -1990,7 +1990,7 @@ export default function InvoiceCreate() {
                             type="number"
 
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                            placeholder="0.00"
+                            placeholder="0"
                             value={templateRow.gst}
                             onChange={(e) => {
                               setTemplateRow(prev => ({
@@ -2014,7 +2014,7 @@ export default function InvoiceCreate() {
                             min="0"
                             step="0.01"
                             className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                            placeholder="0.00"
+                            placeholder="0"
                             value={templateRow.discount}
                             onChange={(e) => {
                               setTemplateRow(prev => ({
@@ -2036,7 +2036,7 @@ export default function InvoiceCreate() {
                           type="number"
 
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0.00"
+                          placeholder="0"
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
@@ -2558,7 +2558,7 @@ export default function InvoiceCreate() {
                           readOnly
                           disabled
                           className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </div>
                       <div>
@@ -2570,7 +2570,7 @@ export default function InvoiceCreate() {
                           readOnly
                           disabled
                           className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </div>
                       <div>
@@ -2582,7 +2582,7 @@ export default function InvoiceCreate() {
                           readOnly
                           disabled
                           className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </div>
                       <div className="grid gap-4">
@@ -2642,7 +2642,7 @@ export default function InvoiceCreate() {
                         value={formData.packing_forwarding_qty}
                         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                     <div>
@@ -2653,7 +2653,7 @@ export default function InvoiceCreate() {
                         value={formData.packing_forwarding_rate}
                         onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                     <div>
@@ -2670,7 +2670,7 @@ export default function InvoiceCreate() {
                           }
                         }}
                         className="input w-full"
-                        placeholder="0.00"
+                        placeholder="0"
                       />
                     </div>
                   </div>
