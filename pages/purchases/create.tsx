@@ -264,7 +264,7 @@ export default function PurchaseCreate() {
         if (!prev.total.trim()) {
           return {
             ...prev,
-            total: total.toFixed(2)
+            total: Math.round(total).toString()
           };
         }
         // If user has entered something, leave it as-is
@@ -688,9 +688,9 @@ export default function PurchaseCreate() {
     // Auto-populate tax fields - ensure they always get updated
     setFormData(prev => ({
       ...prev,
-      total_cgst: totalCgst.toFixed(2),
-      total_sgst: totalSgst.toFixed(2),
-      total_igst: totalIgst.toFixed(2)
+      total_cgst: Math.round(totalCgst).toString(),
+      total_sgst: Math.round(totalSgst).toString(),
+      total_igst: Math.round(totalIgst).toString()
     }));
   }, [selectedProducts, isEditMode, isInitialDataLoaded]);
 
@@ -1944,7 +1944,7 @@ export default function PurchaseCreate() {
                     value={formData.vehicle_number}
                     onChange={(e) => handleInputChange('vehicle_number', e.target.value)}
                     className="input w-full"
-                    placeholder="Enter vehicle number"
+                    placeholder="Enter box quantity"
                   />
                 </div>
                 <div>
@@ -2416,7 +2416,7 @@ export default function PurchaseCreate() {
                               setTemplateRow(prev => ({
                                 ...prev,
                                 total: newTotal,
-                                rate: rate.toFixed(2)
+                                rate: rate.toString()
                               }));
                             } else {
                               setTemplateRow(prev => ({
@@ -2743,7 +2743,7 @@ export default function PurchaseCreate() {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
                                         rate: parseInt(newRate) || 0,
-                                        total: Math.round(total)
+                                        total: total
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
@@ -3225,7 +3225,7 @@ export default function PurchaseCreate() {
                         setFormData(prev => ({
                           ...prev,
                           packing_forwarding_total: newTotal,
-                          packing_forwarding_rate: Math.round(rate).toString()
+                          packing_forwarding_rate: rate.toString()
                         }));
                       } else {
                         setFormData(prev => ({
@@ -3261,7 +3261,7 @@ export default function PurchaseCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">TAX</label>
                       <input
                         type="number"
-                        value={(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0')).toFixed(2)}
+                        value={Math.round(parseFloat(formData.total_cgst || '0') + parseFloat(formData.total_sgst || '0') + parseFloat(formData.total_igst || '0'))}
                         readOnly
                         disabled
                         className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
