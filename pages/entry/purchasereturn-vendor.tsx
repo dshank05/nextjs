@@ -38,6 +38,7 @@ export default function PurchaseReturnIndexPage() {
 
   // Define filter type
   type ReturnFilterState = {
+    returnNoFilter: string;
     vendorFilter: string;
     statusFilter: string;
     dateFrom: string;
@@ -53,8 +54,9 @@ export default function PurchaseReturnIndexPage() {
   };
 
   // Create persistent filter state using use-storage-state (sessionStorage - clears on tab close)
-  const [currentFilters, setCurrentFilters] = useStorageState<ReturnFilterState>('purchase-returns-page-filters-v2', {
+  const [currentFilters, setCurrentFilters] = useStorageState<ReturnFilterState>('purchase-returns-page-filters-v3', {
     defaultValue: {
+      returnNoFilter: '',
       vendorFilter: '',
       statusFilter: 'all',
       dateFrom: '',
@@ -86,7 +88,6 @@ export default function PurchaseReturnIndexPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
   // Debounced fetch function with abort controller
   const debouncedFetchReturns = useCallback((filtersToUse?: typeof currentFilters) => {
@@ -109,10 +110,10 @@ export default function PurchaseReturnIndexPage() {
     }, 300); // 300ms debounce delay
   }, [currentFilters]); // Add currentFilters to dependencies
 
-  // Fetch returns when pagination or search change (but not filters - handled by handleApplyFilters)
+  // Fetch returns when pagination changes (filters handled by handleApplyFilters)
   useEffect(() => {
     debouncedFetchReturns();
-  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchReturns]);
+  }, [pagination.page, pagination.limit, debouncedFetchReturns]);
 
   // Cleanup: Cancel any pending requests and timeouts when component unmounts
   useEffect(() => {
@@ -146,19 +147,19 @@ export default function PurchaseReturnIndexPage() {
       const queryParams = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        vendor: filtersToUse.vendorFilter,
+        search: filtersToUse.returnNoFilter || '',
+        vendor: filtersToUse.vendorFilter || '',
         status: filtersToUse.statusFilter !== 'all' ? filtersToUse.statusFilter : '',
-        dateFrom: filtersToUse.dateFrom,
-        dateTo: filtersToUse.dateTo,
-        amountMin: filtersToUse.amountMin,
-        amountMax: filtersToUse.amountMax,
-        uid: filtersToUse.uidFilter,
-        itemCount: filtersToUse.itemCount,
-        paymentMode: filtersToUse.paymentMode,
-        packingForwardingTotal: filtersToUse.packingForwardingTotal,
-        sortBy: filtersToUse.sortBy,
-        sortOrder: filtersToUse.sortOrder
+        dateFrom: filtersToUse.dateFrom || '',
+        dateTo: filtersToUse.dateTo || '',
+        amountMin: filtersToUse.amountMin || '',
+        amountMax: filtersToUse.amountMax || '',
+        uid: filtersToUse.uidFilter || '',
+        itemCount: filtersToUse.itemCount || '',
+        paymentMode: filtersToUse.paymentMode || '',
+        packingForwardingTotal: filtersToUse.packingForwardingTotal || '',
+        sortBy: filtersToUse.sortBy || 'return_date',
+        sortOrder: filtersToUse.sortOrder || 'desc'
       });
 
       const response = await fetch(`/api/purchase-returns?${queryParams}`, {
@@ -285,8 +286,6 @@ export default function PurchaseReturnIndexPage() {
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
         onExport={() => {}} // Export handled internally by PurchaseReturnTable
@@ -294,6 +293,7 @@ export default function PurchaseReturnIndexPage() {
         sortBy={currentFilters.sortBy as 'return_no' | 'vendor_name' | 'total_amount' | 'return_date' | 'status' | 'item_count'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         initialFilters={{
+          returnNoFilter: currentFilters.returnNoFilter,
           vendorFilter: currentFilters.vendorFilter,
           statusFilter: currentFilters.statusFilter,
           dateFrom: currentFilters.dateFrom,

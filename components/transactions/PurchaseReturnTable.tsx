@@ -43,13 +43,12 @@ interface PurchaseReturnTableProps {
   pagination: Pagination;
   loading: boolean;
   onPageChange: (newPage: number) => void;
-  searchTerm: string;
-  onSearchChange: (value: string) => void;
   itemsPerPage: number;
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
   onExport?: (exportType: 'excel' | 'pdf') => void;
   onApplyFilters?: (filters: {
+    returnNoFilter: string;
     vendorFilter: string;
     statusFilter: string;
     dateFrom: string;
@@ -67,6 +66,7 @@ interface PurchaseReturnTableProps {
   sortBy?: SortField;
   sortOrder?: SortOrder;
   initialFilters?: {
+    returnNoFilter: string;
     vendorFilter: string;
     statusFilter: string;
     dateFrom: string;
@@ -88,8 +88,6 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
   pagination,
   loading,
   onPageChange,
-  searchTerm,
-  onSearchChange,
   itemsPerPage,
   onItemsPerPageChange,
   actionButton,
@@ -102,6 +100,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
 }) => {
   // Filter states - initialize with initialFilters if provided
   const [filters, setFilters] = useState({
+    returnNoFilter: initialFilters?.returnNoFilter || '',
     vendorFilter: initialFilters?.vendorFilter || '',
     statusFilter: initialFilters?.statusFilter || 'all',
     dateFrom: initialFilters?.dateFrom || '',
@@ -137,8 +136,8 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
   };
 
   const clearFilters = () => {
-    onSearchChange('');
     setFilters({
+      returnNoFilter: '',
       vendorFilter: '',
       statusFilter: 'all',
       dateFrom: '',
@@ -159,6 +158,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
     // Apply filters with new sort parameters (parent will update props)
     if (onApplyFilters) {
       const filterParams = {
+        returnNoFilter: filters.returnNoFilter,
         vendorFilter: filters.vendorFilter,
         statusFilter: filters.statusFilter,
         dateFrom: filters.dateFrom,
@@ -250,8 +250,20 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
           <ClearableInput
             type="text"
             placeholder="Enter return no"
-            value={searchTerm}
-            onChange={(e) => onSearchChange(e.target.value)}
+            value={filters.returnNoFilter}
+            onChange={(e) => {
+              const newValue = e.target.value;
+              setFilters(prev => ({ ...prev, returnNoFilter: newValue }));
+              // Auto-apply filter
+              if (onApplyFilters) {
+                onApplyFilters({
+                  ...filters,
+                  returnNoFilter: newValue,
+                  sortBy,
+                  sortOrder
+                });
+              }
+            }}
           />
         </div>
 
@@ -440,6 +452,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
               // Apply cleared filters
               if (onApplyFilters) {
                 onApplyFilters({
+                  returnNoFilter: '',
                   vendorFilter: '',
                   statusFilter: 'all',
                   dateFrom: '',
@@ -557,7 +570,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
 
         {returns.length === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">
-            {searchTerm || filters.vendorFilter || filters.dateFrom || filters.dateTo || filters.statusFilter !== 'all'
+            {filters.returnNoFilter || filters.vendorFilter || filters.dateFrom || filters.dateTo || filters.statusFilter !== 'all'
               ? 'No purchase returns found with the current filters.'
               : 'No purchase returns found'
             }

@@ -44,16 +44,39 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Build where clause
     const where: any = {}
 
-    // Search filter - search across return_no, vendor_name, notes
+    // Search filter - handle return numbers, IDs, and notes
     if (search) {
       const searchStr = Array.isArray(search) ? search[0] : search;
       const searchNum = parseInt(searchStr);
-      where.OR = [
-        !isNaN(searchNum) ? { id: searchNum } : undefined,
-        { return_no: { contains: searchStr } },  // Add return_no search
-        { notes: { contains: searchStr } },
-      ].filter(Boolean) // Remove undefined values
+      const searchConditions = [];
+
+      // If search looks like PR-XXX format, extract ID
+      if (searchStr.toUpperCase().startsWith('PR-')) {
+        const prMatch = searchStr.match(/^PR-(\d+)$/i);
+        if (prMatch) {
+          const returnId = parseInt(prMatch[1]);
+          if (!isNaN(returnId)) {
+            searchConditions.push({ id: returnId });
+          }
+        }
+      }
+
+      // Search by ID if it's a number
+      if (!isNaN(searchNum) && searchNum > 0) {
+        searchConditions.push({ id: searchNum });
+      }
+
+      // Search in notes
+      if (searchStr.trim()) {
+        searchConditions.push({ notes: { contains: searchStr } });
+      }
+
+      if (searchConditions.length > 0) {
+        where.OR = searchConditions;
+      }
     }
+
+
 
     // Financial year filter
     if (fy && fy !== '') {
@@ -328,12 +351,28 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Apply Invoice No filter (uid)
+    // Apply general search filter for vendor names (if search contains non-numeric, non-PR text)
+    if (search && search !== '') {
+      const searchStr = Array.isArray(search) ? search[0] : search;
+
+      // If search is not PR-XXX format and not a number, search in vendor names
+      if (searchStr.trim() && !searchStr.match(/^PR-/) && isNaN(parseInt(searchStr))) {
+        enhancedReturns = enhancedReturns.filter(ret =>
+          ret.vendor_name.toLowerCase().includes(searchStr.toLowerCase()) ||
+          (ret.notes && ret.notes.toLowerCase().includes(searchStr.toLowerCase()))
+        );
+      }
+    }
+
+    // Apply Invoice No filter (uid) - search within comma-separated invoice numbers
     if (uid && uid !== '') {
       const uidStr = Array.isArray(uid) ? uid[0] : uid;
-      enhancedReturns = enhancedReturns.filter(ret =>
-        ret.invoice_no && ret.invoice_no.toString().includes(uidStr)
-      );
+      enhancedReturns = enhancedReturns.filter(ret => {
+        if (!ret.invoice_no) return false;
+        // Split comma-separated invoice numbers and check if any match
+        const invoiceNumbers = ret.invoice_no.toString().split(',').map(inv => inv.trim());
+        return invoiceNumbers.some(inv => inv.includes(uidStr));
+      });
     }
 
     // Apply Item Count filter

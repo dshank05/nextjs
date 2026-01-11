@@ -189,6 +189,9 @@ const Layout = ({ children }: LayoutProps) => {
     if (router.pathname.startsWith('/purchases/')) {
       return 'PURCHASE';
     }
+    if(router.pathname.startsWith('/entry/purchasereturn-vendor-create')){
+      return 'PURCHASE RETURN'
+    }
 
     // Purchase Returns routes
     if (router.pathname.startsWith('/purchase-returns/')) {
