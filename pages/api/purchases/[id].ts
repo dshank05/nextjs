@@ -790,6 +790,29 @@ export default async function handler(
                 fy: existingPurchase.fy
               })
             }
+
+            // ✅ DELETE PAYMENT ALLOCATION RECORDS
+            const allocations = await prisma.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { payment_id: true }
+            });
+
+            await prisma.payment_allocations.deleteMany({
+              where: { purchase_id: purchaseId }
+            });
+
+            // Delete vendor_payments if no other allocations exist
+            for (const alloc of allocations) {
+              const remainingAllocs = await prisma.payment_allocations.count({
+                where: { payment_id: alloc.payment_id }
+              });
+              
+              if (remainingAllocs === 0) {
+                await prisma.vendor_payments.delete({
+                  where: { id: alloc.payment_id }
+                });
+              }
+            }
             
             // SECOND: Handle amount change if it occurred when unmarking
             if (oldTotal !== newTotal) {
@@ -859,6 +882,29 @@ export default async function handler(
               notes: notes,
               fy: existingPurchase.fy
             })
+
+            // ✅ CREATE PAYMENT ALLOCATION RECORDS
+            const payment = await prisma.vendor_payments.create({
+              data: {
+                vendor_id: existingPurchase.vendor_id,
+                payment_date: Math.floor(Date.now() / 1000),
+                payment_amount: newTotal,
+                payment_mode: parsedPaymentMode,
+                payment_type: 'BILL_SPECIFIC',
+                notes: `Payment for purchase ${existingPurchase.invoice_no}`,
+                fy: existingPurchase.fy
+              }
+            });
+
+            await prisma.payment_allocations.create({
+              data: {
+                payment_id: payment.id,
+                purchase_id: purchaseId,
+                allocated_amount: newTotal,
+                allocation_date: Math.floor(Date.now() / 1000),
+                notes: 'Allocated during purchase edit'
+              }
+            });
           }
 
           // Case 3: Stayed UNPAID but amount changed
@@ -972,17 +1018,31 @@ export default async function handler(
           return res.status(400).json({ message: 'Invalid purchase ID' })
         }
 
-        // First delete associated items
+        // ✅ RESTRICTION: Check payment status before deletion
         const purchase = await prisma.purchase.findUnique({
           where: { id: purchaseId },
-          select: { invoice_no: true }
+          select: { 
+            invoice_no: true,
+            payment_status: true
+          }
         })
 
-        if (purchase) {
-          await prisma.purchaseitems.deleteMany({
-            where: { invoice_no: purchase.invoice_no }
+        if (!purchase) {
+          return res.status(404).json({ message: 'Purchase not found' })
+        }
+
+        // Block deletion if paid
+        if (purchase.payment_status === 1) {
+          return res.status(400).json({
+            message: 'Cannot delete paid purchase. Please unmark as paid first.',
+            error_code: 'PURCHASE_PAID'
           })
         }
+
+        // Delete associated items
+        await prisma.purchaseitems.deleteMany({
+          where: { invoice_no: purchase.invoice_no }
+        })
 
         // Then delete purchase
         await prisma.purchase.delete({

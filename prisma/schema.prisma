@@ -336,30 +336,36 @@ model business_details {
 }
 
 model customer_details {
-  id                  Int     @id @default(autoincrement())
-  billing_name        String  @db.VarChar(200)
-  billing_address     String  @db.VarChar(255)
-  billing_address_2   String? @db.VarChar(255)
-  billing_city        String? @db.VarChar(100)
-  billing_pin_code    String? @db.VarChar(20)
-  billing_state       String? @db.VarChar(100)
-  billing_state_code  Int?
-  billing_gstin       String? @db.VarChar(30)
-  contact_no          String? @db.VarChar(20)
-  contact_no_2        String? @db.VarChar(20)
-  contact_no_3        String? @db.VarChar(20)
-  email               String? @db.VarChar(100)
-  status              String  @default("Active") @db.VarChar(20)
-  shipping_name       String? @db.VarChar(200)
-  shipping_address    String  @db.VarChar(255)
-  shipping_address_2  String? @db.VarChar(255)
-  shipping_city       String? @db.VarChar(100)
-  shipping_pin_code   String? @db.VarChar(20)
-  shipping_state      String? @db.VarChar(100)
-  shipping_state_code Int?
-  shipping_gstin      String? @db.VarChar(30)
-  customer_payments   customer_payments[]
-  customer_refunds    customer_refunds[]
+  id                      Int       @id @default(autoincrement())
+  billing_name            String    @db.VarChar(200)
+  billing_address         String    @db.VarChar(255)
+  billing_address_2       String?   @db.VarChar(255)
+  billing_city            String?   @db.VarChar(100)
+  billing_pin_code        String?   @db.VarChar(20)
+  billing_state           String?   @db.VarChar(100)
+  billing_state_code      Int?
+  billing_gstin           String?   @db.VarChar(30)
+  contact_no              String?   @db.VarChar(20)
+  contact_no_2            String?   @db.VarChar(20)
+  contact_no_3            String?   @db.VarChar(20)
+  email                   String?   @db.VarChar(100)
+  status                  String    @default("Active") @db.VarChar(20)
+  shipping_name           String?   @db.VarChar(200)
+  shipping_address        String    @db.VarChar(255)
+  shipping_address_2      String?   @db.VarChar(255)
+  shipping_city           String?   @db.VarChar(100)
+  shipping_pin_code       String?   @db.VarChar(20)
+  shipping_state          String?   @db.VarChar(100)
+  shipping_state_code     Int?
+  shipping_gstin          String?   @db.VarChar(30)
+  account_balance         Decimal   @default(0) @db.Decimal(10, 2)
+  total_paid              Decimal   @default(0) @db.Decimal(10, 2)
+  total_allocated         Decimal   @default(0) @db.Decimal(10, 2)
+  total_refunded          Decimal   @default(0) @db.Decimal(10, 2)
+  total_refund_allocated  Decimal   @default(0) @db.Decimal(10, 2)
+  balance_updated_at      DateTime? @updatedAt
+  customer_payments       customer_payments[]
+  customer_refunds        customer_refunds[]
 }
 
 model financial_year {
@@ -563,29 +569,36 @@ model user {
 }
 
 model vendor_details {
-  id          Int     @id @default(autoincrement())
-  vendor_name String  @db.VarChar(255)
-  address     String? @db.VarChar(255)
-  address_2   String? @db.VarChar(255)
-  city        String? @db.VarChar(100)
-  pin_code    String? @db.VarChar(20)
-  state       String?
-  state_code  Int?
-  contact_no  String? @db.VarChar(20)
-  contact_no_2 String? @db.VarChar(20)
-  contact_no_3 String? @db.VarChar(20)
-  email       String? @db.VarChar(100)
-  status      String  @default("Active") @db.VarChar(20)
-  tax_id      String? @db.VarChar(50)
-  purchases      Purchase[]
-  returns        purchase_returns[]
-  payments       vendor_payments[]
-  refunds        vendor_refunds[]
+  id                      Int       @id @default(autoincrement())
+  vendor_name             String    @db.VarChar(255)
+  address                 String?   @db.VarChar(255)
+  address_2               String?   @db.VarChar(255)
+  city                    String?   @db.VarChar(100)
+  pin_code                String?   @db.VarChar(20)
+  state                   String?
+  state_code              Int?
+  contact_no              String?   @db.VarChar(20)
+  contact_no_2            String?   @db.VarChar(20)
+  contact_no_3            String?   @db.VarChar(20)
+  email                   String?   @db.VarChar(100)
+  status                  String    @default("Active") @db.VarChar(20)
+  tax_id                  String?   @db.VarChar(50)
+  account_balance         Decimal   @default(0) @db.Decimal(10, 2)
+  total_paid              Decimal   @default(0) @db.Decimal(10, 2)
+  total_allocated         Decimal   @default(0) @db.Decimal(10, 2)
+  total_refunded          Decimal   @default(0) @db.Decimal(10, 2)
+  total_refund_allocated  Decimal   @default(0) @db.Decimal(10, 2)
+  balance_updated_at      DateTime? @updatedAt
+  purchases               Purchase[]
+  returns                 purchase_returns[]
+  payments                vendor_payments[]
+  refunds                 vendor_refunds[]
 
   @@index([vendor_name], map: "idx_vendor_name")
   @@index([contact_no], map: "idx_vendor_contact_no")
   @@index([email], map: "idx_vendor_email")
   @@index([status], map: "idx_vendor_status")
+  @@index([account_balance], map: "idx_vendor_balance")
 }
 
 model warehouse_racks {

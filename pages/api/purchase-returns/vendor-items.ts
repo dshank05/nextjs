@@ -188,14 +188,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           product_name: product?.display_name || item.name_of_product || 'Unknown Product',
           display_name: product?.display_name || item.name_of_product,
           part_number: product?.part_no || item.part,
-          available_qty: Math.max(0, availableQty), // Ensure non-negative
+          original_qty: item.qty || 0, // ✅ Original purchase quantity
+          already_returned: alreadyReturned, // ✅ How much was already returned
+          available_qty: Math.max(0, availableQty), // Available for return
+          is_fully_returned: availableQty <= 0, // ✅ Flag for UI
           unit_price: item.rate || 0,
           tax_rate: item.gst_percentage || 0,
           bill_reference: purchase.bill_reference || '',
           invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
-          current_stock: product?.stock || 0  // ✅ Add current stock from product table
+          current_stock: product?.stock || 0  // Current stock from product table
         }
-      }).filter(item => item.available_qty > 0) // Only include items with available quantity
+      })
+      // ✅ SHOW ALL ITEMS (don't filter by available_qty)
+      // .filter(item => item.available_qty > 0)
 
       if (availableItems.length > 0) {
         billsMap.set(purchase.invoice_no, {

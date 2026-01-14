@@ -22,13 +22,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       vendor_id,
       return_date,
       return_notes,
-      payment_status, // 0=Unpaid/Pending Refund, 1=Paid/Refunded (optional, defaults to 0)
-      payment_mode,   // 0=Cash, 1=Bank (optional, defaults to 1)
-      payment_date,   // Unix timestamp (optional)
-      include_packing_forwarding, // 0=no, 1=yes (optional, defaults to 0)
-      include_freight,            // 0=no, 1=yes (optional, defaults to 0)
-      pf_calculation_method,      // 3=proportional, 4=full (optional, defaults to 3)
-      freight_calculation_method, // 3=proportional, 4=full (optional, defaults to 3)
+      return_status, // 0=Incomplete, 1=Complete
+      packing_forwarding_amount, // Manual P&F amount from UI
       items // Array of { purchase_item_id, return_qty, return_reason_id, unit_price, tax_rate, notes? }
     } = req.body
 
@@ -175,67 +170,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Generate debit note number (outside transaction)
     const debitNoteNo = await generateNoteNumber('DEBIT', financialYear)
 
-    // Process payment tracking fields (before transaction)
-    const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status) : 0 // Default: Unpaid
-    const paymentModeValue = payment_mode !== undefined ? parseInt(payment_mode) : 1 // Default: Bank
-    const paymentDateValue = payment_date ? parseInt(payment_date) : null
-
-    // Calculate P&F and freight amounts
-    let packingForwardingAmount = 0
-    let freightAmount = 0
-    
-    if (include_packing_forwarding || include_freight) {
-      // Get first affected purchase for P&F/freight calculation
-      const purchaseItems = await prisma.purchaseitems.findMany({
-        where: {
-          id: { in: items.map((item: any) => parseInt(item.purchase_item_id)) }
-        },
-        select: { invoice_no: true }
-      })
-
-      if (purchaseItems.length > 0) {
-        const firstPurchaseInvoiceNo = purchaseItems[0].invoice_no
-        const originalPurchase = await prisma.purchase.findFirst({
-          where: { invoice_no: firstPurchaseInvoiceNo },
-          select: {
-            total: true,
-            packing_forwarding_total: true,
-            freight: true
-          }
-        })
-
-        if (originalPurchase) {
-          const returnRatio = totalAmount / (originalPurchase.total || 1)
-          const pfMethod = pf_calculation_method !== undefined ? parseInt(pf_calculation_method) : 3
-          const freightMethod = freight_calculation_method !== undefined ? parseInt(freight_calculation_method) : 3
-
-          // P&F calculation
-          if (include_packing_forwarding && originalPurchase.packing_forwarding_total) {
-            if (pfMethod === 3) {
-              // Proportional
-              packingForwardingAmount = returnRatio * originalPurchase.packing_forwarding_total
-            } else if (pfMethod === 4) {
-              // Full
-              packingForwardingAmount = originalPurchase.packing_forwarding_total
-            }
-          }
-
-          // Freight calculation
-          if (include_freight && originalPurchase.freight) {
-            if (freightMethod === 3) {
-              // Proportional
-              freightAmount = returnRatio * originalPurchase.freight
-            } else if (freightMethod === 4) {
-              // Full
-              freightAmount = originalPurchase.freight
-            }
-          }
-        }
-      }
-    }
+    // Use the provided P&F amount from UI (no calculation needed)
+    const packingForwardingAmount = packing_forwarding_amount || 0
+    const freightAmount = 0 // Not used in new system
 
     // Calculate refund amount (before transaction for use in ledger entry)
     const refundAmount = totalAmount + totalTax + packingForwardingAmount + freightAmount
+
+    // Determine payment status from return_status
+    const paymentStatusValue = return_status !== undefined ? parseInt(return_status) : 0 // 0=Incomplete, 1=Complete
+    const paymentModeValue = 1 // Default: Bank
+    const paymentDateValue = paymentStatusValue === 1 ? returnDateTimestamp : null
 
     // Use database transaction with increased timeout for return processing
     const result = await prisma.$transaction(async (tx) => {
@@ -260,15 +205,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         select: { id: true }
       })
 
-      // Calculate refund amount (total + tax + P&F + freight)
-      const refundAmount = totalAmount + totalTax + packingForwardingAmount + freightAmount
-
-      // Process payment tracking fields
-      const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status) : 0 // Default: Unpaid
-      const paymentModeValue = payment_mode !== undefined ? parseInt(payment_mode) : 1 // Default: Bank
-      const paymentDateValue = payment_date ? parseInt(payment_date) : null
-
-      // Create the main return record with debit note and P&F/freight fields
+      // Create the main return record with debit note and P&F fields
       const returnRecord = await tx.purchase_returns.create({
         data: {
           debit_note_no: debitNoteNo,
@@ -285,10 +222,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: paymentModeValue,
           payment_date: paymentDateValue,
           refund_amount: refundAmount,
-          include_packing_forwarding: include_packing_forwarding ? parseInt(include_packing_forwarding) : 0,
-          include_freight: include_freight ? parseInt(include_freight) : 0,
-          pf_calculation_method: pf_calculation_method !== undefined ? parseInt(pf_calculation_method) : 3,
-          freight_calculation_method: freight_calculation_method !== undefined ? parseInt(freight_calculation_method) : 3,
+          include_packing_forwarding: 0,
+          include_freight: 0,
+          pf_calculation_method: 3,
+          freight_calculation_method: 3,
           packing_forwarding_amount: packingForwardingAmount,
           freight_amount: freightAmount
         }
@@ -416,6 +353,29 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         notes: `Refund received for ${debitNoteNo}`,
         fy: financialYear
       })
+
+      // ✅ CREATE REFUND ALLOCATION RECORDS
+      const refund = await prisma.vendor_refunds.create({
+        data: {
+          vendor_id: parseInt(vendor_id),
+          refund_date: returnDateTimestamp,
+          refund_amount: refundAmount,
+          refund_mode: paymentModeValue,
+          refund_type: 'RETURN_SPECIFIC',
+          notes: `Refund for return ${debitNoteNo}`,
+          fy: financialYear
+        }
+      });
+      
+      await prisma.refund_allocations.create({
+        data: {
+          refund_id: refund.id,
+          return_id: result.id,
+          allocated_amount: refundAmount,
+          allocation_date: returnDateTimestamp,
+          notes: 'Allocated during return creation'
+        }
+      });
     }
 
     res.status(201).json({

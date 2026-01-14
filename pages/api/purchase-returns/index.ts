@@ -169,6 +169,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: true,
             payment_date: true,
             refund_amount: true,
+            packing_forwarding_amount: true,
             created_at: true,
             updated_at: true
           }
@@ -199,6 +200,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: true,
             payment_date: true,
             refund_amount: true,
+            packing_forwarding_amount: true,
             created_at: true,
             updated_at: true
           }

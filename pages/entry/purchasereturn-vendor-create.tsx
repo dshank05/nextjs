@@ -35,14 +35,16 @@ interface PurchaseItem {
   display_name?: string;
   part_number?: string;
   original_qty?: number; // Original purchase quantity
+  already_returned?: number; // ✅ How much was already returned
   available_qty: number;
+  is_fully_returned?: boolean; // ✅ Flag for UI
   unit_price: number;
   tax_rate: number;
   bill_reference: string;
   invoice_date: string;
   return_qty?: number; // Added for edit mode
   return_reason_id?: number; // Added for edit mode
-  current_stock: number; // ✅ Current stock from product table
+  current_stock: number; // Current stock from product table
 }
 
 interface ReturnReasons {
@@ -121,6 +123,9 @@ export default function PurchaseReturnVendorCreatePage() {
   const [paymentStatus, setPaymentStatus] = useState<number>(0); // 0=Unpaid, 1=Paid
   const [paymentMode, setPaymentMode] = useState<number>(1); // 0=Cash, 1=Bank
   const [paymentDate, setPaymentDate] = useState('');
+  
+  // P&F state (will be in summary section)
+  const [packingForwardingAmount, setPackingForwardingAmount] = useState<number>(0);
 
   // New state for enhanced features
   const [loadedDateRange, setLoadedDateRange] = useState({ from: '', to: '' });
@@ -372,6 +377,7 @@ export default function PurchaseReturnVendorCreatePage() {
         setPaymentStatus(returnData.return.payment_status ?? 0);
         setPaymentMode(returnData.return.payment_mode ?? 1);
         setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
+        setPackingForwardingAmount(returnData.return.packing_forwarding_amount || 0);
 
         // Set vendor
         const vendorData = returnData.vendor;
@@ -676,9 +682,8 @@ export default function PurchaseReturnVendorCreatePage() {
       const returnData = {
         return_date: returnDate,
         return_notes: returnNotes,
-        payment_status: paymentStatus,
-        payment_mode: paymentMode,
-        payment_date: paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
+        return_status: paymentStatus, // 0=Incomplete, 1=Complete
+        packing_forwarding_amount: packingForwardingAmount || 0,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id
           return_qty: item.return_qty,
@@ -766,10 +771,11 @@ export default function PurchaseReturnVendorCreatePage() {
             
           </div>
 
-          {/* Return Information */}
+          {/* Return Information - 3 Rows x 3 Columns Layout */}
           <div className="mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
-              <div className="md:col-span-2">
+            {/* Row 1: Vendor | Return Date | Return Status */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Vendor *</label>
                 <SearchableSelect
                   options={vendors.map(v => ({
@@ -792,11 +798,11 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Status</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Return Status *</label>
                 <SearchableSelect
                   options={[
-                    { id: '0', name: 'Unpaid (Pending Refund)' },
-                    { id: '1', name: 'Paid (Refunded)' }
+                    { id: '0', name: 'Incomplete' },
+                    { id: '1', name: 'Complete' }
                   ]}
                   selectedValue={paymentStatus.toString()}
                   onSelectionChange={(value) => setPaymentStatus(parseInt(value || '0'))}
@@ -804,34 +810,12 @@ export default function PurchaseReturnVendorCreatePage() {
                   className="w-full"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
-                <SearchableSelect
-                  options={[
-                    { id: '0', name: 'Cash' },
-                    { id: '1', name: 'Bank' }
-                  ]}
-                  selectedValue={paymentMode.toString()}
-                  onSelectionChange={(value) => setPaymentMode(parseInt(value || '1'))}
-                  placeholder="Select mode..."
-                  className="w-full"
-                  disabled={paymentStatus === 0}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Date</label>
-                <input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="input w-full"
-                  disabled={paymentStatus === 0}
-                />
-              </div>
             </div>
+
+            {/* Row 2: Search Invoice | Search Items | Date Range */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Search Bills</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Search by Invoice No.</label>
                 <ClearableInput
                   value={billSearchTerm}
                   onChange={(e) => setBillSearchTerm(e.target.value)}
@@ -840,7 +824,7 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Search Items</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Search by Items</label>
                 <ClearableInput
                   value={itemSearchTerm}
                   onChange={(e) => setItemSearchTerm(e.target.value)}
@@ -860,6 +844,7 @@ export default function PurchaseReturnVendorCreatePage() {
                 />
               </div>
             </div>
+
 
             {/* Enhanced Controls Row */}
             {vendor && (
@@ -959,12 +944,20 @@ export default function PurchaseReturnVendorCreatePage() {
                                 {bill.items.map((item) => {
                                   const selectedItem = selectedItems.get(item.id);
                                   return (
-                                    <tr key={item.id} className="border-t border-slate-600">
+                                <tr key={item.id} className={`border-t border-slate-600 ${item.is_fully_returned ? 'opacity-50 bg-slate-800/50' : ''}`}>
                                       <td className="px-4 py-3 text-sm text-white">
                                         <div>
-                                          <div className="font-medium">{item.product_name}</div>
+                                          <div className="font-medium">
+                                            {item.product_name}
+                                            {item.is_fully_returned && (
+                                              <span className="ml-2 px-2 py-0.5 bg-red-900 text-red-300 text-xs rounded">Fully Returned</span>
+                                            )}
+                                          </div>
                                           {item.part_number && (
                                             <div className="text-slate-400 text-xs">Part: {item.part_number}</div>
+                                          )}
+                                          {item.already_returned > 0 && (
+                                            <div className="text-yellow-400 text-xs">Already returned: {item.already_returned} / {item.original_qty}</div>
                                           )}
                                         </div>
                                       </td>
@@ -977,8 +970,9 @@ export default function PurchaseReturnVendorCreatePage() {
                                           max={item.available_qty}
                                           value={selectedItem?.return_qty || ''}
                                           onChange={(e) => updateReturnQuantity(item.id, parseInt(e.target.value) || 0, item)}
-                                          className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm"
+                                          className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                                           placeholder="0"
+                                          disabled={item.is_fully_returned}
                                         />
                                       </td>
                                       <td className="px-4 py-3 text-center">
@@ -1067,36 +1061,66 @@ export default function PurchaseReturnVendorCreatePage() {
                 )}
               </div>
 
-              {/* Return Summary */}
+              {/* Return Notes | Summary - 2 Column Layout */}
               <div className="border-t border-slate-600 pt-6 mb-6">
-                <h3 className="text-lg font-medium text-slate-200 mb-4">Return Summary</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column: Return Notes */}
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-200 mb-4">Return Notes</h3>
+                    <textarea
+                      value={returnNotes}
+                      onChange={(e) => setReturnNotes(e.target.value)}
+                      rows={10}
+                      className="input w-full"
+                      placeholder="Optional notes about the return..."
+                    />
+                  </div>
 
-                {selectedItems.size > 0 ? (
-                  <div className={`grid grid-cols-1 ${enableTax ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-6 mb-6`}>
-                    <div className="bg-slate-700 rounded-lg p-4 text-center">
-                      <p className="text-slate-400 text-sm mb-1">Items</p>
-                      <p className="text-white text-xl font-semibold">{returnSummary.totalItems}</p>
-                    </div>
-                    <div className="bg-slate-700 rounded-lg p-4 text-center">
-                      <p className="text-slate-400 text-sm mb-1">Quantity</p>
-                      <p className="text-white text-xl font-semibold">{returnSummary.totalQuantity}</p>
-                    </div>
-                    <div className="bg-slate-700 rounded-lg p-4 text-center">
-                      <p className="text-slate-400 text-sm mb-1">Value</p>
-                      <p className="text-green-400 text-xl font-semibold">₹{returnSummary.totalAmount.toFixed(0)}</p>
-                    </div>
-                    {enableTax && (
-                      <div className="bg-slate-700 rounded-lg p-4 text-center">
-                        <p className="text-slate-400 text-sm mb-1">Tax Credit</p>
-                        <p className="text-yellow-400 text-xl font-semibold">₹{returnSummary.totalTax.toFixed(0)}</p>
+                  {/* Right Column: Summary */}
+                  <div>
+                    <h3 className="text-lg font-medium text-slate-200 mb-4">Summary</h3>
+                    {selectedItems.size > 0 ? (
+                      <div className="bg-slate-700 rounded-lg p-4 space-y-3">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-600">
+                          <span className="text-slate-400 text-sm">Items:</span>
+                          <span className="text-white font-semibold">{returnSummary.totalItems}</span>
+                        </div>
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-600">
+                          <span className="text-slate-400 text-sm">Quantity:</span>
+                          <span className="text-white font-semibold">{returnSummary.totalQuantity}</span>
+                        </div>
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-600">
+                          <span className="text-slate-400 text-sm">Subtotal:</span>
+                          <span className="text-white font-semibold">₹{(returnSummary.totalAmount - returnSummary.totalTax).toFixed(2)}</span>
+                        </div>
+                        {enableTax && (
+                          <div className="flex justify-between items-center pb-2 border-b border-slate-600">
+                            <span className="text-slate-400 text-sm">Tax:</span>
+                            <span className="text-yellow-400 font-semibold">₹{returnSummary.totalTax.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-600">
+                          <span className="text-slate-400 text-sm">Packing & Forwarding:</span>
+                          <input
+                            type="number"
+                            value={packingForwardingAmount}
+                            onChange={(e) => setPackingForwardingAmount(parseFloat(e.target.value))}
+                            className="w-32 px-2 py-1 bg-slate-600 border border-slate-500 rounded text-right text-sm text-white"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div className="flex justify-between items-center pt-2">
+                          <span className="text-slate-300 font-medium">Total:</span>
+                          <span className="text-green-400 text-xl font-bold">₹{(returnSummary.totalAmount + (Number(packingForwardingAmount) || 0))}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-slate-400 bg-slate-700 rounded-lg">
+                        No items selected for return
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div className="text-center py-8 text-slate-400">
-                    No items selected for return
-                  </div>
-                )}
+                </div>
 
                 {/* Tax Breakdown */}
                 {selectedItems.size > 0 && enableTax && (
@@ -1125,19 +1149,6 @@ export default function PurchaseReturnVendorCreatePage() {
                   </div>
                 )}
 
-                {/* Return Notes */}
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Return Notes
-                  </label>
-                  <textarea
-                    value={returnNotes}
-                    onChange={(e) => setReturnNotes(e.target.value)}
-                    rows={3}
-                    className="input w-full"
-                    placeholder="Optional notes about the return..."
-                  />
-                </div>
               </div>
 
               {/* Form Actions */}
@@ -1167,7 +1178,7 @@ export default function PurchaseReturnVendorCreatePage() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Confirm Return Processing"
-        message={`Process return for ${selectedItems.size} items totaling ₹${returnSummary.totalAmount.toFixed(2)}?`}
+        message={`Process return for ${selectedItems.size} items totaling ₹${(returnSummary.totalAmount + (packingForwardingAmount || 0))} (including P&F: ₹${(packingForwardingAmount || 0)})?`}
         confirmText="Process Return"
         cancelText="Cancel"
         showLoading={processingReturn}

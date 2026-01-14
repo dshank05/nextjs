@@ -1,10 +1,54 @@
 # Comprehensive Test Scenarios - Vendor Payment & Return System
 
-**Document Version:** 1.0  
-**Created:** December 9, 2025  
-**Status:** 📋 READY FOR TESTING  
+**Document Version:** 2.0  
+**Updated:** January 11, 2026  
+**Testing Framework:** Playwright E2E  
+**Approach:** Real Browser + Real API + Real Database  
+**Status:** 📋 READY FOR IMPLEMENTATION  
 **Total Scenarios:** 100  
 **Coverage:** Purchase, Payment, Return, Refund, Integration, Edge Cases
+
+---
+
+## 🎯 TESTING APPROACH
+
+**Framework:** Playwright End-to-End Testing
+
+**What We Test:**
+- ✅ **Real UI Interactions** - Actual button clicks, form fills, page navigation
+- ✅ **Real API Calls** - HTTP requests to Next.js API routes (no mocking)
+- ✅ **Real Database** - Verify data integrity in MySQL after each operation
+- ✅ **Complete Workflows** - Full user journeys from start to finish
+
+**Test Pattern:**
+```typescript
+test('Test Name', async ({ page }) => {
+  // 1. Navigate to page
+  await page.goto('/purchases/create');
+  
+  // 2. Interact with UI (makes REAL API call)
+  await page.fill('[name="qty"]', '10');
+  await page.click('button:has-text("Create")');
+  
+  // 3. Verify UI updated
+  await expect(page.locator('.success')).toBeVisible();
+  
+  // 4. Verify DATABASE updated correctly
+  const purchase = await prisma.purchase.findFirst({...});
+  expect(purchase.total).toBe(10000);
+  
+  const items = await prisma.purchaseitems.findMany({...});
+  expect(items.length).toBe(1);
+  
+  const product = await prisma.product.findUnique({...});
+  expect(product.stock).toBe(10); // Stock increased
+  
+  const ledger = await prisma.vendor_ledger.findFirst({...});
+  expect(ledger.debit).toBe(10000); // Ledger updated
+});
+```
+
+**See:** `docs/E2E_TESTING_GUIDE.md` for complete implementation guide
 
 ---
 
@@ -1452,6 +1496,9 @@ _Document: This is NEW payment_status value (0=Unpaid, 1=Paid, 2=Partially Paid)
 ✅ Refund recorded  
 ✅ Return marked as refunded  
 ✅ Balance adjusted
+
+**Notes:**
+_✅ Refund validation now supports vendor returns (flag-based approach implemented)_
 
 ---
 

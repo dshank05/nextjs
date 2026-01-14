@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { ledgerService } from '../../../lib/ledger-service'
+import { updateVendorBalance } from '../../../lib/vendor-balance-service'
 
 async function handler(
   req: NextApiRequest,
@@ -639,6 +640,35 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         notes: `Payment made for purchase ${purchase.invoice_no}`,
         fy: currentFy
       })
+
+      // ✅ CREATE PAYMENT ALLOCATION RECORDS
+      const payment = await prisma.vendor_payments.create({
+        data: {
+          vendor_id: parseInt(vendor_id),
+          payment_date: Math.floor(invoiceDate),
+          payment_amount: calculatedGrandTotal,
+          payment_mode: payment_mode,
+          payment_type: 'BILL_SPECIFIC',
+          notes: `Payment for purchase ${purchase.invoice_no}`,
+          fy: currentFy
+        }
+      });
+
+      await prisma.payment_allocations.create({
+        data: {
+          payment_id: payment.id,
+          purchase_id: purchase.id,
+          allocated_amount: calculatedGrandTotal,
+          allocation_date: Math.floor(invoiceDate),
+          notes: 'Allocated during purchase creation'
+        }
+      });
+
+      // ✅ UPDATE VENDOR BALANCE
+      await updateVendorBalance(parseInt(vendor_id), {
+        total_paid: calculatedGrandTotal,
+        total_allocated: calculatedGrandTotal
+      });
     }
 
     const totalTime = Date.now() - startTime;

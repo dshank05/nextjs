@@ -81,9 +81,29 @@ export function getOutstandingAmount(invoiceId: number, type: 'sale'|'salex'): P
 export async function validatePaymentAllocation(
   customerId: number,
   paymentAmount: number,
-  allocations: Array<{ invoice_id?: number; invoicex_id?: number; allocated_amount: number }>
+  allocations: Array<{ invoice_id?: number; invoicex_id?: number; allocated_amount: number; purchase_id?: number }>,
+  paymentType: string = 'BILL_SPECIFIC'
 ): Promise<{ valid: boolean; errors: string[] }> {
   const errors: string[] = [];
+
+  // Allow empty allocations for DIRECT payments
+  if (paymentType === 'DIRECT' && allocations.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  // Allow partial allocations for MIXED payments
+  if (paymentType === 'MIXED') {
+    const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
+    if (totalAllocated > paymentAmount) {
+      errors.push(`Total allocated amount (${totalAllocated}) exceeds payment amount (${paymentAmount})`);
+    }
+    return { valid: errors.length === 0, errors };
+  }
+
+  // BILL_SPECIFIC validation
+  if (allocations.length === 0) {
+    errors.push('Allocations required for BILL_SPECIFIC payments');
+  }
 
   // Check total allocation doesn't exceed payment amount
   const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
@@ -134,14 +154,35 @@ export async function validatePaymentAllocation(
 }
 
 /**
- * Validate refund allocation
+ * Validate refund allocation (supports both customer and vendor returns)
  */
 export async function validateRefundAllocation(
-  customerId: number,
+  entityId: number, // customerId or vendorId
   refundAmount: number,
-  allocations: Array<{ return_id?: number; allocated_amount: number }>
+  allocations: Array<{ return_id?: number; allocated_amount: number }>,
+  type: 'customer' | 'vendor' = 'customer', // Flag to identify customer vs vendor
+  refundType: string = 'RETURN_SPECIFIC'
 ): Promise<{ valid: boolean; errors: string[] }> {
   const errors: string[] = [];
+
+  // Allow empty allocations for DIRECT refunds
+  if (refundType === 'DIRECT' && allocations.length === 0) {
+    return { valid: true, errors: [] };
+  }
+
+  // Allow partial allocations for MIXED refunds
+  if (refundType === 'MIXED') {
+    const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
+    if (totalAllocated > refundAmount) {
+      errors.push(`Total allocated amount (${totalAllocated}) exceeds refund amount (${refundAmount})`);
+    }
+    return { valid: errors.length === 0, errors };
+  }
+
+  // RETURN_SPECIFIC validation
+  if (allocations.length === 0) {
+    errors.push('Allocations required for RETURN_SPECIFIC refunds');
+  }
 
   // Check total allocation doesn't exceed refund amount
   const totalAllocated = allocations.reduce((sum, alloc) => sum + alloc.allocated_amount, 0);
@@ -153,39 +194,70 @@ export async function validateRefundAllocation(
   for (const allocation of allocations) {
     if (!allocation.return_id) continue;
 
-    // Determine if it's sale or salex return
-    const saleReturn = await prisma.sale_returns.findUnique({
-      where: { id: allocation.return_id },
-      select: { refund_amount: true }
-    });
+    if (type === 'vendor') {
+      // VENDOR RETURNS (Purchase Returns)
+      const purchaseReturn = await prisma.purchase_returns.findUnique({
+        where: { id: allocation.return_id },
+        select: { 
+          refund_amount: true,
+          total_amount: true,
+          total_tax: true
+        }
+      });
 
-    const salexReturn = !saleReturn ? await prisma.salex_returns.findUnique({
-      where: { id: allocation.return_id },
-      select: { refund_amount: true }
-    }) : null;
+      if (!purchaseReturn) {
+        errors.push(`Return ${allocation.return_id} not found`);
+        continue;
+      }
 
-    const returnRecord = saleReturn || salexReturn;
-    if (!returnRecord) {
-      errors.push(`Return ${allocation.return_id} not found`);
-      continue;
-    }
+      // Get already allocated refund amount from refund_allocations
+      const existingAllocations = await prisma.refund_allocations.aggregate({
+        where: { return_id: allocation.return_id },
+        _sum: { allocated_amount: true }
+      });
 
-    // Get already allocated refund amount
-    const existingAllocations = saleReturn
-      ? await prisma.customer_refund_allocations.aggregate({
-          where: { sale_return_id: allocation.return_id },
-          _sum: { allocated_amount: true }
-        })
-      : await prisma.customer_refund_allocations.aggregate({
-          where: { salex_return_id: allocation.return_id },
-          _sum: { allocated_amount: true }
-        });
+      const alreadyAllocated = Number(existingAllocations._sum.allocated_amount || 0);
+      const refundAmountTotal = purchaseReturn.refund_amount || (purchaseReturn.total_amount + purchaseReturn.total_tax);
+      const outstanding = refundAmountTotal - alreadyAllocated;
 
-    const alreadyAllocated = Number(existingAllocations._sum.allocated_amount || 0);
-    const outstanding = Number(returnRecord.refund_amount) - alreadyAllocated;
+      if (allocation.allocated_amount > outstanding) {
+        errors.push(`Allocation to return ${allocation.return_id} (${allocation.allocated_amount}) exceeds outstanding refund amount (${outstanding})`);
+      }
+    } else {
+      // CUSTOMER RETURNS (Sale/Salex Returns)
+      const saleReturn = await prisma.sale_returns.findUnique({
+        where: { id: allocation.return_id },
+        select: { refund_amount: true }
+      });
 
-    if (allocation.allocated_amount > outstanding) {
-      errors.push(`Allocation to return ${allocation.return_id} (${allocation.allocated_amount}) exceeds outstanding refund amount (${outstanding})`);
+      const salexReturn = !saleReturn ? await prisma.salex_returns.findUnique({
+        where: { id: allocation.return_id },
+        select: { refund_amount: true }
+      }) : null;
+
+      const returnRecord = saleReturn || salexReturn;
+      if (!returnRecord) {
+        errors.push(`Return ${allocation.return_id} not found`);
+        continue;
+      }
+
+      // Get already allocated refund amount
+      const existingAllocations = saleReturn
+        ? await prisma.customer_refund_allocations.aggregate({
+            where: { sale_return_id: allocation.return_id },
+            _sum: { allocated_amount: true }
+          })
+        : await prisma.customer_refund_allocations.aggregate({
+            where: { salex_return_id: allocation.return_id },
+            _sum: { allocated_amount: true }
+          });
+
+      const alreadyAllocated = Number(existingAllocations._sum.allocated_amount || 0);
+      const outstanding = Number(returnRecord.refund_amount) - alreadyAllocated;
+
+      if (allocation.allocated_amount > outstanding) {
+        errors.push(`Allocation to return ${allocation.return_id} (${allocation.allocated_amount}) exceeds outstanding refund amount (${outstanding})`);
+      }
     }
   }
 

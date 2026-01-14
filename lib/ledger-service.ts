@@ -10,7 +10,7 @@ import { prisma } from './db'
 export interface LedgerEntryData {
   vendor_id: number
   transaction_date: number
-  transaction_type: 'PURCHASE' | 'DEBIT_NOTE' | 'PAYMENT' | 'REFUND_RECEIVED' | 'PAYMENT_REVERSAL' | 'PURCHASE_ADJUSTMENT' | 'PAYMENT_ADJUSTMENT'
+  transaction_type: 'PURCHASE' | 'DEBIT_NOTE' | 'PAYMENT' | 'REFUND_RECEIVED' | 'PAYMENT_REVERSAL' | 'REFUND_REVERSAL' | 'PURCHASE_ADJUSTMENT' | 'PAYMENT_ADJUSTMENT'
   reference_type?: 'purchase' | 'purchase_return' | 'payment'
   reference_id?: number
   reference_no?: string

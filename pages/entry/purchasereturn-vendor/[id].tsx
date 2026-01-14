@@ -78,6 +78,9 @@ export default function PurchaseReturnDetailPage() {
       const billsInfo = data.data.bills;
 
       // Transform API data to match our interface
+      // Convert status number to text
+      const statusText = returnInfo.payment_status === 1 ? 'Complete' : 'Incomplete'
+      
       const returnData: PurchaseReturn = {
         id: returnInfo.id,
         return_no: returnInfo.return_no,
@@ -88,11 +91,11 @@ export default function PurchaseReturnDetailPage() {
         vendor_gstin: vendorInfo.gstin || '',
         total_amount: returnInfo.total_amount,
         total_tax: returnInfo.total_tax,
-        status: returnInfo.status === 'Completed' ? 1 : 0,
+        status: returnInfo.payment_status || 0, // Use payment_status (0=Incomplete, 1=Complete)
         fy: returnInfo.fy,
         notes: returnInfo.notes,
         formattedDate: returnInfo.return_date ? new Date(returnInfo.return_date).toLocaleDateString('en-IN') : '',
-        statusText: returnInfo.status
+        statusText: statusText
       };
 
       // Transform return items from bills
@@ -285,21 +288,21 @@ export default function PurchaseReturnDetailPage() {
               <span className="text-slate-400">Total Tax:</span>
               <span className="text-white font-medium">₹{returnData.total_tax.toFixed(2)}</span>
             </div>
-            <div className="flex justify-between font-semibold">
-              <span className="text-slate-400">Grand Total:</span>
-              <span className="text-white font-bold">₹{returnData.total_amount.toFixed(2)}</span>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Packing & Forwarding:</span>
+              <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0).toFixed(2)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">CGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).cgst || 0, 0).toFixed(2)}</span>
+              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).cgst || 0, 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">SGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).sgst || 0, 0).toFixed(2)}</span>
+              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).sgst || 0, 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">IGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).igst || 0, 0).toFixed(2)}</span>
+              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).igst || 0, 0)}</span>
             </div>
           </div>
 
@@ -379,10 +382,10 @@ export default function PurchaseReturnDetailPage() {
                     <td className="text-slate-300 font-medium">{item.invoice_no}</td>
                     <td className="text-slate-300">{item.bill_reference}</td>
                     <td className="text-slate-300 font-medium">{item.return_qty}</td>
-                    <td className="text-slate-300">₹{item.unit_price.toFixed(2)}</td>
+                    <td className="text-slate-300">₹{item.unit_price}</td>
                     <td className="text-slate-300">{item.tax_rate}%</td>
-                    <td className="text-slate-300">₹{item.tax_amount.toFixed(2)}</td>
-                    <td className="text-slate-300 font-semibold">₹{item.subtotal.toFixed(2)}</td>
+                    <td className="text-slate-300">₹{item.tax_amount}</td>
+                    <td className="text-slate-300 font-semibold">₹{item.subtotal}</td>
                     <td className="text-slate-300">
                       <div className="font-medium">{item.return_reason}</div>
                       {item.notes && (
@@ -404,10 +407,10 @@ export default function PurchaseReturnDetailPage() {
                   <td></td>
                   <td></td>
                   <td className="text-white font-bold text-center py-3 bg-slate-700/20">
-                    ₹{returnItems.reduce((sum, item) => sum + item.tax_amount, 0).toFixed(2)}
+                    ₹{returnItems.reduce((sum, item) => sum + item.tax_amount, 0)}
                   </td>
                   <td className="text-white font-bold text-center py-3 bg-blue-600/10 border-l border-blue-500/30">
-                    ₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2)}
+                    ₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0)}
                   </td>
                   <td></td>
                 </tr>

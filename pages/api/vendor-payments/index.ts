@@ -7,6 +7,7 @@ import {
   calculatePaymentStatus
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
+import { updateVendorBalance } from '../../../lib/vendor-balance-service';
 
 const prisma = new PrismaClient();
 
@@ -61,7 +62,8 @@ async function handleCreatePayment(
     const validation = await validatePaymentAllocation(
       vendor_id,
       payment_amount,
-      allocations
+      allocations,
+      payment_type
     );
 
     if (!validation.valid) {
@@ -177,6 +179,22 @@ async function handleCreatePayment(
     }, {
       timeout: 15000 // 15 second timeout for payment transactions
     });
+
+    // Update vendor balance after transaction
+    if (payment_type === 'DIRECT') {
+      // Direct payment - no allocations
+      await updateVendorBalance(vendor_id, {
+        total_paid: payment_amount
+      });
+    } else {
+      // Bill-specific or mixed payment - has allocations
+      const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
+      
+      await updateVendorBalance(vendor_id, {
+        total_paid: payment_amount,
+        total_allocated: totalAllocated
+      });
+    }
 
     return res.status(201).json({
       success: true,

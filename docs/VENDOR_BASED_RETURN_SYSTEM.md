@@ -788,6 +788,38 @@ stock: { increment: return_qty }  // ✅ Restores stock
 - ✅ Complete CRUD operations
 - ✅ Tax compliance
 - ✅ Data integrity
+- ✅ Packing & Forwarding integration complete
+- ✅ Refund allocation validation fixed (vendor returns support)
 - 🔄 Purchase integration in progress
+
+---
+
+## 🎯 **RECENT UPDATES (January 11, 2026)**
+
+### **✅ Packing & Forwarding (P&F) Integration:**
+1. **Database:** `packing_forwarding_amount` field added to `purchase_returns` table
+2. **POST API:** Saves P&F amount when creating returns
+3. **PUT API:** Updates P&F amount when editing returns
+4. **GET API (detail):** Returns P&F amount for single return
+5. **GET API (list):** Returns P&F amount for all returns in table
+6. **Create/Edit UI:** P&F input field in summary section
+7. **View UI:** P&F display in financial summary (Grand Total removed)
+8. **Bug Fixes:**
+   - Fixed P&F concatenation bug (string → number conversion)
+   - Removed .toFixed(2) from total display
+   - Removed Grand Total from view page (simplified layout)
+
+### **✅ Refund Allocation Validation Fixed:**
+1. **Problem:** `validateRefundAllocation` only checked customer returns (sale_returns, salex_returns)
+2. **Solution:** Added flag-based approach with `type: 'customer' | 'vendor'` parameter
+3. **Implementation:**
+   - Updated `payment-allocation-service.ts` to support vendor returns
+   - Added purchase_returns table lookup for vendor type
+   - Uses refund_allocations table (not customer_refund_allocations)
+   - Backward compatible with customer refunds
+4. **API Update:** vendor-refunds/index.ts now passes 'vendor' type flag
+5. **Result:** "Return not found" error resolved for vendor refunds
+
+---
 
 **Ready for production use once purchase integration is complete.**

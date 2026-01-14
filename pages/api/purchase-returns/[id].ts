@@ -49,6 +49,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         payment_mode: true,
         payment_date: true,
         refund_amount: true,
+        packing_forwarding_amount: true,
         created_at: true,
         updated_at: true
       }
@@ -109,46 +110,41 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // ✅ CRITICAL FIX: Get ALL purchase items from the original purchase, not just returned ones
-    // This allows users to add more items when editing a return
-    let allPurchaseItems: any[] = []
+    // ✅ Get ALL purchase items from ALL invoices that have returned items
+    const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
+    const returnedPurchaseItems = await prisma.purchaseitems.findMany({
+      where: {
+        id: { in: purchaseItemIds }
+      },
+      select: {
+        id: true,
+        product_id: true,
+        name_of_product: true,
+        part: true,
+        qty: true,
+        rate: true,
+        gst_percentage: true,
+        invoice_no: true
+      }
+    })
     
-    if (purchase?.invoice_no) {
-      // Get ALL items from the original purchase
-      allPurchaseItems = await prisma.purchaseitems.findMany({
-        where: {
-          invoice_no: purchase.invoice_no
-        },
-        select: {
-          id: true,
-          product_id: true,
-          name_of_product: true,
-          part: true,
-          qty: true,
-          rate: true,
-          gst_percentage: true,
-          invoice_no: true
-        }
-      })
-    } else {
-      // Fallback: If no purchase_id, just get the items that were returned
-      const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
-      allPurchaseItems = await prisma.purchaseitems.findMany({
-        where: {
-          id: { in: purchaseItemIds }
-        },
-        select: {
-          id: true,
-          product_id: true,
-          name_of_product: true,
-          part: true,
-          qty: true,
-          rate: true,
-          gst_percentage: true,
-          invoice_no: true
-        }
-      })
-    }
+    // ✅ Get ALL items from ALL invoices (not just returned ones) for edit mode
+    const invoiceNos = Array.from(new Set(returnedPurchaseItems.map(pi => pi.invoice_no)))
+    const allPurchaseItems = await prisma.purchaseitems.findMany({
+      where: {
+        invoice_no: { in: invoiceNos }
+      },
+      select: {
+        id: true,
+        product_id: true,
+        name_of_product: true,
+        part: true,
+        qty: true,
+        rate: true,
+        gst_percentage: true,
+        invoice_no: true
+      }
+    })
     
     // Keep reference for backward compatibility
     const originalPurchaseItems = allPurchaseItems
@@ -166,9 +162,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         stock: true
       }
     })
-
-    // Create purchaseItemIds array from all purchase items (not just returned ones)
-    const purchaseItemIds = originalPurchaseItems.map(item => item.id)
 
     // Get already returned quantities for these items (excluding current return)
     const returnedQuantities = await prisma.purchase_return_items.groupBy({
@@ -302,18 +295,46 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       created_at: alloc.refund.created_at
     }))
 
-    // Group items by bill (for vendor-based returns without specific purchase)
-    const bills = [{
-      id: purchase?.id?.toString() || returnRecord.id.toString(),
-      invoice_no: purchase?.invoice_no?.toString() || 'N/A',
-      bill_reference: purchase?.invoice_no?.toString() || 'Vendor Return',
-      invoice_date: purchase?.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
-      total_amount: returnRecord.total_amount,
-      has_tax: (returnRecord.total_tax || 0) > 0,
-      available_items: returnItemsWithDetails.length,
-      total_items: returnItemsWithDetails.length,
-      items: returnItemsWithDetails
-    }]
+    // ✅ Group items by invoice_no to show multiple bills
+    const billsMap = new Map<number, any>()
+    
+    for (const item of returnItemsWithDetails) {
+      const invoiceNo = originalPurchaseItems.find(pi => pi.id === item.purchase_item_id)?.invoice_no
+      
+      if (!invoiceNo) continue
+      
+      if (!billsMap.has(invoiceNo)) {
+        // Get purchase details for this invoice
+        const purchaseForBill = await prisma.purchase.findFirst({
+          where: { invoice_no: invoiceNo },
+          select: {
+            id: true,
+            invoice_no: true,
+            invoice_date: true
+          }
+        })
+        
+        billsMap.set(invoiceNo, {
+          id: purchaseForBill?.id?.toString() || invoiceNo.toString(),
+          invoice_no: invoiceNo.toString(),
+          bill_reference: invoiceNo.toString(),
+          invoice_date: purchaseForBill?.invoice_date ? new Date(purchaseForBill.invoice_date * 1000).toISOString().split('T')[0] : '',
+          total_amount: 0,
+          has_tax: (returnRecord.total_tax || 0) > 0,
+          available_items: 0,
+          total_items: 0,
+          items: []
+        })
+      }
+      
+      const bill = billsMap.get(invoiceNo)
+      bill.items.push(item)
+      bill.available_items++
+      bill.total_items++
+      bill.total_amount += (item.return_qty * item.unit_price) + item.tax_amount
+    }
+    
+    const bills = Array.from(billsMap.values())
 
     const response = {
       return: {
@@ -323,6 +344,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         total_amount: returnRecord.total_amount,
         total_tax: returnRecord.total_tax,
         refund_amount: returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax),
+        packing_forwarding_amount: returnRecord.packing_forwarding_amount || 0,
         status: returnRecord.status,
         payment_status: returnRecord.payment_status ?? 0,
         payment_mode: returnRecord.payment_mode ?? 1,
@@ -340,8 +362,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       },
       bills: bills,
       summary: {
-        total_bills: 1,
-        total_items: returnItemsWithDetails.length,
+        total_bills: bills.length,
+        total_items: returnItems.length, // Count of actual returned items
         total_value: returnRecord.total_amount
       },
       refund_summary: {
@@ -371,7 +393,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id } = req.query
-    const { return_date, notes, items, payment_status, payment_mode, payment_date } = req.body
+    const { return_date, notes, items, payment_status, payment_mode, payment_date, packing_forwarding_amount } = req.body
 
     if (!id || Array.isArray(id)) {
       return res.status(400).json({ message: 'Valid return ID is required' })
@@ -387,6 +409,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       where: { id: returnId },
       select: {
         payment_status: true,
+        payment_mode: true,
         debit_note_no: true,
         vendor_id: true,
         fy: true,
@@ -515,7 +538,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ])
 
       // Update return record and create new items in parallel
-      const refundAmount = totalAmount + totalTax
+      const pfAmount = packing_forwarding_amount || 0
+      const refundAmount = totalAmount + totalTax + pfAmount
       const [updatedReturn] = await Promise.all([
         tx.purchase_returns.update({
           where: { id: returnId },
@@ -524,6 +548,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             total_amount: totalAmount,
             total_tax: totalTax,
             refund_amount: refundAmount,
+            packing_forwarding_amount: pfAmount,
             notes: notes || '',
             payment_status: payment_status !== undefined ? parseInt(payment_status) : undefined,
             payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : undefined,
@@ -638,6 +663,82 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         notes: `Refund received for ${existingReturn.debit_note_no}`,
         fy: existingReturn.fy
       })
+
+      // ✅ CREATE REFUND ALLOCATION RECORDS
+      const refund = await prisma.vendor_refunds.create({
+        data: {
+          vendor_id: existingReturn.vendor_id,
+          refund_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          refund_amount: finalRefundAmount,
+          refund_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+          refund_type: 'RETURN_SPECIFIC',
+          notes: `Refund for return ${existingReturn.debit_note_no}`,
+          fy: existingReturn.fy
+        }
+      });
+      
+      await prisma.refund_allocations.create({
+        data: {
+          refund_id: refund.id,
+          return_id: returnId,
+          allocated_amount: finalRefundAmount,
+          allocation_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          notes: 'Allocated during return edit'
+        }
+      });
+    }
+
+    // ✅ HANDLE PAYMENT STATUS CHANGE FROM PAID TO UNPAID (REVERSAL)
+    if (existingReturn.payment_status === 1 && payment_status === 0) {
+      // Delete refund allocations
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { refund_id: true }
+      });
+      
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+      
+      // Create REFUND_REVERSAL ledger entry
+      const refundEntry = await prisma.vendor_ledger.findFirst({
+        where: {
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          transaction_type: 'REFUND_RECEIVED'
+        },
+        orderBy: { id: 'desc' }
+      });
+      
+      if (refundEntry) {
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'REFUND_REVERSAL',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: 0,
+          credit: refundEntry.debit,
+          payment_mode: existingReturn.payment_mode,
+          payment_status: 0,
+          notes: `Refund reversed for ${existingReturn.debit_note_no} - unmarked as unpaid`,
+          fy: existingReturn.fy
+        });
+      }
     }
 
     res.status(200).json({
@@ -675,6 +776,20 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
+    // ✅ GET RETURN INFO BEFORE DELETION
+    const returnRecord = await prisma.purchase_returns.findUnique({
+      where: { id: returnId },
+      select: {
+        vendor_id: true,
+        debit_note_no: true,
+        payment_status: true
+      }
+    });
+
+    if (!returnRecord) {
+      return res.status(404).json({ message: 'Return not found' })
+    }
+
     // Delete return items first, then return record
     await prisma.$transaction(async (tx) => {
       // Get return items to restore stock before deleting
@@ -709,6 +824,40 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         where: { id: returnId }
       })
     })
+
+    // ✅ CLEAN UP LEDGER ENTRIES AND REFUND ALLOCATIONS (outside transaction)
+    // Delete refund allocations if return was refunded
+    if (returnRecord.payment_status === 1) {
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { refund_id: true }
+      });
+      
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+    }
+
+    // Delete ledger entries for this return
+    await prisma.vendor_ledger.deleteMany({
+      where: {
+        reference_type: 'purchase_return',
+        reference_id: returnId
+      }
+    });
 
     res.status(200).json({
       success: true,

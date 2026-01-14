@@ -7,6 +7,7 @@ import {
   calculateRefundStatus
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
+import { updateVendorBalance } from '../../../lib/vendor-balance-service';
 
 const prisma = new PrismaClient();
 
@@ -57,11 +58,13 @@ async function handleCreateRefund(
       });
     }
 
-    // Validate allocations
+    // Validate allocations (pass 'vendor' type for purchase returns)
     const validation = await validateRefundAllocation(
       vendor_id,
       refund_amount,
-      allocations
+      allocations,
+      'vendor', // Flag to identify vendor returns
+      refund_type
     );
 
     if (!validation.valid) {
@@ -170,6 +173,22 @@ async function handleCreateRefund(
     }, {
       timeout: 15000 // 15 seconds timeout for ledger operations
     });
+
+    // Update vendor balance after transaction
+    if (refund_type === 'DIRECT') {
+      // Direct refund - no allocations
+      await updateVendorBalance(vendor_id, {
+        total_refunded: refund_amount
+      });
+    } else {
+      // Return-specific or mixed refund - has allocations
+      const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
+      
+      await updateVendorBalance(vendor_id, {
+        total_refunded: refund_amount,
+        total_refund_allocated: totalAllocated
+      });
+    }
 
     return res.status(201).json({
       success: true,
