@@ -148,7 +148,7 @@ async function handleCreateRefund(
           data: { payment_status: newStatus }
         });
 
-        // Create ledger entry for this allocation
+        // Create ledger entry for this allocation (INSIDE TRANSACTION)
         await ledgerService.createEntry({
           vendor_id,
           transaction_date: refund_date,
@@ -163,7 +163,7 @@ async function handleCreateRefund(
           credit: 0,
           notes: `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`,
           fy: financialYear
-        });
+        }, tx);
       }
 
       return {

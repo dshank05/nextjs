@@ -56,7 +56,7 @@ test('Test Name', async ({ page }) => {
 
 | Batch | Category | Total | Completed | Status |
 |-------|----------|-------|-----------|--------|
-| 1 | Purchase Creation | 10 | 0 | ⏳ Pending |
+| 1 | Purchase Creation | 10 | 10 | ✅ **COMPLETE** |
 | 2 | Purchase Edit | 12 | 0 | ⏳ Pending |
 | 3 | Payment Allocation | 15 | 0 | ⏳ Pending |
 | 4 | Return Creation | 10 | 0 | ⏳ Pending |
@@ -65,7 +65,7 @@ test('Test Name', async ({ page }) => {
 | 7 | Complex Integration | 12 | 0 | ⏳ Pending |
 | 8 | Edge Cases | 10 | 0 | ⏳ Pending |
 | 9 | Data Integrity | 8 | 0 | ⏳ Pending |
-| **TOTAL** | **All Batches** | **100** | **0** | **0%** |
+| **TOTAL** | **All Batches** | **100** | **10** | **10%** |
 
 ---
 

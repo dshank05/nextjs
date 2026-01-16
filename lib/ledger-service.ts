@@ -26,10 +26,12 @@ export interface LedgerEntryData {
 export class LedgerService {
   /**
    * Create a new ledger entry
+   * @param data - Ledger entry data
+   * @param client - Prisma client (transaction or global) - REQUIRED for transaction safety
    */
-  async createEntry(data: LedgerEntryData): Promise<void> {
+  async createEntry(data: LedgerEntryData, client: any): Promise<void> {
     // Get current balance for this vendor
-    const currentBalance = await this.getLatestBalance(data.vendor_id)
+    const currentBalance = await this.getLatestBalance(data.vendor_id, client)
     
     // Calculate new balance
     // Debit increases balance (you owe more)
@@ -48,8 +50,8 @@ export class LedgerService {
       }
     }
 
-    // Create ledger entry
-    await prisma.vendor_ledger.create({
+    // Create ledger entry using provided client
+    await client.vendor_ledger.create({
       data: {
         vendor_id: data.vendor_id,
         transaction_date: data.transaction_date,
@@ -71,9 +73,11 @@ export class LedgerService {
 
   /**
    * Get latest balance for a vendor
+   * @param vendor_id - Vendor ID
+   * @param client - Prisma client (transaction or global) - REQUIRED for transaction safety
    */
-  async getLatestBalance(vendor_id: number): Promise<number> {
-    const latest = await prisma.vendor_ledger.findFirst({
+  async getLatestBalance(vendor_id: number, client: any): Promise<number> {
+    const latest = await client.vendor_ledger.findFirst({
       where: { vendor_id },
       orderBy: { id: 'desc' },
       select: { balance: true }
@@ -122,9 +126,10 @@ export class LedgerService {
 
   /**
    * Get vendor outstanding balance (what you owe)
+   * NOTE: This method uses global prisma client - only for read operations outside transactions
    */
   async getVendorOutstanding(vendor_id: number): Promise<number> {
-    return await this.getLatestBalance(vendor_id)
+    return await this.getLatestBalance(vendor_id, prisma)
   }
 
   /**
@@ -164,6 +169,8 @@ export class LedgerService {
 
   /**
    * Create purchase ledger entry
+   * @param purchase - Purchase data
+   * @param client - Prisma client (transaction or global) - REQUIRED for transaction safety
    */
   async createPurchaseEntry(purchase: {
     id: number
@@ -172,7 +179,7 @@ export class LedgerService {
     invoice_date: number
     total: number
     fy: number
-  }) {
+  }, client: any) {
     await this.createEntry({
       vendor_id: purchase.vendor_id || 0,
       transaction_date: purchase.invoice_date,
@@ -183,11 +190,13 @@ export class LedgerService {
       debit: purchase.total,
       credit: 0,
       fy: purchase.fy
-    })
+    }, client)
   }
 
   /**
    * Create debit note ledger entry
+   * @param purchaseReturn - Purchase return data
+   * @param client - Prisma client (transaction or global) - REQUIRED for transaction safety
    */
   async createDebitNoteEntry(purchaseReturn: {
     id: number
@@ -199,7 +208,7 @@ export class LedgerService {
     packing_forwarding_amount: number
     freight_amount: number
     fy: number
-  }) {
+  }, client: any) {
     const totalCredit = 
       purchaseReturn.total_amount + 
       purchaseReturn.total_tax + 
@@ -216,7 +225,7 @@ export class LedgerService {
       debit: 0,
       credit: totalCredit,
       fy: purchaseReturn.fy
-    })
+    }, client)
   }
 
   /**

@@ -368,8 +368,9 @@ export default async function handler(
         } = req.body
 
         // ===== VALIDATION =====
-        // Validate payment_status and payment_mode are valid integers [0,1]
-        const validPaymentStatuses = [0, 1];
+        // Validate payment_status and payment_mode are valid integers [0,1,2]
+        // Note: Status 2 (Partially Paid) is calculated by system, but we accept it from frontend
+        const validPaymentStatuses = [0, 1, 2];
         const validPaymentModes = [0, 1];
 
         const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
@@ -382,7 +383,7 @@ export default async function handler(
 
         if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
           return res.status(400).json({
-            message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
+            message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Paid), or 2 (Partially Paid)'
           })
         }
 
@@ -400,6 +401,16 @@ export default async function handler(
         if (!existingPurchase) {
           return res.status(404).json({ message: 'Purchase not found' })
         }
+
+        // ✅ FIX 3: Check if purchase has payment allocations (Type A vs Type B)
+        // Type A: Paid via payment allocation system - status MUST be calculated from allocations
+        // Type B: Marked as paid during creation - status can be set manually
+        const existingAllocations = await prisma.payment_allocations.findMany({
+          where: { purchase_id: purchaseId },
+          select: { allocated_amount: true }
+        })
+        
+        const isTypeA = existingAllocations.length > 0
 
         // ===== RETURN VALIDATION =====
         // Block editing if purchase is fully returned
@@ -481,6 +492,47 @@ export default async function handler(
 
         // Start transaction for purchase and item updates
         const result = await prisma.$transaction(async (tx) => {
+          // ✅ FIX 1: Calculate correct payment_status BEFORE update
+          // This prevents race conditions between status update and ledger creation
+          let finalPaymentStatus = parsedPaymentStatus
+          
+          // Calculate totals first (needed for status calculation)
+          let calculatedItemsTotal = 0;
+          let calculatedPackingTotal = 0;
+          let calculatedTotalTax = 0;
+
+          if (items && Array.isArray(items)) {
+            calculatedItemsTotal = items.reduce((sum: number, item: any) => {
+              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0));
+            }, 0);
+
+            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0;
+            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0;
+            calculatedPackingTotal = packingQty * packingRate;
+
+            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0;
+          }
+
+          const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax;
+          
+          // ✅ FIX 3: For Type A purchases, ALWAYS calculate status from allocations
+          if (isTypeA) {
+            const totalAllocated = existingAllocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            
+            // Calculate status based on actual allocations (ignore request status)
+            if (totalAllocated >= newTotal) {
+              finalPaymentStatus = 1 // Fully paid
+            } else if (totalAllocated > 0) {
+              finalPaymentStatus = 2 // Partially paid
+            } else {
+              finalPaymentStatus = 0 // Unpaid
+            }
+          }
+          // For Type B purchases, use the request status (parsedPaymentStatus)
+
           // ===== CRITICAL FIX: Update bill_to table with vendor details =====
           // Get existing vendor data for fallback
           let existingVendor = null;
@@ -520,30 +572,7 @@ export default async function handler(
             }
           });
 
-          // Calculate totals from items if provided
-          let calculatedItemsTotal = 0;
-          let calculatedPackingTotal = 0;
-          let calculatedTotalTax = 0;
-
-          if (items && Array.isArray(items)) {
-            // Calculate items total (sum of qty * rate for all items)
-            calculatedItemsTotal = items.reduce((sum: number, item: any) => {
-              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0));
-            }, 0);
-
-            // Get packing/forwarding total if provided
-            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0;
-            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0;
-            calculatedPackingTotal = packingQty * packingRate;
-
-            // Get total tax from request body
-            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0;
-          }
-
-          // Calculate grand total (excluding freight as per requirement)
-          const calculatedGrandTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax;
-
-          // Update purchase record
+          // Update purchase record with calculated status
           const updatedPurchase = await tx.purchase.update({
             where: { id: purchaseId },
             data: {
@@ -554,7 +583,7 @@ export default async function handler(
               vendor_id: vendor_id ? parseInt(vendor_id.toString()) : existingPurchase.vendor_id,
               notes: notes || null,
               descriptions: descriptions || null,
-              payment_status: parsedPaymentStatus,
+              payment_status: finalPaymentStatus, // ✅ Use calculated status
               payment_mode: parsedPaymentMode,
               transport: transport_name || null,
               transport_name: transport_name || null,
@@ -568,7 +597,7 @@ export default async function handler(
               total_sgst: total_sgst ? parseFloat(total_sgst.toString()) : 0,
               total_igst: total_igst ? parseFloat(total_igst.toString()) : 0,
               total_tax: calculatedTotalTax,
-              total: calculatedGrandTotal,
+              total: newTotal,
               freight: transport_cost ? parseFloat(transport_cost.toString()) : 0,
             }
           })
@@ -747,24 +776,20 @@ export default async function handler(
             }
           }
 
-          return updatedPurchase
-        }, {
-          timeout: 15000 // 15 seconds
-        })
+          // ✅ FIX 2: Move ledger handling INSIDE transaction
+          // This ensures ledger entries reference the correct final payment_status
+          const oldPaymentStatus = existingPurchase.payment_status
+          const newPaymentStatus = finalPaymentStatus // ✅ Use calculated status
+          const oldTotal = existingPurchase.total
+          const timestamp = new Date()?.toLocaleString('en-IN')
 
-        // ===== LEDGER HANDLING WITH REVERSAL ENTRIES =====
-        // Handle all payment status and amount changes using reversal entries (never delete)
-        const oldPaymentStatus = existingPurchase.payment_status
-        const newPaymentStatus = parsedPaymentStatus
-        const oldTotal = existingPurchase.total
-        const newTotal = result.total
-        const timestamp = new Date()?.toLocaleString('en-IN')
-
-        try {
+          // ===== LEDGER HANDLING WITH REVERSAL ENTRIES =====
+          // Handle all payment status and amount changes using reversal entries (never delete)
+          
           // Case 1: Changed from PAID to UNPAID (unmarking)
           if (oldPaymentStatus === 1 && newPaymentStatus === 0) {
             // FIRST: Create PAYMENT_REVERSAL to reverse the payment
-            const paymentEntry = await prisma.vendor_ledger.findFirst({
+            const paymentEntry = await tx.vendor_ledger.findFirst({
               where: {
                 reference_type: 'purchase',
                 reference_id: purchaseId,
@@ -788,27 +813,27 @@ export default async function handler(
                 payment_status: 0,
                 notes: `Payment reversed for purchase ${existingPurchase.invoice_no} - unmarked as unpaid on ${timestamp} for editing`,
                 fy: existingPurchase.fy
-              })
+              }, tx)
             }
 
             // ✅ DELETE PAYMENT ALLOCATION RECORDS
-            const allocations = await prisma.payment_allocations.findMany({
+            const allocations = await tx.payment_allocations.findMany({
               where: { purchase_id: purchaseId },
               select: { payment_id: true }
             });
 
-            await prisma.payment_allocations.deleteMany({
+            await tx.payment_allocations.deleteMany({
               where: { purchase_id: purchaseId }
             });
 
             // Delete vendor_payments if no other allocations exist
             for (const alloc of allocations) {
-              const remainingAllocs = await prisma.payment_allocations.count({
+              const remainingAllocs = await tx.payment_allocations.count({
                 where: { payment_id: alloc.payment_id }
               });
               
               if (remainingAllocs === 0) {
-                await prisma.vendor_payments.delete({
+                await tx.vendor_payments.delete({
                   where: { id: alloc.payment_id }
                 });
               }
@@ -829,7 +854,7 @@ export default async function handler(
                 credit: difference < 0 ? Math.abs(difference) : 0,
                 notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (after unmarking)`,
                 fy: existingPurchase.fy
-              })
+              }, tx)
             }
           }
 
@@ -850,11 +875,11 @@ export default async function handler(
                 credit: difference < 0 ? Math.abs(difference) : 0,
                 notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (before marking as paid)`,
                 fy: existingPurchase.fy
-              })
+              }, tx)
             }
             
             // SECOND: Check if this is a re-mark (was previously paid and reversed)
-            const hasReversal = await prisma.vendor_ledger.findFirst({
+            const hasReversal = await tx.vendor_ledger.findFirst({
               where: {
                 reference_type: 'purchase',
                 reference_id: purchaseId,
@@ -881,10 +906,10 @@ export default async function handler(
               payment_date: existingPurchase.invoice_date,
               notes: notes,
               fy: existingPurchase.fy
-            })
+            }, tx)
 
             // ✅ CREATE PAYMENT ALLOCATION RECORDS
-            const payment = await prisma.vendor_payments.create({
+            const payment = await tx.vendor_payments.create({
               data: {
                 vendor_id: existingPurchase.vendor_id,
                 payment_date: Math.floor(Date.now() / 1000),
@@ -896,7 +921,7 @@ export default async function handler(
               }
             });
 
-            await prisma.payment_allocations.create({
+            await tx.payment_allocations.create({
               data: {
                 payment_id: payment.id,
                 purchase_id: purchaseId,
@@ -923,17 +948,12 @@ export default async function handler(
               credit: difference < 0 ? Math.abs(difference) : 0,
               notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp}`,
               fy: existingPurchase.fy
-            })
+            }, tx)
           }
 
           // Case 4: Stayed PAID but amount changed
           if (oldPaymentStatus === 1 && newPaymentStatus === 1 && oldTotal !== newTotal) {
             const difference = newTotal - oldTotal
-            
-            // Check if this purchase has payment allocations (Type A) vs marked paid during creation (Type B)
-            const paymentAllocations = await prisma.payment_allocations.findMany({
-              where: { purchase_id: purchaseId }
-            })
             
             // Create PURCHASE_ADJUSTMENT entry
             await ledgerService.createEntry({
@@ -947,35 +967,13 @@ export default async function handler(
               credit: difference < 0 ? Math.abs(difference) : 0,
               notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (while paid)`,
               fy: existingPurchase.fy
-            })
+            }, tx)
             
-            if (paymentAllocations.length > 0) {
-              // Type A: Paid via payment allocation system
-              // DO NOT create PAYMENT_ADJUSTMENT - the actual payment is tracked in payment_allocations
-              // Recalculate payment_status based on actual allocated amounts
-              const totalAllocated = paymentAllocations.reduce(
-                (sum, alloc) => sum + Number(alloc.allocated_amount),
-                0
-              )
-              
-              // Calculate new payment status
-              let newCalculatedStatus = 0
-              if (totalAllocated >= newTotal) {
-                newCalculatedStatus = 1 // Fully paid
-              } else if (totalAllocated > 0) {
-                newCalculatedStatus = 2 // Partially paid
-              }
-              
-              // Update payment_status if it changed
-              if (newCalculatedStatus !== newPaymentStatus) {
-                await prisma.purchase.update({
-                  where: { id: purchaseId },
-                  data: { payment_status: newCalculatedStatus }
-                })
-              }
-            } else {
+            // ✅ FIX 1 & 3: Status already calculated correctly above
+            // Type A: Status was calculated from allocations (finalPaymentStatus)
+            // Type B: Create PAYMENT_ADJUSTMENT to keep it balanced
+            if (!isTypeA) {
               // Type B: Marked as paid during creation (no payment allocations)
-              // Create PAYMENT_ADJUSTMENT to keep it balanced
               await ledgerService.createEntry({
                 vendor_id: existingPurchase.vendor_id,
                 transaction_date: Math.floor(Date.now() / 1000),
@@ -989,12 +987,210 @@ export default async function handler(
                 payment_status: 1,
                 notes: `Payment adjustment for purchase ${existingPurchase.invoice_no} - ${difference > 0 ? 'additional' : 'refund'} ₹${Math.abs(difference)} on ${timestamp}`,
                 fy: existingPurchase.fy
-              })
+              }, tx)
             }
           }
-        } catch (error) {
-          console.error('Purchase Update - Failed to create ledger entries:', error);
-        }
+
+          // Case 5: Changed from FULLY PAID to PARTIALLY PAID (amount increased beyond payment)
+          if (oldPaymentStatus === 1 && newPaymentStatus === 2 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the additional amount
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference,
+              credit: 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount increased by ₹${difference} on ${timestamp} - now partially paid`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          // Case 6: Changed from PARTIALLY PAID to FULLY PAID (mark remaining as paid)
+          if (oldPaymentStatus === 2 && newPaymentStatus === 1) {
+            // Calculate remaining amount to pay
+            const totalAllocated = existingAllocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            const remainingAmount = newTotal - totalAllocated
+            
+            // FIRST: Handle amount change if it occurred before marking as paid
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (before marking as fully paid)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+            
+            // SECOND: Create PAYMENT entry for remaining amount
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: remainingAmount,
+              payment_mode: parsedPaymentMode,
+              payment_status: 1,
+              payment_date: existingPurchase.invoice_date,
+              notes: `Payment for remaining amount ₹${remainingAmount} for purchase ${existingPurchase.invoice_no} (marked as fully paid on ${timestamp})`,
+              fy: existingPurchase.fy
+            }, tx)
+
+            // THIRD: Create payment allocation for remaining amount
+            const payment = await tx.vendor_payments.create({
+              data: {
+                vendor_id: existingPurchase.vendor_id,
+                payment_date: Math.floor(Date.now() / 1000),
+                payment_amount: remainingAmount,
+                payment_mode: parsedPaymentMode,
+                payment_type: 'BILL_SPECIFIC',
+                notes: `Payment for remaining amount on purchase ${existingPurchase.invoice_no}`,
+                fy: existingPurchase.fy
+              }
+            });
+
+            await tx.payment_allocations.create({
+              data: {
+                payment_id: payment.id,
+                purchase_id: purchaseId,
+                allocated_amount: remainingAmount,
+                allocation_date: Math.floor(Date.now() / 1000),
+                notes: 'Allocated during purchase edit (partial to paid)'
+              }
+            });
+          }
+
+          // Case 7: Changed from PARTIALLY PAID to UNPAID (unmark all payments)
+          if (oldPaymentStatus === 2 && newPaymentStatus === 0) {
+            // Get all payment allocations to reverse
+            const allocations = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { allocated_amount: true }
+            })
+            
+            const totalAllocated = allocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            
+            // FIRST: Create PAYMENT_REVERSAL to reverse all payments
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT_REVERSAL',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: totalAllocated,
+              credit: 0,
+              payment_mode: existingPurchase.payment_mode,
+              payment_status: 0,
+              notes: `All payments (₹${totalAllocated}) reversed for purchase ${existingPurchase.invoice_no} - unmarked as unpaid on ${timestamp}`,
+              fy: existingPurchase.fy
+            }, tx)
+
+            // SECOND: Delete payment allocations
+            const allocationIds = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { payment_id: true }
+            });
+
+            await tx.payment_allocations.deleteMany({
+              where: { purchase_id: purchaseId }
+            });
+
+            // Delete vendor_payments if no other allocations exist
+            for (const alloc of allocationIds) {
+              const remainingAllocs = await tx.payment_allocations.count({
+                where: { payment_id: alloc.payment_id }
+              });
+              
+              if (remainingAllocs === 0) {
+                await tx.vendor_payments.delete({
+                  where: { id: alloc.payment_id }
+                });
+              }
+            }
+            
+            // THIRD: Handle amount change if it occurred when unmarking
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (after unmarking)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+          }
+
+          // Case 8: Stayed PARTIALLY PAID but amount increased
+          if (oldPaymentStatus === 2 && newPaymentStatus === 2 && newTotal > oldTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the increase
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference,
+              credit: 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount increased by ₹${difference} on ${timestamp} (partially paid)`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          // Case 9: Stayed PARTIALLY PAID but amount decreased
+          if (oldPaymentStatus === 2 && newPaymentStatus === 2 && newTotal < oldTotal) {
+            const difference = oldTotal - newTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the decrease
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: difference,
+              notes: `Purchase ${existingPurchase.invoice_no} amount decreased by ₹${difference} on ${timestamp} (partially paid)`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          return updatedPurchase
+        }, {
+          timeout: 15000 // 30 seconds - increased for complex operations
+        })
 
         res.status(200).json({
           status: "success",

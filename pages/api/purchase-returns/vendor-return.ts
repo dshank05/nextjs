@@ -323,7 +323,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       timeout: 15000 // 15 seconds timeout for complex return processing
     })
 
-    // Create ledger entry for debit note (outside transaction)
+    // Create ledger entry for debit note (OUTSIDE TRANSACTION - uses global prisma)
     await ledgerService.createDebitNoteEntry({
       id: result.id,
       vendor_id: parseInt(vendor_id),
@@ -334,9 +334,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       packing_forwarding_amount: packingForwardingAmount,
       freight_amount: freightAmount,
       fy: financialYear
-    })
+    }, prisma)
 
-    // If refunded immediately, create refund received ledger entry
+    // If refunded immediately, create refund received ledger entry (OUTSIDE TRANSACTION)
     if (paymentStatusValue === 1) {
       await ledgerService.createEntry({
         vendor_id: parseInt(vendor_id),
@@ -352,7 +352,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         payment_date: paymentDateValue,
         notes: `Refund received for ${debitNoteNo}`,
         fy: financialYear
-      })
+      }, prisma)
 
       // ✅ CREATE REFUND ALLOCATION RECORDS
       const refund = await prisma.vendor_refunds.create({

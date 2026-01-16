@@ -644,7 +644,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Create ledger entry if payment status changed from unpaid to paid (outside transaction)
+    // Create ledger entry if payment status changed from unpaid to paid (OUTSIDE TRANSACTION)
     if (existingReturn.payment_status === 0 && payment_status === 1) {
       const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax)
       
@@ -662,7 +662,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         payment_date: payment_date ? parseInt(payment_date) : null,
         notes: `Refund received for ${existingReturn.debit_note_no}`,
         fy: existingReturn.fy
-      })
+      }, prisma)
 
       // ✅ CREATE REFUND ALLOCATION RECORDS
       const refund = await prisma.vendor_refunds.create({
@@ -713,7 +713,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       }
       
-      // Create REFUND_REVERSAL ledger entry
+      // Create REFUND_REVERSAL ledger entry (OUTSIDE TRANSACTION)
       const refundEntry = await prisma.vendor_ledger.findFirst({
         where: {
           reference_type: 'purchase_return',
@@ -737,8 +737,174 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           payment_status: 0,
           notes: `Refund reversed for ${existingReturn.debit_note_no} - unmarked as unpaid`,
           fy: existingReturn.fy
-        });
+        }, prisma);
       }
+    }
+
+    // ✅ NEW CASE 1: PARTIAL (2) → PAID (1) - Mark remaining as refunded
+    if (existingReturn.payment_status === 2 && payment_status === 1) {
+      // Get existing refund allocations
+      const existingAllocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { allocated_amount: true }
+      });
+      
+      const totalAllocated = existingAllocations.reduce(
+        (sum, alloc) => sum + Number(alloc.allocated_amount),
+        0
+      );
+      
+      const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax);
+      const remainingAmount = finalRefundAmount - totalAllocated;
+      
+      // FIRST: Handle amount change if it occurred before marking as refunded
+      if (amountChanged) {
+        const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+        const newTotal = result.total_amount + result.total_tax;
+        const difference = newTotal - oldTotal;
+        
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'PURCHASE_ADJUSTMENT',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: difference < 0 ? Math.abs(difference) : 0,
+          credit: difference > 0 ? difference : 0,
+          notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as fully refunded)`,
+          fy: existingReturn.fy
+        }, prisma);
+      }
+      
+      // SECOND: Create REFUND_RECEIVED entry for remaining amount
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_RECEIVED',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: remainingAmount,
+        credit: 0,
+        payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+        payment_status: 1,
+        payment_date: payment_date ? parseInt(payment_date) : null,
+        notes: `Refund for remaining amount ₹${remainingAmount} for ${existingReturn.debit_note_no} (marked as fully refunded)`,
+        fy: existingReturn.fy
+      }, prisma);
+
+      // THIRD: Create refund allocation for remaining amount
+      const refund = await prisma.vendor_refunds.create({
+        data: {
+          vendor_id: existingReturn.vendor_id,
+          refund_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          refund_amount: remainingAmount,
+          refund_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+          refund_type: 'RETURN_SPECIFIC',
+          notes: `Refund for remaining amount on return ${existingReturn.debit_note_no}`,
+          fy: existingReturn.fy
+        }
+      });
+      
+      await prisma.refund_allocations.create({
+        data: {
+          refund_id: refund.id,
+          return_id: returnId,
+          allocated_amount: remainingAmount,
+          allocation_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          notes: 'Allocated during return edit (partial to refunded)'
+        }
+      });
+    }
+
+    // ✅ NEW CASE 2: PARTIAL (2) → UNPAID (0) - Unmark all refunds
+    if (existingReturn.payment_status === 2 && payment_status === 0) {
+      // Get all refund allocations to reverse
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { allocated_amount: true, refund_id: true }
+      });
+      
+      const totalAllocated = allocations.reduce(
+        (sum, alloc) => sum + Number(alloc.allocated_amount),
+        0
+      );
+      
+      // FIRST: Create REFUND_REVERSAL to reverse all refunds
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_REVERSAL',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: 0,
+        credit: totalAllocated,
+        payment_mode: existingReturn.payment_mode,
+        payment_status: 0,
+        notes: `All refunds (₹${totalAllocated}) reversed for ${existingReturn.debit_note_no} - unmarked as unpaid`,
+        fy: existingReturn.fy
+      }, prisma);
+
+      // SECOND: Delete refund allocations
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+      
+      // THIRD: Handle amount change if it occurred when unmarking
+      if (amountChanged) {
+        const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+        const newTotal = result.total_amount + result.total_tax;
+        const difference = newTotal - oldTotal;
+        
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'PURCHASE_ADJUSTMENT',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: difference < 0 ? Math.abs(difference) : 0,
+          credit: difference > 0 ? difference : 0,
+          notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
+          fy: existingReturn.fy
+        }, prisma);
+      }
+    }
+
+    // ✅ NEW CASE 3: PARTIAL (2) → PARTIAL (2) - Amount change while partially refunded
+    if (existingReturn.payment_status === 2 && payment_status === 2 && amountChanged) {
+      const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+      const newTotal = result.total_amount + result.total_tax;
+      const difference = newTotal - oldTotal;
+      
+      // Create PURCHASE_ADJUSTMENT entry for return amount change
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: Math.floor(Date.now() / 1000),
+        transaction_type: 'PURCHASE_ADJUSTMENT',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: difference < 0 ? Math.abs(difference) : 0,
+        credit: difference > 0 ? difference : 0,
+        notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (partially refunded)`,
+        fy: existingReturn.fy
+      }, prisma);
     }
 
     res.status(200).json({

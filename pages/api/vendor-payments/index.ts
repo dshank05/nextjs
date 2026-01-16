@@ -154,7 +154,7 @@ async function handleCreatePayment(
           data: { payment_status: newStatus }
         });
 
-        // Create ledger entry for this allocation
+        // Create ledger entry for this allocation (INSIDE TRANSACTION)
         await ledgerService.createEntry({
           vendor_id,
           transaction_date: payment_date,
@@ -169,7 +169,7 @@ async function handleCreatePayment(
           credit: allocation.allocated_amount,
           notes: `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`,
           fy: financialYear
-        });
+        }, tx);
       }
 
       return {

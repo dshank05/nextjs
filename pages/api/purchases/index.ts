@@ -614,7 +614,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return purchase;
     }, { timeout: 45000 });
 
-    // ===== STEP 5: LEDGER OPERATIONS =====
+    // ===== STEP 5: LEDGER OPERATIONS (OUTSIDE TRANSACTION - USES GLOBAL PRISMA) =====
+    // NOTE: These operations are NOT in the transaction above
+    // They use global prisma client and commit immediately
     await ledgerService.createPurchaseEntry({
       id: purchase.id,
       vendor_id: parseInt(vendor_id),
@@ -622,7 +624,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       invoice_date: Math.floor(invoiceDate),
       total: calculatedGrandTotal,
       fy: currentFy
-    })
+    }, prisma)
 
     if (payment_status === 1) {
       await ledgerService.createEntry({
@@ -639,7 +641,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         payment_date: Math.floor(invoiceDate),
         notes: `Payment made for purchase ${purchase.invoice_no}`,
         fy: currentFy
-      })
+      }, prisma)
 
       // ✅ CREATE PAYMENT ALLOCATION RECORDS
       const payment = await prisma.vendor_payments.create({
