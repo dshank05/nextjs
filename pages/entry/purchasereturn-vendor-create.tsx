@@ -682,7 +682,9 @@ export default function PurchaseReturnVendorCreatePage() {
       const returnData = {
         return_date: returnDate,
         return_notes: returnNotes,
-        return_status: paymentStatus, // 0=Incomplete, 1=Complete
+        payment_status: paymentStatus, // 0=Incomplete, 1=Complete
+        payment_mode: paymentMode, // 0=Cash, 1=Bank
+        payment_date: paymentStatus === 1 && paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
         packing_forwarding_amount: packingForwardingAmount || 0,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id
@@ -773,8 +775,8 @@ export default function PurchaseReturnVendorCreatePage() {
 
           {/* Return Information - 3 Rows x 3 Columns Layout */}
           <div className="mb-6">
-            {/* Row 1: Vendor | Return Date | Return Status */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Row 1: Vendor | Return Date | Return Status | Payment Mode */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Vendor *</label>
                 <SearchableSelect
@@ -801,13 +803,36 @@ export default function PurchaseReturnVendorCreatePage() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">Return Status *</label>
                 <SearchableSelect
                   options={[
-                    { id: '0', name: 'Incomplete' },
-                    { id: '1', name: 'Complete' }
+                    { id: '0', name: 'Incomplete (Unpaid)' },
+                    { id: '1', name: 'Complete (Paid)' }
                   ]}
                   selectedValue={paymentStatus.toString()}
-                  onSelectionChange={(value) => setPaymentStatus(parseInt(value || '0'))}
+                  onSelectionChange={(value) => {
+                    const newStatus = parseInt(value || '0');
+                    setPaymentStatus(newStatus);
+                    // Auto-set payment date to today if marking as paid
+                    if (newStatus === 1) {
+                      setPaymentDate(new Date().toISOString().split('T')[0]);
+                    } else {
+                      setPaymentDate('');
+                    }
+                  }}
                   placeholder="Select status..."
                   className="w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+                <SearchableSelect
+                  options={[
+                    { id: '0', name: 'Cash' },
+                    { id: '1', name: 'Bank' }
+                  ]}
+                  selectedValue={paymentMode.toString()}
+                  onSelectionChange={(value) => setPaymentMode(parseInt(value || '1'))}
+                  placeholder="Select mode..."
+                  className="w-full"
+                  disabled={paymentStatus === 0}
                 />
               </div>
             </div>
@@ -1178,7 +1203,7 @@ export default function PurchaseReturnVendorCreatePage() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Confirm Return Processing"
-        message={`Process return for ${selectedItems.size} items totaling ₹${(returnSummary.totalAmount + (packingForwardingAmount || 0))} (including P&F: ₹${(packingForwardingAmount || 0)})?`}
+        message={`Process return for ${selectedItems.size} items totaling ₹${(returnSummary.totalAmount + (Number(packingForwardingAmount) || 0))} (including P&F: ₹${(Number(packingForwardingAmount) || 0)})?`}
         confirmText="Process Return"
         cancelText="Cancel"
         showLoading={processingReturn}

@@ -550,7 +550,7 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                 <td className="text-slate-300">
                   {returnItem.payment_mode === 0 ? 'Cash' : returnItem.payment_mode === 1 ? 'Bank' : 'N/A'}
                 </td>
-                <td>{getStatusBadge(returnItem.status)}</td>
+                <td>{getStatusBadge(returnItem.payment_status)}</td>
                 <td className="text-slate-300">₹{returnItem.packing_forwarding_total?.toLocaleString('en-IN') || '0'}</td>
                 <td>
                   <div className="flex items-center space-x-2">

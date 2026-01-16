@@ -538,7 +538,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ])
 
       // Update return record and create new items in parallel
-      const pfAmount = packing_forwarding_amount || 0
+      const pfAmount = parseFloat((packing_forwarding_amount || 0).toString())
       const refundAmount = totalAmount + totalTax + pfAmount
       const [updatedReturn] = await Promise.all([
         tx.purchase_returns.update({
@@ -547,12 +547,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
             total_amount: totalAmount,
             total_tax: totalTax,
-            refund_amount: refundAmount,
+            refund_amount: parseFloat(refundAmount.toString()),
             packing_forwarding_amount: pfAmount,
             notes: notes || '',
-            payment_status: payment_status !== undefined ? parseInt(payment_status) : undefined,
-            payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : undefined,
-            payment_date: payment_date ? parseInt(payment_date) : undefined,
+            payment_status: payment_status !== undefined ? parseInt(payment_status.toString()) : undefined,
+            payment_mode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : undefined,
+            payment_date: payment_date ? parseInt(payment_date.toString()) : undefined,
             updated_at: new Date()
           }
         }),
@@ -646,6 +646,36 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     // Create ledger entry if payment status changed from unpaid to paid (OUTSIDE TRANSACTION)
     if (existingReturn.payment_status === 0 && payment_status === 1) {
+      // ✅ NEW: Check if original purchase is fully paid before allowing refund
+      const returnItems = await prisma.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: { purchase_item_id: true }
+      });
+      
+      const purchaseItemIds = returnItems.map(item => item.purchase_item_id);
+      const purchaseItems = await prisma.purchaseitems.findMany({
+        where: { id: { in: purchaseItemIds } },
+        select: { invoice_no: true }
+      });
+      
+      const invoiceNos = Array.from(new Set(purchaseItems.map(pi => pi.invoice_no)));
+      const unpaidPurchases = await prisma.purchase.findMany({
+        where: {
+          invoice_no: { in: invoiceNos },
+          payment_status: { in: [0, 2] } // Unpaid or Partially Paid
+        },
+        select: { invoice_no: true, payment_status: true }
+      });
+      
+      if (unpaidPurchases.length > 0) {
+        const invoiceList = unpaidPurchases.map(p => `#${p.invoice_no} (${p.payment_status === 0 ? 'Unpaid' : 'Partially Paid'})`).join(', ');
+        return res.status(400).json({
+          message: `Cannot mark return as refunded. Original purchase(s) ${invoiceList} are not fully paid. Please pay the purchase first.`,
+          error_code: 'UNPAID_PURCHASE_REFUND_BLOCKED',
+          unpaid_purchases: unpaidPurchases
+        });
+      }
+      
       const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax)
       
       await ledgerService.createEntry({

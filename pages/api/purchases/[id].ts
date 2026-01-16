@@ -714,7 +714,7 @@ export default async function handler(
                   where: { id: productId },
                   data: {
                     stock: {
-                      increment: newData.qty
+                      increment: parseFloat(newData.qty.toString())
                     },
                     // Update latest purchase rate and timestamp
                     latest_purchase_rate: parseFloat(newData.rate.toString()),
@@ -1189,7 +1189,7 @@ export default async function handler(
 
           return updatedPurchase
         }, {
-          timeout: 15000 // 30 seconds - increased for complex operations
+          timeout: 30000 // 30 seconds - increased for complex operations
         })
 
         res.status(200).json({

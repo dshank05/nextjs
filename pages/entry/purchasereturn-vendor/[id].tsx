@@ -282,15 +282,15 @@ export default function PurchaseReturnDetailPage() {
           <div className="space-y-3">
             <div className="flex justify-between">
               <span className="text-slate-400">Items Total:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0).toFixed(2)}</span>
+              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Total Tax:</span>
-              <span className="text-white font-medium">₹{returnData.total_tax.toFixed(2)}</span>
+              <span className="text-white font-medium">₹{returnData.total_tax}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Packing & Forwarding:</span>
-              <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0).toFixed(2)}</span>
+              <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">CGST:</span>
