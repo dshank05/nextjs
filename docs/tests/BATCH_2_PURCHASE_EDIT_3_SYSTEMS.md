@@ -668,9 +668,9 @@ Every purchase edit operation must update all 3 systems correctly:
 | 2.7 | ✅ Stock +2 | ✅ ADJUSTMENT + PAYMENT_ADJ | ✅ Adjusted | ⏳ Pending | |
 | 2.8 | ✅ Stock -2 | ✅ ADJUSTMENT + PAYMENT_ADJ | ✅ Reversed | ⏳ Pending | |
 | 2.9 | ✅ No change | ✅ PAYMENT_REVERSAL | ✅ Reversed | ⏳ Pending | |
-| 2.10 | ✅ Stock +5 | ✅ ADJUSTMENT + REVERSAL | ✅ Reversed | ⏳ Pending | |
-| 2.11 | ✅ Stock +5 (new) | ✅ ADJUSTMENT (+2500) | ✅ Adjusted if paid | ⏳ Pending | |
-| 2.12 | ✅ Stock reversed | ✅ ADJUSTMENT (-2500) | ✅ Reversed if paid | ⏳ Pending | |
+| 2.10 | ✅ Stock +2 | ✅ ADJUSTMENT (+2000) | ✅ Status = PARTIAL (2) | ✅ **PASS** | ✅ Type A: Status calculated from allocations (10k paid, 12k total = partial). ⚠️ **UI BUG**: Payment mode auto-changes to Bank on edit (should preserve original) |
+| 2.11 | ✅ Stock +5 (new) | ✅ ADJUSTMENT (+2500) | ✅ Status = PARTIAL (2) | ✅ **PASS** | ✅ 2 items now. Total: 14500. Outstanding: 4500. Ledger entry #189 created. |
+| 2.12 | ✅ Stock -5 (removed) | ✅ ADJUSTMENT (-2500) | ✅ Status = PARTIAL (2) | ✅ **PASS** | ✅ Back to 1 item. Total: 12000. Outstanding: 2000. Ledger entry #190 created (credit). |
 
 ---
 
