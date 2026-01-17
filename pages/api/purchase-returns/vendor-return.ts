@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { generateNoteNumber } from '../../../lib/note-counter'
 import { ledgerService } from '../../../lib/ledger-service'
+import { balanceHandler } from '../../../lib/balance-handler'
 
 async function handler(
   req: NextApiRequest,
@@ -231,11 +232,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Create return items and update product stock
-      for (const item of processedItems) {
-        // Create return item record
-        await tx.purchase_return_items.create({
-          data: {
+      // ✅ PARALLEL OPTIMIZATION: Create return items and update stock in parallel
+      await Promise.all([
+        // Create all return items in bulk
+        tx.purchase_return_items.createMany({
+          data: processedItems.map(item => ({
             purchase_return_id: returnRecord.id,
             purchase_item_id: item.purchase_item_id,
             return_qty: item.return_qty,
@@ -246,22 +247,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             sgst: item.sgst,
             igst: item.igst,
             notes: item.notes
-          }
-        })
-
-        // Update product stock (DECREASE stock since we're returning items to vendor)
-        const purchaseItem = purchaseItems.find(pi => pi.id === item.purchase_item_id)
-        if (purchaseItem?.product_id) {
-          await tx.product.update({
-            where: { id: purchaseItem.product_id },
-            data: {
-              stock: {
-                decrement: item.return_qty
+          }))
+        }),
+        // Update all product stocks in parallel
+        ...processedItems.map(item => {
+          const purchaseItem = purchaseItems.find(pi => pi.id === item.purchase_item_id)
+          if (purchaseItem?.product_id) {
+            return tx.product.update({
+              where: { id: purchaseItem.product_id },
+              data: {
+                stock: {
+                  decrement: item.return_qty
+                }
               }
-            }
-          })
-        }
-      }
+            })
+          }
+          return Promise.resolve()
+        })
+      ])
 
       // Update return_status for all affected purchases
       // CRITICAL: We do NOT modify the original purchase amounts - they remain unchanged for accounting integrity
@@ -318,65 +321,72 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       }
 
+      // ✅ MOVE LEDGER OPERATIONS INSIDE TRANSACTION
+      // Create ledger entry for debit note
+      await ledgerService.createDebitNoteEntry({
+        id: returnRecord.id,
+        vendor_id: parseInt(vendor_id),
+        debit_note_no: debitNoteNo,
+        return_date: returnDateTimestamp,
+        total_amount: totalAmount,
+        total_tax: totalTax,
+        packing_forwarding_amount: packingForwardingAmount,
+        freight_amount: freightAmount,
+        fy: financialYear
+      }, tx)
+
+      // If refunded immediately, create refund received ledger entry and allocations
+      if (paymentStatusValue === 1) {
+        await ledgerService.createEntry({
+          vendor_id: parseInt(vendor_id),
+          transaction_date: paymentDateValue || returnDateTimestamp,
+          transaction_type: 'REFUND_RECEIVED',
+          reference_type: 'purchase_return',
+          reference_id: returnRecord.id,
+          reference_no: debitNoteNo,
+          debit: refundAmount,
+          credit: 0,
+          payment_mode: paymentModeValue,
+          payment_status: 1,
+          payment_date: paymentDateValue,
+          notes: `Refund received for ${debitNoteNo}`,
+          fy: financialYear
+        }, tx)
+
+        // ✅ CREATE REFUND ALLOCATION RECORDS INSIDE TRANSACTION
+        const refund = await tx.vendor_refunds.create({
+          data: {
+            vendor_id: parseInt(vendor_id),
+            refund_date: returnDateTimestamp,
+            refund_amount: refundAmount,
+            refund_mode: paymentModeValue,
+            refund_type: 'RETURN_SPECIFIC',
+            notes: `Refund for return ${debitNoteNo}`,
+            fy: financialYear
+          }
+        });
+        
+        await tx.refund_allocations.create({
+          data: {
+            refund_id: refund.id,
+            return_id: returnRecord.id,
+            allocated_amount: refundAmount,
+            allocation_date: returnDateTimestamp,
+            notes: 'Allocated during return creation'
+          }
+        });
+
+        // ✅ ADD BALANCE UPDATE INSIDE TRANSACTION
+        await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
+          total_refunded: refundAmount,
+          total_refund_allocated: refundAmount
+        });
+      }
+
       return returnRecord
     }, {
-      timeout: 15000 // 15 seconds timeout for complex return processing
+      timeout: 45000 // 45 seconds timeout for complex return processing
     })
-
-    // Create ledger entry for debit note (OUTSIDE TRANSACTION - uses global prisma)
-    await ledgerService.createDebitNoteEntry({
-      id: result.id,
-      vendor_id: parseInt(vendor_id),
-      debit_note_no: debitNoteNo,
-      return_date: returnDateTimestamp,
-      total_amount: totalAmount,
-      total_tax: totalTax,
-      packing_forwarding_amount: packingForwardingAmount,
-      freight_amount: freightAmount,
-      fy: financialYear
-    }, prisma)
-
-    // If refunded immediately, create refund received ledger entry (OUTSIDE TRANSACTION)
-    if (paymentStatusValue === 1) {
-      await ledgerService.createEntry({
-        vendor_id: parseInt(vendor_id),
-        transaction_date: paymentDateValue || returnDateTimestamp,
-        transaction_type: 'REFUND_RECEIVED',
-        reference_type: 'purchase_return',
-        reference_id: result.id,
-        reference_no: debitNoteNo,
-        debit: refundAmount,
-        credit: 0,
-        payment_mode: paymentModeValue,
-        payment_status: 1,
-        payment_date: paymentDateValue,
-        notes: `Refund received for ${debitNoteNo}`,
-        fy: financialYear
-      }, prisma)
-
-      // ✅ CREATE REFUND ALLOCATION RECORDS
-      const refund = await prisma.vendor_refunds.create({
-        data: {
-          vendor_id: parseInt(vendor_id),
-          refund_date: returnDateTimestamp,
-          refund_amount: refundAmount,
-          refund_mode: paymentModeValue,
-          refund_type: 'RETURN_SPECIFIC',
-          notes: `Refund for return ${debitNoteNo}`,
-          fy: financialYear
-        }
-      });
-      
-      await prisma.refund_allocations.create({
-        data: {
-          refund_id: refund.id,
-          return_id: result.id,
-          allocated_amount: refundAmount,
-          allocation_date: returnDateTimestamp,
-          notes: 'Allocated during return creation'
-        }
-      });
-    }
 
     res.status(201).json({
       success: true,

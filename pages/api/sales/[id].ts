@@ -434,7 +434,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             // Existing item - check if quantity changed
             const qtyDifference = newData.qty - existingData.qty
 
-            if (Math.abs(qtyDifference) > 01) { // Allow for small floating point differences
+            if (Math.abs(qtyDifference) > .001) { // Allow for small floating point differences
               // Update quantity and adjust stock
               await tx.invoiceitems.update({
                 where: { id: existingData.id },

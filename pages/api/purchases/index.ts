@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { ledgerService } from '../../../lib/ledger-service'
-import { updateVendorBalance } from '../../../lib/vendor-balance-service'
+import { balanceHandler } from '../../../lib/balance-handler'
 
 async function handler(
   req: NextApiRequest,
@@ -592,86 +592,90 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: bulkInsertData
       });
 
-      // ===== OPTIMIZED DB OPERATION 6: Parallel stock updates =====
-      await Promise.all(
-        items.map(async (item) => {
-          const productId = parseInt(item.product_id);
-          const validatedQty = Number(item.qty) || 0;
+      // ===== OPTIMIZED: Parallel stock updates and ledger creation =====
+      await Promise.all([
+        // Stock updates (parallel)
+        Promise.all(
+          items.map(async (item) => {
+            const productId = parseInt(item.product_id);
+            const validatedQty = Number(item.qty) || 0;
 
-          return tx.product.update({
-            where: { id: productId },
-            data: {
-              stock: {
-                increment: validatedQty
-              },
-              latest_purchase_rate: parseFloat(item.rate) || 0,
-              last_purchase_date: invoiceDate
-            }
-          });
-        })
-      );
+            return tx.product.update({
+              where: { id: productId },
+              data: {
+                stock: {
+                  increment: validatedQty
+                },
+                latest_purchase_rate: parseFloat(item.rate) || 0,
+                last_purchase_date: invoiceDate
+              }
+            });
+          })
+        ),
+        // Ledger entry (parallel with stock updates)
+        ledgerService.createPurchaseEntry({
+          id: purchase.id,
+          vendor_id: parseInt(vendor_id),
+          invoice_no: purchase.invoice_no,
+          invoice_date: Math.floor(invoiceDate),
+          total: calculatedGrandTotal,
+          fy: currentFy
+        }, tx)
+      ]);
+
+      // ===== PAYMENT OPERATIONS (if paid) =====
+      if (payment_status === 1) {
+        // Create PAYMENT ledger entry
+        await ledgerService.createEntry({
+          vendor_id: parseInt(vendor_id),
+          transaction_date: Math.floor(invoiceDate),
+          transaction_type: 'PAYMENT',
+          reference_type: 'purchase',
+          reference_id: purchase.id,
+          reference_no: purchase.invoice_no.toString(),
+          debit: 0,
+          credit: calculatedGrandTotal,
+          payment_mode: payment_mode,
+          payment_status: 1,
+          payment_date: Math.floor(invoiceDate),
+          notes: `Payment made for purchase ${purchase.invoice_no}`,
+          fy: currentFy
+        }, tx);
+
+        // Create payment allocation records
+        const payment = await tx.vendor_payments.create({
+          data: {
+            vendor_id: parseInt(vendor_id),
+            payment_date: Math.floor(invoiceDate),
+            payment_amount: calculatedGrandTotal,
+            payment_mode: payment_mode,
+            payment_type: 'BILL_SPECIFIC',
+            notes: `Payment for purchase ${purchase.invoice_no}`,
+            fy: currentFy
+          }
+        });
+
+        await tx.payment_allocations.create({
+          data: {
+            payment_id: payment.id,
+            purchase_id: purchase.id,
+            allocated_amount: calculatedGrandTotal,
+            allocation_date: Math.floor(invoiceDate),
+            notes: 'Allocated during purchase creation'
+          }
+        });
+
+        // Update vendor balance
+        await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
+          total_paid: calculatedGrandTotal,
+          total_allocated: calculatedGrandTotal
+        });
+      }
 
       return purchase;
     }, { timeout: 45000 });
 
-    // ===== STEP 5: LEDGER OPERATIONS (OUTSIDE TRANSACTION - USES GLOBAL PRISMA) =====
-    // NOTE: These operations are NOT in the transaction above
-    // They use global prisma client and commit immediately
-    await ledgerService.createPurchaseEntry({
-      id: purchase.id,
-      vendor_id: parseInt(vendor_id),
-      invoice_no: purchase.invoice_no,
-      invoice_date: Math.floor(invoiceDate),
-      total: calculatedGrandTotal,
-      fy: currentFy
-    }, prisma)
-
-    if (payment_status === 1) {
-      await ledgerService.createEntry({
-        vendor_id: parseInt(vendor_id),
-        transaction_date: Math.floor(invoiceDate),
-        transaction_type: 'PAYMENT',
-        reference_type: 'purchase',
-        reference_id: purchase.id,
-        reference_no: purchase.invoice_no.toString(),
-        debit: 0,
-        credit: calculatedGrandTotal,
-        payment_mode: payment_mode,
-        payment_status: 1,
-        payment_date: Math.floor(invoiceDate),
-        notes: `Payment made for purchase ${purchase.invoice_no}`,
-        fy: currentFy
-      }, prisma)
-
-      // ✅ CREATE PAYMENT ALLOCATION RECORDS
-      const payment = await prisma.vendor_payments.create({
-        data: {
-          vendor_id: parseInt(vendor_id),
-          payment_date: Math.floor(invoiceDate),
-          payment_amount: calculatedGrandTotal,
-          payment_mode: payment_mode,
-          payment_type: 'BILL_SPECIFIC',
-          notes: `Payment for purchase ${purchase.invoice_no}`,
-          fy: currentFy
-        }
-      });
-
-      await prisma.payment_allocations.create({
-        data: {
-          payment_id: payment.id,
-          purchase_id: purchase.id,
-          allocated_amount: calculatedGrandTotal,
-          allocation_date: Math.floor(invoiceDate),
-          notes: 'Allocated during purchase creation'
-        }
-      });
-
-      // ✅ UPDATE VENDOR BALANCE
-      await updateVendorBalance(parseInt(vendor_id), {
-        total_paid: calculatedGrandTotal,
-        total_allocated: calculatedGrandTotal
-      });
-    }
+    // No operations outside transaction - everything is atomic!
 
     const totalTime = Date.now() - startTime;
 

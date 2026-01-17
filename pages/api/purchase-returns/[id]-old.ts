@@ -1,8 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
-import { transactionHandler } from '../../../lib/transaction-handler'
-import { balanceHandler } from '../../../lib/balance-handler'
+import { ledgerService } from '../../../lib/ledger-service'
 
 async function handler(
   req: NextApiRequest,
@@ -405,7 +404,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // Get existing return
+    // Get existing return before transaction to check payment status change
     const existingReturn = await prisma.purchase_returns.findUnique({
       where: { id: returnId },
       select: {
@@ -415,8 +414,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         vendor_id: true,
         fy: true,
         total_amount: true,
-        total_tax: true,
-        refund_amount: true
+        total_tax: true
       }
     })
 
@@ -424,27 +422,37 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Return not found' })
     }
 
-    // Block editing if refunded
+    // ✅ Block editing if refunded
     if (existingReturn.payment_status === 1) {
       return res.status(400).json({
         message: 'Cannot edit a refunded return. The refund has already been processed.',
-        error_code: 'REFUNDED_RETURN_EDIT_BLOCKED'
+        error_code: 'REFUNDED_RETURN_EDIT_BLOCKED',
+        suggestion: 'Create a new return if additional items need to be returned'
       })
     }
 
-    // Check if Type A (has refund allocations) or Type B (marked as refunded during creation)
-    const existingAllocations = await prisma.refund_allocations.findMany({
-      where: { return_id: returnId },
-      select: { allocated_amount: true }
-    })
-    
-    const isTypeA = existingAllocations.length > 0
-
     // Start transaction
     const result = await prisma.$transaction(async (tx) => {
-      let finalPaymentStatus = payment_status !== undefined ? parseInt(payment_status.toString()) : existingReturn.payment_status
-      
-      // Calculate totals
+      // Get current return items
+      const currentReturnItems = await tx.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: { 
+          purchase_item_id: true, 
+          return_qty: true
+        }
+      })
+
+      // Get current return
+      const currentReturn = await tx.purchase_returns.findUnique({
+        where: { id: returnId },
+        select: { total_amount: true, total_tax: true }
+      })
+
+      if (!currentReturn) {
+        throw new Error('Return not found')
+      }
+
+      // Calculate new totals and process items
       let totalAmount = 0
       let totalTax = 0
 
@@ -452,7 +460,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         const subtotal = item.return_qty * item.unit_price
         const taxAmount = (subtotal * item.tax_rate) / 100
 
-        const BUSINESS_STATE_CODE = 9
+        // Determine CGST/SGST vs IGST based on vendor state
+        const BUSINESS_STATE_CODE = 9 // Uttar Pradesh
         let cgst = 0, sgst = 0, igst = 0
         if (item.vendor_state_code === BUSINESS_STATE_CODE) {
           cgst = taxAmount / 2
@@ -461,7 +470,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           igst = taxAmount
         }
 
-        totalAmount += subtotal
+        totalAmount += subtotal + taxAmount
         totalTax += taxAmount
 
         return {
@@ -477,47 +486,24 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      const pfAmount = parseFloat((packing_forwarding_amount || 0).toString())
-      const newTotal = totalAmount + totalTax + pfAmount
-
-      // For Type A returns, calculate status from allocations
-      if (isTypeA) {
-        const totalAllocated = existingAllocations.reduce(
-          (sum, alloc) => sum + Number(alloc.allocated_amount),
-          0
-        )
-        
-        if (totalAllocated >= newTotal) {
-          finalPaymentStatus = 1
-        } else if (totalAllocated > 0) {
-          finalPaymentStatus = 2
-        } else {
-          finalPaymentStatus = 0
-        }
-      }
-
-      // Get current return items for stock adjustment
-      const currentReturnItems = await tx.purchase_return_items.findMany({
-        where: { purchase_return_id: returnId },
-        select: { purchase_item_id: true, return_qty: true }
-      })
-
-      // Calculate NET stock adjustments
+      // Pre-calculate NET stock adjustments (like invoice API pattern)
       const stockAdjustments = new Map<number, number>()
 
+      // Get all purchase_item_ids (old + new)
       const allPurchaseItemIds = [
         ...currentReturnItems.map(item => item.purchase_item_id),
         ...processedItems.map(item => item.purchase_item_id)
       ]
       const uniquePurchaseItemIds = Array.from(new Set(allPurchaseItemIds))
 
+      // Fetch product_ids for all items in one query
       const purchaseItems = await tx.purchaseitems.findMany({
         where: { id: { in: uniquePurchaseItemIds } },
         select: { id: true, product_id: true }
       })
       const purchaseItemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]))
 
-      // Reversals for old items (add back to stock)
+      // Calculate reversals for old return items (add back to stock)
       for (const oldItem of currentReturnItems) {
         const productId = purchaseItemMap.get(oldItem.purchase_item_id)
         if (productId) {
@@ -526,7 +512,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // Deductions for new items (remove from stock)
+      // Calculate deductions for new return items (remove from stock)
       for (const newItem of processedItems) {
         const productId = purchaseItemMap.get(newItem.purchase_item_id)
         if (productId) {
@@ -535,9 +521,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // Execute stock adjustments in parallel
+      // Execute all stock adjustments in parallel using Promise.all
       const stockUpdatePromises = Array.from(stockAdjustments.entries())
-        .filter(([_, adjustment]) => adjustment !== 0)
+        .filter(([_, adjustment]) => adjustment !== 0) // Skip if no net change
         .map(([productId, adjustment]) =>
           tx.product.update({
             where: { id: productId },
@@ -546,12 +532,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         )
 
       // Delete old items and update stock in parallel
-      await Promise.all([
+      const [deleteResult] = await Promise.all([
         tx.purchase_return_items.deleteMany({ where: { purchase_return_id: returnId } }),
         ...stockUpdatePromises
       ])
 
       // Update return record and create new items in parallel
+      const pfAmount = parseFloat((packing_forwarding_amount || 0).toString())
       const refundAmount = totalAmount + totalTax + pfAmount
       const [updatedReturn] = await Promise.all([
         tx.purchase_returns.update({
@@ -563,7 +550,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             refund_amount: parseFloat(refundAmount.toString()),
             packing_forwarding_amount: pfAmount,
             notes: notes || '',
-            payment_status: finalPaymentStatus,
+            payment_status: payment_status !== undefined ? parseInt(payment_status.toString()) : undefined,
             payment_mode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : undefined,
             payment_date: payment_date ? parseInt(payment_date.toString()) : undefined,
             updated_at: new Date()
@@ -578,28 +565,33 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ])
 
       // Recalculate return_status for affected purchases
+      // Get the return record to find purchase_id
       const returnWithPurchase = await tx.purchase_returns.findUnique({
         where: { id: returnId },
         select: { purchase_id: true }
       })
 
       if (returnWithPurchase?.purchase_id) {
+        // Get purchase details
         const purchaseRecord = await tx.purchase.findUnique({
           where: { id: returnWithPurchase.purchase_id },
           select: { invoice_no: true }
         })
 
         if (purchaseRecord) {
+          // Get all items for this purchase
           const allPurchaseItems = await tx.purchaseitems.findMany({
             where: { invoice_no: purchaseRecord.invoice_no },
             select: { id: true, qty: true }
           })
 
+          // Get all returns for these items
           const allReturns = await tx.purchase_return_items.findMany({
             where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
             select: { purchase_item_id: true, return_qty: true }
           })
 
+          // Calculate return status based on returned quantities
           const returnMap = new Map()
           allReturns.forEach(r => {
             const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
@@ -619,8 +611,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             }
           }
 
+          // Calculate return_status: 0=none, 1=partial, 2=full
           const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
 
+          // Update return_status on purchase
           await tx.purchase.update({
             where: { id: returnWithPurchase.purchase_id },
             data: { return_status: returnStatus }
@@ -628,37 +622,320 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // ✅ USE TRANSACTION HANDLER FOR ALL LEDGER/ALLOCATION/BALANCE OPERATIONS
-      const oldPaymentStatus = existingReturn.payment_status
-      const newPaymentStatus = finalPaymentStatus
-      const oldTotal = (existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)
+      return updatedReturn
+    }, {
+      timeout: 10000 // 10 second timeout for the transaction
+    })
+
+    // ✅ FIX: Update DEBIT_NOTE ledger entry if amount changed (outside transaction)
+    const amountChanged = 
+      result.total_amount !== existingReturn.total_amount || 
+      result.total_tax !== existingReturn.total_tax
+
+    if (amountChanged) {
+      // Update the DEBIT_NOTE ledger entry with new amount
+      await ledgerService.updateDebitNoteEntry({
+        vendor_id: existingReturn.vendor_id,
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        new_total_amount: result.total_amount,
+        new_total_tax: result.total_tax,
+        fy: existingReturn.fy
+      })
+    }
+
+    // Create ledger entry if payment status changed from unpaid to paid (OUTSIDE TRANSACTION)
+    if (existingReturn.payment_status === 0 && payment_status === 1) {
+      // ✅ NEW: Check if original purchase is fully paid before allowing refund
+      const returnItems = await prisma.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: { purchase_item_id: true }
+      });
+      
+      const purchaseItemIds = returnItems.map(item => item.purchase_item_id);
+      const purchaseItems = await prisma.purchaseitems.findMany({
+        where: { id: { in: purchaseItemIds } },
+        select: { invoice_no: true }
+      });
+      
+      const invoiceNos = Array.from(new Set(purchaseItems.map(pi => pi.invoice_no)));
+      const unpaidPurchases = await prisma.purchase.findMany({
+        where: {
+          invoice_no: { in: invoiceNos },
+          payment_status: { in: [0, 2] } // Unpaid or Partially Paid
+        },
+        select: { invoice_no: true, payment_status: true }
+      });
+      
+      if (unpaidPurchases.length > 0) {
+        const invoiceList = unpaidPurchases.map(p => `#${p.invoice_no} (${p.payment_status === 0 ? 'Unpaid' : 'Partially Paid'})`).join(', ');
+        return res.status(400).json({
+          message: `Cannot mark return as refunded. Original purchase(s) ${invoiceList} are not fully paid. Please pay the purchase first.`,
+          error_code: 'UNPAID_PURCHASE_REFUND_BLOCKED',
+          unpaid_purchases: unpaidPurchases
+        });
+      }
+      
+      const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax)
+      
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_RECEIVED',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: finalRefundAmount,
+        credit: 0,
+        payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+        payment_status: 1,
+        payment_date: payment_date ? parseInt(payment_date) : null,
+        notes: `Refund received for ${existingReturn.debit_note_no}`,
+        fy: existingReturn.fy
+      }, prisma)
+
+      // ✅ CREATE REFUND ALLOCATION RECORDS
+      const refund = await prisma.vendor_refunds.create({
+        data: {
+          vendor_id: existingReturn.vendor_id,
+          refund_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          refund_amount: finalRefundAmount,
+          refund_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+          refund_type: 'RETURN_SPECIFIC',
+          notes: `Refund for return ${existingReturn.debit_note_no}`,
+          fy: existingReturn.fy
+        }
+      });
+      
+      await prisma.refund_allocations.create({
+        data: {
+          refund_id: refund.id,
+          return_id: returnId,
+          allocated_amount: finalRefundAmount,
+          allocation_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          notes: 'Allocated during return edit'
+        }
+      });
+    }
+
+    // ✅ HANDLE PAYMENT STATUS CHANGE FROM PAID TO UNPAID (REVERSAL)
+    if (existingReturn.payment_status === 1 && payment_status === 0) {
+      // Delete refund allocations
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { refund_id: true }
+      });
+      
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+      
+      // Create REFUND_REVERSAL ledger entry (OUTSIDE TRANSACTION)
+      const refundEntry = await prisma.vendor_ledger.findFirst({
+        where: {
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          transaction_type: 'REFUND_RECEIVED'
+        },
+        orderBy: { id: 'desc' }
+      });
+      
+      if (refundEntry) {
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'REFUND_REVERSAL',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: 0,
+          credit: refundEntry.debit,
+          payment_mode: existingReturn.payment_mode,
+          payment_status: 0,
+          notes: `Refund reversed for ${existingReturn.debit_note_no} - unmarked as unpaid`,
+          fy: existingReturn.fy
+        }, prisma);
+      }
+    }
+
+    // ✅ NEW CASE 1: PARTIAL (2) → PAID (1) - Mark remaining as refunded
+    if (existingReturn.payment_status === 2 && payment_status === 1) {
+      // Get existing refund allocations
+      const existingAllocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { allocated_amount: true }
+      });
+      
       const totalAllocated = existingAllocations.reduce(
         (sum, alloc) => sum + Number(alloc.allocated_amount),
         0
-      )
+      );
+      
+      const finalRefundAmount = result.refund_amount || (result.total_amount + result.total_tax);
+      const remainingAmount = finalRefundAmount - totalAllocated;
+      
+      // FIRST: Handle amount change if it occurred before marking as refunded
+      if (amountChanged) {
+        const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+        const newTotal = result.total_amount + result.total_tax;
+        const difference = newTotal - oldTotal;
+        
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'PURCHASE_ADJUSTMENT',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: difference < 0 ? Math.abs(difference) : 0,
+          credit: difference > 0 ? difference : 0,
+          notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as fully refunded)`,
+          fy: existingReturn.fy
+        }, prisma);
+      }
+      
+      // SECOND: Create REFUND_RECEIVED entry for remaining amount
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_RECEIVED',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: remainingAmount,
+        credit: 0,
+        payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+        payment_status: 1,
+        payment_date: payment_date ? parseInt(payment_date) : null,
+        notes: `Refund for remaining amount ₹${remainingAmount} for ${existingReturn.debit_note_no} (marked as fully refunded)`,
+        fy: existingReturn.fy
+      }, prisma);
 
-      // Get all operations from handler
-      const handlerResult = await transactionHandler.handleReturnEdit({
-        oldStatus: oldPaymentStatus,
-        newStatus: newPaymentStatus,
-        oldTotal: oldTotal,
-        newTotal: newTotal,
-        vendorId: existingReturn.vendor_id,
-        returnId: returnId,
-        debitNoteNo: existingReturn.debit_note_no || '',
-        paymentMode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : existingReturn.payment_mode,
-        paymentDate: payment_date ? parseInt(payment_date.toString()) : Math.floor(Date.now() / 1000),
-        fy: existingReturn.fy,
-        totalAllocated: totalAllocated
-      })
+      // THIRD: Create refund allocation for remaining amount
+      const refund = await prisma.vendor_refunds.create({
+        data: {
+          vendor_id: existingReturn.vendor_id,
+          refund_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          refund_amount: remainingAmount,
+          refund_mode: payment_mode !== undefined ? parseInt(payment_mode) : 1,
+          refund_type: 'RETURN_SPECIFIC',
+          notes: `Refund for remaining amount on return ${existingReturn.debit_note_no}`,
+          fy: existingReturn.fy
+        }
+      });
+      
+      await prisma.refund_allocations.create({
+        data: {
+          refund_id: refund.id,
+          return_id: returnId,
+          allocated_amount: remainingAmount,
+          allocation_date: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+          notes: 'Allocated during return edit (partial to refunded)'
+        }
+      });
+    }
 
-      // Execute all operations (ledger, allocations, balance) in transaction
-      await transactionHandler.executeInTransaction(tx, handlerResult)
+    // ✅ NEW CASE 2: PARTIAL (2) → UNPAID (0) - Unmark all refunds
+    if (existingReturn.payment_status === 2 && payment_status === 0) {
+      // Get all refund allocations to reverse
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { allocated_amount: true, refund_id: true }
+      });
+      
+      const totalAllocated = allocations.reduce(
+        (sum, alloc) => sum + Number(alloc.allocated_amount),
+        0
+      );
+      
+      // FIRST: Create REFUND_REVERSAL to reverse all refunds
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: Math.floor(Date.now() / 1000),
+        transaction_type: 'REFUND_REVERSAL',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: 0,
+        credit: totalAllocated,
+        payment_mode: existingReturn.payment_mode,
+        payment_status: 0,
+        notes: `All refunds (₹${totalAllocated}) reversed for ${existingReturn.debit_note_no} - unmarked as unpaid`,
+        fy: existingReturn.fy
+      }, prisma);
 
-      return updatedReturn
-    }, {
-      timeout: 45000 // 45 seconds timeout for complex return edit processing
-    })
+      // SECOND: Delete refund allocations
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+      
+      // THIRD: Handle amount change if it occurred when unmarking
+      if (amountChanged) {
+        const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+        const newTotal = result.total_amount + result.total_tax;
+        const difference = newTotal - oldTotal;
+        
+        await ledgerService.createEntry({
+          vendor_id: existingReturn.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: 'PURCHASE_ADJUSTMENT',
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: existingReturn.debit_note_no || '',
+          debit: difference < 0 ? Math.abs(difference) : 0,
+          credit: difference > 0 ? difference : 0,
+          notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
+          fy: existingReturn.fy
+        }, prisma);
+      }
+    }
+
+    // ✅ NEW CASE 3: PARTIAL (2) → PARTIAL (2) - Amount change while partially refunded
+    if (existingReturn.payment_status === 2 && payment_status === 2 && amountChanged) {
+      const oldTotal = existingReturn.total_amount + existingReturn.total_tax;
+      const newTotal = result.total_amount + result.total_tax;
+      const difference = newTotal - oldTotal;
+      
+      // Create PURCHASE_ADJUSTMENT entry for return amount change
+      await ledgerService.createEntry({
+        vendor_id: existingReturn.vendor_id,
+        transaction_date: Math.floor(Date.now() / 1000),
+        transaction_type: 'PURCHASE_ADJUSTMENT',
+        reference_type: 'purchase_return',
+        reference_id: returnId,
+        reference_no: existingReturn.debit_note_no || '',
+        debit: difference < 0 ? Math.abs(difference) : 0,
+        credit: difference > 0 ? difference : 0,
+        notes: `Return ${existingReturn.debit_note_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (partially refunded)`,
+        fy: existingReturn.fy
+      }, prisma);
+    }
 
     res.status(200).json({
       success: true,
@@ -709,7 +986,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Return not found' })
     }
 
-    // ✅ MOVE ALL OPERATIONS INTO TRANSACTION
+    // Delete return items first, then return record
     await prisma.$transaction(async (tx) => {
       // Get return items to restore stock before deleting
       const returnItems = await tx.purchase_return_items.findMany({
@@ -717,93 +994,66 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         select: { purchase_item_id: true, return_qty: true }
       })
 
-      // Get purchase items to get product IDs
-      const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
-      const purchaseItems = await tx.purchaseitems.findMany({
-        where: { id: { in: purchaseItemIds } },
-        select: { id: true, product_id: true }
-      })
-      const purchaseItemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]))
-
-      // ✅ PARALLEL OPTIMIZATION: Restore stock for all items in parallel
-      const stockRestorePromises = returnItems
-        .map(returnItem => {
-          const productId = purchaseItemMap.get(returnItem.purchase_item_id)
-          if (productId) {
-            return tx.product.update({
-              where: { id: productId },
-              data: {
-                stock: { increment: returnItem.return_qty }
-              }
-            })
-          }
-          return Promise.resolve()
+      // Restore stock for all return items
+      for (const returnItem of returnItems) {
+        const purchaseItem = await tx.purchaseitems.findUnique({
+          where: { id: returnItem.purchase_item_id },
+          select: { product_id: true }
         })
-        .filter(p => p !== Promise.resolve())
 
-      // Execute stock restoration and deletions in parallel
-      await Promise.all([
-        ...stockRestorePromises,
-        tx.purchase_return_items.deleteMany({
-          where: { purchase_return_id: returnId }
-        })
-      ])
-
-      // Delete return record
-      await tx.purchase_returns.delete({
-        where: { id: returnId }
-      })
-
-      // ✅ MOVE LEDGER/ALLOCATION CLEANUP INTO TRANSACTION
-      // Delete refund allocations if return was refunded
-      if (returnRecord.payment_status === 1) {
-        const allocations = await tx.refund_allocations.findMany({
-          where: { return_id: returnId },
-          select: { refund_id: true, allocated_amount: true }
-        });
-        
-        // Calculate total refunded for balance reversal
-        const totalRefunded = allocations.reduce(
-          (sum, alloc) => sum + Number(alloc.allocated_amount),
-          0
-        )
-        
-        await tx.refund_allocations.deleteMany({
-          where: { return_id: returnId }
-        });
-        
-        // Delete vendor_refunds if no other allocations exist
-        for (const alloc of allocations) {
-          const remainingAllocs = await tx.refund_allocations.count({
-            where: { refund_id: alloc.refund_id }
-          });
-          
-          if (remainingAllocs === 0) {
-            await tx.vendor_refunds.delete({
-              where: { id: alloc.refund_id }
-            });
-          }
-        }
-
-        // ✅ ADD BALANCE REVERSAL
-        if (totalRefunded > 0) {
-          await balanceHandler.incrementBalanceInTransaction(tx, returnRecord.vendor_id, {
-            total_refunded: -totalRefunded,
-            total_refund_allocated: -totalRefunded
-          });
+        if (purchaseItem?.product_id) {
+          await tx.product.update({
+            where: { id: purchaseItem.product_id },
+            data: {
+              stock: { increment: returnItem.return_qty } // Restore stock when return is cancelled
+            }
+          })
         }
       }
 
-      // Delete ledger entries for this return
-      await tx.vendor_ledger.deleteMany({
-        where: {
-          reference_type: 'purchase_return',
-          reference_id: returnId
-        }
-      });
-    }, {
-      timeout: 45000 // 45 seconds timeout for delete operations
+      // Delete return items and return record
+      await tx.purchase_return_items.deleteMany({
+        where: { purchase_return_id: returnId }
+      })
+
+      await tx.purchase_returns.delete({
+        where: { id: returnId }
+      })
     })
+
+    // ✅ CLEAN UP LEDGER ENTRIES AND REFUND ALLOCATIONS (outside transaction)
+    // Delete refund allocations if return was refunded
+    if (returnRecord.payment_status === 1) {
+      const allocations = await prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        select: { refund_id: true }
+      });
+      
+      await prisma.refund_allocations.deleteMany({
+        where: { return_id: returnId }
+      });
+      
+      // Delete vendor_refunds if no other allocations exist
+      for (const alloc of allocations) {
+        const remainingAllocs = await prisma.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        
+        if (remainingAllocs === 0) {
+          await prisma.vendor_refunds.delete({
+            where: { id: alloc.refund_id }
+          });
+        }
+      }
+    }
+
+    // Delete ledger entries for this return
+    await prisma.vendor_ledger.deleteMany({
+      where: {
+        reference_type: 'purchase_return',
+        reference_id: returnId
+      }
+    });
 
     res.status(200).json({
       success: true,

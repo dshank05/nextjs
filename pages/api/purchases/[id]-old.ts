@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
-import { transactionHandler } from '../../../lib/transaction-handler'
+import { ledgerService } from '../../../lib/ledger-service'
 
 export default async function handler(
   req: NextApiRequest,
@@ -355,7 +355,7 @@ export default async function handler(
           payment_mode,
           transport_name,
           vehicle_number,
-          items,
+          items, // Include items for update logic
           total_cgst,
           total_sgst,
           total_igst,
@@ -367,17 +367,19 @@ export default async function handler(
           packing_forwarding_total
         } = req.body
 
-        // Validation
-        const validPaymentStatuses = [0, 1, 2]
-        const validPaymentModes = [0, 1]
+        // ===== VALIDATION =====
+        // Validate payment_status and payment_mode are valid integers [0,1,2]
+        // Note: Status 2 (Partially Paid) is calculated by system, but we accept it from frontend
+        const validPaymentStatuses = [0, 1, 2];
+        const validPaymentModes = [0, 1];
 
         const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
           ? parseInt(payment_status.toString())
-          : 0
+          : 0; // Default to 0 (Unpaid)
 
         const parsedPaymentMode = payment_mode !== undefined && payment_mode !== null
           ? parseInt(payment_mode.toString())
-          : 1
+          : 1; // Default to 1 (Bank)
 
         if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
           return res.status(400).json({
@@ -391,7 +393,7 @@ export default async function handler(
           })
         }
 
-        // Get existing purchase
+        // Get existing purchase to access invoice_no
         const existingPurchase = await prisma.purchase.findUnique({
           where: { id: purchaseId }
         })
@@ -400,7 +402,9 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
-        // Check if Type A (has payment allocations) or Type B (marked as paid during creation)
+        // ✅ FIX 3: Check if purchase has payment allocations (Type A vs Type B)
+        // Type A: Paid via payment allocation system - status MUST be calculated from allocations
+        // Type B: Marked as paid during creation - status can be set manually
         const existingAllocations = await prisma.payment_allocations.findMany({
           where: { purchase_id: purchaseId },
           select: { allocated_amount: true }
@@ -408,7 +412,8 @@ export default async function handler(
         
         const isTypeA = existingAllocations.length > 0
 
-        // Return validation
+        // ===== RETURN VALIDATION =====
+        // Block editing if purchase is fully returned
         if (existingPurchase.return_status === 2) {
           return res.status(400).json({
             message: 'Cannot edit a fully returned purchase. All items have been returned.',
@@ -416,29 +421,34 @@ export default async function handler(
           })
         }
 
-        // Validate item-level changes for partial returns
+        // If purchase has partial returns, validate item-level changes
         if (existingPurchase.return_status === 1 && items && Array.isArray(items)) {
+          // Get all purchase items
           const purchaseItems = await prisma.purchaseitems.findMany({
             where: { invoice_no: existingPurchase.invoice_no },
             select: { id: true, product_id: true, qty: true, name_of_product: true }
           })
 
+          // Get all returns for these items
           const purchaseItemIds = purchaseItems.map(item => item.id)
           const returnItems = await prisma.purchase_return_items.findMany({
             where: { purchase_item_id: { in: purchaseItemIds } },
             select: { purchase_item_id: true, return_qty: true }
           })
 
+          // Calculate returned quantities per item
           const returnedQtyMap = new Map<number, number>()
           returnItems.forEach(returnItem => {
             const existingQty = returnedQtyMap.get(returnItem.purchase_item_id) || 0
             returnedQtyMap.set(returnItem.purchase_item_id, existingQty + returnItem.return_qty)
           })
 
+          // Create map of product_id to purchase_item for validation
           const productToPurchaseItemMap = new Map(
             purchaseItems.map(item => [item.product_id, { id: item.id, qty: item.qty, name: item.name_of_product }])
           )
 
+          // Validate each item in the update request
           for (const newItem of items) {
             const productId = parseInt(newItem.product_id)
             const purchaseItemData = productToPurchaseItemMap.get(productId)
@@ -446,6 +456,7 @@ export default async function handler(
             if (purchaseItemData) {
               const returnedQty = returnedQtyMap.get(purchaseItemData.id) || 0
               
+              // Cannot reduce quantity below returned amount
               if (returnedQty > 0 && newItem.qty < returnedQty) {
                 return res.status(400).json({
                   message: `Cannot reduce quantity for "${purchaseItemData.name}" to ${newItem.qty}. ${returnedQty} units have already been returned.`,
@@ -460,6 +471,7 @@ export default async function handler(
             }
           }
 
+          // Check for item deletions
           const newProductIds = new Set(items.map(item => parseInt(item.product_id)))
           for (const purchaseItem of purchaseItems) {
             if (!newProductIds.has(purchaseItem.product_id)) {
@@ -478,53 +490,59 @@ export default async function handler(
           }
         }
 
-        // Start transaction
+        // Start transaction for purchase and item updates
         const result = await prisma.$transaction(async (tx) => {
+          // ✅ FIX 1: Calculate correct payment_status BEFORE update
+          // This prevents race conditions between status update and ledger creation
           let finalPaymentStatus = parsedPaymentStatus
           
-          // Calculate totals
-          let calculatedItemsTotal = 0
-          let calculatedPackingTotal = 0
-          let calculatedTotalTax = 0
+          // Calculate totals first (needed for status calculation)
+          let calculatedItemsTotal = 0;
+          let calculatedPackingTotal = 0;
+          let calculatedTotalTax = 0;
 
           if (items && Array.isArray(items)) {
             calculatedItemsTotal = items.reduce((sum: number, item: any) => {
-              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0))
-            }, 0)
+              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0));
+            }, 0);
 
-            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0
-            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0
-            calculatedPackingTotal = packingQty * packingRate
+            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0;
+            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0;
+            calculatedPackingTotal = packingQty * packingRate;
 
-            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0
+            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0;
           }
 
-          const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax
+          const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax;
           
-          // For Type A purchases, calculate status from allocations
+          // ✅ FIX 3: For Type A purchases, ALWAYS calculate status from allocations
           if (isTypeA) {
             const totalAllocated = existingAllocations.reduce(
               (sum, alloc) => sum + Number(alloc.allocated_amount),
               0
             )
             
+            // Calculate status based on actual allocations (ignore request status)
             if (totalAllocated >= newTotal) {
-              finalPaymentStatus = 1
+              finalPaymentStatus = 1 // Fully paid
             } else if (totalAllocated > 0) {
-              finalPaymentStatus = 2
+              finalPaymentStatus = 2 // Partially paid
             } else {
-              finalPaymentStatus = 0
+              finalPaymentStatus = 0 // Unpaid
             }
           }
+          // For Type B purchases, use the request status (parsedPaymentStatus)
 
-          // Update bill_to table
-          let existingVendor = null
+          // ===== CRITICAL FIX: Update bill_to table with vendor details =====
+          // Get existing vendor data for fallback
+          let existingVendor = null;
           if (existingPurchase.vendor_id && existingPurchase.vendor_id !== 0) {
             existingVendor = await tx.vendor_details.findUnique({
               where: { id: existingPurchase.vendor_id }
-            })
+            });
           }
 
+          // Update or create bill_to record with vendor details from req.body
           await tx.bill_to.upsert({
             where: { invoice_no: existingPurchase.invoice_no },
             update: {
@@ -552,9 +570,9 @@ export default async function handler(
               gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
               pin_code: req.body.pin_code ?? ''
             }
-          })
+          });
 
-          // Update purchase record
+          // Update purchase record with calculated status
           const updatedPurchase = await tx.purchase.update({
             where: { id: purchaseId },
             data: {
@@ -565,7 +583,7 @@ export default async function handler(
               vendor_id: vendor_id ? parseInt(vendor_id.toString()) : existingPurchase.vendor_id,
               notes: notes || null,
               descriptions: descriptions || null,
-              payment_status: finalPaymentStatus,
+              payment_status: finalPaymentStatus, // ✅ Use calculated status
               payment_mode: parsedPaymentMode,
               transport: transport_name || null,
               transport_name: transport_name || null,
@@ -584,12 +602,14 @@ export default async function handler(
             }
           })
 
-          // Handle item updates
+          // Handle item updates if items are provided
           if (items && Array.isArray(items)) {
+            // Get existing purchase items for comparison
             const existingItems = await tx.purchaseitems.findMany({
               where: { invoice_no: updatedPurchase.invoice_no }
             })
 
+            // Create maps for efficient lookup
             const existingItemsMap = new Map<number, any>()
             const newItemsMap = new Map<number, any>()
 
@@ -623,9 +643,10 @@ export default async function handler(
               })
             })
 
-            // Process deletions
+            // Process deletions: items that exist in DB but not in new list
             for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
               if (!newItemsMap.has(productId)) {
+                // Item was removed - decrease stock
                 if (existingData.qty > 0) {
                   await tx.product.update({
                     where: { id: productId },
@@ -636,6 +657,7 @@ export default async function handler(
                     }
                   })
                 }
+                // Delete the item
                 await tx.purchaseitems.delete({
                   where: { id: existingData.id }
                 })
@@ -647,6 +669,8 @@ export default async function handler(
               const existingData = existingItemsMap.get(productId)
 
               if (!existingData) {
+                // New item - create it and increase stock
+                // Fetch product details from database for new item
                 const product = await tx.product.findUnique({
                   where: { id: productId }
                 })
@@ -655,8 +679,9 @@ export default async function handler(
                   throw new Error(`Product with ID ${productId} not found`)
                 }
 
-                const modelId = newData.model_id ? parseInt(newData.model_id) : null
-                const companyId = newData.company_id ? parseInt(newData.company_id) : null
+                // Use model_id directly from frontend
+                const modelId = newData.model_id ? parseInt(newData.model_id) : null;
+                const companyId = newData.company_id ? parseInt(newData.company_id) : null;
 
                 await tx.purchaseitems.create({
                   data: {
@@ -673,7 +698,7 @@ export default async function handler(
                     part: newData.part || '',
                     qty: parseFloat(newData.qty),
                     rate: parseFloat(newData.rate),
-                    subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
+                    subtotal: parseFloat(newData.qty) * parseFloat(newData.rate), // Base amount without tax
                     gst_percentage: parseFloat(newData.gst_percentage) || 0,
                     cgst: parseFloat(newData.cgst) || 0,
                     sgst: parseFloat(newData.sgst) || 0,
@@ -684,17 +709,20 @@ export default async function handler(
                   }
                 })
 
+                // Increase stock for new purchase
                 await tx.product.update({
                   where: { id: productId },
                   data: {
                     stock: {
                       increment: parseFloat(newData.qty.toString())
                     },
+                    // Update latest purchase rate and timestamp
                     latest_purchase_rate: parseFloat(newData.rate.toString()),
                     last_purchase_date: updatedPurchase.invoice_date
                   }
                 })
               } else {
+                // Existing item - check if quantity, rate, or product details changed
                 const qtyDifference = newData.qty - existingData.qty
                 const rateChanged = Math.abs(newData.rate - existingData.item.rate) > 0.001
                 const subtotalChanged = Math.abs(newData.total - existingData.item.subtotal) > 0.001
@@ -704,12 +732,13 @@ export default async function handler(
                 const needsUpdate = Math.abs(qtyDifference) > 0.001 || rateChanged || subtotalChanged || nameChanged || carModelChanged
 
                 if (needsUpdate) {
+                  // Update item details
                   await tx.purchaseitems.update({
                     where: { id: existingData.id },
                     data: {
                       qty: parseFloat(newData.qty),
                       rate: parseFloat(newData.rate),
-                      subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
+                      subtotal: parseFloat(newData.qty) * parseFloat(newData.rate), // Base amount without tax
                       name_of_product: newData.name_of_product,
                       car_model: newData.car_model,
                       gst_percentage: parseFloat(newData.gst_percentage) || 0,
@@ -720,14 +749,17 @@ export default async function handler(
                     }
                   })
 
+                  // Update product stock and latest purchase rate
                   const productUpdateData: any = {}
 
+                  // Adjust stock based on quantity difference
                   if (Math.abs(qtyDifference) > 0.001) {
                     productUpdateData.stock = {
-                      increment: qtyDifference
+                      increment: qtyDifference // Add the difference (can be negative)
                     }
                   }
 
+                  // Update latest purchase rate if rate changed
                   if (rateChanged) {
                     productUpdateData.latest_purchase_rate = parseFloat(newData.rate.toString())
                     productUpdateData.last_purchase_date = updatedPurchase.invoice_date
@@ -744,37 +776,420 @@ export default async function handler(
             }
           }
 
-          // ✅ USE TRANSACTION HANDLER FOR ALL LEDGER/ALLOCATION/BALANCE OPERATIONS
+          // ✅ FIX 2: Move ledger handling INSIDE transaction
+          // This ensures ledger entries reference the correct final payment_status
           const oldPaymentStatus = existingPurchase.payment_status
-          const newPaymentStatus = finalPaymentStatus
+          const newPaymentStatus = finalPaymentStatus // ✅ Use calculated status
           const oldTotal = existingPurchase.total
-          const totalAllocated = existingAllocations.reduce(
-            (sum, alloc) => sum + Number(alloc.allocated_amount),
-            0
-          )
+          const timestamp = new Date()?.toLocaleString('en-IN')
 
-          // Get all operations from handler
-          const handlerResult = await transactionHandler.handlePurchaseEdit({
-            oldStatus: oldPaymentStatus,
-            newStatus: newPaymentStatus,
-            oldTotal: oldTotal,
-            newTotal: newTotal,
-            vendorId: existingPurchase.vendor_id,
-            purchaseId: purchaseId,
-            invoiceNo: existingPurchase.invoice_no.toString(),
-            paymentMode: parsedPaymentMode,
-            paymentDate: existingPurchase.invoice_date,
-            fy: existingPurchase.fy,
-            totalAllocated: totalAllocated,
-            isTypeA: isTypeA
-          })
+          // ===== LEDGER HANDLING WITH REVERSAL ENTRIES =====
+          // Handle all payment status and amount changes using reversal entries (never delete)
+          
+          // Case 1: Changed from PAID to UNPAID (unmarking)
+          if (oldPaymentStatus === 1 && newPaymentStatus === 0) {
+            // FIRST: Create PAYMENT_REVERSAL to reverse the payment
+            const paymentEntry = await tx.vendor_ledger.findFirst({
+              where: {
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                transaction_type: 'PAYMENT'
+              },
+              orderBy: { id: 'desc' }
+            })
+            
+            if (paymentEntry) {
+              // Create REVERSAL entry (don't delete original!)
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PAYMENT_REVERSAL',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: paymentEntry.credit,
+                credit: 0,
+                payment_mode: existingPurchase.payment_mode,
+                payment_status: 0,
+                notes: `Payment reversed for purchase ${existingPurchase.invoice_no} - unmarked as unpaid on ${timestamp} for editing`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
 
-          // Execute all operations (ledger, allocations, balance) in transaction
-          await transactionHandler.executeInTransaction(tx, handlerResult)
+            // ✅ DELETE PAYMENT ALLOCATION RECORDS
+            const allocations = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { payment_id: true }
+            });
+
+            await tx.payment_allocations.deleteMany({
+              where: { purchase_id: purchaseId }
+            });
+
+            // Delete vendor_payments if no other allocations exist
+            for (const alloc of allocations) {
+              const remainingAllocs = await tx.payment_allocations.count({
+                where: { payment_id: alloc.payment_id }
+              });
+              
+              if (remainingAllocs === 0) {
+                await tx.vendor_payments.delete({
+                  where: { id: alloc.payment_id }
+                });
+              }
+            }
+            
+            // SECOND: Handle amount change if it occurred when unmarking
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (after unmarking)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+          }
+
+          // Case 2: Changed from UNPAID to PAID (marking as paid)
+          if (oldPaymentStatus === 0 && newPaymentStatus === 1) {
+            // FIRST: Handle amount change if it occurred before marking as paid
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (before marking as paid)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+            
+            // SECOND: Check if this is a re-mark (was previously paid and reversed)
+            const hasReversal = await tx.vendor_ledger.findFirst({
+              where: {
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                transaction_type: 'PAYMENT_REVERSAL'
+              }
+            })
+            
+            const notes = hasReversal
+              ? `Payment made for purchase ${existingPurchase.invoice_no} (re-marked as paid after editing on ${timestamp})`
+              : `Payment made for purchase ${existingPurchase.invoice_no}`
+            
+            // THIRD: Create new PAYMENT entry with the new total
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: newTotal,
+              payment_mode: parsedPaymentMode,
+              payment_status: 1,
+              payment_date: existingPurchase.invoice_date,
+              notes: notes,
+              fy: existingPurchase.fy
+            }, tx)
+
+            // ✅ CREATE PAYMENT ALLOCATION RECORDS
+            const payment = await tx.vendor_payments.create({
+              data: {
+                vendor_id: existingPurchase.vendor_id,
+                payment_date: Math.floor(Date.now() / 1000),
+                payment_amount: newTotal,
+                payment_mode: parsedPaymentMode,
+                payment_type: 'BILL_SPECIFIC',
+                notes: `Payment for purchase ${existingPurchase.invoice_no}`,
+                fy: existingPurchase.fy
+              }
+            });
+
+            await tx.payment_allocations.create({
+              data: {
+                payment_id: payment.id,
+                purchase_id: purchaseId,
+                allocated_amount: newTotal,
+                allocation_date: Math.floor(Date.now() / 1000),
+                notes: 'Allocated during purchase edit'
+              }
+            });
+          }
+
+          // Case 3: Stayed UNPAID but amount changed
+          if (oldPaymentStatus === 0 && newPaymentStatus === 0 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create ADJUSTMENT entry for the difference
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference > 0 ? difference : 0,
+              credit: difference < 0 ? Math.abs(difference) : 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp}`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          // Case 4: Stayed PAID but amount changed
+          if (oldPaymentStatus === 1 && newPaymentStatus === 1 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference > 0 ? difference : 0,
+              credit: difference < 0 ? Math.abs(difference) : 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (while paid)`,
+              fy: existingPurchase.fy
+            }, tx)
+            
+            // ✅ FIX 1 & 3: Status already calculated correctly above
+            // Type A: Status was calculated from allocations (finalPaymentStatus)
+            // Type B: Create PAYMENT_ADJUSTMENT to keep it balanced
+            if (!isTypeA) {
+              // Type B: Marked as paid during creation (no payment allocations)
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PAYMENT_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference < 0 ? Math.abs(difference) : 0,
+                credit: difference > 0 ? difference : 0,
+                payment_mode: existingPurchase.payment_mode,
+                payment_status: 1,
+                notes: `Payment adjustment for purchase ${existingPurchase.invoice_no} - ${difference > 0 ? 'additional' : 'refund'} ₹${Math.abs(difference)} on ${timestamp}`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+          }
+
+          // Case 5: Changed from FULLY PAID to PARTIALLY PAID (amount increased beyond payment)
+          if (oldPaymentStatus === 1 && newPaymentStatus === 2 && oldTotal !== newTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the additional amount
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference,
+              credit: 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount increased by ₹${difference} on ${timestamp} - now partially paid`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          // Case 6: Changed from PARTIALLY PAID to FULLY PAID (mark remaining as paid)
+          if (oldPaymentStatus === 2 && newPaymentStatus === 1) {
+            // Calculate remaining amount to pay
+            const totalAllocated = existingAllocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            const remainingAmount = newTotal - totalAllocated
+            
+            // FIRST: Handle amount change if it occurred before marking as paid
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (before marking as fully paid)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+            
+            // SECOND: Create PAYMENT entry for remaining amount
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: remainingAmount,
+              payment_mode: parsedPaymentMode,
+              payment_status: 1,
+              payment_date: existingPurchase.invoice_date,
+              notes: `Payment for remaining amount ₹${remainingAmount} for purchase ${existingPurchase.invoice_no} (marked as fully paid on ${timestamp})`,
+              fy: existingPurchase.fy
+            }, tx)
+
+            // THIRD: Create payment allocation for remaining amount
+            const payment = await tx.vendor_payments.create({
+              data: {
+                vendor_id: existingPurchase.vendor_id,
+                payment_date: Math.floor(Date.now() / 1000),
+                payment_amount: remainingAmount,
+                payment_mode: parsedPaymentMode,
+                payment_type: 'BILL_SPECIFIC',
+                notes: `Payment for remaining amount on purchase ${existingPurchase.invoice_no}`,
+                fy: existingPurchase.fy
+              }
+            });
+
+            await tx.payment_allocations.create({
+              data: {
+                payment_id: payment.id,
+                purchase_id: purchaseId,
+                allocated_amount: remainingAmount,
+                allocation_date: Math.floor(Date.now() / 1000),
+                notes: 'Allocated during purchase edit (partial to paid)'
+              }
+            });
+          }
+
+          // Case 7: Changed from PARTIALLY PAID to UNPAID (unmark all payments)
+          if (oldPaymentStatus === 2 && newPaymentStatus === 0) {
+            // Get all payment allocations to reverse
+            const allocations = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { allocated_amount: true }
+            })
+            
+            const totalAllocated = allocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            
+            // FIRST: Create PAYMENT_REVERSAL to reverse all payments
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PAYMENT_REVERSAL',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: totalAllocated,
+              credit: 0,
+              payment_mode: existingPurchase.payment_mode,
+              payment_status: 0,
+              notes: `All payments (₹${totalAllocated}) reversed for purchase ${existingPurchase.invoice_no} - unmarked as unpaid on ${timestamp}`,
+              fy: existingPurchase.fy
+            }, tx)
+
+            // SECOND: Delete payment allocations
+            const allocationIds = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { payment_id: true }
+            });
+
+            await tx.payment_allocations.deleteMany({
+              where: { purchase_id: purchaseId }
+            });
+
+            // Delete vendor_payments if no other allocations exist
+            for (const alloc of allocationIds) {
+              const remainingAllocs = await tx.payment_allocations.count({
+                where: { payment_id: alloc.payment_id }
+              });
+              
+              if (remainingAllocs === 0) {
+                await tx.vendor_payments.delete({
+                  where: { id: alloc.payment_id }
+                });
+              }
+            }
+            
+            // THIRD: Handle amount change if it occurred when unmarking
+            if (oldTotal !== newTotal) {
+              const difference = newTotal - oldTotal
+              
+              await ledgerService.createEntry({
+                vendor_id: existingPurchase.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'PURCHASE_ADJUSTMENT',
+                reference_type: 'purchase',
+                reference_id: purchaseId,
+                reference_no: existingPurchase.invoice_no.toString(),
+                debit: difference > 0 ? difference : 0,
+                credit: difference < 0 ? Math.abs(difference) : 0,
+                notes: `Purchase ${existingPurchase.invoice_no} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} on ${timestamp} (after unmarking)`,
+                fy: existingPurchase.fy
+              }, tx)
+            }
+          }
+
+          // Case 8: Stayed PARTIALLY PAID but amount increased
+          if (oldPaymentStatus === 2 && newPaymentStatus === 2 && newTotal > oldTotal) {
+            const difference = newTotal - oldTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the increase
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: difference,
+              credit: 0,
+              notes: `Purchase ${existingPurchase.invoice_no} amount increased by ₹${difference} on ${timestamp} (partially paid)`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
+
+          // Case 9: Stayed PARTIALLY PAID but amount decreased
+          if (oldPaymentStatus === 2 && newPaymentStatus === 2 && newTotal < oldTotal) {
+            const difference = oldTotal - newTotal
+            
+            // Create PURCHASE_ADJUSTMENT entry for the decrease
+            await ledgerService.createEntry({
+              vendor_id: existingPurchase.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: 'PURCHASE_ADJUSTMENT',
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: existingPurchase.invoice_no.toString(),
+              debit: 0,
+              credit: difference,
+              notes: `Purchase ${existingPurchase.invoice_no} amount decreased by ₹${difference} on ${timestamp} (partially paid)`,
+              fy: existingPurchase.fy
+            }, tx)
+          }
 
           return updatedPurchase
         }, {
-          timeout: 30000
+          timeout: 30000 // 30 seconds - increased for complex operations
         })
 
         res.status(200).json({
