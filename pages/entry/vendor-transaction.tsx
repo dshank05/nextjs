@@ -96,7 +96,7 @@ export default function VendorTransactionEntry() {
   const fetchOutstandingBills = async (vendorId: number) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/purchases?vendor=${vendorId}&status=0,2&limit=1000`)
+      const res = await fetch(`/api/purchases?vendor=${vendorId}&status=0,2&limit=1000&sortOrder=asc`)
       const data = await res.json()
       
       if (data.purchases) {
@@ -126,7 +126,7 @@ export default function VendorTransactionEntry() {
   const fetchOutstandingReturns = async (vendorId: number) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/purchase-returns?vendor=${vendorId}&limit=1000`)
+      const res = await fetch(`/api/purchase-returns?vendor=${vendorId}&limit=1000&sortOrder=asc`)
       const data = await res.json()
       
       if (data.returns) {
@@ -452,7 +452,7 @@ export default function VendorTransactionEntry() {
 
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Mode <span className="text-red-400">*</span>
+                    Payment Mode <span className="text-red-400">*</span>
                   </label>
                   <SearchableSelect
                     options={[
@@ -596,23 +596,23 @@ export default function VendorTransactionEntry() {
               <h3 className="text-lg font-medium text-slate-200 mb-4">Transaction Summary</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-slate-700 rounded-lg p-4">
-                  <p className="text-slate-400 text-sm mb-1">Amount</p>
-                  <p className="text-white text-xl font-semibold">
-                    ₹{amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div className="bg-slate-700 rounded-lg p-4">
-                  <p className="text-slate-400 text-sm mb-1">Total Allocated</p>
+                  <p className="text-slate-400 text-sm mb-1">Amount Allocated</p>
                   <p className="text-white text-xl font-semibold">
                     ₹{totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className={`bg-slate-700 rounded-lg p-4 ${Math.abs(difference) < 0.01 ? 'border-2 border-green-500' : 'border-2 border-red-500'}`}>
-                  <p className="text-slate-400 text-sm mb-1">Difference</p>
+                  <p className="text-slate-400 text-sm mb-1">Amount Difference</p>
                   <p className={`text-xl font-semibold ${Math.abs(difference) < 0.01 ? 'text-green-400' : 'text-red-400'}`}>
                     ₹{Math.abs(difference)?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     {difference > 0.01 ? ' (Unallocated)' : difference < -0.01 ? ' (Over-allocated)' : ' '}
                     {Math.abs(difference) < 0.01 && <CheckCircle className="inline w-5 h-5 ml-2" />}
+                  </p>
+                </div>
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <p className="text-slate-400 text-sm mb-1">Total Balance</p>
+                  <p className="text-white text-xl font-semibold">
+                    ₹{amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
