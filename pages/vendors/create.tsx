@@ -152,8 +152,9 @@ export default function CreateVendor() {
     }
 
     // ===== STATE VALIDATION =====
-    if (!formData.state.trim()) {
-      newErrors.state = 'State is required';
+    // State is mandatory for "Other" vendor, optional for named vendors
+    if (formData.vendor_name.trim().toLowerCase() === 'other' && !formData.state.trim()) {
+      newErrors.state = 'State is required for "Other" vendor';
     }
 
     setErrors(newErrors);
@@ -417,7 +418,7 @@ export default function CreateVendor() {
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
-                State *
+                State {formData.vendor_name.trim().toLowerCase() === 'other' && <span className="text-red-400">*</span>}
               </label>
               <SearchableSelect
                 options={[
