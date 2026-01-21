@@ -1,0 +1,160 @@
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../lib/db'
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ message: 'Method not allowed' })
+  }
+
+  try {
+    const {
+      vendor_id,
+      dateFrom,
+      dateTo,
+      page = '1',
+      limit = '50'
+    } = req.query
+
+    if (!vendor_id) {
+      return res.status(400).json({ message: 'Vendor ID is required' })
+    }
+
+    const pageNum = parseInt(page as string)
+    const limitNum = parseInt(limit as string)
+    const skip = (pageNum - 1) * limitNum
+
+    // Build where clause
+    const where: any = {
+      vendor_id: parseInt(vendor_id as string)
+    }
+
+    // Date range filter - default to last 3 months if not provided
+    if (dateFrom && dateTo) {
+      const startTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000)
+      const endTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000)
+      where.transaction_date = {
+        gte: startTimestamp,
+        lte: endTimestamp
+      }
+    } else {
+      // Default: Last 3 months
+      const now = new Date()
+      const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())
+      where.transaction_date = {
+        gte: Math.floor(threeMonthsAgo.getTime() / 1000),
+        lte: Math.floor(now.getTime() / 1000)
+      }
+    }
+
+    // Fetch ledger entries
+    const [entries, total] = await Promise.all([
+      prisma.vendor_ledger.findMany({
+        where,
+        orderBy: [
+          { transaction_date: 'asc' },
+          { id: 'asc' }
+        ],
+        skip,
+        take: limitNum
+      }),
+      prisma.vendor_ledger.count({ where })
+    ])
+
+    // Format entries for accounting ledger display
+    const formattedEntries = entries.map(entry => {
+      // Determine particulars based on transaction type and payment mode
+      let particulars = ''
+      
+      switch (entry.transaction_type) {
+        case 'PURCHASE':
+          particulars = 'Purchase A/c'
+          break
+        case 'PAYMENT':
+          particulars = entry.payment_mode === 0 ? 'Cash A/c' : 'Bank A/c'
+          break
+        case 'DEBIT_NOTE':
+          particulars = 'Purchase Return A/c'
+          break
+        case 'REFUND_RECEIVED':
+          particulars = entry.payment_mode === 0 ? 'Cash A/c' : 'Bank A/c'
+          break
+        case 'PAYMENT_REVERSAL':
+          particulars = entry.payment_mode === 0 ? 'Cash A/c' : 'Bank A/c'
+          break
+        default:
+          particulars = entry.transaction_type
+      }
+
+      // Determine voucher type
+      let voucherType = ''
+      switch (entry.transaction_type) {
+        case 'PURCHASE':
+          voucherType = 'Purchase'
+          break
+        case 'PAYMENT':
+          voucherType = 'Payment'
+          break
+        case 'DEBIT_NOTE':
+          voucherType = 'Debit Note'
+          break
+        case 'REFUND_RECEIVED':
+          voucherType = 'Refund'
+          break
+        case 'PAYMENT_REVERSAL':
+          voucherType = 'Payment Reversal'
+          break
+        default:
+          voucherType = entry.transaction_type
+      }
+
+      // Determine remarks
+      let remarks = entry.notes || ''
+      if (!remarks) {
+        if (entry.balance === 0) {
+          remarks = 'Nill Balance'
+        } else if (entry.balance < 0) {
+          remarks = 'Advance Payment'
+        } else {
+          remarks = 'Balance'
+        }
+      }
+
+      return {
+        id: entry.id,
+        date: entry.transaction_date,
+        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN'),
+        particulars,
+        voucherType,
+        voucherNo: entry.reference_no || '-',
+        debit: Number(entry.debit) || 0,
+        credit: Number(entry.credit) || 0,
+        balance: Number(entry.balance) || 0,
+        remarks,
+        paymentMode: entry.payment_mode,
+        transactionType: entry.transaction_type
+      }
+    })
+
+    const totalPages = Math.ceil(total / limitNum)
+
+    res.status(200).json({
+      entries: formattedEntries,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasMore: pageNum < totalPages
+      }
+    })
+  } catch (error) {
+    console.error('Vendor ledger accounting fetch error:', error)
+    res.status(500).json({
+      message: 'Failed to fetch vendor ledger',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}

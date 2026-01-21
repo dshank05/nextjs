@@ -107,6 +107,7 @@ const Layout = ({ children }: LayoutProps) => {
       icon: '📊',
       subpages: [
         { name: 'VENDOR LEDGER', href: '/reports/vendor-ledger' },
+        { name: 'VENDOR REPORTS', href: '/reports/vendor-reports' },
         { name: 'MINIMUM STOCK', href: '/reports/minimumstock' },
         { name: 'SALE', href: '/reports/sale' },
         { name: 'SALE X', href: '/reports/salex' },

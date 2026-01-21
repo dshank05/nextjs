@@ -1,50 +1,34 @@
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { ShoppingCart, FileText, DollarSign } from 'lucide-react';
+import { FileText, DollarSign, Loader2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
-import { ClearableInput, ExportMenu, SearchableSelect } from '../../components/common';
+import { ExportMenu, SearchableSelect } from '../../components/common';
 
-interface OutstandingVendor {
+interface LedgerEntry {
   id: number;
-  vendor_id: number;
-  vendor_name: string;
-  transaction_date: number;
-  balance: number;
-  last_transaction_type: string;
-  reference_display: string;
-  reference_url: string | null;
-  reference_type: string;
+  date: number;
   formattedDate: string;
-  vendor: {
-    vendor_name: string;
-    contact_no: string;
-    email: string;
-    address: string;
-    city: string;
-    state: string;
-    tax_id: string;
-  } | null;
+  particulars: string;
+  voucherType: string;
+  voucherNo: string;
+  debit: number;
+  credit: number;
+  balance: number;
+  remarks: string;
+  transactionType: string;
 }
 
-interface DebitNote {
-  id: number;
-  debit_note_no: string;
-  return_date: number;
-  vendor_id: number;
-  vendor_name: string;
-  purchase_id: number;
-  total_amount: number;
-  total_tax: number;
-  packing_forwarding_amount: number;
-  freight_amount: number;
-  refund_amount: number;
-  payment_status: number;
-  payment_mode: number;
-  payment_date?: number;
-  notes?: string;
-  fy: number;
-  item_count: number;
+interface DetailEntry {
+  date: number;
   formattedDate: string;
+  type: string;
+  refNo: string;
+  billRef: string;
+  amount: number;
+  allocated: number;
+  balance: number;
+  paymentStatus?: number;
+  paymentMode?: number;
+  paymentType?: string;
 }
 
 interface Pagination {
@@ -54,131 +38,95 @@ interface Pagination {
   totalPages: number;
 }
 
-type ViewType = 'outstanding' | 'debit-notes';
+interface Vendor {
+  id: number;
+  vendor_name: string;
+}
+
+type ViewType = 'accounting' | 'details';
 
 export default function VendorLedgerPage() {
-  const [activeView, setActiveView] = useState<ViewType>('outstanding');
-
-  // Shared state for both views
-  const [outstandingVendors, setOutstandingVendors] = useState<OutstandingVendor[]>([]);
-  const [debitNotes, setDebitNotes] = useState<DebitNote[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeView, setActiveView] = useState<ViewType>('accounting');
+  const [accountingEntries, setAccountingEntries] = useState<LedgerEntry[]>([]);
+  const [detailEntries, setDetailEntries] = useState<DetailEntry[]>([]);
+  const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 10,
+    limit: 50,
     total: 0,
     totalPages: 0
   });
 
-  // Search and filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filters, setFilters] = useState({
-    vendorFilter: '',
-    dateFrom: '',
-    dateTo: '',
-    amountMin: '',
-    amountMax: '',
-    paymentStatus: 'all'
-  });
+  // Filters
+  const [selectedVendor, setSelectedVendor] = useState<string>('');
+  const [dateFrom, setDateFrom] = useState<string>('');
+  const [dateTo, setDateTo] = useState<string>('');
+  const [vendors, setVendors] = useState<Vendor[]>([]);
 
-  // Sorting states - different for each view since APIs have different capabilities
-  const [sortBy, setSortBy] = useState<string>('balance');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  // Vendor options for dropdown
-  const [vendorOptions, setVendorOptions] = useState<{ id: string; name: string }[]>([]);
-
-  // Fetch vendor options on mount
+  // Fetch vendors on mount
   useEffect(() => {
-    fetchVendorOptions();
+    fetchVendors();
   }, []);
 
+  // Fetch data when filters change
   useEffect(() => {
-    fetchData();
-  }, [pagination.page, searchTerm, filters, sortBy, sortOrder, activeView]);
+    if (selectedVendor) {
+      fetchData();
+    }
+  }, [selectedVendor, dateFrom, dateTo, pagination.page, activeView]);
 
-  const fetchVendorOptions = async () => {
+  const fetchVendors = async () => {
     try {
       const response = await fetch('/api/vendors');
       if (response.ok) {
         const data = await response.json();
-        setVendorOptions([
-          { id: '', name: 'All Vendors' },
-          ...data.vendors.map((vendor: any) => ({
-            id: vendor.id.toString(),
-            name: vendor.vendor_name || vendor.name || ''
-          }))
-        ]);
+        setVendors(data.vendors || []);
       }
     } catch (error) {
-      console.error('Error fetching vendor options:', error);
+      console.error('Error fetching vendors:', error);
     }
   };
 
   const fetchData = async () => {
+    if (!selectedVendor) return;
+
     setLoading(true);
     try {
       const params = new URLSearchParams({
+        vendor_id: selectedVendor,
         page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: searchTerm,
-        vendorFilter: filters.vendorFilter,
-        dateFrom: filters.dateFrom,
-        dateTo: filters.dateTo,
-        amountMin: filters.amountMin,
-        amountMax: filters.amountMax,
-        sortBy: sortBy,
-        sortOrder: sortOrder
+        limit: pagination.limit.toString()
       });
 
-      if (activeView === 'debit-notes') {
-        params.set('paymentStatus', filters.paymentStatus);
-      }
+      if (dateFrom) params.set('dateFrom', dateFrom);
+      if (dateTo) params.set('dateTo', dateTo);
 
-      const endpoint = activeView === 'outstanding'
-        ? '/api/reports/vendor-outstanding'
-        : '/api/reports/debit-notes';
+      const endpoint = activeView === 'accounting'
+        ? '/api/reports/vendor-ledger-accounting'
+        : '/api/reports/vendor-ledger-details';
 
       const response = await fetch(`${endpoint}?${params}`);
       if (response.ok) {
         const data = await response.json();
-        if (activeView === 'outstanding') {
-          setOutstandingVendors(data.outstandingVendors || []);
+        if (activeView === 'accounting') {
+          setAccountingEntries(data.entries || []);
         } else {
-          setDebitNotes(data.debitNotes || []);
+          setDetailEntries(data.entries || []);
         }
         setPagination(data.pagination);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('Error fetching ledger data:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const clearFilters = () => {
-    setSearchTerm('');
-    setFilters({
-      vendorFilter: '',
-      dateFrom: '',
-      dateTo: '',
-      amountMin: '',
-      amountMax: '',
-      paymentStatus: 'all'
-    });
+    setSelectedVendor('');
+    setDateFrom('');
+    setDateTo('');
     setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const getPaymentStatusBadge = (status: number) => {
-    switch (status) {
-      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
-      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
-    }
-  };
-
-  const getPaymentModeText = (mode: number) => {
-    return mode === 0 ? 'Cash' : 'Bank';
   };
 
   const getPageNumbers = () => {
@@ -189,123 +137,82 @@ export default function VendorLedgerPage() {
     return pages;
   };
 
+  const getPaymentStatusBadge = (status: number) => {
+    switch (status) {
+      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
+      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial</span>;
+      default: return null;
+    }
+  };
+
+  const selectedVendorName = vendors.find(v => v.id.toString() === selectedVendor)?.vendor_name || '';
+
   return (
     <div className="space-y-6">
-     
-
       <div className="card">
         {/* Button Group */}
         <div className="flex space-x-1 mb-6 bg-slate-800 p-1 rounded-lg">
           <button
             className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-              activeView === 'outstanding'
+              activeView === 'accounting'
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('outstanding')}
+            onClick={() => setActiveView('accounting')}
           >
-            Outstanding Balances
+            <div className="flex items-center justify-center gap-2">
+              <FileText className="w-4 h-4" />
+              Accounting Ledger
+            </div>
           </button>
           <button
             className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-              activeView === 'debit-notes'
+              activeView === 'details'
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('debit-notes')}
+            onClick={() => setActiveView('details')}
           >
-            Debit Notes
+            <div className="flex items-center justify-center gap-2">
+              <DollarSign className="w-4 h-4" />
+              Payment Details
+            </div>
           </button>
         </div>
 
-        {/* Export Menu */}
-        <div className="flex items-center justify-end gap-2 mb-4">
-          <ExportMenu
-            data={activeView === 'outstanding' ? outstandingVendors : debitNotes}
-            columns={
-              activeView === 'outstanding'
-                ? [
-                    { key: 'vendor_name', label: 'Vendor Name', enabled: true },
-                    { key: 'balance', label: 'Outstanding Amount', enabled: true },
-                    { key: 'formattedDate', label: 'Last Transaction', enabled: true },
-                    { key: 'last_transaction_type', label: 'Transaction Type', enabled: true },
-                    { key: 'reference_display', label: 'Last Transaction Ref', enabled: true }
-                  ]
-                : [
-                    { key: 'debit_note_no', label: 'Debit Note No', enabled: true },
-                    { key: 'vendor_name', label: 'Vendor Name', enabled: true },
-                    { key: 'refund_amount', label: 'Refund Amount', enabled: true },
-                    { key: 'formattedDate', label: 'Date', enabled: true },
-                    { key: 'payment_status', label: 'Payment Status', enabled: true },
-                    { key: 'item_count', label: 'Items', enabled: true }
-                  ]
-            }
-            config={{
-              title: activeView === 'outstanding' ? 'Vendor Outstanding Report' : 'Debit Notes Report',
-              fileName: `${activeView === 'outstanding' ? 'Vendor_Outstanding' : 'Debit_Notes'}_Report_${new Date().toISOString().split('T')[0]}`
-            }}
-          />
-        </div>
-
         {/* Filters Section */}
-        <div className="grid grid-cols-6 gap-4 mb-4">
-          {/* Search */}
-          <div className="flex-1">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          {/* Vendor Selector */}
+          <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">
-              {activeView === 'outstanding' ? 'Search Vendors' : 'Search Debit Notes'}
+              Vendor <span className="text-red-400">*</span>
             </label>
-            <ClearableInput
-              type="text"
-              placeholder={activeView === 'outstanding' ? 'Search vendors...' : 'Search debit notes...'}
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {/* Vendor Filter */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-300 mb-2">Vendor</label>
             <SearchableSelect
-              options={vendorOptions}
-              selectedValue={filters.vendorFilter}
+              options={vendors.map(v => ({
+                id: v.id.toString(),
+                name: v.vendor_name
+              }))}
+              selectedValue={selectedVendor}
               onSelectionChange={(value) => {
-                setFilters(prev => ({ ...prev, vendorFilter: value || '' }));
+                setSelectedVendor(value || '');
+                setPagination(prev => ({ ...prev, page: 1 }));
               }}
               placeholder="Select vendor..."
             />
           </div>
 
-          {/* Amount Min Filter */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount</label>
-            <ClearableInput
-              type="number"
-              placeholder="Min amount"
-              value={filters.amountMin}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMin: e.target.value }))}
-              min="0"
-            />
-          </div>
-
-          {/* Amount Max Filter */}
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount</label>
-            <ClearableInput
-              type="number"
-              placeholder="Max amount"
-              value={filters.amountMax}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMax: e.target.value }))}
-              min="0"
-            />
-          </div>
-
           {/* Date Range Filter */}
-          <div className="flex-1">
+          <div className="md:col-span-2">
             <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
             <DateRangeFilter
-              startDate={filters.dateFrom}
-              endDate={filters.dateTo}
-              onDateChange={(start, end) => setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }))}
+              startDate={dateFrom}
+              endDate={dateTo}
+              onDateChange={(start, end) => {
+                setDateFrom(start);
+                setDateTo(end);
+                setPagination(prev => ({ ...prev, page: 1 }));
+              }}
               placeholder="Select date range..."
             />
           </div>
@@ -314,19 +221,59 @@ export default function VendorLedgerPage() {
           <div className="flex items-end">
             <button
               onClick={clearFilters}
-              className="btn-secondary px-4 py-2"
+              className="btn-secondary px-4 py-2 w-full"
             >
               Clear Filters
             </button>
           </div>
         </div>
 
+        {/* Export Menu */}
+        {selectedVendor && (
+          <div className="flex items-center justify-between mb-4">
+            <div className="text-sm text-slate-400">
+              {selectedVendorName && (
+                <span className="font-medium text-white">Ledger for: {selectedVendorName}</span>
+              )}
+            </div>
+            <ExportMenu
+              data={activeView === 'accounting' ? accountingEntries : detailEntries}
+              columns={
+                activeView === 'accounting'
+                  ? [
+                      { key: 'formattedDate', label: 'Date', enabled: true },
+                      { key: 'particulars', label: 'Particulars', enabled: true },
+                      { key: 'voucherType', label: 'Voucher Type', enabled: true },
+                      { key: 'voucherNo', label: 'Voucher No', enabled: true },
+                      { key: 'debit', label: 'Debit (₹)', enabled: true },
+                      { key: 'credit', label: 'Credit (₹)', enabled: true },
+                      { key: 'balance', label: 'Balance (₹)', enabled: true },
+                      { key: 'remarks', label: 'Remarks', enabled: true }
+                    ]
+                  : [
+                      { key: 'formattedDate', label: 'Date', enabled: true },
+                      { key: 'type', label: 'Type', enabled: true },
+                      { key: 'refNo', label: 'Ref No', enabled: true },
+                      { key: 'billRef', label: 'Bill Ref', enabled: true },
+                      { key: 'amount', label: 'Amount (₹)', enabled: true },
+                      { key: 'allocated', label: 'Allocated (₹)', enabled: true },
+                      { key: 'balance', label: 'Balance (₹)', enabled: true }
+                    ]
+              }
+              config={{
+                title: `Vendor Ledger - ${selectedVendorName}`,
+                fileName: `Vendor_Ledger_${selectedVendorName}_${new Date().toISOString().split('T')[0]}`
+              }}
+            />
+          </div>
+        )}
+
         {/* Pagination Info */}
-        {pagination && (
+        {pagination && selectedVendor && (
           <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
             <div>
               Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} {activeView === 'outstanding' ? 'outstanding vendors' : 'debit notes'}
+              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
             </div>
             <div>Page {pagination.page} of {pagination.totalPages}</div>
           </div>
@@ -336,51 +283,46 @@ export default function VendorLedgerPage() {
         <div className="overflow-x-auto relative">
           {loading && (
             <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-10 rounded-lg">
-              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+              <Loader2 className="w-16 h-16 animate-spin text-blue-500" />
             </div>
           )}
 
-          {activeView === 'outstanding' ? (
+          {!selectedVendor ? (
+            <div className="text-center py-12 text-slate-400">
+              <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
+              <p className="text-lg">Please select a vendor to view ledger</p>
+            </div>
+          ) : activeView === 'accounting' ? (
             <table className="table">
               <thead>
                 <tr>
-                  <th>S.N</th>
-                  <th>Vendor Name</th>
-                  <th>Outstanding Amount</th>
-                  <th>Last Transaction</th>
-                  <th>Transaction Type</th>
-                  <th>Last Transaction Ref</th>
+                  <th>Date</th>
+                  <th>Particulars</th>
+                  <th>Voucher Type</th>
+                  <th>Voucher No</th>
+                  <th className="text-right">Debit (₹)</th>
+                  <th className="text-right">Credit (₹)</th>
+                  <th className="text-right">Balance (₹)</th>
+                  <th>Remarks</th>
                 </tr>
               </thead>
               <tbody>
-                {outstandingVendors.map((vendor, idx) => (
-                  <tr key={vendor.id}>
-                    <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                    <td className="font-medium text-white">{vendor.vendor_name}</td>
-                    <td className="text-slate-300 font-semibold">₹{vendor.balance?.toLocaleString('en-IN')}</td>
-                    <td className="text-slate-300">{vendor.formattedDate}</td>
-                    <td className="text-slate-300">{vendor.last_transaction_type}</td>
-                    <td className="text-slate-300">
-                      {vendor.reference_type === 'purchase' && vendor.reference_url ? (
-                        <Link
-                          href={vendor.reference_url}
-                          className="text-blue-400 hover:text-blue-300 underline font-medium"
-                        >
-                          {vendor.reference_display}
-                        </Link>
-                      ) : vendor.reference_type === 'debit_note' && vendor.reference_url ? (
-                        <Link
-                          href={vendor.reference_url}
-                          className="text-blue-400 hover:text-blue-300 underline font-medium"
-                        >
-                          {vendor.reference_display}
-                        </Link>
-                      ) : (
-                        <span className="text-green-400 font-medium">
-                          {vendor.reference_display}
-                        </span>
-                      )}
+                {accountingEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="text-slate-300">{entry.formattedDate}</td>
+                    <td className="text-slate-300">{entry.particulars}</td>
+                    <td className="text-slate-300">{entry.voucherType}</td>
+                    <td className="font-medium text-white">{entry.voucherNo}</td>
+                    <td className="text-right text-red-400 font-semibold">
+                      {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
+                    <td className="text-right text-green-400 font-semibold">
+                      {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                    </td>
+                    <td className={`text-right font-semibold ${entry.balance < 0 ? 'text-red-400' : entry.balance > 0 ? 'text-green-400' : 'text-slate-300'}`}>
+                      ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="text-slate-400 text-sm">{entry.remarks}</td>
                   </tr>
                 ))}
               </tbody>
@@ -389,39 +331,34 @@ export default function VendorLedgerPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>S.N</th>
-                  <th>Debit Note No</th>
-                  <th>Vendor Name</th>
-                  <th>Refund Amount</th>
                   <th>Date</th>
-                  <th>Payment Status</th>
-                  <th>Items</th>
-                  <th>Actions</th>
+                  <th>Type</th>
+                  <th>Ref No</th>
+                  <th>Bill Ref</th>
+                  <th className="text-right">Amount (₹)</th>
+                  <th className="text-right">Allocated (₹)</th>
+                  <th className="text-right">Balance (₹)</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {debitNotes.map((note, idx) => (
-                  <tr key={note.id}>
-                    <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
-                    <td className="font-medium text-white">{note.debit_note_no}</td>
-                    <td className="text-slate-300">{note.vendor_name}</td>
-                    <td className="text-slate-300 font-semibold">₹{note.refund_amount?.toLocaleString('en-IN')}</td>
-                    <td className="text-slate-300">{note.formattedDate}</td>
-                    <td>{getPaymentStatusBadge(note.payment_status)}</td>
-                    <td className="text-slate-300">
-                      <div className="flex items-center gap-1">
-                        <span>{note.item_count}</span>
-                        <span className="text-xs text-slate-400">items</span>
-                      </div>
+                {detailEntries.map((entry, idx) => (
+                  <tr key={idx}>
+                    <td className="text-slate-300">{entry.formattedDate}</td>
+                    <td className="text-slate-300">{entry.type}</td>
+                    <td className="font-medium text-white">{entry.refNo}</td>
+                    <td className="text-slate-300">{entry.billRef}</td>
+                    <td className="text-right font-semibold text-white">
+                      ₹{entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="text-right text-blue-400 font-semibold">
+                      ₹{entry.allocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className={`text-right font-semibold ${entry.balance > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                      ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td>
-                      <Link
-                        href={`/entry/purchasereturn-vendor/${note.id}`}
-                        title="View Debit Note Details"
-                        className="btn-icon text-slate-300"
-                      >
-                        View
-                      </Link>
+                      {entry.paymentStatus !== undefined && getPaymentStatusBadge(entry.paymentStatus)}
                     </td>
                   </tr>
                 ))}
@@ -429,18 +366,15 @@ export default function VendorLedgerPage() {
             </table>
           )}
 
-          {(activeView === 'outstanding' ? outstandingVendors : debitNotes).length === 0 && !loading && (
+          {selectedVendor && (activeView === 'accounting' ? accountingEntries : detailEntries).length === 0 && !loading && (
             <div className="text-center py-8 text-slate-400">
-              {searchTerm || filters.vendorFilter || filters.dateFrom || filters.dateTo
-                ? `No ${activeView === 'outstanding' ? 'outstanding vendors' : 'debit notes'} found with the current filters.`
-                : `No ${activeView === 'outstanding' ? 'outstanding vendors' : 'debit notes'} found.`
-              }
+              No ledger entries found for the selected filters.
             </div>
           )}
         </div>
 
         {/* Pagination */}
-        {pagination.totalPages > 1 && (
+        {pagination.totalPages > 1 && selectedVendor && (
           <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
             <button
               onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
