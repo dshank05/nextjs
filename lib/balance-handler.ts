@@ -24,18 +24,161 @@ export interface ChangeSet {
   vendorId: number;
   totalAllocated?: number;
   amountChanged: boolean;
+  currentBalance?: {
+    total_paid: number;
+    total_allocated: number;
+    total_refunded: number;
+    total_refund_allocated: number;
+  };
 }
 
 export class BalanceHandler {
   /**
+   * Get balance operations for purchase/return creation with payment/refund
+   * Handles smart advance allocation for new transactions
+   */
+  getCreateBalanceOps(params: {
+    vendorId: number;
+    total: number;
+    currentBalance?: {
+      total_paid: number;
+      total_allocated: number;
+      total_refunded: number;
+      total_refund_allocated: number;
+    };
+    type: 'PURCHASE' | 'RETURN';
+  }): BalanceOperation | null {
+    // Skip balance operations for "Other" vendor (id = 0)
+    if (params.vendorId === 0) {
+      return null;
+    }
+    
+    // Calculate advance balance based on type
+    const advanceBalance = params.currentBalance 
+      ? (params.type === 'PURCHASE'
+          ? params.currentBalance.total_paid - params.currentBalance.total_allocated
+          : params.currentBalance.total_refunded - params.currentBalance.total_refund_allocated)
+      : 0;
+    
+    // Scenario 1: Full advance available
+    if (advanceBalance >= params.total) {
+      return {
+        vendorId: params.vendorId,
+        update: params.type === 'PURCHASE'
+          ? { total_allocated: params.total }
+          : { total_refund_allocated: params.total }
+      };
+    }
+    // Scenario 2: Partial advance available
+    else if (advanceBalance > 0) {
+      return {
+        vendorId: params.vendorId,
+        update: params.type === 'PURCHASE'
+          ? { 
+              total_paid: params.total - advanceBalance,
+              total_allocated: params.total 
+            }
+          : { 
+              total_refunded: params.total - advanceBalance,
+              total_refund_allocated: params.total 
+            }
+      };
+    }
+    // Scenario 3: No advance available
+    else {
+      return {
+        vendorId: params.vendorId,
+        update: params.type === 'PURCHASE'
+          ? { 
+              total_paid: params.total,
+              total_allocated: params.total 
+            }
+          : { 
+              total_refunded: params.total,
+              total_refund_allocated: params.total 
+            }
+      };
+    }
+  }
+  
+  /**
    * Get balance operations for purchase status changes
-   * Handles all 9 cases for purchase edit
+   * Handles all 9 cases for purchase edit with smart advance allocation
    */
   getPurchaseBalanceOps(changes: ChangeSet): BalanceOperation | null {
     const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
     
+    // Calculate advance balance (vendor owes us money)
+    const advanceBalance = changes.currentBalance 
+      ? changes.currentBalance.total_paid - changes.currentBalance.total_allocated 
+      : 0;
+    
     switch (statusChange) {
-      case '1→0': // Paid → Unpaid
+      case '0→1': // Unpaid → Paid
+        // Scenario 1: Vendor owes us enough to cover full bill
+        if (advanceBalance >= changes.newTotal) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_allocated: changes.newTotal  // Use advance only, no new payment
+            }
+          };
+        }
+        // Scenario 2: Vendor owes us partially
+        else if (advanceBalance > 0) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_paid: changes.newTotal - advanceBalance,  // New payment for difference
+              total_allocated: changes.newTotal  // Full allocation
+            }
+          };
+        }
+        // Scenario 3: No advance available
+        else {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_paid: changes.newTotal,
+              total_allocated: changes.newTotal
+            }
+          };
+        }
+        
+      case '2→1': // Partial → Paid
+        const remaining = changes.newTotal - (changes.totalAllocated || 0);
+        
+        // Scenario 1: Advance covers remaining amount
+        if (advanceBalance >= remaining) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_allocated: remaining  // Use advance for remaining
+            }
+          };
+        }
+        // Scenario 2: Partial advance available
+        else if (advanceBalance > 0) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_paid: remaining - advanceBalance,
+              total_allocated: remaining
+            }
+          };
+        }
+        // Scenario 3: No advance
+        else {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_paid: remaining,
+              total_allocated: remaining
+            }
+          };
+        }
+        
+      case '1→0': // Paid → Unpaid (restore advance)
         return {
           vendorId: changes.vendorId,
           update: {
@@ -44,26 +187,7 @@ export class BalanceHandler {
           }
         };
         
-      case '0→1': // Unpaid → Paid
-        return {
-          vendorId: changes.vendorId,
-          update: {
-            total_paid: changes.newTotal,
-            total_allocated: changes.newTotal
-          }
-        };
-        
-      case '2→1': // Partial → Paid
-        const remaining = changes.newTotal - (changes.totalAllocated || 0);
-        return {
-          vendorId: changes.vendorId,
-          update: {
-            total_paid: remaining,
-            total_allocated: remaining
-          }
-        };
-        
-      case '2→0': // Partial → Unpaid
+      case '2→0': // Partial → Unpaid (restore partial advance)
         return {
           vendorId: changes.vendorId,
           update: {
@@ -89,13 +213,82 @@ export class BalanceHandler {
   
   /**
    * Get balance operations for return status changes
-   * Handles all 9 cases for return edit
+   * Handles all 9 cases for return edit with smart advance refund allocation
    */
   getReturnBalanceOps(changes: ChangeSet): BalanceOperation | null {
     const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
     
+    // Calculate advance refund balance (vendor owes us refund)
+    const advanceRefundBalance = changes.currentBalance 
+      ? changes.currentBalance.total_refunded - changes.currentBalance.total_refund_allocated 
+      : 0;
+    
     switch (statusChange) {
-      case '1→0': // Refunded → Unpaid
+      case '0→1': // Unpaid → Refunded
+        // Scenario 1: Advance refund covers full return
+        if (advanceRefundBalance >= changes.newTotal) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refund_allocated: changes.newTotal  // Use advance refund only
+            }
+          };
+        }
+        // Scenario 2: Partial advance refund available
+        else if (advanceRefundBalance > 0) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refunded: changes.newTotal - advanceRefundBalance,
+              total_refund_allocated: changes.newTotal
+            }
+          };
+        }
+        // Scenario 3: No advance refund
+        else {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refunded: changes.newTotal,
+              total_refund_allocated: changes.newTotal
+            }
+          };
+        }
+        
+      case '2→1': // Partial → Refunded
+        const remaining = changes.newTotal - (changes.totalAllocated || 0);
+        
+        // Scenario 1: Advance refund covers remaining
+        if (advanceRefundBalance >= remaining) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refund_allocated: remaining
+            }
+          };
+        }
+        // Scenario 2: Partial advance refund
+        else if (advanceRefundBalance > 0) {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refunded: remaining - advanceRefundBalance,
+              total_refund_allocated: remaining
+            }
+          };
+        }
+        // Scenario 3: No advance refund
+        else {
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refunded: remaining,
+              total_refund_allocated: remaining
+            }
+          };
+        }
+        
+      case '1→0': // Refunded → Unpaid (restore advance refund)
         return {
           vendorId: changes.vendorId,
           update: {
@@ -104,26 +297,7 @@ export class BalanceHandler {
           }
         };
         
-      case '0→1': // Unpaid → Refunded
-        return {
-          vendorId: changes.vendorId,
-          update: {
-            total_refunded: changes.newTotal,
-            total_refund_allocated: changes.newTotal
-          }
-        };
-        
-      case '2→1': // Partial → Refunded
-        const remaining = changes.newTotal - (changes.totalAllocated || 0);
-        return {
-          vendorId: changes.vendorId,
-          update: {
-            total_refunded: remaining,
-            total_refund_allocated: remaining
-          }
-        };
-        
-      case '2→0': // Partial → Unpaid
+      case '2→0': // Partial → Unpaid (restore partial advance refund)
         return {
           vendorId: changes.vendorId,
           update: {

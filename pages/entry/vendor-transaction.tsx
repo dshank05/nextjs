@@ -33,6 +33,7 @@ interface Vendor {
 }
 
 type OperationType = 'EXPENSE' | 'INCOME' | ''
+type PaymentType = 'BILL_SPECIFIC' | 'MIXED' | 'DIRECT'
 
 export default function VendorTransactionEntry() {
   const router = useRouter()
@@ -41,6 +42,7 @@ export default function VendorTransactionEntry() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [selectedVendor, setSelectedVendor] = useState<number>(0)
   const [operationType, setOperationType] = useState<OperationType>('')
+  const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC')
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
   const [outstandingReturns, setOutstandingReturns] = useState<OutstandingReturn[]>([])
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0])
@@ -217,11 +219,26 @@ export default function VendorTransactionEntry() {
     if (!amount || parseFloat(amount) <= 0) return true
     
     const allocated = getTotalAllocated()
-    if (allocated === 0) return true
-    
     const amountNum = parseFloat(amount) || 0
-    const difference = amountNum - allocated
-    if (Math.abs(difference) > 0.01) return true
+    
+    // DIRECT: No allocation needed
+    if (paymentType === 'DIRECT') {
+      return false
+    }
+    
+    // BILL_SPECIFIC: Must allocate ALL
+    if (paymentType === 'BILL_SPECIFIC') {
+      if (allocated === 0) return true
+      if (Math.abs(amountNum - allocated) > 0.01) return true
+      return false
+    }
+    
+    // MIXED: Must allocate SOME (but not more than amount)
+    if (paymentType === 'MIXED') {
+      if (allocated === 0) return true  // Must allocate at least something
+      if (allocated > amountNum) return true  // Cannot over-allocate
+      return false
+    }
     
     return false
   }
@@ -244,21 +261,45 @@ export default function VendorTransactionEntry() {
       return
     }
     
-    const totalAllocated = getTotalAllocated()
-    const amountNum = parseFloat(amount)
-    
-    if (Math.abs(totalAllocated - amountNum) > 0.01) {
-      setError(`Total allocated (₹${totalAllocated.toFixed(2)}) must equal amount (₹${amountNum.toFixed(2)})`)
+    // DIRECT: No validation needed for allocations
+    if (paymentType === 'DIRECT') {
+      setShowConfirmationModal(true)
       return
     }
     
-    const hasAllocations = operationType === 'EXPENSE' 
-      ? outstandingBills.some(b => b.allocated && b.allocated > 0)
-      : outstandingReturns.some(r => r.allocated && r.allocated > 0)
+    const totalAllocated = getTotalAllocated()
+    const amountNum = parseFloat(amount)
     
-    if (!hasAllocations) {
-      setError('Please allocate amount to at least one item')
-      return
+    // BILL_SPECIFIC: Must allocate ALL
+    if (paymentType === 'BILL_SPECIFIC') {
+      if (Math.abs(totalAllocated - amountNum) > 0.01) {
+        setError(`Total allocated (₹${totalAllocated.toFixed(2)}) must equal amount (₹${amountNum.toFixed(2)})`)
+        return
+      }
+    }
+    
+    // MIXED: Must allocate SOME (but can have unallocated)
+    if (paymentType === 'MIXED') {
+      if (totalAllocated === 0) {
+        setError('Please allocate at least some amount to bills')
+        return
+      }
+      if (totalAllocated > amountNum) {
+        setError(`Cannot allocate more (₹${totalAllocated.toFixed(2)}) than payment amount (₹${amountNum.toFixed(2)})`)
+        return
+      }
+    }
+    
+    // Check if allocations exist (only for BILL_SPECIFIC and MIXED types)
+    if (paymentType === 'BILL_SPECIFIC' || paymentType === 'MIXED') {
+      const hasAllocations = operationType === 'EXPENSE' 
+        ? outstandingBills.some(b => b.allocated && b.allocated > 0)
+        : outstandingReturns.some(r => r.allocated && r.allocated > 0)
+      
+      if (!hasAllocations) {
+        setError('Please allocate amount to at least one item')
+        return
+      }
     }
 
     setShowConfirmationModal(true)
@@ -275,7 +316,7 @@ export default function VendorTransactionEntry() {
       
       if (operationType === 'EXPENSE') {
         endpoint = '/api/vendor-payments'
-        const allocations = outstandingBills
+        const allocations = paymentType === 'DIRECT' ? [] : outstandingBills
           .filter(bill => bill.allocated && bill.allocated > 0)
           .map(bill => ({
             purchase_id: bill.purchase_id,
@@ -288,14 +329,14 @@ export default function VendorTransactionEntry() {
           payment_amount: amountNum,
           payment_mode: mode,
           payment_date: timestamp,
-          payment_type: 'BILL_SPECIFIC',
+          payment_type: paymentType,
           notes,
           allocations,
           fy: currentFY
         }
       } else {
         endpoint = '/api/vendor-refunds'
-        const allocations = outstandingReturns
+        const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
           .filter(ret => ret.allocated && ret.allocated > 0)
           .map(ret => ({
             return_id: ret.return_id,
@@ -308,7 +349,7 @@ export default function VendorTransactionEntry() {
           refund_amount: amountNum,
           refund_mode: mode,
           refund_date: timestamp,
-          refund_type: 'RETURN_SPECIFIC',
+          refund_type: paymentType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC',
           notes,
           allocations,
           fy: currentFY
@@ -423,6 +464,61 @@ export default function VendorTransactionEntry() {
                 </div>
               </div>
 
+              {/* Payment Type Selection */}
+              {operationType && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Payment Type <span className="text-red-400">*</span>
+                  </label>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="BILL_SPECIFIC"
+                        checked={paymentType === 'BILL_SPECIFIC'}
+                        onChange={(e) => setPaymentType(e.target.value as PaymentType)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <div>
+                        <span className="text-slate-300 font-medium">Bill Specific</span>
+                        <p className="text-xs text-slate-400">Allocate all to {operationType === 'EXPENSE' ? 'bills' : 'returns'}</p>
+                      </div>
+                    </label>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="MIXED"
+                        checked={paymentType === 'MIXED'}
+                        onChange={(e) => setPaymentType(e.target.value as PaymentType)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <div>
+                        <span className="text-slate-300 font-medium">Mixed</span>
+                        <p className="text-xs text-slate-400">Allocate some, keep rest as advance</p>
+                      </div>
+                    </label>
+                    
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="paymentType"
+                        value="DIRECT"
+                        checked={paymentType === 'DIRECT'}
+                        onChange={(e) => setPaymentType(e.target.value as PaymentType)}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <div>
+                        <span className="text-slate-300 font-medium">Direct Advance</span>
+                        <p className="text-xs text-slate-400">No allocation, all advance</p>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -483,45 +579,64 @@ export default function VendorTransactionEntry() {
           {/* Allocation Section */}
           {selectedVendor > 0 && operationType && (
             <div className="border-t border-slate-600 pt-6 mb-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-slate-200 flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  Allocate to {operationType === 'EXPENSE' ? 'Bills' : 'Returns'}
-                </h3>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleAutoAllocate}
-                    className="btn-primary text-sm"
-                    disabled={!amount || loading}
-                  >
-                    Auto Allocate
-                  </button>
-                  <button
-                    onClick={handleClearAllocations}
-                    className="btn-secondary text-sm"
-                    disabled={loading}
-                  >
-                    Clear All
-                  </button>
+              {paymentType === 'DIRECT' ? (
+                <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-6 text-center">
+                  <DollarSign className="w-12 h-12 text-blue-400 mx-auto mb-3" />
+                  <h3 className="text-lg font-medium text-blue-300 mb-2">Direct Advance {operationType === 'EXPENSE' ? 'Payment' : 'Refund'}</h3>
+                  <p className="text-slate-300">
+                    {operationType === 'EXPENSE' 
+                      ? `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be added as advance payment to vendor`
+                      : `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be recorded as credit from vendor`
+                    }
+                  </p>
+                  <p className="text-sm text-slate-400 mt-2">
+                    {operationType === 'EXPENSE'
+                      ? 'This creates a credit balance with the vendor that can be used for future purchases.'
+                      : 'The vendor owes you this amount, which can offset future purchases.'
+                    }
+                  </p>
                 </div>
-              </div>
-
-              {loading ? (
-                <div className="flex flex-col items-center justify-center py-12 text-slate-400">
-                  <Loader2 className="w-8 h-8 animate-spin mb-3" />
-                  <p>Loading outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'}...</p>
-                </div>
-              ) : outstandingItems.length === 0 ? (
-                <div className="text-center py-8 text-slate-400">No outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'} for this vendor</div>
               ) : (
                 <>
-                  {(!amount || parseFloat(amount) <= 0) && (
-                    <div className="mb-3 text-sm text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
-                      Please enter Amount above to enable allocation
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-medium text-slate-200 flex items-center gap-2">
+                      <FileText className="w-5 h-5" />
+                      Allocate to {operationType === 'EXPENSE' ? 'Bills' : 'Returns'}
+                    </h3>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleAutoAllocate}
+                        className="btn-primary text-sm"
+                        disabled={!amount || loading}
+                      >
+                        Auto Allocate
+                      </button>
+                      <button
+                        onClick={handleClearAllocations}
+                        className="btn-secondary text-sm"
+                        disabled={loading}
+                      >
+                        Clear All
+                      </button>
                     </div>
-                  )}
-                  <div className="overflow-x-auto">
-                    <table className="table">
+                  </div>
+
+                  {loading ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                      <Loader2 className="w-8 h-8 animate-spin mb-3" />
+                      <p>Loading outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'}...</p>
+                    </div>
+                  ) : outstandingItems.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400">No outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'} for this vendor</div>
+                  ) : (
+                    <>
+                      {(!amount || parseFloat(amount) <= 0) && (
+                        <div className="mb-3 text-sm text-yellow-400 bg-yellow-900/20 border border-yellow-700/30 rounded-lg p-3">
+                          Please enter Amount above to enable allocation
+                        </div>
+                      )}
+                      <div className="overflow-x-auto">
+                        <table className="table">
                       <thead>
                         <tr>
                           <th>{operationType === 'EXPENSE' ? 'Invoice No' : 'Return No'}</th>
@@ -584,14 +699,16 @@ export default function VendorTransactionEntry() {
                         )}
                       </tbody>
                     </table>
-                  </div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>
           )}
 
           {/* Summary */}
-          {selectedVendor > 0 && operationType && outstandingItems.length > 0 && (
+          {selectedVendor > 0 && operationType && (paymentType !== 'DIRECT' && outstandingItems.length > 0) && (
             <div className="border-t border-slate-600 pt-6 mb-6">
               <h3 className="text-lg font-medium text-slate-200 mb-4">Transaction Summary</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -643,11 +760,21 @@ export default function VendorTransactionEntry() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Confirm Transaction"
-        message={`Record ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${
-          operationType === 'EXPENSE' 
-            ? outstandingBills.filter(b => b.allocated && b.allocated > 0).length 
-            : outstandingReturns.filter(r => r.allocated && r.allocated > 0).length
-        } ${operationType === 'EXPENSE' ? 'bill(s)' : 'return(s)'}?`}
+        message={
+          paymentType === 'DIRECT'
+            ? `Record direct advance ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}? This will be added to vendor's advance balance.`
+            : paymentType === 'MIXED'
+            ? `Record ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} with ₹${totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${
+                operationType === 'EXPENSE' 
+                  ? outstandingBills.filter(b => b.allocated && b.allocated > 0).length 
+                  : outstandingReturns.filter(r => r.allocated && r.allocated > 0).length
+              } ${operationType === 'EXPENSE' ? 'bill(s)' : 'return(s)'} and ₹${difference?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} as advance?`
+            : `Record ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${
+                operationType === 'EXPENSE' 
+                  ? outstandingBills.filter(b => b.allocated && b.allocated > 0).length 
+                  : outstandingReturns.filter(r => r.allocated && r.allocated > 0).length
+              } ${operationType === 'EXPENSE' ? 'bill(s)' : 'return(s)'}?`
+        }
         confirmText="Record Transaction"
         cancelText="Cancel"
         showLoading={loading}

@@ -22,6 +22,12 @@ export interface ChangeSet {
   totalAllocated?: number;
   isTypeA?: boolean; // Has existing allocations
   amountChanged: boolean;
+  currentBalance?: {
+    total_paid: number;
+    total_allocated: number;
+    total_refunded: number;
+    total_refund_allocated: number;
+  };
 }
 
 export interface LedgerOperation {

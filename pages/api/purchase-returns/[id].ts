@@ -637,6 +637,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         0
       )
 
+      // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE REFUND ALLOCATION
+      const vendor = await tx.vendor_details.findUnique({
+        where: { id: existingReturn.vendor_id },
+        select: {
+          total_paid: true,
+          total_allocated: true,
+          total_refunded: true,
+          total_refund_allocated: true
+        }
+      });
+
       // Get all operations from handler
       const handlerResult = await transactionHandler.handleReturnEdit({
         oldStatus: oldPaymentStatus,
@@ -649,7 +660,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         paymentMode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : existingReturn.payment_mode,
         paymentDate: payment_date ? parseInt(payment_date.toString()) : Math.floor(Date.now() / 1000),
         fy: existingReturn.fy,
-        totalAllocated: totalAllocated
+        totalAllocated: totalAllocated,
+        currentBalance: vendor ? {
+          total_paid: Number(vendor.total_paid),
+          total_allocated: Number(vendor.total_allocated),
+          total_refunded: Number(vendor.total_refunded),
+          total_refund_allocated: Number(vendor.total_refund_allocated)
+        } : undefined
       })
 
       // Execute all operations (ledger, allocations, balance) in transaction

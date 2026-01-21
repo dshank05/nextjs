@@ -39,6 +39,12 @@ export class TransactionHandler {
     fy: number;
     totalAllocated?: number;
     isTypeA?: boolean;
+    currentBalance?: {
+      total_paid: number;
+      total_allocated: number;
+      total_refunded: number;
+      total_refund_allocated: number;
+    };
   }): Promise<TransactionResult> {
     // Build change set
     const changes: ChangeSet = {
@@ -54,7 +60,8 @@ export class TransactionHandler {
       fy: params.fy,
       totalAllocated: params.totalAllocated,
       isTypeA: params.isTypeA,
-      amountChanged: params.oldTotal !== params.newTotal
+      amountChanged: params.oldTotal !== params.newTotal,
+      currentBalance: params.currentBalance
     };
     
     // Get ledger operations
@@ -89,6 +96,12 @@ export class TransactionHandler {
     paymentDate?: number;
     fy: number;
     totalAllocated?: number;
+    currentBalance?: {
+      total_paid: number;
+      total_allocated: number;
+      total_refunded: number;
+      total_refund_allocated: number;
+    };
   }): Promise<TransactionResult> {
     // Build change set
     const changes: ChangeSet = {
@@ -103,7 +116,8 @@ export class TransactionHandler {
       paymentDate: params.paymentDate,
       fy: params.fy,
       totalAllocated: params.totalAllocated,
-      amountChanged: params.oldTotal !== params.newTotal
+      amountChanged: params.oldTotal !== params.newTotal,
+      currentBalance: params.currentBalance
     };
     
     // Get ledger operations

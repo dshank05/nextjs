@@ -651,30 +651,393 @@ Refactor each API to use the new handlers:
 
 ---
 
-## 🎯 IMPLEMENTATION ROADMAP
+## 🚨 CRITICAL ISSUE: DUPLICATE PAYMENT PROBLEM
 
-### **Week 1: Foundation**
-- [ ] Create Transaction Handler service
-- [ ] Create Ledger Handler service
-- [ ] Create Balance Handler service
-- [ ] Add unit tests for each service
+### **The Problem:**
 
-### **Week 2: Fix Gaps**
-- [ ] Add missing balance updates (10 locations)
-- [ ] Fix ledger audit trail violations (2 locations)
-- [ ] Move balance updates into transactions (6 locations)
+When users create a DIRECT payment (advance) via Vendor Transaction page, then later mark a bill as "Paid" in Purchase Create/Edit, the system creates a **duplicate payment**!
 
-### **Week 3: Refactor APIs**
-- [ ] Refactor Purchase Create
-- [ ] Refactor Purchase Edit
-- [ ] Refactor Return Create
-- [ ] Refactor Return Edit
+**Example:**
+```
+Step 1: Payment ₹10,000 (DIRECT)
+- total_paid: 10,000
+- total_allocated: 0
+- account_balance: 10,000 (advance)
 
-### **Week 4: Testing & Optimization**
-- [ ] Integration testing
-- [ ] Performance testing
-- [ ] Update documentation
-- [ ] Deploy to production
+Step 2: Mark bill as PAID
+- total_paid: 10,000 + 10,000 = 20,000 ❌ DUPLICATE!
+- total_allocated: 10,000
+- account_balance: 10,000
+```
+
+### **Root Cause:**
+
+The `balance-handler.ts` always creates new payment when status changes to "Paid", without checking if vendor has existing advance balance.
+
+### **Solution:**
+
+Implement **Smart Advance Balance Allocation** - automatically check and use existing advance balance before creating new payments.
+
+---
+
+## 🎯 IMPLEMENTATION ROADMAP (UPDATED)
+
+### **Phase 1: Vendor Transaction Page** (PRIORITY 1 - 2-3 hours)
+
+**Goal:** Add payment type selector for DIRECT/MIXED payments
+
+**Changes:**
+- Add payment type radio buttons (BILL_SPECIFIC / MIXED / DIRECT)
+- Update validation logic for each type
+- Update summary display
+- Hide allocation table for DIRECT mode
+
+**Files to modify:**
+- `pages/entry/vendor-transaction.tsx`
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 2: Update balance-handler.ts** (PRIORITY 2 - 3-4 hours)
+
+**Goal:** Add smart advance balance allocation logic
+
+**Changes:**
+1. Add `currentBalance` parameter to `ChangeSet` interface
+2. Update `getPurchaseBalanceOps()` to check and use advance
+3. Update `getReturnBalanceOps()` similarly
+4. Handle all 9 status transition cases
+
+**Files to modify:**
+- `lib/balance-handler.ts`
+
+**Cases to handle:**
+```typescript
+Case 0→1: Unpaid → Paid
+  - Check advance balance
+  - Use advance if available (no new payment)
+  - Create new payment only for difference
+
+Case 2→1: Partial → Paid
+  - Calculate remaining amount
+  - Check advance balance
+  - Use advance for remaining if available
+
+Case 1→0: Paid → Unpaid
+  - Reverse allocation
+  - Restore advance balance
+
+Case 2→0: Partial → Unpaid
+  - Reverse partial allocation
+  - Restore advance balance
+```
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 3: Update transaction-handler.ts** (PRIORITY 3 - 1-2 hours)
+
+**Goal:** Pass current balance to balance-handler
+
+**Changes:**
+1. Accept `currentBalance` in `handlePurchaseEdit()`
+2. Pass to `balanceHandler.getPurchaseBalanceOps()`
+3. Similar for `handleReturnEdit()`
+
+**Files to modify:**
+- `lib/transaction-handler.ts`
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 4: Update Purchase Edit API** (PRIORITY 4 - 2-3 hours)
+
+**Goal:** Fetch and pass vendor balance to handler
+
+**Changes:**
+1. Fetch vendor balance before calling handler
+2. Pass `currentBalance` to transaction handler
+3. No UI changes needed
+
+**Files to modify:**
+- `pages/api/purchases/[id].ts`
+
+**Code changes:**
+```typescript
+// Fetch current vendor balance
+const vendor = await tx.vendor_details.findUnique({
+  where: { id: existingPurchase.vendor_id },
+  select: {
+    total_paid: true,
+    total_allocated: true,
+    total_refunded: true,
+    total_refund_allocated: true
+  }
+})
+
+// Pass to handler
+const handlerResult = await transactionHandler.handlePurchaseEdit({
+  ...params,
+  currentBalance: vendor ? {
+    total_paid: Number(vendor.total_paid),
+    total_allocated: Number(vendor.total_allocated),
+    total_refunded: Number(vendor.total_refunded),
+    total_refund_allocated: Number(vendor.total_refund_allocated)
+  } : undefined
+})
+```
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 5: Update Purchase Create API** (PRIORITY 5 - 2-3 hours)
+
+**Goal:** Check advance before creating payment
+
+**Changes:**
+1. Fetch vendor balance when `payment_status = 1`
+2. Use advance automatically
+3. Create ledger entries appropriately
+
+**Files to modify:**
+- `pages/api/purchases/index.ts`
+
+**Logic:**
+```typescript
+if (payment_status === 1) {
+  // Fetch vendor balance
+  const vendor = await tx.vendor_details.findUnique({...})
+  const advanceBalance = vendor 
+    ? Number(vendor.total_paid) - Number(vendor.total_allocated)
+    : 0
+  
+  if (advanceBalance >= calculatedGrandTotal) {
+    // Use full advance - NO new payment
+    await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+      total_allocated: calculatedGrandTotal
+    })
+  } else if (advanceBalance > 0) {
+    // Use partial advance
+    await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+      total_paid: calculatedGrandTotal - advanceBalance,
+      total_allocated: calculatedGrandTotal
+    })
+  } else {
+    // No advance - create new payment
+    await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+      total_paid: calculatedGrandTotal,
+      total_allocated: calculatedGrandTotal
+    })
+  }
+}
+```
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 6: Update Return Edit API** (PRIORITY 6 - 2-3 hours)
+
+**Goal:** Similar logic for refunds
+
+**Changes:**
+1. Fetch vendor balance before calling handler
+2. Pass to transaction handler
+3. Use advance refund balance if available
+
+**Files to modify:**
+- `pages/api/purchase-returns/[id].ts`
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 7: Update Return Create API** (PRIORITY 7 - 2-3 hours)
+
+**Goal:** Check advance refund before creating refund
+
+**Changes:**
+1. Fetch vendor balance when `payment_status = 1`
+2. Use advance refund automatically
+3. Create ledger entries appropriately
+
+**Files to modify:**
+- `pages/api/purchase-returns/vendor-return.ts`
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Phase 8: Testing & Verification** (4-6 hours)
+
+**Test Scenarios:**
+- [ ] Test DIRECT payment creation
+- [ ] Test MIXED payment creation
+- [ ] Test BILL_SPECIFIC payment creation
+- [ ] Test advance usage in Purchase Create
+- [ ] Test advance usage in Purchase Edit
+- [ ] Test partial advance scenarios
+- [ ] Test no advance scenarios
+- [ ] Test all status transitions (0→1, 1→0, 2→1, 2→0)
+- [ ] Test balance calculations
+- [ ] Test ledger entries
+- [ ] Test with partial returns
+- [ ] Test editing in all directions
+
+**Status:** ⏳ PENDING
+
+---
+
+### **Total Estimated Time: 18-27 hours (2-3 days)**
+
+---
+
+## 📊 ADVANCE PAYMENT ALLOCATION - DETAILED SPECS
+
+### **Balance Field Usage:**
+
+```typescript
+// vendor_details balance fields
+account_balance = total_paid - total_allocated - total_refunded + total_refund_allocated
+
+// Advance balance calculation
+advance_balance = total_paid - total_allocated
+
+// Advance refund balance calculation
+advance_refund_balance = total_refunded - total_refund_allocated
+```
+
+### **Payment Type Support:**
+
+**1. BILL_SPECIFIC** (Current default)
+- Must allocate all payment to specific bills
+- `total_allocated` must equal `payment_amount`
+- Used when paying specific invoices
+
+**2. MIXED** (New feature)
+- Can allocate some to bills, keep rest as advance
+- `total_allocated` can be less than `payment_amount`
+- Difference becomes advance balance
+
+**3. DIRECT** (New feature)
+- No allocation to bills
+- All amount becomes advance balance
+- `total_allocated` = 0
+
+### **Smart Allocation Logic:**
+
+**Scenario 1: Full Advance Available**
+```
+Before: advance = ₹10,000, bill = ₹10,000
+Action: Mark as PAID
+Result: Uses advance, no new payment
+- total_paid: 10,000 (unchanged)
+- total_allocated: 10,000
+- account_balance: 0
+```
+
+**Scenario 2: Partial Advance Available**
+```
+Before: advance = ₹7,000, bill = ₹10,000
+Action: Mark as PAID
+Result: Uses ₹7k advance + creates ₹3k new payment
+- total_paid: 10,000 (7k + 3k)
+- total_allocated: 10,000
+- account_balance: 0
+```
+
+**Scenario 3: No Advance Available**
+```
+Before: advance = ₹0, bill = ₹10,000
+Action: Mark as PAID
+Result: Creates ₹10k new payment
+- total_paid: 10,000
+- total_allocated: 10,000
+- account_balance: 0
+```
+
+---
+
+## 🔧 API UPDATE SUMMARY
+
+### **APIs Requiring Updates:**
+
+| API | Handler Update | Balance Check | Advance Logic | Priority |
+|-----|---------------|---------------|---------------|----------|
+| **Vendor Transaction** | ❌ No | ❌ No | ✅ Payment Type | 1 |
+| **balance-handler.ts** | ✅ Yes | ✅ Yes | ✅ Smart Alloc | 2 |
+| **transaction-handler.ts** | ✅ Yes | ❌ No | ❌ No | 3 |
+| **Purchase Edit** | ❌ No | ✅ Yes | ❌ No | 4 |
+| **Purchase Create** | ❌ No | ✅ Yes | ✅ Smart Alloc | 5 |
+| **Return Edit** | ❌ No | ✅ Yes | ❌ No | 6 |
+| **Return Create** | ❌ No | ✅ Yes | ✅ Smart Alloc | 7 |
+
+### **Handler Updates:**
+
+**balance-handler.ts:**
+- Add `currentBalance` to ChangeSet interface
+- Implement advance check in Cases 0→1, 2→1
+- Implement advance restoration in Cases 1→0, 2→0
+- Similar logic for return operations
+
+**transaction-handler.ts:**
+- Accept `currentBalance` parameter
+- Pass to balance-handler
+- No logic changes needed
+
+### **Case-by-Case Behavior:**
+
+**Purchase Edit Cases:**
+```
+Case 0→1 (Unpaid → Paid):
+  - Check advance balance
+  - Use advance if available
+  - Create new payment only for difference
+
+Case 1→0 (Paid → Unpaid):
+  - Reverse allocation
+  - Restore advance balance
+
+Case 2→1 (Partial → Paid):
+  - Calculate remaining amount
+  - Check advance balance
+  - Use advance for remaining if available
+
+Case 2→0 (Partial → Unpaid):
+  - Reverse partial allocation
+  - Restore advance balance
+
+Cases 3-9 (Amount changes):
+  - No advance logic needed
+  - Existing logic works correctly
+```
+
+---
+
+## 📝 IMPLEMENTATION NOTES
+
+### **User Requirements:**
+- ✅ Cannot block status changes (users need full editing flexibility)
+- ✅ Must handle partial returns
+- ✅ Must work automatically (no UI toggles in Purchase Create/Edit)
+- ✅ Must prevent duplicate payments
+- ✅ Must properly track advance balance
+
+### **Technical Constraints:**
+- ✅ All operations must be in transaction
+- ✅ Must maintain audit trail
+- ✅ Must update all 4 systems (Inventory, Ledger, Payment Allocation, Balance)
+- ✅ Must handle all 9 status transition cases
+
+### **Business Logic:**
+- ✅ Advance balance = total_paid - total_allocated
+- ✅ Always use advance first before creating new payment
+- ✅ Create ledger entries showing advance usage
+- ✅ Support 3 payment types: BILL_SPECIFIC, MIXED, DIRECT
 
 ---
 

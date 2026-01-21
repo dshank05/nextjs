@@ -625,6 +625,35 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       // ===== PAYMENT OPERATIONS (if paid) =====
       if (payment_status === 1) {
+        // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE ALLOCATION
+        const vendor = await tx.vendor_details.findUnique({
+          where: { id: parseInt(vendor_id) },
+          select: {
+            total_paid: true,
+            total_allocated: true,
+            total_refunded: true,
+            total_refund_allocated: true
+          }
+        });
+
+        // ✅ USE BALANCE HANDLER FOR SMART ALLOCATION (handles vendor_id = 0)
+        const balanceOp = balanceHandler.getCreateBalanceOps({
+          vendorId: parseInt(vendor_id),
+          total: calculatedGrandTotal,
+          currentBalance: vendor ? {
+            total_paid: Number(vendor.total_paid),
+            total_allocated: Number(vendor.total_allocated),
+            total_refunded: Number(vendor.total_refunded),
+            total_refund_allocated: Number(vendor.total_refund_allocated)
+          } : undefined,
+          type: 'PURCHASE'
+        });
+
+        // Calculate advance for ledger notes
+        const advanceBalance = vendor 
+          ? Number(vendor.total_paid) - Number(vendor.total_allocated)
+          : 0;
+
         // Create PAYMENT ledger entry
         await ledgerService.createEntry({
           vendor_id: parseInt(vendor_id),
@@ -638,7 +667,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: payment_mode,
           payment_status: 1,
           payment_date: Math.floor(invoiceDate),
-          notes: `Payment made for purchase ${purchase.invoice_no}`,
+          notes: advanceBalance > 0 
+            ? `Payment for purchase ${purchase.invoice_no} (₹${advanceBalance >= calculatedGrandTotal ? calculatedGrandTotal : advanceBalance} from advance${advanceBalance < calculatedGrandTotal ? `, ₹${calculatedGrandTotal - advanceBalance} new payment` : ''})`
+            : `Payment made for purchase ${purchase.invoice_no}`,
           fy: currentFy
         }, tx);
 
@@ -650,7 +681,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             payment_amount: calculatedGrandTotal,
             payment_mode: payment_mode,
             payment_type: 'BILL_SPECIFIC',
-            notes: `Payment for purchase ${purchase.invoice_no}`,
+            notes: advanceBalance > 0
+              ? `Payment for purchase ${purchase.invoice_no} (using ₹${Math.min(advanceBalance, calculatedGrandTotal)} advance)`
+              : `Payment for purchase ${purchase.invoice_no}`,
             fy: currentFy
           }
         });
@@ -665,11 +698,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         });
 
-        // Update vendor balance
-        await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
-          total_paid: calculatedGrandTotal,
-          total_allocated: calculatedGrandTotal
-        });
+        // ✅ UPDATE VENDOR BALANCE (skips vendor_id = 0 automatically)
+        if (balanceOp) {
+          await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
+        }
       }
 
       return purchase;

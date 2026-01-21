@@ -753,6 +753,17 @@ export default async function handler(
             0
           )
 
+          // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE ALLOCATION
+          const vendor = await tx.vendor_details.findUnique({
+            where: { id: existingPurchase.vendor_id },
+            select: {
+              total_paid: true,
+              total_allocated: true,
+              total_refunded: true,
+              total_refund_allocated: true
+            }
+          });
+
           // Get all operations from handler
           const handlerResult = await transactionHandler.handlePurchaseEdit({
             oldStatus: oldPaymentStatus,
@@ -766,7 +777,13 @@ export default async function handler(
             paymentDate: existingPurchase.invoice_date,
             fy: existingPurchase.fy,
             totalAllocated: totalAllocated,
-            isTypeA: isTypeA
+            isTypeA: isTypeA,
+            currentBalance: vendor ? {
+              total_paid: Number(vendor.total_paid),
+              total_allocated: Number(vendor.total_allocated),
+              total_refunded: Number(vendor.total_refunded),
+              total_refund_allocated: Number(vendor.total_refund_allocated)
+            } : undefined
           })
 
           // Execute all operations (ledger, allocations, balance) in transaction

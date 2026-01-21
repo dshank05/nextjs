@@ -337,6 +337,35 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       // If refunded immediately, create refund received ledger entry and allocations
       if (paymentStatusValue === 1) {
+        // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE REFUND ALLOCATION
+        const vendor = await tx.vendor_details.findUnique({
+          where: { id: parseInt(vendor_id) },
+          select: {
+            total_paid: true,
+            total_allocated: true,
+            total_refunded: true,
+            total_refund_allocated: true
+          }
+        });
+
+        // ✅ USE BALANCE HANDLER FOR SMART ALLOCATION (handles vendor_id = 0)
+        const balanceOp = balanceHandler.getCreateBalanceOps({
+          vendorId: parseInt(vendor_id),
+          total: refundAmount,
+          currentBalance: vendor ? {
+            total_paid: Number(vendor.total_paid),
+            total_allocated: Number(vendor.total_allocated),
+            total_refunded: Number(vendor.total_refunded),
+            total_refund_allocated: Number(vendor.total_refund_allocated)
+          } : undefined,
+          type: 'RETURN'
+        });
+
+        // Calculate advance for ledger notes
+        const advanceRefundBalance = vendor 
+          ? Number(vendor.total_refunded) - Number(vendor.total_refund_allocated)
+          : 0;
+
         await ledgerService.createEntry({
           vendor_id: parseInt(vendor_id),
           transaction_date: paymentDateValue || returnDateTimestamp,
@@ -349,7 +378,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_mode: paymentModeValue,
           payment_status: 1,
           payment_date: paymentDateValue,
-          notes: `Refund received for ${debitNoteNo}`,
+          notes: advanceRefundBalance > 0
+            ? `Refund for ${debitNoteNo} (₹${advanceRefundBalance >= refundAmount ? refundAmount : advanceRefundBalance} from advance${advanceRefundBalance < refundAmount ? `, ₹${refundAmount - advanceRefundBalance} new refund` : ''})`
+            : `Refund received for ${debitNoteNo}`,
           fy: financialYear
         }, tx)
 
@@ -361,7 +392,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             refund_amount: refundAmount,
             refund_mode: paymentModeValue,
             refund_type: 'RETURN_SPECIFIC',
-            notes: `Refund for return ${debitNoteNo}`,
+            notes: advanceRefundBalance > 0
+              ? `Refund for return ${debitNoteNo} (using ₹${Math.min(advanceRefundBalance, refundAmount)} advance)`
+              : `Refund for return ${debitNoteNo}`,
             fy: financialYear
           }
         });
@@ -376,11 +409,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         });
 
-        // ✅ ADD BALANCE UPDATE INSIDE TRANSACTION
-        await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
-          total_refunded: refundAmount,
-          total_refund_allocated: refundAmount
-        });
+        // ✅ UPDATE VENDOR BALANCE (skips vendor_id = 0 automatically)
+        if (balanceOp) {
+          await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
+        }
       }
 
       return returnRecord
