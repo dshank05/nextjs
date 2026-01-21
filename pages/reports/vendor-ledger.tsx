@@ -20,15 +20,13 @@ interface LedgerEntry {
 interface DetailEntry {
   date: number;
   formattedDate: string;
-  type: string;
-  refNo: string;
-  billRef: string;
-  amount: number;
-  allocated: number;
-  balance: number;
-  paymentStatus?: number;
-  paymentMode?: number;
-  paymentType?: string;
+  transactionType: string;
+  reference: string;
+  billAmount: number | null;
+  paymentAmount: number | null;
+  outstanding: number;
+  mode: number | null;
+  status: number | null;
 }
 
 interface Pagination {
@@ -252,12 +250,12 @@ export default function VendorLedgerPage() {
                     ]
                   : [
                       { key: 'formattedDate', label: 'Date', enabled: true },
-                      { key: 'type', label: 'Type', enabled: true },
-                      { key: 'refNo', label: 'Ref No', enabled: true },
-                      { key: 'billRef', label: 'Bill Ref', enabled: true },
-                      { key: 'amount', label: 'Amount (₹)', enabled: true },
-                      { key: 'allocated', label: 'Allocated (₹)', enabled: true },
-                      { key: 'balance', label: 'Balance (₹)', enabled: true }
+                      { key: 'transactionType', label: 'Transaction Type', enabled: true },
+                      { key: 'reference', label: 'Reference', enabled: true },
+                      { key: 'billAmount', label: 'Bill Amount (₹)', enabled: true },
+                      { key: 'paymentAmount', label: 'Payment Amount (₹)', enabled: true },
+                      { key: 'outstanding', label: 'Outstanding (₹)', enabled: true },
+                      { key: 'mode', label: 'Mode', enabled: true }
                     ]
               }
               config={{
@@ -332,36 +330,46 @@ export default function VendorLedgerPage() {
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Type</th>
-                  <th>Ref No</th>
-                  <th>Bill Ref</th>
-                  <th className="text-right">Amount (₹)</th>
-                  <th className="text-right">Allocated (₹)</th>
-                  <th className="text-right">Balance (₹)</th>
+                  <th>Transaction Type</th>
+                  <th>Reference</th>
+                  <th className="text-right">Bill Amount (₹)</th>
+                  <th className="text-right">Payment Amount (₹)</th>
+                  <th className="text-right">Outstanding (₹)</th>
+                  <th>Mode</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {detailEntries.map((entry, idx) => (
-                  <tr key={idx}>
-                    <td className="text-slate-300">{entry.formattedDate}</td>
-                    <td className="text-slate-300">{entry.type}</td>
-                    <td className="font-medium text-white">{entry.refNo}</td>
-                    <td className="text-slate-300">{entry.billRef}</td>
-                    <td className="text-right font-semibold text-white">
-                      ₹{entry.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="text-right text-blue-400 font-semibold">
-                      ₹{entry.allocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className={`text-right font-semibold ${entry.balance > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                      ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td>
-                      {entry.paymentStatus !== undefined && getPaymentStatusBadge(entry.paymentStatus)}
-                    </td>
-                  </tr>
-                ))}
+                {detailEntries.map((entry, idx) => {
+                  return (
+                    <tr key={idx}>
+                      <td className="text-slate-300">{entry.formattedDate}</td>
+                      <td className="text-slate-300">{entry.transactionType}</td>
+                      <td className="font-medium text-white">{entry.reference}</td>
+                      <td className="text-right font-semibold text-white">
+                        {entry.billAmount !== null 
+                          ? `₹${entry.billAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                          : '-'
+                        }
+                      </td>
+                      <td className="text-right text-green-400 font-semibold">
+                        {entry.paymentAmount !== null
+                          ? `₹${entry.paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                          : '-'
+                        }
+                      </td>
+                      <td className={`text-right font-semibold ${entry.outstanding > 0 ? 'text-yellow-400' : entry.outstanding < 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        ₹{Math.abs(entry.outstanding).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="text-slate-300">
+                        {entry.mode !== null ? (entry.mode === 0 ? 'Cash' : 'Bank') : '-'}
+                      </td>
+                      <td>
+                        {entry.status !== null && getPaymentStatusBadge(entry.status)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

@@ -108,7 +108,7 @@ export default async function handler(
       orderBy: { return_date: 'asc' }
     })
 
-    // Format purchase entries
+    // Format purchase entries with simplified structure
     const purchaseEntries = purchases.flatMap(purchase => {
       const entries: any[] = []
       
@@ -121,35 +121,39 @@ export default async function handler(
       entries.push({
         date: purchase.invoice_date,
         formattedDate: new Date(purchase.invoice_date * 1000).toLocaleDateString('en-IN'),
-        type: 'Purchase',
-        refNo: `PUR-${purchase.invoice_no}`,
-        billRef: '-',
-        amount: Number(purchase.total),
-        allocated: totalAllocated,
-        balance: Number(purchase.total) - totalAllocated,
-        paymentStatus: purchase.payment_status
+        transactionType: 'Purchase',
+        reference: `PUR-${purchase.invoice_no}`,
+        billAmount: Number(purchase.total),
+        paymentAmount: null,
+        outstanding: Number(purchase.total) - totalAllocated,
+        mode: null,
+        status: purchase.payment_status
       })
 
-      // Add payment allocation entries
+      // Add payment entries (one per payment, not per allocation)
+      const paymentMap = new Map()
       purchase.payment_allocations.forEach(alloc => {
-        entries.push({
-          date: alloc.payment.payment_date,
-          formattedDate: new Date(alloc.payment.payment_date * 1000).toLocaleDateString('en-IN'),
-          type: 'Payment',
-          refNo: `PAY-${alloc.payment.id}`,
-          billRef: `PUR-${purchase.invoice_no}`,
-          amount: Number(alloc.payment.payment_amount),
-          allocated: Number(alloc.allocated_amount),
-          balance: 0, // Will be calculated later
-          paymentMode: alloc.payment.payment_mode,
-          paymentType: alloc.payment.payment_type
-        })
+        const paymentId = alloc.payment.id
+        if (!paymentMap.has(paymentId)) {
+          paymentMap.set(paymentId, {
+            date: alloc.payment.payment_date,
+            formattedDate: new Date(alloc.payment.payment_date * 1000).toLocaleDateString('en-IN'),
+            transactionType: 'Payment',
+            reference: `PAY-${paymentId}`,
+            billAmount: null,
+            paymentAmount: Number(alloc.payment.payment_amount),
+            outstanding: null, // Will be calculated later
+            mode: alloc.payment.payment_mode,
+            status: null
+          })
+        }
       })
-
+      
+      entries.push(...Array.from(paymentMap.values()))
       return entries
     })
 
-    // Format return entries
+    // Format return entries with simplified structure
     const returnEntries = returns.flatMap(returnItem => {
       const entries: any[] = []
       
@@ -162,36 +166,58 @@ export default async function handler(
       entries.push({
         date: returnItem.return_date,
         formattedDate: new Date(returnItem.return_date * 1000).toLocaleDateString('en-IN'),
-        type: 'Return',
-        refNo: returnItem.debit_note_no || `RET-${returnItem.id}`,
-        billRef: '-',
-        amount: Number(returnItem.refund_amount),
-        allocated: totalAllocated,
-        balance: Number(returnItem.refund_amount) - totalAllocated,
-        paymentStatus: returnItem.payment_status
+        transactionType: 'Return',
+        reference: returnItem.debit_note_no || `RET-${returnItem.id}`,
+        billAmount: Number(returnItem.refund_amount),
+        paymentAmount: null,
+        outstanding: Number(returnItem.refund_amount) - totalAllocated,
+        mode: null,
+        status: returnItem.payment_status
       })
 
-      // Add refund allocation entries
+      // Add refund entries (one per refund, not per allocation)
+      const refundMap = new Map()
       returnItem.refund_allocations.forEach(alloc => {
-        entries.push({
-          date: alloc.refund.refund_date,
-          formattedDate: new Date(alloc.refund.refund_date * 1000).toLocaleDateString('en-IN'),
-          type: 'Refund',
-          refNo: `REF-${alloc.refund.id}`,
-          billRef: returnItem.debit_note_no || `RET-${returnItem.id}`,
-          amount: Number(alloc.refund.refund_amount),
-          allocated: Number(alloc.allocated_amount),
-          balance: 0, // Will be calculated later
-          refundMode: alloc.refund.refund_mode,
-          refundType: alloc.refund.refund_type
-        })
+        const refundId = alloc.refund.id
+        if (!refundMap.has(refundId)) {
+          refundMap.set(refundId, {
+            date: alloc.refund.refund_date,
+            formattedDate: new Date(alloc.refund.refund_date * 1000).toLocaleDateString('en-IN'),
+            transactionType: 'Refund',
+            reference: `REF-${refundId}`,
+            billAmount: null,
+            paymentAmount: Number(alloc.refund.refund_amount),
+            outstanding: null, // Will be calculated later
+            mode: alloc.refund.refund_mode,
+            status: null
+          })
+        }
       })
-
+      
+      entries.push(...Array.from(refundMap.values()))
       return entries
     })
 
     // Combine and sort all entries by date
     const allEntries = [...purchaseEntries, ...returnEntries].sort((a, b) => a.date - b.date)
+    
+    // Calculate running outstanding balance
+    let runningOutstanding = 0
+    allEntries.forEach(entry => {
+      if (entry.transactionType === 'Purchase') {
+        runningOutstanding += entry.billAmount
+        entry.outstanding = runningOutstanding
+      } else if (entry.transactionType === 'Payment') {
+        runningOutstanding -= entry.paymentAmount
+        entry.outstanding = runningOutstanding
+      } else if (entry.transactionType === 'Return') {
+        runningOutstanding -= entry.billAmount
+        entry.outstanding = runningOutstanding
+      } else if (entry.transactionType === 'Refund') {
+        runningOutstanding += entry.paymentAmount
+        entry.outstanding = runningOutstanding
+      }
+    })
 
     // Apply pagination
     const paginatedEntries = allEntries.slice(skip, skip + limitNum)
