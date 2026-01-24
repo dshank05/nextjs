@@ -158,8 +158,8 @@ export default function PurchaseReturnIndexPage() {
         itemCount: filtersToUse.itemCount || '',
         paymentMode: filtersToUse.paymentMode || '',
         packingForwardingTotal: filtersToUse.packingForwardingTotal || '',
-        sortBy: filtersToUse.sortBy || 'return_date',
-        sortOrder: filtersToUse.sortOrder || 'desc'
+        sortBy: filtersToUse.sortBy || 'return_no',
+        sortOrder: filtersToUse.sortOrder || 'asc'
       });
 
       const response = await fetch(`/api/purchase-returns?${queryParams}`, {

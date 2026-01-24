@@ -85,7 +85,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Status filter - convert UI strings to DB integers
     if (status && status !== '') {
-      where.status = parseInt(status as string);
+      where.payment_status = parseInt(status as string);
     }
 
     // Amount range filters
@@ -141,7 +141,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'return_date', 'total_amount', 'total_tax', 'status', 'fy', 'vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount']
-    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'return_date'
+    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'id'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // For computed fields, we need to fetch all data first and sort in JavaScript
