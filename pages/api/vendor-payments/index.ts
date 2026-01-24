@@ -225,7 +225,9 @@ async function handleListPayments(
       dateTo,
       payment_mode,
       page = '1',
-      limit = '50'
+      limit = '50',
+      sortBy = 'id',
+      sortOrder = 'asc'
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -253,6 +255,32 @@ async function handleListPayments(
       where.payment_mode = parseInt(payment_mode as string);
     }
 
+    // Build orderBy clause
+    let orderBy: any = {};
+    const sortField = sortBy as string;
+    const order = sortOrder as string;
+
+    if (sortField === 'vendor_name') {
+      orderBy = {
+        vendor: {
+          vendor_name: order
+        }
+      };
+    } else if (sortField === 'payment_amount') {
+      orderBy = {
+        payment_amount: order
+      };
+    } else if (sortField === 'payment_date') {
+      orderBy = {
+        payment_date: order
+      };
+    } else {
+      // Default to id
+      orderBy = {
+        id: order
+      };
+    }
+
     // Get total count
     const total = await prisma.vendor_payments.count({ where });
 
@@ -278,9 +306,7 @@ async function handleListPayments(
           }
         }
       },
-      orderBy: {
-        payment_date: 'desc'
-      },
+      orderBy,
       skip,
       take: limitNum
     });

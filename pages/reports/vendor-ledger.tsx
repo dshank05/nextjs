@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, DollarSign, Loader2 } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
 
@@ -15,18 +15,8 @@ interface LedgerEntry {
   balance: number;
   remarks: string;
   transactionType: string;
-}
-
-interface DetailEntry {
-  date: number;
-  formattedDate: string;
-  transactionType: string;
-  reference: string;
-  billAmount: number | null;
-  paymentAmount: number | null;
-  outstanding: number;
-  mode: number | null;
-  status: number | null;
+  referenceType: string | null;
+  referenceId: number | null;
 }
 
 interface Pagination {
@@ -41,12 +31,9 @@ interface Vendor {
   vendor_name: string;
 }
 
-type ViewType = 'accounting' | 'details';
-
 export default function VendorLedgerPage() {
-  const [activeView, setActiveView] = useState<ViewType>('accounting');
   const [accountingEntries, setAccountingEntries] = useState<LedgerEntry[]>([]);
-  const [detailEntries, setDetailEntries] = useState<DetailEntry[]>([]);
+  const [mergedEntries, setMergedEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -71,7 +58,17 @@ export default function VendorLedgerPage() {
     if (selectedVendor) {
       fetchData();
     }
-  }, [selectedVendor, dateFrom, dateTo, pagination.page, activeView]);
+  }, [selectedVendor, dateFrom, dateTo, pagination.page]);
+
+  // Merge adjustment entries when accounting entries change
+  useEffect(() => {
+    if (accountingEntries.length > 0) {
+      const merged = mergeAdjustmentEntries(accountingEntries);
+      setMergedEntries(merged);
+    } else {
+      setMergedEntries([]);
+    }
+  }, [accountingEntries]);
 
   const fetchVendors = async () => {
     try {
@@ -99,18 +96,10 @@ export default function VendorLedgerPage() {
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
 
-      const endpoint = activeView === 'accounting'
-        ? '/api/reports/vendor-ledger-accounting'
-        : '/api/reports/vendor-ledger-details';
-
-      const response = await fetch(`${endpoint}?${params}`);
+      const response = await fetch(`/api/reports/vendor-ledger-accounting?${params}`);
       if (response.ok) {
         const data = await response.json();
-        if (activeView === 'accounting') {
-          setAccountingEntries(data.entries || []);
-        } else {
-          setDetailEntries(data.entries || []);
-        }
+        setAccountingEntries(data.entries || []);
         setPagination(data.pagination);
       }
     } catch (error) {
@@ -118,6 +107,74 @@ export default function VendorLedgerPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Smart merging logic to combine adjustment entries with their base transactions
+  const mergeAdjustmentEntries = (entries: LedgerEntry[]): LedgerEntry[] => {
+    // Group entries by reference type, reference ID, and base transaction type
+    const groupMap = new Map<string, LedgerEntry[]>();
+    
+    entries.forEach(entry => {
+      // Skip entries without proper reference data
+      if (!entry.referenceType || !entry.referenceId) {
+        // Keep these entries as-is
+        const key = `solo-${entry.id}`;
+        groupMap.set(key, [entry]);
+        return;
+      }
+
+      // Get base type (remove _ADJUSTMENT, _REVERSAL suffixes)
+      const baseType = entry.transactionType
+        .replace('_ADJUSTMENT', '')
+        .replace('_REVERSAL', '');
+      
+      // Create group key: referenceType-referenceId-baseType
+      const key = `${entry.referenceType}-${entry.referenceId}-${baseType}`;
+      
+      if (!groupMap.has(key)) {
+        groupMap.set(key, []);
+      }
+      groupMap.get(key)!.push(entry);
+    });
+
+    // Merge groups and create display entries
+    const merged: LedgerEntry[] = [];
+    
+    groupMap.forEach((group, key) => {
+      if (group.length === 1) {
+        // Single entry, no merging needed
+        merged.push(group[0]);
+      } else {
+        // Multiple entries - merge them
+        // Use the latest entry as base (usually the adjustment)
+        const latestEntry = group[group.length - 1];
+        
+        // Sum up all debits and credits
+        const totalDebit = group.reduce((sum, e) => sum + e.debit, 0);
+        const totalCredit = group.reduce((sum, e) => sum + e.credit, 0);
+        
+        // Use the final balance from the latest entry
+        const finalBalance = latestEntry.balance;
+        
+        // Create merged entry
+        merged.push({
+          ...latestEntry,
+          debit: totalDebit,
+          credit: totalCredit,
+          balance: finalBalance,
+          // Combine remarks to show it's merged
+          remarks: group.length > 1 
+            ? `${latestEntry.remarks} (${group.length} entries merged)`
+            : latestEntry.remarks
+        });
+      }
+    });
+
+    // Sort by date and ID
+    return merged.sort((a, b) => {
+      if (a.date !== b.date) return a.date - b.date;
+      return a.id - b.id;
+    });
   };
 
   const clearFilters = () => {
@@ -135,50 +192,11 @@ export default function VendorLedgerPage() {
     return pages;
   };
 
-  const getPaymentStatusBadge = (status: number) => {
-    switch (status) {
-      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
-      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
-      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial</span>;
-      default: return null;
-    }
-  };
-
   const selectedVendorName = vendors.find(v => v.id.toString() === selectedVendor)?.vendor_name || '';
 
   return (
     <div className="space-y-6">
       <div className="card">
-        {/* Button Group */}
-        <div className="flex space-x-1 mb-6 bg-slate-800 p-1 rounded-lg">
-          <button
-            className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-              activeView === 'accounting'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-300 hover:bg-slate-700'
-            }`}
-            onClick={() => setActiveView('accounting')}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <FileText className="w-4 h-4" />
-              Accounting Ledger
-            </div>
-          </button>
-          <button
-            className={`flex-1 py-2 px-4 rounded-md font-medium transition-colors ${
-              activeView === 'details'
-                ? 'bg-blue-600 text-white'
-                : 'text-slate-300 hover:bg-slate-700'
-            }`}
-            onClick={() => setActiveView('details')}
-          >
-            <div className="flex items-center justify-center gap-2">
-              <DollarSign className="w-4 h-4" />
-              Payment Details
-            </div>
-          </button>
-        </div>
-
         {/* Filters Section */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
           {/* Vendor Selector */}
@@ -201,7 +219,7 @@ export default function VendorLedgerPage() {
           </div>
 
           {/* Date Range Filter */}
-          <div className="md:col-span-2">
+          <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Date Range</label>
             <DateRangeFilter
               startDate={dateFrom}
@@ -235,29 +253,17 @@ export default function VendorLedgerPage() {
               )}
             </div>
             <ExportMenu
-              data={activeView === 'accounting' ? accountingEntries : detailEntries}
-              columns={
-                activeView === 'accounting'
-                  ? [
-                      { key: 'formattedDate', label: 'Date', enabled: true },
-                      { key: 'particulars', label: 'Particulars', enabled: true },
-                      { key: 'voucherType', label: 'Voucher Type', enabled: true },
-                      { key: 'voucherNo', label: 'Voucher No', enabled: true },
-                      { key: 'debit', label: 'Debit (₹)', enabled: true },
-                      { key: 'credit', label: 'Credit (₹)', enabled: true },
-                      { key: 'balance', label: 'Balance (₹)', enabled: true },
-                      { key: 'remarks', label: 'Remarks', enabled: true }
-                    ]
-                  : [
-                      { key: 'formattedDate', label: 'Date', enabled: true },
-                      { key: 'transactionType', label: 'Transaction Type', enabled: true },
-                      { key: 'reference', label: 'Reference', enabled: true },
-                      { key: 'billAmount', label: 'Bill Amount (₹)', enabled: true },
-                      { key: 'paymentAmount', label: 'Payment Amount (₹)', enabled: true },
-                      { key: 'outstanding', label: 'Outstanding (₹)', enabled: true },
-                      { key: 'mode', label: 'Mode', enabled: true }
-                    ]
-              }
+              data={mergedEntries}
+              columns={[
+                { key: 'formattedDate', label: 'Date', enabled: true },
+                { key: 'particulars', label: 'Particulars', enabled: true },
+                { key: 'voucherType', label: 'Voucher Type', enabled: true },
+                { key: 'voucherNo', label: 'Voucher No', enabled: true },
+                { key: 'debit', label: 'Debit (₹)', enabled: true },
+                { key: 'credit', label: 'Credit (₹)', enabled: true },
+                { key: 'balance', label: 'Balance (₹)', enabled: true },
+                { key: 'remarks', label: 'Remarks', enabled: true }
+              ]}
               config={{
                 title: `Vendor Ledger - ${selectedVendorName}`,
                 fileName: `Vendor_Ledger_${selectedVendorName}_${new Date().toISOString().split('T')[0]}`
@@ -270,8 +276,7 @@ export default function VendorLedgerPage() {
         {pagination && selectedVendor && (
           <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
             <div>
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
-              {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} entries
+              Showing {mergedEntries.length} merged entries (from {accountingEntries.length} total entries)
             </div>
             <div>Page {pagination.page} of {pagination.totalPages}</div>
           </div>
@@ -290,7 +295,7 @@ export default function VendorLedgerPage() {
               <FileText className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg">Please select a vendor to view ledger</p>
             </div>
-          ) : activeView === 'accounting' ? (
+          ) : (
             <table className="table">
               <thead>
                 <tr>
@@ -305,8 +310,8 @@ export default function VendorLedgerPage() {
                 </tr>
               </thead>
               <tbody>
-                {accountingEntries.map((entry) => (
-                  <tr key={entry.id}>
+                {mergedEntries.map((entry) => (
+                  <tr key={`merged-${entry.id}`}>
                     <td className="text-slate-300">{entry.formattedDate}</td>
                     <td className="text-slate-300">{entry.particulars}</td>
                     <td className="text-slate-300">{entry.voucherType}</td>
@@ -320,61 +325,20 @@ export default function VendorLedgerPage() {
                     <td className={`text-right font-semibold ${entry.balance < 0 ? 'text-red-400' : entry.balance > 0 ? 'text-green-400' : 'text-slate-300'}`}>
                       ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="text-slate-400 text-sm">{entry.remarks}</td>
+                    <td className="text-slate-400 text-sm">
+                      {entry.remarks
+                        .replace(/\(now partially paid\)/gi, '')
+                        .replace(/\(now partially returned\)/gi, '')
+                        .replace(/\(\d+ entries merged\)/gi, '')
+                        .trim()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Transaction Type</th>
-                  <th>Reference</th>
-                  <th className="text-right">Bill Amount (₹)</th>
-                  <th className="text-right">Payment Amount (₹)</th>
-                  <th className="text-right">Outstanding (₹)</th>
-                  <th>Mode</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detailEntries.map((entry, idx) => {
-                  return (
-                    <tr key={idx}>
-                      <td className="text-slate-300">{entry.formattedDate}</td>
-                      <td className="text-slate-300">{entry.transactionType}</td>
-                      <td className="font-medium text-white">{entry.reference}</td>
-                      <td className="text-right font-semibold text-white">
-                        {entry.billAmount !== null 
-                          ? `₹${entry.billAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                          : '-'
-                        }
-                      </td>
-                      <td className="text-right text-green-400 font-semibold">
-                        {entry.paymentAmount !== null
-                          ? `₹${entry.paymentAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                          : '-'
-                        }
-                      </td>
-                      <td className={`text-right font-semibold ${entry.outstanding > 0 ? 'text-yellow-400' : entry.outstanding < 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        ₹{Math.abs(entry.outstanding).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="text-slate-300">
-                        {entry.mode !== null ? (entry.mode === 0 ? 'Cash' : 'Bank') : '-'}
-                      </td>
-                      <td>
-                        {entry.status !== null && getPaymentStatusBadge(entry.status)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           )}
 
-          {selectedVendor && (activeView === 'accounting' ? accountingEntries : detailEntries).length === 0 && !loading && (
+          {selectedVendor && mergedEntries.length === 0 && !loading && (
             <div className="text-center py-8 text-slate-400">
               No ledger entries found for the selected filters.
             </div>

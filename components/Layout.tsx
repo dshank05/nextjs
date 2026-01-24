@@ -74,7 +74,7 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor' },
-        { name: 'VENDOR TRANSACTION', href: '/entry/vendor-transaction' },
+        { name: 'VENDOR TRANSACTION', href: '/vendor-transactions' },
         { name: 'CUSTOMER TRANSACTION', href: '/entry/customer-transaction' },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
@@ -190,11 +190,13 @@ const Layout = ({ children }: LayoutProps) => {
     if (router.pathname.startsWith('/purchases/')) {
       return 'PURCHASE';
     }
-    if(router.pathname.startsWith('/entry/purchasereturn-vendor-create')){
-      return 'PURCHASE RETURN'
+    // Purchase Return routes
+    if (router.pathname === '/entry/purchasereturn-vendor-create') {
+      return hasEditParam ? 'PURCHASE RETURN EDIT' : 'PURCHASE RETURN CREATE';
     }
-
-    // Purchase Returns routes
+    if (router.pathname === '/entry/purchasereturn-vendor') {
+      return 'PURCHASE RETURNS';
+    }
     if (router.pathname.startsWith('/purchase-returns/')) {
       return 'PURCHASE RETURNS';
     }
@@ -235,6 +237,17 @@ const Layout = ({ children }: LayoutProps) => {
     }
     if (router.pathname.startsWith('/vendors/view/')) {
       return 'VENDOR VIEW';
+    }
+
+    // Vendor Transactions routes
+    if (router.pathname === '/entry/vendor-transaction') {
+      return hasEditParam ? 'EDIT VENDOR TRANSACTION' : 'RECORD VENDOR TRANSACTION';
+    }
+    if (router.pathname === '/vendor-transactions') {
+      return 'VENDOR TRANSACTIONS';
+    }
+    if (router.pathname.startsWith('/vendor-transactions/view/')) {
+      return 'VENDOR TRANSACTION VIEW';
     }
 
     // Check navigation items

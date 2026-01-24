@@ -4,6 +4,7 @@ import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
+import SessionStorageService from '../../lib/sessionStorage'
 
 interface OutstandingBill {
   purchase_id: number
@@ -37,10 +38,11 @@ type PaymentType = 'BILL_SPECIFIC' | 'MIXED' | 'DIRECT'
 
 export default function VendorTransactionEntry() {
   const router = useRouter()
+  const { edit, type } = router.query
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [selectedVendor, setSelectedVendor] = useState<number>(0)
+  const [selectedVendor, setSelectedVendor] = useState<string>('')
   const [operationType, setOperationType] = useState<OperationType>('')
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC')
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
@@ -52,19 +54,27 @@ export default function VendorTransactionEntry() {
   const [currentFY, setCurrentFY] = useState<number>(2024)
   const [error, setError] = useState<string>('')
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
+  
+  // Edit mode
+  const isEditMode = !!edit
+  const [transactionId, setTransactionId] = useState<number>(0)
 
   useEffect(() => {
     fetchVendors()
     fetchCurrentFY()
-  }, [])
+    if (isEditMode && edit && type) {
+      fetchTransactionForEdit(edit as string, type as string)
+    }
+  }, [edit, type, isEditMode])
 
   useEffect(() => {
-    if (selectedVendor > 0 && operationType) {
+    const vendorId = parseInt(selectedVendor)
+    if (vendorId > 0 && operationType) {
       if (operationType === 'EXPENSE') {
-        fetchOutstandingBills(selectedVendor)
+        fetchOutstandingBills(vendorId)
         setOutstandingReturns([])
       } else if (operationType === 'INCOME') {
-        fetchOutstandingReturns(selectedVendor)
+        fetchOutstandingReturns(vendorId)
         setOutstandingBills([])
       }
     } else {
@@ -150,6 +160,102 @@ export default function VendorTransactionEntry() {
     } catch (error) {
       console.error('Error fetching outstanding returns:', error)
       setError('Failed to load outstanding returns')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchTransactionForEdit = async (id: string, transactionType: string) => {
+    setLoading(true)
+    try {
+      const isExpense = transactionType === 'expense'
+      const module = isExpense ? 'vendor-payments' : 'vendor-refunds'
+      
+      // Check sessionStorage first (optimization to avoid API call)
+      const cachedData = SessionStorageService.get(module, id)
+      let transaction = cachedData
+      
+      // If no cached data, fetch from API
+      if (!cachedData) {
+        const endpoint = isExpense 
+          ? `/api/vendor-payments/${id}`
+          : `/api/vendor-refunds/${id}`
+        
+        const response = await fetch(endpoint)
+        const data = await response.json()
+        
+        if (data.success && data.data) {
+          transaction = data.data
+        } else {
+          setError('Failed to load transaction for editing')
+          setLoading(false)
+          return
+        }
+      }
+      
+      if (transaction) {
+        
+        // Set transaction ID
+        setTransactionId(parseInt(id))
+        
+        // Set vendor
+        setSelectedVendor(transaction.vendor.id.toString())
+        
+        // Set operation type
+        setOperationType(isExpense ? 'EXPENSE' : 'INCOME')
+        
+        // Set payment type
+        const pType = isExpense ? transaction.payment_type : transaction.refund_type
+        setPaymentType(pType as PaymentType)
+        
+        // Set amount
+        const amt = isExpense ? transaction.payment_amount : transaction.refund_amount
+        setAmount(amt.toString())
+        
+        // Set mode
+        const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
+        setMode(payMode)
+        
+        // Set date
+        const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
+        const dateObj = new Date(dateTimestamp * 1000)
+        setDate(dateObj.toISOString().split('T')[0])
+        
+        // Set notes
+        setNotes(transaction.notes || '')
+        
+        // Set FY
+        setCurrentFY(transaction.fy)
+        
+        // Wait for vendor to be set, then fetch outstanding items
+        // The useEffect will handle fetching bills/returns when vendor changes
+        
+        // After a brief delay, set allocations
+        setTimeout(() => {
+          if (isExpense && transaction.allocations) {
+            // Fetch all bills first, then set allocations
+            fetchOutstandingBills(transaction.vendor.id).then(() => {
+              setOutstandingBills(prev => prev.map(bill => {
+                const alloc = transaction.allocations.find((a: any) => a.purchase_id === bill.purchase_id)
+                return alloc ? { ...bill, allocated: alloc.allocated_amount } : bill
+              }))
+            })
+          } else if (!isExpense && transaction.allocations) {
+            fetchOutstandingReturns(transaction.vendor.id).then(() => {
+              setOutstandingReturns(prev => prev.map(ret => {
+                const alloc = transaction.allocations.find((a: any) => a.return_id === ret.return_id)
+                return alloc ? { ...ret, allocated: alloc.allocated_amount } : ret
+              }))
+            })
+          }
+        }, 500)
+        
+        // Clean up sessionStorage after use
+        SessionStorageService.remove(module, id)
+      }
+    } catch (error) {
+      console.error('Error fetching transaction for edit:', error)
+      setError('Failed to load transaction for editing')
     } finally {
       setLoading(false)
     }
@@ -313,9 +419,10 @@ export default function VendorTransactionEntry() {
       
       let endpoint = ''
       let payload: any = {}
+      const method = isEditMode ? 'PUT' : 'POST'
       
       if (operationType === 'EXPENSE') {
-        endpoint = '/api/vendor-payments'
+        endpoint = isEditMode ? `/api/vendor-payments/${transactionId}` : '/api/vendor-payments'
         const allocations = paymentType === 'DIRECT' ? [] : outstandingBills
           .filter(bill => bill.allocated && bill.allocated > 0)
           .map(bill => ({
@@ -335,7 +442,7 @@ export default function VendorTransactionEntry() {
           fy: currentFY
         }
       } else {
-        endpoint = '/api/vendor-refunds'
+        endpoint = isEditMode ? `/api/vendor-refunds/${transactionId}` : '/api/vendor-refunds'
         const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
           .filter(ret => ret.allocated && ret.allocated > 0)
           .map(ret => ({
@@ -357,7 +464,7 @@ export default function VendorTransactionEntry() {
       }
       
       const res = await fetch(endpoint, {
-        method: 'POST',
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
@@ -366,18 +473,24 @@ export default function VendorTransactionEntry() {
       
       if (res.ok && data.success) {
         const transactionType = operationType === 'EXPENSE' ? 'Payment' : 'Refund'
-        showSnackbar('success', `${transactionType} recorded successfully!`)
+        const action = isEditMode ? 'updated' : 'recorded'
+        showSnackbar('success', `${transactionType} ${action} successfully!`)
         
-        // Reset form
-        setSelectedVendor(0)
-        setOperationType('')
-        setOutstandingBills([])
-        setOutstandingReturns([])
-        setAmount('')
-        setMode(1)
-        setDate(new Date().toISOString().split('T')[0])
-        setNotes('')
-        setError('')
+        if (isEditMode) {
+          // Redirect to transactions list after edit
+          router.push('/vendor-transactions')
+        } else {
+          // Reset form for new entry
+          setSelectedVendor('')
+          setOperationType('')
+          setOutstandingBills([])
+          setOutstandingReturns([])
+          setAmount('')
+          setMode(1)
+          setDate(new Date().toISOString().split('T')[0])
+          setNotes('')
+          setError('')
+        }
       } else {
         setError(data.error || 'Failed to record transaction')
       }
@@ -399,14 +512,6 @@ export default function VendorTransactionEntry() {
     <div className="space-y-6">
       <div className="card">
         <div className="p-6">
-          {/* Header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-semibold text-slate-200 flex items-center gap-2">
-              <DollarSign className="w-6 h-6" />
-              Record Vendor Transaction
-            </h1>
-          </div>
-
           {error && (
             <div className="mb-6 bg-red-900/20 border border-red-700/30 rounded-lg p-4">
               <p className="text-red-400">{error}</p>
@@ -427,8 +532,8 @@ export default function VendorTransactionEntry() {
                     id: v.id.toString(),
                     name: v.vendor_name
                   }))}
-                  selectedValue={selectedVendor.toString()}
-                  onSelectionChange={(value) => setSelectedVendor(parseInt(value || '0'))}
+                  selectedValue={selectedVendor}
+                  onSelectionChange={(value) => setSelectedVendor(value || '')}
                   placeholder="Select vendor..."
                   className="w-full"
                 />
@@ -577,7 +682,7 @@ export default function VendorTransactionEntry() {
           </div>
 
           {/* Allocation Section */}
-          {selectedVendor > 0 && operationType && (
+          {parseInt(selectedVendor) > 0 && operationType && (
             <div className="border-t border-slate-600 pt-6 mb-6">
               {paymentType === 'DIRECT' ? (
                 <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-6 text-center">
@@ -708,7 +813,7 @@ export default function VendorTransactionEntry() {
           )}
 
           {/* Summary */}
-          {selectedVendor > 0 && operationType && (paymentType !== 'DIRECT' && outstandingItems.length > 0) && (
+          {parseInt(selectedVendor) > 0 && operationType && (paymentType !== 'DIRECT' && outstandingItems.length > 0) && (
             <div className="border-t border-slate-600 pt-6 mb-6">
               <h3 className="text-lg font-medium text-slate-200 mb-4">Transaction Summary</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -750,7 +855,7 @@ export default function VendorTransactionEntry() {
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-600"
               disabled={isRecordDisabled()}
             >
-              {loading ? 'Recording...' : 'Record Transaction'}
+              {loading ? (isEditMode ? 'Updating...' : 'Recording...') : (isEditMode ? 'Update Transaction' : 'Record Transaction')}
             </button>
           </div>
         </div>
@@ -775,7 +880,7 @@ export default function VendorTransactionEntry() {
                   : outstandingReturns.filter(r => r.allocated && r.allocated > 0).length
               } ${operationType === 'EXPENSE' ? 'bill(s)' : 'return(s)'}?`
         }
-        confirmText="Record Transaction"
+        confirmText={isEditMode ? "Update Transaction" : "Record Transaction"}
         cancelText="Cancel"
         showLoading={loading}
         loadingText="Recording Transaction..."

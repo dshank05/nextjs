@@ -219,7 +219,9 @@ async function handleListRefunds(
       dateTo,
       refund_mode,
       page = '1',
-      limit = '50'
+      limit = '50',
+      sortBy = 'id',
+      sortOrder = 'asc'
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -245,6 +247,32 @@ async function handleListRefunds(
 
     if (refund_mode !== undefined) {
       where.refund_mode = parseInt(refund_mode as string);
+    }
+
+    // Build orderBy clause
+    let orderBy: any = {};
+    const sortField = sortBy as string;
+    const order = sortOrder as string;
+
+    if (sortField === 'vendor_name') {
+      orderBy = {
+        vendor: {
+          vendor_name: order
+        }
+      };
+    } else if (sortField === 'refund_amount') {
+      orderBy = {
+        refund_amount: order
+      };
+    } else if (sortField === 'refund_date') {
+      orderBy = {
+        refund_date: order
+      };
+    } else {
+      // Default to id
+      orderBy = {
+        id: order
+      };
     }
 
     // Get total count
@@ -273,9 +301,7 @@ async function handleListRefunds(
           }
         }
       },
-      orderBy: {
-        refund_date: 'desc'
-      },
+      orderBy,
       skip,
       take: limitNum
     });

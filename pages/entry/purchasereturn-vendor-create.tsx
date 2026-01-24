@@ -83,12 +83,14 @@ export default function PurchaseReturnVendorCreatePage() {
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
-  // Tax is now always disabled
-  const enableTax = false;
-
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [bills, setBills] = useState<PurchaseBill[]>([]);
+  
+  // Enable tax display if ANY bill has tax
+  const enableTax = useMemo(() => {
+    return bills.some(bill => bill.has_tax);
+  }, [bills]);
   const [returnReasons, setReturnReasons] = useState<ReturnReasons[]>([]);
   const [loading, setLoading] = useState(false);
   const [processingReturn, setProcessingReturn] = useState(false);
