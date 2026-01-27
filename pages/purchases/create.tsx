@@ -2705,7 +2705,7 @@ export default function PurchaseCreate() {
                                     const rate = editingRowData?.rate || 0;
                                     const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
 
-                                    if (qty > 0 && rate > 0) {
+                                    if (qty >= 0 && rate >= 0) {
                                       const subtotal = qty * rate;
                                       const taxAmount = (subtotal * gstPercent) / 100;
                                       const total = subtotal + taxAmount;
@@ -2867,9 +2867,9 @@ export default function PurchaseCreate() {
                               <td className="px-2 py-2 text-center w-24">
                                 <input
                                   type="number"
-                                  min="1"
+                                  min="0"
                                   className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="1"
+                                  placeholder=""
                                   value={editingRowData?.qty || ''}
                                   onChange={(e) => {
                                     const newQty = e.target.value;
@@ -2877,20 +2877,20 @@ export default function PurchaseCreate() {
                                     const rate = editingRowData?.rate || 0;
                                     const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
 
-                                    if (qty > 0 && rate > 0) {
+                                    if (qty >= 0 && rate > 0) {
                                       const subtotal = qty * rate;
                                       const taxAmount = (subtotal * gstPercent) / 100;
                                       const total = subtotal + taxAmount;
 
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        qty: parseFloat(newQty) || 1,
+                                        qty: parseFloat(newQty) || 0,
                                         total: total
                                       } : null);
                                     } else {
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        qty: parseFloat(newQty) || 1
+                                        qty: parseFloat(newQty) || 0
                                       } : null);
                                     }
                                   }}

@@ -33,7 +33,6 @@ interface Vendor {
 
 export default function VendorLedgerPage() {
   const [accountingEntries, setAccountingEntries] = useState<LedgerEntry[]>([]);
-  // const [mergedEntries, setMergedEntries] = useState<LedgerEntry[]>([]); // ✅ COMMENTED OUT - No longer merging entries
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -70,16 +69,6 @@ export default function VendorLedgerPage() {
     }
   }, [selectedVendor, dateFrom, dateTo, pagination.page]);
 
-  // ✅ COMMENTED OUT - No longer merging adjustment entries with base transactions
-  // useEffect(() => {
-  //   if (accountingEntries.length > 0) {
-  //     const merged = mergeAdjustmentEntries(accountingEntries);
-  //     setMergedEntries(merged);
-  //   } else {
-  //     setMergedEntries([]);
-  //   }
-  // }, [accountingEntries]);
-
   const fetchVendors = async () => {
     try {
       const response = await fetch('/api/vendors');
@@ -111,10 +100,7 @@ export default function VendorLedgerPage() {
       if (response.ok) {
         const data = await response.json();
         
-        // Don't filter - let merge logic handle adjustments
-        // Merge adjustment entries with base transactions
-        const mergedEntries = mergeAdjustmentEntries(data.entries || []);
-        
+        // ✅ Backend now handles merging and balance calculation
         setAccountingEntries(data.entries);
         setPagination(data.pagination);
       }
@@ -124,139 +110,6 @@ export default function VendorLedgerPage() {
       setLoading(false);
     }
   };
-
-  /**
-   * Merge adjustment entries with base transactions
-   * Groups entries by reference AND transaction type to show final amounts
-   * ONLY merges entries of the same type (e.g., PURCHASE won't merge with PAYMENT)
-   */
-  const mergeAdjustmentEntries = (entries: LedgerEntry[]): LedgerEntry[] => {
-    // Group entries by reference (type + id) AND transaction type
-    const groupMap = new Map<string, LedgerEntry[]>();
-    
-    entries.forEach(entry => {
-      // Skip entries without proper reference data
-      if (!entry.referenceType || !entry.referenceId) {
-        const key = `solo-${entry.id}`;
-        groupMap.set(key, [entry]);
-        return;
-      }
-      
-      // Get base transaction type (without _ADJUSTMENT suffix)
-      const baseType = entry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '');
-      
-      // Create group key: referenceType-referenceId-baseType
-      // This ensures PURCHASE and PAYMENT don't merge together
-      const key = `${entry.referenceType}-${entry.referenceId}-${baseType}`;
-      
-      if (!groupMap.has(key)) {
-        groupMap.set(key, []);
-      }
-      groupMap.get(key)!.push(entry);
-    });
-    
-    // Merge groups
-    const merged: LedgerEntry[] = [];
-    
-    groupMap.forEach((group) => {
-      if (group.length === 1) {
-        // Single entry, no merging needed
-        merged.push(group[0]);
-      } else {
-        // Multiple entries - merge them
-        // Use FIRST entry for date/position (no reordering)
-        const firstEntry = group[0];
-        
-        // Sum up all debits and credits
-        const totalDebit = group.reduce((sum, e) => sum + e.debit, 0);
-        const totalCredit = group.reduce((sum, e) => sum + e.credit, 0);
-        
-        // Calculate the balance after this merged transaction
-        // Start with the balance before first transaction, add debit, subtract credit
-        const balanceBefore = group[0].balance - group[0].debit + group[0].credit;
-        const balanceAfter = balanceBefore + totalDebit - totalCredit;
-        
-        // Create merged entry
-        merged.push({
-          ...firstEntry, // Keep original date, id, voucher, remarks
-          debit: totalDebit,
-          credit: totalCredit,
-          balance: balanceAfter // Calculate correct balance for this position
-        });
-      }
-    });
-    
-    // Return without sorting - maintains original date order
-    return merged;
-  };
-
-  // ✅ COMMENTED OUT - Old complex merging logic disabled per user request
-  // const mergeAdjustmentEntriesOld = (entries: LedgerEntry[]): LedgerEntry[] => {
-  //   // Group entries by reference type, reference ID, and base transaction type
-  //   const groupMap = new Map<string, LedgerEntry[]>();
-  //   
-  //   entries.forEach(entry => {
-  //     // Skip entries without proper reference data
-  //     if (!entry.referenceType || !entry.referenceId) {
-  //       // Keep these entries as-is
-  //       const key = `solo-${entry.id}`;
-  //       groupMap.set(key, [entry]);
-  //       return;
-  //     }
-  //
-  //     // Get base type (remove _ADJUSTMENT, _REVERSAL suffixes)
-  //     const baseType = entry.transactionType
-  //       .replace('_ADJUSTMENT', '')
-  //       .replace('_REVERSAL', '');
-  //     
-  //     // Create group key: referenceType-referenceId-baseType
-  //     const key = `${entry.referenceType}-${entry.referenceId}-${baseType}`;
-  //     
-  //     if (!groupMap.has(key)) {
-  //       groupMap.set(key, []);
-  //     }
-  //     groupMap.get(key)!.push(entry);
-  //   });
-  //
-  //   // Merge groups and create display entries
-  //   const merged: LedgerEntry[] = [];
-  //   
-  //   groupMap.forEach((group, key) => {
-  //     if (group.length === 1) {
-  //       // Single entry, no merging needed
-  //       merged.push(group[0]);
-  //     } else {
-  //       // Multiple entries - merge them
-  //       // Use the latest entry as base (usually the adjustment)
-  //       const latestEntry = group[group.length - 1];
-  //       
-  //       // Sum up all debits and credits
-  //       const totalDebit = group.reduce((sum, e) => sum + e.debit, 0);
-  //       const totalCredit = group.reduce((sum, e) => sum + e.credit, 0);
-  //       
-  //       // Use the final balance from the latest entry
-  //       const finalBalance = latestEntry.balance;
-  //       
-  //       // Create merged entry
-  //       merged.push({
-  //         ...latestEntry,
-  //         debit: totalDebit,
-  //         credit: totalCredit,
-  //         balance: finalBalance,
-  //         // Combine remarks to show it's merged
-  //         remarks: group.length > 1 
-  //           ? `${latestEntry.remarks} (${group.length} entries merged)`
-  //           : latestEntry.remarks
-  //       });
-  //     }
-  //   });
-  //
-  //   // Sort by date and ID
-  //   return merged.sort((a, b) => {
-  //     if (a.date !== b.date) return a.date - b.date;
-  //     return a.id - b.id;
-  //   });
-  // };
 
   const clearFilters = () => {
     setSelectedVendor('');

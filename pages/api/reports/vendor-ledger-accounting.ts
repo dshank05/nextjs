@@ -1,6 +1,70 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
+/**
+ * Merge adjustment entries with base transactions
+ * Groups by reference_id + base transaction type
+ * - PURCHASE + PURCHASE_ADJUSTMENT → Single Purchase
+ * - PAYMENT + PAYMENT_ADJUSTMENT + PAYMENT_REVERSAL → Single Payment
+ * - DEBIT_NOTE + REFUND_RECEIVED + REFUND_REVERSAL → Single Debit Note
+ */
+function mergeAdjustmentEntries(entries: any[]): any[] {
+  // Group entries by reference_id + base transaction type
+  const groups = new Map<string, any[]>()
+  
+  entries.forEach(entry => {
+    // Determine base transaction type (remove _ADJUSTMENT, _REVERSAL suffixes)
+    let baseType = entry.transaction_type
+      .replace('_ADJUSTMENT', '')
+      .replace('_REVERSAL', '')
+    
+    // Map REFUND types to DEBIT_NOTE (fallback for old data)
+    if (baseType === 'REFUND_RECEIVED') {
+      baseType = 'DEBIT_NOTE'
+    }
+    
+    // Create group key: baseType-referenceType-referenceId
+    // This ensures PURCHASE and PAYMENT don't merge together
+    const key = entry.reference_id && entry.reference_type
+      ? `${baseType}-${entry.reference_type}-${entry.reference_id}`
+      : `solo-${entry.id}` // Standalone entries without reference
+    
+    if (!groups.has(key)) {
+      groups.set(key, [])
+    }
+    groups.get(key)!.push(entry)
+  })
+  
+  // Merge each group
+  const merged: any[] = []
+  
+  groups.forEach((group) => {
+    if (group.length === 1) {
+      // Single entry, no merging needed
+      merged.push(group[0])
+    } else {
+      // Multiple entries - merge them
+      const firstEntry = group[0]
+      
+      // Sum up all debits and credits
+      const totalDebit = group.reduce((sum, e) => sum + Number(e.debit), 0)
+      const totalCredit = group.reduce((sum, e) => sum + Number(e.credit), 0)
+      
+      // Create merged entry (keep first entry's metadata)
+      merged.push({
+        ...firstEntry,
+        debit: totalDebit,
+        credit: totalCredit,
+        // Balance will be recalculated later
+        transaction_type: firstEntry.transaction_type.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
+      })
+    }
+  })
+  
+  // Sort by date to maintain chronological order
+  return merged.sort((a, b) => a.transaction_date - b.transaction_date)
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -69,8 +133,18 @@ export default async function handler(
       prisma.vendor_ledger.count({ where })
     ])
 
+    // ✅ Merge adjustments with base transactions
+    const mergedEntries = mergeAdjustmentEntries(entries)
+
+    // ✅ Recalculate running balance after merge
+    let runningBalance = 0
+    mergedEntries.forEach(entry => {
+      runningBalance = runningBalance + Number(entry.debit) - Number(entry.credit)
+      entry.balance = runningBalance
+    })
+
     // Format entries for accounting ledger display
-    const formattedEntries = entries.map(entry => {
+    const formattedEntries = mergedEntries.map(entry => {
       // Determine particulars based on transaction type and payment mode (removed "A/c" suffix)
       let particulars = ''
       
