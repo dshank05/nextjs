@@ -1,4 +1,4 @@
-import jsPDF from 'jspdf';
+d import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import ExcelJS from 'exceljs';
 
@@ -316,7 +316,7 @@ export const printPage = async (config: {
   title: string;
   businessDetails?: any;
   output?: 'print' | 'pdf';
-  pageType: 'purchase-view' | 'sale-view' | 'product-view' | 'index-table';
+  pageType: 'purchase-view' | 'return-view' | 'sale-view' | 'product-view' | 'index-table';
   data: any; // Page-specific data
 }): Promise<void> => {
   try {
