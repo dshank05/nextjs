@@ -31,21 +31,30 @@ export default async function handler(
       vendor_id: parseInt(vendor_id as string)
     }
 
-    // Date range filter - default to last 3 months if not provided
+    // Date range filter - default to current month if not provided
     if (dateFrom && dateTo) {
-      const startTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000)
-      const endTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000)
+      // Start of day for dateFrom (00:00:00)
+      const startDate = new Date(dateFrom as string)
+      startDate.setHours(0, 0, 0, 0)
+      const startTimestamp = Math.floor(startDate.getTime() / 1000)
+      
+      // End of day for dateTo (23:59:59)
+      const endDate = new Date(dateTo as string)
+      endDate.setHours(23, 59, 59, 999)
+      const endTimestamp = Math.floor(endDate.getTime() / 1000)
+      
       where.transaction_date = {
         gte: startTimestamp,
         lte: endTimestamp
       }
     } else {
-      // Default: Last 3 months
+      // Default: Current month (first day to last day)
       const now = new Date()
-      const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate())
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+      const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
       where.transaction_date = {
-        gte: Math.floor(threeMonthsAgo.getTime() / 1000),
-        lte: Math.floor(now.getTime() / 1000)
+        gte: Math.floor(firstDayOfMonth.getTime() / 1000),
+        lte: Math.floor(lastDayOfMonth.getTime() / 1000)
       }
     }
 
@@ -53,10 +62,7 @@ export default async function handler(
     const [entries, total] = await Promise.all([
       prisma.vendor_ledger.findMany({
         where,
-        orderBy: [
-          { transaction_date: 'asc' },
-          { id: 'asc' }
-        ],
+        orderBy: { transaction_date: 'asc' }, // Sort by transaction_date only (ASC - oldest first)
         skip,
         take: limitNum
       }),

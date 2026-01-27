@@ -23,7 +23,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       vendor_id,
       return_date,
       return_notes,
-      return_status, // 0=Incomplete, 1=Complete
+      payment_status, // ✅ FIXED: Use payment_status (0=Incomplete, 1=Complete)
+      payment_mode, // 0=Cash, 1=Bank
       packing_forwarding_amount, // Manual P&F amount from UI
       items // Array of { purchase_item_id, return_qty, return_reason_id, unit_price, tax_rate, notes? }
     } = req.body
@@ -178,9 +179,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Calculate refund amount (before transaction for use in ledger entry)
     const refundAmount = totalAmount + totalTax + packingForwardingAmount + freightAmount
 
-    // Determine payment status from return_status
-    const paymentStatusValue = return_status !== undefined ? parseInt(return_status) : 0 // 0=Incomplete, 1=Complete
-    const paymentModeValue = 1 // Default: Bank
+    // ✅ Determine payment status from payment_status parameter
+    const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status.toString()) : 0 // 0=Incomplete, 1=Complete
+    const paymentModeValue = payment_mode !== undefined ? parseInt(payment_mode.toString()) : 1 // 0=Cash, 1=Bank (default)
     const paymentDateValue = paymentStatusValue === 1 ? returnDateTimestamp : null
 
     // Use database transaction with increased timeout for return processing
@@ -321,98 +322,99 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       }
 
-      // ✅ MOVE LEDGER OPERATIONS INSIDE TRANSACTION
-      // Create ledger entry for debit note
-      await ledgerService.createDebitNoteEntry({
-        id: returnRecord.id,
-        vendor_id: parseInt(vendor_id),
-        debit_note_no: debitNoteNo,
-        return_date: returnDateTimestamp,
-        total_amount: totalAmount,
-        total_tax: totalTax,
-        packing_forwarding_amount: packingForwardingAmount,
-        freight_amount: freightAmount,
-        fy: financialYear
-      }, tx)
-
-      // If refunded immediately, create refund received ledger entry and allocations
+      // ✅ ONLY CREATE LEDGER ENTRIES WHEN COMPLETE (Issue #6)
       if (paymentStatusValue === 1) {
-        // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE REFUND ALLOCATION
-        const vendor = await tx.vendor_details.findUnique({
-          where: { id: parseInt(vendor_id) },
-          select: {
-            total_paid: true,
-            total_allocated: true,
-            total_refunded: true,
-            total_refund_allocated: true
-          }
-        });
-
-        // ✅ USE BALANCE HANDLER FOR SMART ALLOCATION (handles vendor_id = 0)
-        const balanceOp = balanceHandler.getCreateBalanceOps({
-          vendorId: parseInt(vendor_id),
-          total: refundAmount,
-          currentBalance: vendor ? {
-            total_paid: Number(vendor.total_paid),
-            total_allocated: Number(vendor.total_allocated),
-            total_refunded: Number(vendor.total_refunded),
-            total_refund_allocated: Number(vendor.total_refund_allocated)
-          } : undefined,
-          type: 'RETURN'
-        });
-
-        // Calculate advance for ledger notes
-        const advanceRefundBalance = vendor 
-          ? Number(vendor.total_refunded) - Number(vendor.total_refund_allocated)
-          : 0;
-
-        await ledgerService.createEntry({
+        // Create ledger entry for debit note
+        await ledgerService.createDebitNoteEntry({
+          id: returnRecord.id,
           vendor_id: parseInt(vendor_id),
-          transaction_date: paymentDateValue || returnDateTimestamp,
-          transaction_type: 'REFUND_RECEIVED',
-          reference_type: 'purchase_return',
-          reference_id: returnRecord.id,
-          reference_no: debitNoteNo,
-          debit: refundAmount,
-          credit: 0,
-          payment_mode: paymentModeValue,
-          payment_status: 1,
-          payment_date: paymentDateValue,
-          notes: advanceRefundBalance > 0
-            ? `Refund for ${debitNoteNo} (₹${advanceRefundBalance >= refundAmount ? refundAmount : advanceRefundBalance} from advance${advanceRefundBalance < refundAmount ? `, ₹${refundAmount - advanceRefundBalance} new refund` : ''})`
-            : `Refund received for ${debitNoteNo}`,
+          debit_note_no: debitNoteNo,
+          return_date: returnDateTimestamp,
+          total_amount: totalAmount,
+          total_tax: totalTax,
+          packing_forwarding_amount: packingForwardingAmount,
+          freight_amount: freightAmount,
           fy: financialYear
         }, tx)
 
-        // ✅ CREATE REFUND ALLOCATION RECORDS INSIDE TRANSACTION
-        const refund = await tx.vendor_refunds.create({
-          data: {
-            vendor_id: parseInt(vendor_id),
-            refund_date: returnDateTimestamp,
-            refund_amount: refundAmount,
-            refund_mode: paymentModeValue,
-            refund_type: 'RETURN_SPECIFIC',
-            notes: advanceRefundBalance > 0
-              ? `Refund for return ${debitNoteNo} (using ₹${Math.min(advanceRefundBalance, refundAmount)} advance)`
-              : `Refund for return ${debitNoteNo}`,
-            fy: financialYear
-          }
-        });
-        
-        await tx.refund_allocations.create({
-          data: {
-            refund_id: refund.id,
-            return_id: returnRecord.id,
-            allocated_amount: refundAmount,
-            allocation_date: returnDateTimestamp,
-            notes: 'Allocated during return creation'
-          }
-        });
+        // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry
+        // Balance adjusts automatically from DEBIT_NOTE entry only
+        // const vendor = await tx.vendor_details.findUnique({
+        //   where: { id: parseInt(vendor_id) },
+        //   select: {
+        //     total_paid: true,
+        //     total_allocated: true,
+        //     total_refunded: true,
+        //     total_refund_allocated: true
+        //   }
+        // });
 
-        // ✅ UPDATE VENDOR BALANCE (skips vendor_id = 0 automatically)
-        if (balanceOp) {
-          await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
-        }
+        // const balanceOp = balanceHandler.getCreateBalanceOps({
+        //   vendorId: parseInt(vendor_id),
+        //   total: refundAmount,
+        //   currentBalance: vendor ? {
+        //     total_paid: Number(vendor.total_paid),
+        //     total_allocated: Number(vendor.total_allocated),
+        //     total_refunded: Number(vendor.total_refunded),
+        //     total_refund_allocated: Number(vendor.total_refund_allocated)
+        //   } : undefined,
+        //   type: 'RETURN'
+        // });
+
+        // const advanceRefundBalance = vendor 
+        //   ? Number(vendor.total_refunded) - Number(vendor.total_refund_allocated)
+        //   : 0;
+
+        // await ledgerService.createEntry({
+        //   vendor_id: parseInt(vendor_id),
+        //   transaction_date: paymentDateValue || returnDateTimestamp,
+        //   transaction_type: 'REFUND_RECEIVED',
+        //   reference_type: 'purchase_return',
+        //   reference_id: returnRecord.id,
+        //   reference_no: debitNoteNo,
+        //   debit: refundAmount,
+        //   credit: 0,
+        //   payment_mode: paymentModeValue,
+        //   payment_status: 1,
+        //   payment_date: paymentDateValue,
+        //   notes: advanceRefundBalance > 0
+        //     ? `Refund for ${debitNoteNo} (₹${advanceRefundBalance >= refundAmount ? refundAmount : advanceRefundBalance} from advance${advanceRefundBalance < refundAmount ? `, ₹${refundAmount - advanceRefundBalance} new refund` : ''})`
+        //     : `Refund received for ${debitNoteNo}`,
+        //   fy: financialYear
+        // }, tx)
+
+        // ❌ COMMENTED OUT - Issue #6: No vendor_refunds record
+        // await tx.vendor_refunds.create({
+        //   data: {
+        //     vendor_id: parseInt(vendor_id),
+        //     refund_date: returnDateTimestamp,
+        //     refund_amount: refundAmount,
+        //     refund_mode: paymentModeValue,
+        //     refund_type: 'RETURN_SPECIFIC',
+        //     notes: advanceRefundBalance > 0
+        //       ? `Refund for return ${debitNoteNo} (using ₹${Math.min(advanceRefundBalance, refundAmount)} advance)`
+        //       : `Refund for return ${debitNoteNo}`,
+        //     fy: financialYear
+        //   }
+        // });
+        
+        // ❌ COMMENTED OUT - Issue #7: Remove separate refund allocation entries
+        // Payment adjusts automatically through ledger + balance updates
+        // await tx.refund_allocations.create({
+        //   data: {
+        //     refund_id: refund.id,
+        //     return_id: returnRecord.id,
+        //     allocated_amount: refundAmount,
+        //     allocation_date: returnDateTimestamp,
+        //     notes: 'Allocated during return creation'
+        //   }
+        // });
+
+        // ❌ COMMENTED OUT - Issue #6: No balance update needed
+        // Balance adjusts automatically from DEBIT_NOTE ledger entry
+        // if (balanceOp) {
+        //   await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
+        // }
       }
 
       return returnRecord

@@ -208,7 +208,7 @@ export const generatePurchaseViewTemplate = (purchase: any): HTMLElement => {
 export const generatePageTemplate = (config: {
   title: string;
   businessDetails?: any;
-  pageType: 'purchase-view' | 'sale-view' | 'product-view' | 'index-table';
+  pageType: 'purchase-view' | 'return-view' | 'sale-view' | 'product-view' | 'index-table';
   data: any;
 }): HTMLElement => {
   const { businessDetails, pageType, data } = config;
@@ -235,6 +235,9 @@ export const generatePageTemplate = (config: {
     case 'purchase-view':
       container.appendChild(generatePurchaseViewTemplate(data));
       break;
+    case 'return-view':
+      container.appendChild(generateReturnViewTemplate(data));
+      break;
     case 'sale-view':
       container.appendChild(generateSaleViewTemplate(data));
       break;
@@ -247,6 +250,82 @@ export const generatePageTemplate = (config: {
   }
 
   return container;
+};
+
+// Generate return view template
+export const generateReturnViewTemplate = (returnData: any): HTMLElement => {
+  const content = document.createElement('div');
+
+  // Header
+  const header = document.createElement('div');
+  header.style.cssText = `
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 2px solid #d00;
+    background: #fff0f0;
+  `;
+  header.innerHTML = `
+    <h1 style="margin: 0; font-size: 18px; color: #d00;">Return #${returnData.return_no}</h1>
+    <p style="margin: 8px 0 0 0; font-size: 12px; color: #666;">
+      ${returnData.vendor_name || 'N/A'} • ${returnData.formattedDate || formatDate(returnData.return_date)}
+    </p>
+  `;
+  content.appendChild(header);
+
+  // Info grid (4 columns)
+  const infoGrid = document.createElement('div');
+  infoGrid.style.cssText = `
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-bottom: 30px;
+  `;
+
+  // Column 1: Basic Return Info
+  const col1 = document.createElement('div');
+  col1.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Return Information</h3>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total:</span><span>₹${(returnData.total_amount || 0)?.toLocaleString('en-IN')}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Return #:</span><span>${returnData.return_no}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Date:</span><span>${returnData.formattedDate || formatDate(returnData.return_date)}</span></div>
+    <div style="display: flex; justify-content: space-between; font-size: 11px;"><span>Status:</span><span>${returnData.statusText || (returnData.status === 1 ? 'Complete' : 'Incomplete')}</span></div>
+  `;
+
+  // Column 2: Vendor Details
+  const col2 = document.createElement('div');
+  col2.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Vendor Details</h3>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Vendor:</span><span>${returnData.vendor_name || 'N/A'}</span></div>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>GSTIN:</span><span>${returnData.vendor_gstin || 'N/A'}</span></div>
+    <div style="font-size: 10px; margin-top: 8px;"><strong>Address:</strong><br>${returnData.vendor_address || 'N/A'}</div>
+  `;
+
+  // Column 3: Financial Summary
+  const col3 = document.createElement('div');
+  const totalTax = returnData.total_tax || 0;
+  col3.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Financial Summary</h3>
+    <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Items Total:</span><span>₹${(returnData.total_amount || 0)?.toLocaleString('en-IN')}</span></div>
+    ${totalTax > 0 ? `
+      <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 11px;"><span>Total Tax:</span><span>₹${totalTax?.toLocaleString('en-IN')}</span></div>
+    ` : ''}
+  `;
+
+  // Column 4: Notes
+  const col4 = document.createElement('div');
+  col4.innerHTML = `
+    <h3 style="margin: 0 0 10px 0; font-size: 12px; border-bottom: 1px solid #ccc; padding-bottom: 3px;">Return Notes</h3>
+    <div style="font-size: 10px; line-height: 1.4;">${returnData.notes || 'No notes available'}</div>
+  `;
+
+  infoGrid.appendChild(col1);
+  infoGrid.appendChild(col2);
+  infoGrid.appendChild(col3);
+  infoGrid.appendChild(col4);
+  content.appendChild(infoGrid);
+
+  return content;
 };
 
 // Placeholder functions for other page types (to be implemented)

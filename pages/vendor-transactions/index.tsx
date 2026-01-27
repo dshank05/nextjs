@@ -55,10 +55,10 @@ export default function VendorTransactionsPage() {
     const now = new Date()
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    
+
     setDateFrom(firstDay.toISOString().split('T')[0])
     setDateTo(lastDay.toISOString().split('T')[0])
-    
+
     fetchVendors()
   }, [])
 
@@ -90,14 +90,20 @@ export default function VendorTransactionsPage() {
         sortOrder,
         type: transactionType
       })
-      
+
       if (selectedVendor) params.append('vendor_id', selectedVendor)
       if (dateFrom) {
-        const timestamp = Math.floor(new Date(dateFrom).getTime() / 1000)
+        // Start of day for dateFrom (00:00:00)
+        const startDate = new Date(dateFrom)
+        startDate.setHours(0, 0, 0, 0)
+        const timestamp = Math.floor(startDate.getTime() / 1000)
         params.append('dateFrom', timestamp.toString())
       }
       if (dateTo) {
-        const timestamp = Math.floor(new Date(dateTo).getTime() / 1000)
+        // End of day for dateTo (23:59:59)
+        const endDate = new Date(dateTo)
+        endDate.setHours(23, 59, 59, 999)
+        const timestamp = Math.floor(endDate.getTime() / 1000)
         params.append('dateTo', timestamp.toString())
       }
       if (paymentMode) params.append('payment_mode', paymentMode)
@@ -123,12 +129,12 @@ export default function VendorTransactionsPage() {
     // Clear vendor selection and hide transactions
     setSelectedVendor('')
     setShowTransactions(false)
-    
+
     // Reset to current month
     const now = new Date()
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-    
+
     setDateFrom(firstDay.toISOString().split('T')[0])
     setDateTo(lastDay.toISOString().split('T')[0])
     setPaymentMode('')
@@ -187,11 +193,11 @@ export default function VendorTransactionsPage() {
     if (!invoiceNumbers || invoiceNumbers.length === 0) {
       return <span className="text-slate-500">Direct</span>
     }
-    
+
     if (invoiceNumbers.length <= 3) {
       return <span className="text-slate-300">{invoiceNumbers.join(', ')}</span>
     }
-    
+
     const displayed = invoiceNumbers.slice(0, 3).join(', ')
     const remaining = invoiceNumbers.length - 3
     return (
@@ -245,21 +251,23 @@ export default function VendorTransactionsPage() {
           {/* Header Section */}
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-2xl font-bold text-slate-200">Vendor Transactions</h1>
-            {showTransactions && (
-              <div className="flex items-center gap-2">
-                <ExportMenu 
+
+            <div className="flex items-center gap-2">
+              {showTransactions && (
+                <ExportMenu
                   data={exportData}
                   columns={exportColumns}
                   config={exportConfig}
                 />
-                <Link
-                  href="/entry/vendor-transaction"
-                  className="btn-primary"
-                >
-                  Create Transaction
-                </Link>
-              </div>
-            )}
+              )}
+              <Link
+                href="/entry/vendor-transaction"
+                className="btn-primary"
+              >
+                Create Transaction
+              </Link>
+            </div>
+
           </div>
 
           {/* Filters Section - All in same row, vendor always visible, others conditional */}
@@ -413,32 +421,32 @@ export default function VendorTransactionsPage() {
                   <thead>
                     <tr>
                       <th>S.N</th>
-                      <th 
-                        className="cursor-pointer hover:bg-slate-700/50" 
+                      <th
+                        className="cursor-pointer hover:bg-slate-700/50"
                         onClick={() => handleSort('id')}
                       >
                         ID {getSortIcon('id')}
                       </th>
                       <th>Invoice No.</th>
-                      <th 
+                      <th
                         className="cursor-pointer hover:bg-slate-700/50"
                         onClick={() => handleSort('date')}
                       >
                         Date {getSortIcon('date')}
                       </th>
-                      <th 
+                      <th
                         className="cursor-pointer hover:bg-slate-700/50"
                         onClick={() => handleSort('vendor_name')}
                       >
                         Vendor {getSortIcon('vendor_name')}
                       </th>
-                      <th 
+                      <th
                         className="text-right cursor-pointer hover:bg-slate-700/50"
                         onClick={() => handleSort('amount')}
                       >
                         Amount {getSortIcon('amount')}
                       </th>
-                      <th 
+                      <th
                         className="cursor-pointer hover:bg-slate-700/50"
                         onClick={() => handleSort('type')}
                       >
@@ -503,9 +511,9 @@ export default function VendorTransactionsPage() {
               {/* Pagination */}
               {totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                  <button 
-                    onClick={() => setPage(page - 1)} 
-                    disabled={page === 1} 
+                  <button
+                    onClick={() => setPage(page - 1)}
+                    disabled={page === 1}
                     className="btn-secondary disabled:opacity-50"
                   >
                     Previous
@@ -518,9 +526,9 @@ export default function VendorTransactionsPage() {
                       </>
                     )}
                     {getPageNumbers().map(p => (
-                      <button 
-                        key={p} 
-                        onClick={() => setPage(p)} 
+                      <button
+                        key={p}
+                        onClick={() => setPage(p)}
                         className={`px-3 py-1 rounded ${p === page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
                       >
                         {p}
@@ -535,9 +543,9 @@ export default function VendorTransactionsPage() {
                       </>
                     )}
                   </div>
-                  <button 
-                    onClick={() => setPage(page + 1)} 
-                    disabled={page === totalPages} 
+                  <button
+                    onClick={() => setPage(page + 1)}
+                    disabled={page === totalPages}
                     className="btn-secondary disabled:opacity-50"
                   >
                     Next

@@ -274,15 +274,16 @@ export class LedgerService {
     })
 
     // Recalculate balances for all subsequent entries
-    await this.recalculateBalancesAfter(params.vendor_id, existingEntry.id)
+    await this.recalculateBalancesAfter(params.vendor_id, existingEntry.id, prisma)
   }
 
   /**
    * Recalculate balances for all entries after a specific entry
+   * PUBLIC: Called by transactionHandler after creating adjustment entries
    */
-  private async recalculateBalancesAfter(vendor_id: number, after_entry_id: number) {
+  async recalculateBalancesAfter(vendor_id: number, after_entry_id: number, client: any) {
     // Get all entries after the modified one, ordered by ID
-    const subsequentEntries = await prisma.vendor_ledger.findMany({
+    const subsequentEntries = await client.vendor_ledger.findMany({
       where: {
         vendor_id,
         id: { gt: after_entry_id }
@@ -291,7 +292,7 @@ export class LedgerService {
     })
 
     // Get the balance from the modified entry
-    const modifiedEntry = await prisma.vendor_ledger.findUnique({
+    const modifiedEntry = await client.vendor_ledger.findUnique({
       where: { id: after_entry_id },
       select: { balance: true }
     })
@@ -301,7 +302,7 @@ export class LedgerService {
     // Update each subsequent entry
     for (const entry of subsequentEntries) {
       runningBalance = runningBalance + entry.debit - entry.credit
-      await prisma.vendor_ledger.update({
+      await client.vendor_ledger.update({
         where: { id: entry.id },
         data: { balance: runningBalance }
       })

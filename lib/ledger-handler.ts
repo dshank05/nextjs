@@ -368,37 +368,36 @@ export class LedgerHandler {
               reference_no: changes.debitNoteNo!,
               debit: difference < 0 ? Math.abs(difference) : 0,
               credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as refunded)`,
+              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as complete)`,
               fy: changes.fy
             },
-            description: 'Return adjustment before marking refunded'
+            description: 'Return adjustment before marking complete'
           });
         }
         
-        // Create refund
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: changes.paymentDate || timestamp,
-            transaction_type: 'REFUND_RECEIVED',
-            reference_type: 'purchase_return',
-            reference_id: changes.returnId!,
-            reference_no: changes.debitNoteNo!,
-            debit: changes.newTotal,
-            credit: 0,
-            payment_mode: changes.paymentMode,
-            payment_status: 1,
-            payment_date: changes.paymentDate || timestamp,
-            notes: `Refund received for ${changes.debitNoteNo}`,
-            fy: changes.fy
-          },
-          description: 'Refund received'
-        });
+        // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry for returns
+        // Balance adjusts automatically from DEBIT_NOTE entry
+        // ops.push({
+        //   entry: {
+        //     vendor_id: changes.vendorId,
+        //     transaction_date: changes.paymentDate || timestamp,
+        //     transaction_type: 'REFUND_RECEIVED',
+        //     reference_type: 'purchase_return',
+        //     reference_id: changes.returnId!,
+        //     reference_no: changes.debitNoteNo!,
+        //     debit: changes.newTotal,
+        //     credit: 0,
+        //     payment_mode: changes.paymentMode,
+        //     payment_status: 1,
+        //     payment_date: changes.paymentDate || timestamp,
+        //     notes: `Refund received for ${changes.debitNoteNo}`,
+        //     fy: changes.fy
+        //   },
+        //   description: 'Refund received'
+        // });
         break;
         
-      case '2→1': // Partial → Refunded
-        const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
-        
+      case '2→1': // Partial → Complete
         // If amount changed, adjust return first
         if (changes.amountChanged) {
           const difference = changes.newTotal - changes.oldTotal;
@@ -412,32 +411,34 @@ export class LedgerHandler {
               reference_no: changes.debitNoteNo!,
               debit: difference < 0 ? Math.abs(difference) : 0,
               credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as fully refunded)`,
+              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as complete)`,
               fy: changes.fy
             },
-            description: 'Return adjustment before marking fully refunded'
+            description: 'Return adjustment before marking complete'
           });
         }
         
-        // Create refund for remaining amount
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: changes.paymentDate || timestamp,
-            transaction_type: 'REFUND_RECEIVED',
-            reference_type: 'purchase_return',
-            reference_id: changes.returnId!,
-            reference_no: changes.debitNoteNo!,
-            debit: remainingAmount,
-            credit: 0,
-            payment_mode: changes.paymentMode,
-            payment_status: 1,
-            payment_date: changes.paymentDate || timestamp,
-            notes: `Refund for remaining amount ₹${remainingAmount} for ${changes.debitNoteNo} (marked as fully refunded)`,
-            fy: changes.fy
-          },
-          description: 'Refund for remaining amount'
-        });
+        // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry for returns
+        // Balance adjusts automatically from DEBIT_NOTE entry
+        // const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
+        // ops.push({
+        //   entry: {
+        //     vendor_id: changes.vendorId,
+        //     transaction_date: changes.paymentDate || timestamp,
+        //     transaction_type: 'REFUND_RECEIVED',
+        //     reference_type: 'purchase_return',
+        //     reference_id: changes.returnId!,
+        //     reference_no: changes.debitNoteNo!,
+        //     debit: remainingAmount,
+        //     credit: 0,
+        //     payment_mode: changes.paymentMode,
+        //     payment_status: 1,
+        //     payment_date: changes.paymentDate || timestamp,
+        //     notes: `Refund for remaining amount ₹${remainingAmount} for ${changes.debitNoteNo} (marked as fully complete)`,
+        //     fy: changes.fy
+        //   },
+        //   description: 'Refund for remaining amount'
+        // });
         break;
         
       case '2→0': // Partial → Unpaid

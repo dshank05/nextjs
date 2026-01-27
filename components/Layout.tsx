@@ -194,6 +194,9 @@ const Layout = ({ children }: LayoutProps) => {
     if (router.pathname === '/entry/purchasereturn-vendor-create') {
       return hasEditParam ? 'PURCHASE RETURN EDIT' : 'PURCHASE RETURN CREATE';
     }
+    if (router.pathname.startsWith('/entry/purchasereturn-vendor/')) {
+      return 'PURCHASE RETURN VIEW';
+    }
     if (router.pathname === '/entry/purchasereturn-vendor') {
       return 'PURCHASE RETURNS';
     }

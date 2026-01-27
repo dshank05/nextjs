@@ -207,7 +207,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
       // If this item was returned, use the return data; otherwise set return_qty to 0
       const returnQty = returnItem?.return_qty || 0
-      const unitPrice = returnItem?.unit_price || originalItem.rate || 0
+      // ✅ FIX: Handle ₹0 price correctly - don't fallback if price is explicitly 0
+      const unitPrice = returnItem !== undefined ? returnItem.unit_price : (originalItem.rate || 0)
       const taxRate = originalItem.gst_percentage || 0
       
       // Calculate tax for the returned quantity

@@ -144,9 +144,46 @@ export class TransactionHandler {
     tx: any,
     result: TransactionResult
   ): Promise<void> {
-    // 1. Execute ledger operations
+    // 1. Execute ledger operations and track adjustment entries
+    const adjustmentEntryIds: { vendorId: number; entryId: number }[] = [];
+    
     for (const op of result.ledgerOps) {
-      await ledgerService.createEntry(op.entry, tx);
+      // Create the entry
+      const createdEntry = await tx.vendor_ledger.create({
+        data: {
+          vendor_id: op.entry.vendor_id,
+          transaction_date: op.entry.transaction_date,
+          transaction_type: op.entry.transaction_type,
+          reference_type: op.entry.reference_type,
+          reference_id: op.entry.reference_id,
+          reference_no: op.entry.reference_no,
+          payment_mode: op.entry.payment_mode,
+          payment_status: op.entry.payment_status,
+          payment_date: op.entry.payment_date,
+          debit: op.entry.debit,
+          credit: op.entry.credit,
+          balance: await ledgerService.getLatestBalance(op.entry.vendor_id, tx) + op.entry.debit - op.entry.credit,
+          notes: op.entry.notes || '',
+          fy: op.entry.fy
+        }
+      });
+      
+      // Track if this is an adjustment entry
+      if (op.entry.transaction_type.includes('_ADJUSTMENT')) {
+        adjustmentEntryIds.push({
+          vendorId: op.entry.vendor_id,
+          entryId: createdEntry.id
+        });
+      }
+    }
+    
+    // 1b. Recalculate ledger balances if any adjustment entries were created
+    for (const adjustment of adjustmentEntryIds) {
+      await ledgerService.recalculateBalancesAfter(
+        adjustment.vendorId,
+        adjustment.entryId,
+        tx
+      );
     }
     
     // 2. Execute allocation changes
@@ -208,42 +245,45 @@ export class TransactionHandler {
   
   /**
    * Get allocation changes for return status transitions
+   * ❌ COMMENTED OUT - Issue #6 & #7: No refund allocations for returns
    */
   private getReturnAllocationChanges(changes: ChangeSet): AllocationChange[] {
     const allocationChanges: AllocationChange[] = [];
-    const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
+    // ❌ All refund allocation logic commented out
+    // Balance adjusts automatically from DEBIT_NOTE ledger entry
+    // const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
     
-    switch (statusChange) {
-      case '0→1': // Unpaid → Refunded
-      case '2→1': // Partial → Refunded
-        // Create refund and allocation
-        allocationChanges.push({
-          action: 'CREATE',
-          type: 'REFUND',
-          data: {
-            vendorId: changes.vendorId,
-            returnId: changes.returnId,
-            amount: statusChange === '0→1' ? changes.newTotal : (changes.newTotal - (changes.totalAllocated || 0)),
-            refundMode: changes.paymentMode,
-            refundDate: changes.paymentDate,
-            fy: changes.fy,
-            debitNoteNo: changes.debitNoteNo
-          }
-        });
-        break;
+    // switch (statusChange) {
+    //   case '0→1': // Unpaid → Complete
+    //   case '2→1': // Partial → Complete
+    //     // Create refund and allocation
+    //     allocationChanges.push({
+    //       action: 'CREATE',
+    //       type: 'REFUND',
+    //       data: {
+    //         vendorId: changes.vendorId,
+    //         returnId: changes.returnId,
+    //         amount: statusChange === '0→1' ? changes.newTotal : (changes.newTotal - (changes.totalAllocated || 0)),
+    //         refundMode: changes.paymentMode,
+    //         refundDate: changes.paymentDate,
+    //         fy: changes.fy,
+    //         debitNoteNo: changes.debitNoteNo
+    //       }
+    //     });
+    //     break;
         
-      case '1→0': // Refunded → Unpaid
-      case '2→0': // Partial → Unpaid
-        // Delete refund allocations
-        allocationChanges.push({
-          action: 'DELETE',
-          type: 'REFUND',
-          where: {
-            returnId: changes.returnId
-          }
-        });
-        break;
-    }
+    //   case '1→0': // Complete → Unpaid
+    //   case '2→0': // Partial → Unpaid
+    //     // Delete refund allocations
+    //     allocationChanges.push({
+    //       action: 'DELETE',
+    //       type: 'REFUND',
+    //       where: {
+    //         returnId: changes.returnId
+    //       }
+    //     });
+    //     break;
+    // }
     
     return allocationChanges;
   }

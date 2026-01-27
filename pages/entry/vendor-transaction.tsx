@@ -44,7 +44,7 @@ export default function VendorTransactionEntry() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [selectedVendor, setSelectedVendor] = useState<string>('')
   const [operationType, setOperationType] = useState<OperationType>('')
-  const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC')
+  const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for EXPENSE
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
   const [outstandingReturns, setOutstandingReturns] = useState<OutstandingReturn[]>([])
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0])
@@ -74,6 +74,8 @@ export default function VendorTransactionEntry() {
         fetchOutstandingBills(vendorId)
         setOutstandingReturns([])
       } else if (operationType === 'INCOME') {
+        // ✅ Auto-set DIRECT for INCOME
+        setPaymentType('DIRECT')
         fetchOutstandingReturns(vendorId)
         setOutstandingBills([])
       }
@@ -569,8 +571,8 @@ export default function VendorTransactionEntry() {
                 </div>
               </div>
 
-              {/* Payment Type Selection */}
-              {operationType && (
+              {/* Payment Type Selection - Only show for EXPENSE */}
+              {operationType === 'EXPENSE' && (
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-300 mb-2">
                     Payment Type <span className="text-red-400">*</span>
@@ -587,7 +589,7 @@ export default function VendorTransactionEntry() {
                       />
                       <div>
                         <span className="text-slate-300 font-medium">Bill Specific</span>
-                        <p className="text-xs text-slate-400">Allocate all to {operationType === 'EXPENSE' ? 'bills' : 'returns'}</p>
+                        <p className="text-xs text-slate-400">Allocate all to bills</p>
                       </div>
                     </label>
                     

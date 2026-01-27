@@ -834,7 +834,6 @@ export default function PurchaseReturnVendorCreatePage() {
                   onSelectionChange={(value) => setPaymentMode(parseInt(value || '1'))}
                   placeholder="Select mode..."
                   className="w-full"
-                  disabled={paymentStatus === 0}
                 />
               </div>
             </div>

@@ -33,7 +33,7 @@ interface Vendor {
 
 export default function VendorLedgerPage() {
   const [accountingEntries, setAccountingEntries] = useState<LedgerEntry[]>([]);
-  const [mergedEntries, setMergedEntries] = useState<LedgerEntry[]>([]);
+  // const [mergedEntries, setMergedEntries] = useState<LedgerEntry[]>([]); // ✅ COMMENTED OUT - No longer merging entries
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -48,6 +48,16 @@ export default function VendorLedgerPage() {
   const [dateTo, setDateTo] = useState<string>('');
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
+  // Set default dates to current month on mount
+  useEffect(() => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    setDateFrom(firstDay.toISOString().split('T')[0]);
+    setDateTo(lastDay.toISOString().split('T')[0]);
+  }, []);
+
   // Fetch vendors on mount
   useEffect(() => {
     fetchVendors();
@@ -60,15 +70,15 @@ export default function VendorLedgerPage() {
     }
   }, [selectedVendor, dateFrom, dateTo, pagination.page]);
 
-  // Merge adjustment entries when accounting entries change
-  useEffect(() => {
-    if (accountingEntries.length > 0) {
-      const merged = mergeAdjustmentEntries(accountingEntries);
-      setMergedEntries(merged);
-    } else {
-      setMergedEntries([]);
-    }
-  }, [accountingEntries]);
+  // ✅ COMMENTED OUT - No longer merging adjustment entries with base transactions
+  // useEffect(() => {
+  //   if (accountingEntries.length > 0) {
+  //     const merged = mergeAdjustmentEntries(accountingEntries);
+  //     setMergedEntries(merged);
+  //   } else {
+  //     setMergedEntries([]);
+  //   }
+  // }, [accountingEntries]);
 
   const fetchVendors = async () => {
     try {
@@ -97,9 +107,15 @@ export default function VendorLedgerPage() {
       if (dateTo) params.set('dateTo', dateTo);
 
       const response = await fetch(`/api/reports/vendor-ledger-accounting?${params}`);
+      
       if (response.ok) {
         const data = await response.json();
-        setAccountingEntries(data.entries || []);
+        
+        // Don't filter - let merge logic handle adjustments
+        // Merge adjustment entries with base transactions
+        const mergedEntries = mergeAdjustmentEntries(data.entries || []);
+        
+        setAccountingEntries(data.entries);
         setPagination(data.pagination);
       }
     } catch (error) {
@@ -109,26 +125,28 @@ export default function VendorLedgerPage() {
     }
   };
 
-  // Smart merging logic to combine adjustment entries with their base transactions
+  /**
+   * Merge adjustment entries with base transactions
+   * Groups entries by reference AND transaction type to show final amounts
+   * ONLY merges entries of the same type (e.g., PURCHASE won't merge with PAYMENT)
+   */
   const mergeAdjustmentEntries = (entries: LedgerEntry[]): LedgerEntry[] => {
-    // Group entries by reference type, reference ID, and base transaction type
+    // Group entries by reference (type + id) AND transaction type
     const groupMap = new Map<string, LedgerEntry[]>();
     
     entries.forEach(entry => {
       // Skip entries without proper reference data
       if (!entry.referenceType || !entry.referenceId) {
-        // Keep these entries as-is
         const key = `solo-${entry.id}`;
         groupMap.set(key, [entry]);
         return;
       }
-
-      // Get base type (remove _ADJUSTMENT, _REVERSAL suffixes)
-      const baseType = entry.transactionType
-        .replace('_ADJUSTMENT', '')
-        .replace('_REVERSAL', '');
+      
+      // Get base transaction type (without _ADJUSTMENT suffix)
+      const baseType = entry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '');
       
       // Create group key: referenceType-referenceId-baseType
+      // This ensures PURCHASE and PAYMENT don't merge together
       const key = `${entry.referenceType}-${entry.referenceId}-${baseType}`;
       
       if (!groupMap.has(key)) {
@@ -136,46 +154,109 @@ export default function VendorLedgerPage() {
       }
       groupMap.get(key)!.push(entry);
     });
-
-    // Merge groups and create display entries
+    
+    // Merge groups
     const merged: LedgerEntry[] = [];
     
-    groupMap.forEach((group, key) => {
+    groupMap.forEach((group) => {
       if (group.length === 1) {
         // Single entry, no merging needed
         merged.push(group[0]);
       } else {
         // Multiple entries - merge them
-        // Use the latest entry as base (usually the adjustment)
-        const latestEntry = group[group.length - 1];
+        // Use FIRST entry for date/position (no reordering)
+        const firstEntry = group[0];
         
         // Sum up all debits and credits
         const totalDebit = group.reduce((sum, e) => sum + e.debit, 0);
         const totalCredit = group.reduce((sum, e) => sum + e.credit, 0);
         
-        // Use the final balance from the latest entry
-        const finalBalance = latestEntry.balance;
+        // Calculate the balance after this merged transaction
+        // Start with the balance before first transaction, add debit, subtract credit
+        const balanceBefore = group[0].balance - group[0].debit + group[0].credit;
+        const balanceAfter = balanceBefore + totalDebit - totalCredit;
         
         // Create merged entry
         merged.push({
-          ...latestEntry,
+          ...firstEntry, // Keep original date, id, voucher, remarks
           debit: totalDebit,
           credit: totalCredit,
-          balance: finalBalance,
-          // Combine remarks to show it's merged
-          remarks: group.length > 1 
-            ? `${latestEntry.remarks} (${group.length} entries merged)`
-            : latestEntry.remarks
+          balance: balanceAfter // Calculate correct balance for this position
         });
       }
     });
-
-    // Sort by date and ID
-    return merged.sort((a, b) => {
-      if (a.date !== b.date) return a.date - b.date;
-      return a.id - b.id;
-    });
+    
+    // Return without sorting - maintains original date order
+    return merged;
   };
+
+  // ✅ COMMENTED OUT - Old complex merging logic disabled per user request
+  // const mergeAdjustmentEntriesOld = (entries: LedgerEntry[]): LedgerEntry[] => {
+  //   // Group entries by reference type, reference ID, and base transaction type
+  //   const groupMap = new Map<string, LedgerEntry[]>();
+  //   
+  //   entries.forEach(entry => {
+  //     // Skip entries without proper reference data
+  //     if (!entry.referenceType || !entry.referenceId) {
+  //       // Keep these entries as-is
+  //       const key = `solo-${entry.id}`;
+  //       groupMap.set(key, [entry]);
+  //       return;
+  //     }
+  //
+  //     // Get base type (remove _ADJUSTMENT, _REVERSAL suffixes)
+  //     const baseType = entry.transactionType
+  //       .replace('_ADJUSTMENT', '')
+  //       .replace('_REVERSAL', '');
+  //     
+  //     // Create group key: referenceType-referenceId-baseType
+  //     const key = `${entry.referenceType}-${entry.referenceId}-${baseType}`;
+  //     
+  //     if (!groupMap.has(key)) {
+  //       groupMap.set(key, []);
+  //     }
+  //     groupMap.get(key)!.push(entry);
+  //   });
+  //
+  //   // Merge groups and create display entries
+  //   const merged: LedgerEntry[] = [];
+  //   
+  //   groupMap.forEach((group, key) => {
+  //     if (group.length === 1) {
+  //       // Single entry, no merging needed
+  //       merged.push(group[0]);
+  //     } else {
+  //       // Multiple entries - merge them
+  //       // Use the latest entry as base (usually the adjustment)
+  //       const latestEntry = group[group.length - 1];
+  //       
+  //       // Sum up all debits and credits
+  //       const totalDebit = group.reduce((sum, e) => sum + e.debit, 0);
+  //       const totalCredit = group.reduce((sum, e) => sum + e.credit, 0);
+  //       
+  //       // Use the final balance from the latest entry
+  //       const finalBalance = latestEntry.balance;
+  //       
+  //       // Create merged entry
+  //       merged.push({
+  //         ...latestEntry,
+  //         debit: totalDebit,
+  //         credit: totalCredit,
+  //         balance: finalBalance,
+  //         // Combine remarks to show it's merged
+  //         remarks: group.length > 1 
+  //           ? `${latestEntry.remarks} (${group.length} entries merged)`
+  //           : latestEntry.remarks
+  //       });
+  //     }
+  //   });
+  //
+  //   // Sort by date and ID
+  //   return merged.sort((a, b) => {
+  //     if (a.date !== b.date) return a.date - b.date;
+  //     return a.id - b.id;
+  //   });
+  // };
 
   const clearFilters = () => {
     setSelectedVendor('');
@@ -253,7 +334,7 @@ export default function VendorLedgerPage() {
               )}
             </div>
             <ExportMenu
-              data={mergedEntries}
+              data={accountingEntries}
               columns={[
                 { key: 'formattedDate', label: 'Date', enabled: true },
                 { key: 'particulars', label: 'Particulars', enabled: true },
@@ -261,8 +342,7 @@ export default function VendorLedgerPage() {
                 { key: 'voucherNo', label: 'Voucher No', enabled: true },
                 { key: 'debit', label: 'Debit (₹)', enabled: true },
                 { key: 'credit', label: 'Credit (₹)', enabled: true },
-                { key: 'balance', label: 'Balance (₹)', enabled: true },
-                { key: 'remarks', label: 'Remarks', enabled: true }
+                { key: 'balance', label: 'Balance (₹)', enabled: true }
               ]}
               config={{
                 title: `Vendor Ledger - ${selectedVendorName}`,
@@ -276,7 +356,7 @@ export default function VendorLedgerPage() {
         {pagination && selectedVendor && (
           <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
             <div>
-              Showing {mergedEntries.length} merged entries (from {accountingEntries.length} total entries)
+              Showing {accountingEntries.length} entries
             </div>
             <div>Page {pagination.page} of {pagination.totalPages}</div>
           </div>
@@ -306,31 +386,23 @@ export default function VendorLedgerPage() {
                   <th className="text-right">Debit (₹)</th>
                   <th className="text-right">Credit (₹)</th>
                   <th className="text-right">Balance (₹)</th>
-                  <th>Remarks</th>
                 </tr>
               </thead>
               <tbody>
-                {mergedEntries.map((entry) => (
-                  <tr key={`merged-${entry.id}`}>
+                {accountingEntries.map((entry) => (
+                  <tr key={entry.id}>
                     <td className="text-slate-300">{entry.formattedDate}</td>
                     <td className="text-slate-300">{entry.particulars}</td>
                     <td className="text-slate-300">{entry.voucherType}</td>
                     <td className="font-medium text-white">{entry.voucherNo}</td>
-                    <td className="text-right text-red-400 font-semibold">
+                    <td className="text-right text-slate-300 font-semibold">
                       {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
-                    <td className="text-right text-green-400 font-semibold">
+                    <td className="text-right text-slate-300 font-semibold">
                       {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
-                    <td className={`text-right font-semibold ${entry.balance < 0 ? 'text-red-400' : entry.balance > 0 ? 'text-green-400' : 'text-slate-300'}`}>
-                      ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="text-slate-400 text-sm">
-                      {entry.remarks
-                        .replace(/\(now partially paid\)/gi, '')
-                        .replace(/\(now partially returned\)/gi, '')
-                        .replace(/\(\d+ entries merged\)/gi, '')
-                        .trim()}
+                    <td className="text-right font-semibold text-slate-300">
+                      ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>
                 ))}
@@ -338,7 +410,7 @@ export default function VendorLedgerPage() {
             </table>
           )}
 
-          {selectedVendor && mergedEntries.length === 0 && !loading && (
+          {selectedVendor && accountingEntries.length === 0 && !loading && (
             <div className="text-center py-8 text-slate-400">
               No ledger entries found for the selected filters.
             </div>

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Printer, Edit, Trash2, Building2, FileText, Package, ClipboardList, Eye, DollarSign } from 'lucide-react';
+import { Edit, Trash2, Building2, FileText, Package, ClipboardList, Eye, DollarSign } from 'lucide-react';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import RefundHistoryModal from '../../../components/RefundHistoryModal';
 import QuickRefundModal from '../../../components/QuickRefundModal';
+import { ExportMenu } from '../../../components/common/ExportMenu';
 
 interface PurchaseReturn {
   id: number;
@@ -152,9 +153,72 @@ export default function PurchaseReturnDetailPage() {
     }
   };
 
-  const handlePrintReturn = () => {
-    // TODO: Implement print functionality
-    showSnackbar('info', 'Print functionality will be implemented');
+  // Enhanced Excel export using new layout system
+  const handleExportPageAsExcel = async () => {
+    if (!returnData) return;
+    
+    try {
+      const { exportToExcelWithLayout } = await import('../../../lib/export-utils-enhanced');
+      const { preparePurchaseReturnDataForExport } = await import('../../../lib/export-layouts/purchase-return-view-layout');
+
+      // Prepare data and get dynamic layout
+      const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, fullApiData);
+
+      await exportToExcelWithLayout(
+        preparedData,
+        {
+          title: `Purchase Return ${returnData.return_no}`,
+          fileName: `Purchase_Return_${returnData.return_no}`,
+          layout: dynamicLayout
+        },
+      );
+    } catch (error) {
+      console.error('Excel export error:', error);
+      showSnackbar('error', 'Error exporting Excel. Please try again.');
+    }
+  };
+
+  // Enhanced PDF export using new layout system
+  const handlePrintOrPDF = async (output: 'print' | 'pdf' = 'print') => {
+    if (!returnData) return;
+    
+    try {
+      if (output === 'pdf') {
+        // Use new enhanced PDF export
+        const { exportToPDFWithLayout } = await import('../../../lib/export-utils-enhanced');
+        const { preparePurchaseReturnDataForExport } = await import('../../../lib/export-layouts/purchase-return-view-layout');
+
+        // Prepare data and get dynamic layout
+        const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, fullApiData);
+
+        await exportToPDFWithLayout(
+          preparedData,
+          {
+            title: `Purchase Return ${returnData.return_no}`,
+            fileName: `Purchase_Return_${returnData.return_no}`,
+            layout: dynamicLayout
+          },
+        );
+      } else {
+        // Keep print functionality using existing system
+        const { printPage } = await import('../../../lib/export-utils');
+
+        // Fetch business details
+        const businessResponse = await fetch('/api/business-details');
+        const businessDetails = businessResponse.ok ? await businessResponse.json() : null;
+
+        await printPage({
+          title: 'Purchase Return Invoice',
+          businessDetails,
+          output,
+          pageType: 'return-view',
+          data: returnData
+        });
+      }
+    } catch (error) {
+      console.error('PDF export error:', error);
+      showSnackbar('error', 'Error exporting PDF. Please try again.');
+    }
   };
 
   if (loading) {
@@ -284,26 +348,30 @@ export default function PurchaseReturnDetailPage() {
               <span className="text-slate-400">Items Total:</span>
               <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Total Tax:</span>
-              <span className="text-white font-medium">₹{returnData.total_tax}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Packing & Forwarding:</span>
-              <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">CGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).cgst || 0, 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">SGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).sgst || 0, 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">IGST:</span>
-              <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).igst || 0, 0)}</span>
-            </div>
+            {returnData.total_tax > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Total Tax:</span>
+                  <span className="text-white font-medium">₹{returnData.total_tax}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Packing & Forwarding:</span>
+                  <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">CGST:</span>
+                  <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).cgst || 0, 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">SGST:</span>
+                  <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).sgst || 0, 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">IGST:</span>
+                  <span className="text-white font-medium">₹{returnItems.reduce((sum, item) => sum + (item as any).igst || 0, 0)}</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Column 4: Notes */}
@@ -322,15 +390,22 @@ export default function PurchaseReturnDetailPage() {
         {/* Actions Row - Separate from columns */}
         <div className="border-t border-slate-700 mt-6 pt-4 px-6">
           <div className="flex justify-end items-center gap-3">
-            <button
-              onClick={handlePrintReturn}
-              className="btn-secondary flex items-center gap-2"
-              title="Print Return"
-            >
-              <Printer className="w-4 h-4" />
-              Print
-            </button>
-            {(fullApiData as any)?.refund_summary && (fullApiData as any).refund_summary.remaining_amount > 0 && (
+            <ExportMenu 
+              data={[returnData]}
+              columns={[]}
+              config={{
+                title: `Purchase Return #${returnData.return_no}`,
+                fileName: `purchase-return-${returnData.return_no}-${new Date().toISOString().split('T')[0]}`
+              }}
+              onExport={(exportType) => {
+                if (exportType === 'excel') {
+                  handleExportPageAsExcel();
+                } else if (exportType === 'pdf') {
+                  handlePrintOrPDF('pdf');
+                }
+              }}
+            />
+            {/* {(fullApiData as any)?.refund_summary && (fullApiData as any).refund_summary.remaining_amount > 0 && (
               <button
                 onClick={() => setShowQuickRefundModal(true)}
                 className="btn-secondary flex items-center gap-2"
@@ -339,7 +414,7 @@ export default function PurchaseReturnDetailPage() {
                 <DollarSign className="w-4 h-4" />
                 Mark as Refunded
               </button>
-            )}
+            )} */}
             <button
               onClick={handleEditReturn}
               className="btn-primary flex items-center gap-2"
@@ -363,8 +438,12 @@ export default function PurchaseReturnDetailPage() {
                   <th>Bill Ref</th>
                   <th>Qty</th>
                   <th>Rate</th>
-                  <th>Tax %</th>
-                  <th>Tax Amount</th>
+                  {returnData.total_tax > 0 && (
+                    <>
+                      <th>Tax %</th>
+                      <th>Tax Amount</th>
+                    </>
+                  )}
                   <th>Subtotal</th>
                   <th>Reason</th>
                 </tr>
@@ -383,8 +462,12 @@ export default function PurchaseReturnDetailPage() {
                     <td className="text-slate-300">{item.bill_reference}</td>
                     <td className="text-slate-300 font-medium">{item.return_qty}</td>
                     <td className="text-slate-300">₹{item.unit_price}</td>
-                    <td className="text-slate-300">{item.tax_rate}%</td>
-                    <td className="text-slate-300">₹{item.tax_amount}</td>
+                    {returnData.total_tax > 0 && (
+                      <>
+                        <td className="text-slate-300">{item.tax_rate}%</td>
+                        <td className="text-slate-300">₹{item.tax_amount}</td>
+                      </>
+                    )}
                     <td className="text-slate-300 font-semibold">₹{item.subtotal}</td>
                     <td className="text-slate-300">
                       <div className="font-medium">{item.return_reason}</div>
@@ -405,10 +488,14 @@ export default function PurchaseReturnDetailPage() {
                     {returnItems.reduce((sum, item) => sum + item.return_qty, 0)}
                   </td>
                   <td></td>
-                  <td></td>
-                  <td className="text-white font-bold text-center py-3 bg-slate-700/20">
-                    ₹{returnItems.reduce((sum, item) => sum + item.tax_amount, 0)}
-                  </td>
+                  {returnData.total_tax > 0 && (
+                    <>
+                      <td></td>
+                      <td className="text-white font-bold text-center py-3 bg-slate-700/20">
+                        ₹{returnItems.reduce((sum, item) => sum + item.tax_amount, 0)}
+                      </td>
+                    </>
+                  )}
                   <td className="text-white font-bold text-center py-3 bg-blue-600/10 border-l border-blue-500/30">
                     ₹{returnItems.reduce((sum, item) => sum + item.subtotal, 0)}
                   </td>
