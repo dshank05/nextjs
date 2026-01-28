@@ -122,7 +122,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert return date to Unix timestamp
-    const returnDateTimestamp = return_date ? Math.floor(new Date(return_date).getTime() / 1000) : Math.floor(Date.now() / 1000)
+    const returnDateTimestamp = return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : Math.floor(Date.now() / 1000)
 
     // Calculate totals
     let totalAmount = 0

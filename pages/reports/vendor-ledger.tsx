@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileText, Loader2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
+import { mergeLedgerEntries, recalculateBalance } from '../../lib/ledger-merge-utils';
 
 interface LedgerEntry {
   id: number;
@@ -14,6 +15,7 @@ interface LedgerEntry {
   credit: number;
   balance: number;
   remarks: string;
+  paymentMode: number | null;
   transactionType: string;
   referenceType: string | null;
   referenceId: number | null;
@@ -100,8 +102,12 @@ export default function VendorLedgerPage() {
       if (response.ok) {
         const data = await response.json();
         
-        // ✅ Backend now handles merging and balance calculation
-        setAccountingEntries(data.entries);
+        // ✅ Client-side merge: Merge adjustments, then recalculate balance (exactly like backend)
+        const rawEntries = data.entries as LedgerEntry[];
+        const mergedEntries = mergeLedgerEntries(rawEntries);
+        const entriesWithBalance = recalculateBalance(mergedEntries);
+        
+        setAccountingEntries(entriesWithBalance);
         setPagination(data.pagination);
       }
     } catch (error) {
@@ -127,6 +133,12 @@ export default function VendorLedgerPage() {
   };
 
   const selectedVendorName = vendors.find(v => v.id.toString() === selectedVendor)?.vendor_name || '';
+
+  // Calculate summary totals
+  const totalDebit = accountingEntries.reduce((sum, entry) => sum + entry.debit, 0);
+  const totalCredit = accountingEntries.reduce((sum, entry) => sum + entry.credit, 0);
+  const openingBalance = accountingEntries.length > 0 ? accountingEntries[0].balance - accountingEntries[0].debit + accountingEntries[0].credit : 0;
+  const closingBalance = accountingEntries.length > 0 ? accountingEntries[accountingEntries.length - 1].balance : 0;
 
   return (
     <div className="space-y-6">
@@ -322,6 +334,40 @@ export default function VendorLedgerPage() {
             >
               Next
             </button>
+          </div>
+        )}
+
+        {/* Summary Box - Bottom Right */}
+        {selectedVendor && accountingEntries.length > 0 && (
+          <div className="mt-6 flex justify-end">
+            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700 min-w-[300px]">
+              <div className="text-sm space-y-2">
+                <div className="flex justify-between gap-8">
+                  <span className="text-slate-400">Opening Balance:</span>
+                  <span className="font-semibold text-white">
+                    ₹{Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-8">
+                  <span className="text-slate-400">Total Debit:</span>
+                  <span className="font-semibold text-green-400">
+                    ₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-8">
+                  <span className="text-slate-400">Total Credit:</span>
+                  <span className="font-semibold text-red-400">
+                    ₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-8 pt-2 border-t border-slate-600">
+                  <span className="text-white font-medium">Closing Balance:</span>
+                  <span className="font-bold text-lg text-white">
+                    ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

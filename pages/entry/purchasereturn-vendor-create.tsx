@@ -724,7 +724,7 @@ export default function PurchaseReturnVendorCreatePage() {
         const action = isEditMode ? 'updated' : 'created';
         const returnId = isEditMode ? returnIdParam : result.data.return.id;
         showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
-        router.push('/entry/purchasereturn-vendor');
+        router.push(`/entry/purchasereturn-vendor/${returnId}`);
       } else {
         const error = await response.json();
         showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);

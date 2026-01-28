@@ -500,7 +500,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           tx.salex_returns.update({
             where: { id: returnId },
             data: {
-              return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
+              return_date: return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : undefined,
               total_amount: totalAmount,
               refund_amount: refundAmount,
               notes: notes || '',

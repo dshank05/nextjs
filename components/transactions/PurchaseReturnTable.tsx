@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowUp, ArrowDown, Eye } from 'lucide-react';
+import { ArrowUp, ArrowDown, Eye, Trash2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
+import { ConfirmationModal } from '../ConfirmationModal';
+import { useSnackbar } from '../SnackbarProvider';
 
 interface PurchaseReturn {
   id: number;
@@ -117,6 +119,69 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
   // Use props for sorting state (controlled component)
   const sortBy = propSortBy;
   const sortOrder = propSortOrder;
+
+  // Delete functionality
+  const { showSnackbar } = useSnackbar();
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [returnToDelete, setReturnToDelete] = useState<PurchaseReturn | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleDeleteClick = (returnItem: PurchaseReturn) => {
+    setReturnToDelete(returnItem);
+    setDeleteModalOpen(true);
+  };
+
+  const handleCancelDelete = () => {
+    // Abort the request if it's in progress
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setDeleteModalOpen(false);
+    setReturnToDelete(null);
+    setDeleting(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!returnToDelete) return;
+
+    setDeleting(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`/api/purchase-returns/${returnToDelete.id}`, {
+        method: 'DELETE',
+        signal: abortControllerRef.current.signal
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Return ${returnToDelete.return_no} deleted successfully`);
+        setDeleteModalOpen(false);
+        setReturnToDelete(null);
+        
+        // Refresh the table by triggering filter apply
+        if (onApplyFilters) {
+          onApplyFilters({
+            ...filters,
+            sortBy,
+            sortOrder
+          });
+        }
+      } else {
+        const error = await response.json();
+        showSnackbar('error', error.message || 'Failed to delete return');
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        showSnackbar('error', 'Failed to delete return');
+        console.error('Delete error:', error);
+      }
+    } finally {
+      setDeleting(false);
+      abortControllerRef.current = null;
+    }
+  };
 
   // Sync filters with initialFilters prop when it changes (handles refresh/session storage load)
   useEffect(() => {
@@ -576,10 +641,17 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
                     <Link
                       href={`/entry/purchasereturn-vendor/${returnItem.id}`}
                       title="View Return Details"
-                      className="btn-icon text-slate-300"
+                      className="btn-icon text-slate-300 hover:text-blue-400"
                     >
                       <Eye className="w-4 h-4" />
                     </Link>
+                    <button
+                      onClick={() => handleDeleteClick(returnItem)}
+                      title="Delete Return"
+                      className="btn-icon text-red-400 hover:text-red-500"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -609,6 +681,22 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Purchase Return"
+        message={
+          returnToDelete
+            ? `Are you sure you want to delete return ${returnToDelete.return_no}? This action is irreversible and will restore stock quantities, create reversal entries in the ledger, remove all related allocations, and update vendor balance. This operation cannot be undone.`
+            : ''
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        showLoading={deleting}
+        loadingText="Deleting..."
+      />
     </div>
   );
 };

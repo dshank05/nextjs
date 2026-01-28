@@ -517,6 +517,27 @@ export default async function handler(
             }
           }
 
+          // ✅ Calculate final invoice date early (for ledger entries) - TIMEZONE SAFE
+          const finalInvoiceDate = date 
+            ? Math.floor(new Date(date + 'T12:00:00').getTime() / 1000) 
+            : existingPurchase.invoice_date;
+          
+          const dateChanged = date && finalInvoiceDate !== existingPurchase.invoice_date;
+
+          // ✅ ALWAYS update ALL purchase-related ledger entries (PURCHASE + PURCHASE_ADJUSTMENT)
+          await tx.vendor_ledger.updateMany({
+            where: {
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              transaction_type: { in: ['PURCHASE', 'PURCHASE_ADJUSTMENT'] }
+            },
+            data: {
+              transaction_date: finalInvoiceDate
+            }
+          });
+          
+          console.log(`[PURCHASE UPDATE] Updated ledger entries for purchase ${purchaseId}, date: ${finalInvoiceDate}, changed: ${dateChanged}`);
+
           // Update bill_to table
           let existingVendor = null
           if (existingPurchase.vendor_id && existingPurchase.vendor_id !== 0) {
@@ -561,7 +582,7 @@ export default async function handler(
               bill_reference: bill_reference || null,
               bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
               staff_id: staff_id ? parseInt(staff_id.toString()) : null,
-              invoice_date: date ? Math.floor(new Date(date).getTime() / 1000) : existingPurchase.invoice_date,
+              invoice_date: finalInvoiceDate,  // ✅ Use already-calculated finalInvoiceDate
               vendor_id: vendor_id ? parseInt(vendor_id.toString()) : existingPurchase.vendor_id,
               notes: notes || null,
               descriptions: descriptions || null,
@@ -774,7 +795,7 @@ export default async function handler(
             purchaseId: purchaseId,
             invoiceNo: existingPurchase.invoice_no.toString(),
             paymentMode: parsedPaymentMode,
-            paymentDate: existingPurchase.invoice_date,
+            paymentDate: finalInvoiceDate,  // ✅ Use finalInvoiceDate (user's date or existing)
             fy: existingPurchase.fy,
             totalAllocated: totalAllocated,
             isTypeA: isTypeA,

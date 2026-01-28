@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { transactionHandler } from '../../../lib/transaction-handler'
 import { balanceHandler } from '../../../lib/balance-handler'
+import { ledgerService } from '../../../lib/ledger-service'
 
 async function handler(
   req: NextApiRequest,
@@ -558,7 +559,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         tx.purchase_returns.update({
           where: { id: returnId },
           data: {
-            return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
+            return_date: return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : undefined,
             total_amount: totalAmount,
             total_tax: totalTax,
             refund_amount: parseFloat(refundAmount.toString()),
@@ -812,13 +813,29 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      // Delete ledger entries for this return
-      await tx.vendor_ledger.deleteMany({
+      // ✅ CREATE REVERSAL ENTRIES INSTEAD OF DELETING (preserves audit trail)
+      const ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
           reference_type: 'purchase_return',
           reference_id: returnId
         }
       });
+
+      // Create reversal entry for each ledger entry
+      for (const entry of ledgerEntries) {
+        await ledgerService.createEntry({
+          vendor_id: entry.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: `${entry.transaction_type}_REVERSAL` as any,
+          reference_type: 'purchase_return',
+          reference_id: returnId,
+          reference_no: entry.reference_no || '',
+          debit: entry.credit,  // ✅ Swap debit/credit to reverse
+          credit: entry.debit,   // ✅ Swap debit/credit to reverse
+          notes: `Reversal: Return ${entry.reference_no} deleted`,
+          fy: entry.fy
+        }, tx);
+      }
     }, {
       timeout: 45000 // 45 seconds timeout for delete operations
     })

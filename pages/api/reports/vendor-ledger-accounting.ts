@@ -2,11 +2,16 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 
 /**
- * Merge adjustment entries with base transactions
- * Groups by reference_id + base transaction type
- * - PURCHASE + PURCHASE_ADJUSTMENT → Single Purchase
- * - PAYMENT + PAYMENT_ADJUSTMENT + PAYMENT_REVERSAL → Single Payment
- * - DEBIT_NOTE + REFUND_RECEIVED + REFUND_REVERSAL → Single Debit Note
+ * Merge adjustment/reversal entries with base transactions
+ * 
+ * Groups by: BASE_TYPE-REFERENCE_TYPE-REFERENCE_ID
+ * - PURCHASE + PURCHASE_ADJUSTMENT → Single Purchase entry
+ * - PAYMENT + PAYMENT_ADJUSTMENT/REVERSAL → Single Payment entry  
+ * - DEBIT_NOTE + REFUND + REVERSALS → Single Debit Note entry
+ * 
+ * Preserves Order: Uses transaction_date (earliest) for sorting, display_date (latest) for UI
+ * NET Calculation: Combines debits and credits to show NET amount in appropriate column only
+ *   Example: Debit ₹26,500 + Credit ₹5,300 = NET Debit ₹21,200 (NOT both!)
  */
 function mergeAdjustmentEntries(entries: any[]): any[] {
   // Group entries by reference_id + base transaction type
@@ -50,11 +55,20 @@ function mergeAdjustmentEntries(entries: any[]): any[] {
       const totalDebit = group.reduce((sum, e) => sum + Number(e.debit), 0)
       const totalCredit = group.reduce((sum, e) => sum + Number(e.credit), 0)
       
+      // ✅ Calculate NET amount (fixes double debit/credit display bug)
+      const netAmount = totalDebit - totalCredit
+      
+      // ✅ Calculate earliest date (for sorting/position) and latest date (for display)
+      const earliestDate = Math.min(...group.map(e => e.transaction_date))
+      const latestDate = Math.max(...group.map(e => e.transaction_date))
+      
       // Create merged entry (keep first entry's metadata)
       merged.push({
         ...firstEntry,
-        debit: totalDebit,
-        credit: totalCredit,
+        transaction_date: earliestDate,  // Preserves original position
+        display_date: latestDate,         // Shows updated date in UI
+        debit: netAmount > 0 ? netAmount : 0,        // Show in debit column only if NET is positive
+        credit: netAmount < 0 ? Math.abs(netAmount) : 0,  // Show in credit column only if NET is negative
         // Balance will be recalculated later
         transaction_type: firstEntry.transaction_type.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
       })
@@ -62,7 +76,10 @@ function mergeAdjustmentEntries(entries: any[]): any[] {
   })
   
   // Sort by date to maintain chronological order
-  return merged.sort((a, b) => a.transaction_date - b.transaction_date)
+  // ✅ Filter out entries that NET to zero (deleted/cancelled transactions)
+  return merged
+    .filter(entry => entry.debit !== 0 || entry.credit !== 0)  // Keep only non-zero entries
+    .sort((a, b) => a.transaction_date - b.transaction_date)
 }
 
 export default async function handler(
@@ -133,18 +150,16 @@ export default async function handler(
       prisma.vendor_ledger.count({ where })
     ])
 
-    // ✅ Merge adjustments with base transactions
-    const mergedEntries = mergeAdjustmentEntries(entries)
-
-    // ✅ Recalculate running balance after merge
+    // ✅ Return RAW entries (merge happens on client-side)
+    // Calculate running balance
     let runningBalance = 0
-    mergedEntries.forEach(entry => {
+    entries.forEach(entry => {
       runningBalance = runningBalance + Number(entry.debit) - Number(entry.credit)
       entry.balance = runningBalance
     })
 
     // Format entries for accounting ledger display
-    const formattedEntries = mergedEntries.map(entry => {
+    const formattedEntries = entries.map(entry => {
       // Determine particulars based on transaction type and payment mode (removed "A/c" suffix)
       let particulars = ''
       
@@ -208,10 +223,13 @@ export default async function handler(
         }
       }
 
+      // ✅ Use display_date if available (for edited transactions), otherwise use transaction_date
+      const displayDate = (entry as any).display_date || entry.transaction_date
+      
       return {
         id: entry.id,
-        date: entry.transaction_date,
-        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN'),
+        date: displayDate,  // Use display_date for UI
+        formattedDate: new Date(displayDate * 1000).toLocaleDateString('en-IN'),
         particulars,
         voucherType,
         voucherNo: entry.reference_no || '-',

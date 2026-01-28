@@ -470,8 +470,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // ===== STEP 3: DATA PREPARATION =====
-    const invoiceDate = new Date(date).getTime() / 1000
+    // ===== STEP 3: DATA PREPARATION ===== 
+    // ✅ TIMEZONE SAFE: Add T12:00:00 to avoid timezone shift
+    const invoiceDate = new Date(date + 'T12:00:00').getTime() / 1000
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal +
       parseFloat(packing_forwarding_total?.toString()) +
