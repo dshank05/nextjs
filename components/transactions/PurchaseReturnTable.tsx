@@ -118,6 +118,25 @@ export const PurchaseReturnTable: React.FC<PurchaseReturnTableProps> = ({
   const sortBy = propSortBy;
   const sortOrder = propSortOrder;
 
+  // Sync filters with initialFilters prop when it changes (handles refresh/session storage load)
+  useEffect(() => {
+    if (initialFilters) {
+      setFilters({
+        returnNoFilter: initialFilters.returnNoFilter || '',
+        vendorFilter: initialFilters.vendorFilter || '',
+        statusFilter: initialFilters.statusFilter || 'all',
+        dateFrom: initialFilters.dateFrom || '',
+        dateTo: initialFilters.dateTo || '',
+        amountMin: initialFilters.amountMin || '',
+        amountMax: initialFilters.amountMax || '',
+        uidFilter: initialFilters.uidFilter || '',
+        itemCount: initialFilters.itemCount || '',
+        paymentMode: initialFilters.paymentMode || '',
+        packingForwardingTotal: initialFilters.packingForwardingTotal || ''
+      });
+    }
+  }, [initialFilters]);
+
   // Fetch filter options on mount
   useEffect(() => {
     fetchFilterOptions();

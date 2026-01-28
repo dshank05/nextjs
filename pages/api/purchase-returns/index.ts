@@ -140,8 +140,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Validate and set sort parameters
+    // Map return_no to id since return_no is just formatted id (PR-001 = id 1)
+    let requestedSortField = sortBy as string;
+    if (requestedSortField === 'return_no') {
+      requestedSortField = 'id';
+    }
+    
     const validSortFields = ['id', 'return_date', 'total_amount', 'total_tax', 'status', 'fy', 'vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount']
-    const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'id'
+    const sortField = validSortFields.includes(requestedSortField) ? requestedSortField : 'id'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
     // For computed fields, we need to fetch all data first and sort in JavaScript

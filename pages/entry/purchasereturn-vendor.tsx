@@ -67,8 +67,8 @@ export default function PurchaseReturnIndexPage() {
       itemCount: '',
       paymentMode: '',
       packingForwardingTotal: '',
-      sortBy: 'return_date',
-      sortOrder: 'desc'
+      sortBy: 'return_no',
+      sortOrder: 'asc'
     },
     storage: "session"
   });
