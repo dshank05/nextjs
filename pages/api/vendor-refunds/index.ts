@@ -238,10 +238,14 @@ async function handleListRefunds(
     if (dateFrom || dateTo) {
       where.refund_date = {};
       if (dateFrom) {
-        where.refund_date.gte = parseInt(dateFrom as string);
+        const startDate = new Date(dateFrom as string);
+        startDate.setHours(0, 0, 0, 0);
+        where.refund_date.gte = Math.floor(startDate.getTime() / 1000);
       }
       if (dateTo) {
-        where.refund_date.lte = parseInt(dateTo as string);
+        const endDate = new Date(dateTo as string);
+        endDate.setHours(23, 59, 59, 999);  // ✅ End of day
+        where.refund_date.lte = Math.floor(endDate.getTime() / 1000);
       }
     }
 

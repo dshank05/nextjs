@@ -101,8 +101,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Date range filters
     if (dateFrom && dateTo) {
       try {
+        // Start of day for dateFrom (00:00:00)
         const startDateObj = new Date(dateFrom as string);
+        startDateObj.setHours(0, 0, 0, 0);
+        
+        // End of day for dateTo (23:59:59)
         const endDateObj = new Date(dateTo as string);
+        endDateObj.setHours(23, 59, 59, 999);
 
         if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
           const startTimestamp = Math.floor(startDateObj.getTime() / 1000);

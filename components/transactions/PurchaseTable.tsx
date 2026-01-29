@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowUp, ArrowDown, Eye, Printer, FileMinus, Undo2 } from 'lucide-react';
+import { ArrowUp, ArrowDown, Eye, Printer, FileMinus, Undo2, Trash2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
+import { ConfirmationModal } from '../ConfirmationModal';
+import { useSnackbar } from '../SnackbarProvider';
 
 interface PurchaseItem {
   id: number;
@@ -161,9 +163,71 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   });
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ vendors: [] });
 
+  // Delete functionality
+  const { showSnackbar } = useSnackbar();
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [purchaseToDelete, setPurchaseToDelete] = useState<Purchase | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // Use props for sorting state (controlled component)
   const sortBy = propSortBy;
   const sortOrder = propSortOrder;
+
+  const handleDeleteClick = (purchase: Purchase) => {
+    setPurchaseToDelete(purchase);
+    setDeleteModalOpen(true);
+  };
+
+  const handleCancelDelete = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setDeleteModalOpen(false);
+    setPurchaseToDelete(null);
+    setDeleting(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!purchaseToDelete) return;
+
+    setDeleting(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`/api/purchases/${purchaseToDelete.id}`, {
+        method: 'DELETE',
+        signal: abortControllerRef.current.signal
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Purchase ${purchaseToDelete.invoice_no} deleted successfully`);
+        setDeleteModalOpen(false);
+        setPurchaseToDelete(null);
+        
+        // Refresh the table
+        if (onApplyFilters) {
+          onApplyFilters({
+            ...filters,
+            sortBy,
+            sortOrder
+          });
+        }
+      } else {
+        const error = await response.json();
+        showSnackbar('error', error.message || 'Failed to delete purchase');
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        showSnackbar('error', 'Failed to delete purchase');
+        console.error('Delete error:', error);
+      }
+    } finally {
+      setDeleting(false);
+      abortControllerRef.current = null;
+    }
+  };
 
   // Fetch filter options on mount
   useEffect(() => {
@@ -762,6 +826,14 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                         <Undo2 className="w-4 h-4" />
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDeleteClick(purchase)}
+                      title="Delete Purchase"
+                      className="btn-icon text-red-400 hover:text-red-500"
+                      disabled={(purchase.return_status || 0) > 0}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -786,6 +858,22 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Purchase"
+        message={
+          purchaseToDelete
+            ? `Are you sure you want to delete purchase ${purchaseToDelete.invoice_no}? This action is irreversible and will restore stock quantities, create reversal entries in the ledger, remove all related allocations, and update vendor balance. This operation cannot be undone.`
+            : ''
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        showLoading={deleting}
+        loadingText="Deleting..."
+      />
     </div>
   );
 };

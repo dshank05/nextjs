@@ -400,6 +400,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const { nextInvoiceNo, currentFy } = await getNextInvoiceNumber('purchase');
 
     const {
+      invoice_number,
       bill_reference,
       bill_reference_date,
       staff_id,
@@ -418,6 +419,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       payment_status,
       payment_mode
     } = req.body
+
+    // ===== STEP 1: DETERMINE INVOICE NUMBER TO USE =====
+    // Use UI-provided invoice_number if present, otherwise use auto-generated
+    const invoiceNumberToUse = invoice_number ? parseInt(invoice_number) : nextInvoiceNo;
+
+    // ===== DUPLICATE INVOICE NUMBER VALIDATION =====
+    const existingPurchase = await prisma.purchase.findFirst({
+      where: {
+        invoice_no: invoiceNumberToUse
+      }
+    });
+
+    if (existingPurchase) {
+      return res.status(400).json({
+        message: `Invoice number ${invoiceNumberToUse} already exists`,
+        error_code: 'DUPLICATE_INVOICE_NO'
+      });
+    }
 
     // ===== STEP 2: VALIDATION =====
     if (vendor_id === undefined || vendor_id === null || !items || items.length === 0) {
@@ -484,7 +503,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // ===== DB OPERATION 1: Create purchase record =====
       const purchase = await tx.purchase.create({
         data: {
-          invoice_no: nextInvoiceNo,
+          invoice_no: invoiceNumberToUse,
           bill_reference: bill_reference,
           bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
           staff_id: staff_id ? parseInt(staff_id) : null,
@@ -590,7 +609,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
       // Use Prisma's createMany for bulk insert
       await tx.purchaseitems.createMany({
-        data: bulkInsertData
+        data: bulkInsertData.map(item => ({
+          ...item,
+          invoice_no: invoiceNumberToUse
+        }))
       });
 
       // ===== OPTIMIZED: Parallel stock updates and ledger creation =====

@@ -244,10 +244,14 @@ async function handleListPayments(
     if (dateFrom || dateTo) {
       where.payment_date = {};
       if (dateFrom) {
-        where.payment_date.gte = parseInt(dateFrom as string);
+        const startDate = new Date(dateFrom as string);
+        startDate.setHours(0, 0, 0, 0);
+        where.payment_date.gte = Math.floor(startDate.getTime() / 1000);
       }
       if (dateTo) {
-        where.payment_date.lte = parseInt(dateTo as string);
+        const endDate = new Date(dateTo as string);
+        endDate.setHours(23, 59, 59, 999);  // ✅ End of day
+        where.payment_date.lte = Math.floor(endDate.getTime() / 1000);
       }
     }
 

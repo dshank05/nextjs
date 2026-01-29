@@ -2739,26 +2739,11 @@ export default function PurchaseCreate() {
                                   value={editingRowData?.rate || ''}
                                   onChange={(e) => {
                                     const newRate = e.target.value;
-                                    const qty = editingRowData?.qty || 0;
-                                    const rate = parseInt(newRate) || 0;
-                                    const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
-
-                                    if (qty > 0 && rate > 0) {
-                                      const subtotal = qty * rate;
-                                      const taxAmount = (subtotal * gstPercent) / 100;
-                                      const total = subtotal + taxAmount;
-
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        rate: parseInt(newRate) || 0,
-                                        total: total
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        rate: parseInt(newRate) || 0
-                                      } : null);
-                                    }
+                                    // Don't recalculate total - let user enter it manually
+                                    setEditingRowData(prev => prev ? {
+                                      ...prev,
+                                      rate: parseInt(newRate) || 0
+                                    } : null);
                                   }}
                                   onWheel={(e) => e.preventDefault()}
                                   onKeyDown={(e) => {

@@ -143,6 +143,7 @@ async function handleGetPayment(
 /**
  * PUT /api/vendor-payments/[id]
  * Update an existing vendor payment
+ * REFACTORED: Now uses transaction-handler for clean, maintainable code
  */
 async function handleUpdatePayment(
   req: NextApiRequest,
@@ -187,20 +188,25 @@ async function handleUpdatePayment(
         throw new Error('Payment not found');
       }
 
-      // 2. Calculate differences
-      const oldAmount = Number(existingPayment.payment_amount);
-      const newAmount = Number(payment_amount);
-      const amountDiff = newAmount - oldAmount;
-
-      // Get old and new allocation purchase IDs
-      const oldAllocations = existingPayment.allocations;
-      const oldAllocMap = new Map(oldAllocations.map(a => [a.purchase_id, Number(a.allocated_amount)]));
-      const newAllocMap = new Map(allocations.map((a: any) => [a.purchase_id, Number(a.allocated_amount)]));
-
-      const allPurchaseIds = new Set([
-        ...Array.from(oldAllocMap.keys()), 
-        ...Array.from(newAllocMap.keys())
-      ]);
+      // 2. Use transaction handler to calculate what needs to change
+      const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorPaymentEdit({
+        paymentId,
+        vendorId: existingPayment.vendor_id,
+        oldAmount: Number(existingPayment.payment_amount),
+        newAmount: Number(payment_amount),
+        oldAllocations: existingPayment.allocations.map(a => ({
+          purchase_id: a.purchase_id,
+          allocated_amount: Number(a.allocated_amount)
+        })),
+        newAllocations: allocations.map((a: any) => ({
+          purchase_id: a.purchase_id,
+          allocated_amount: Number(a.allocated_amount)
+        })),
+        paymentMode: payment_mode,
+        paymentDate: payment_date,
+        paymentType: payment_type,
+        fy: existingPayment.fy
+      });
 
       // 3. Update payment record
       const updatedPayment = await tx.vendor_payments.update({
@@ -214,94 +220,42 @@ async function handleUpdatePayment(
         }
       });
 
-      // 4. Delete all existing allocations
+      // 4. Delete old allocations & create new ones (parallel)
       await tx.payment_allocations.deleteMany({
         where: { payment_id: paymentId }
       });
 
-      // 5. Create new allocations
-      const createdAllocations = [];
-      for (const alloc of allocations) {
-        const newAlloc = await tx.payment_allocations.create({
-          data: {
-            payment_id: paymentId,
-            purchase_id: alloc.purchase_id,
-            allocated_amount: alloc.allocated_amount,
-            allocation_date: payment_date,
-            notes: alloc.notes || null
-          }
-        });
-        createdAllocations.push(newAlloc);
+      const createdAllocations = await Promise.all(
+        allocations.map((alloc: any) =>
+          tx.payment_allocations.create({
+            data: {
+              payment_id: paymentId,
+              purchase_id: alloc.purchase_id,
+              allocated_amount: alloc.allocated_amount,
+              allocation_date: payment_date,
+              notes: alloc.notes || null
+            }
+          })
+        )
+      );
+
+      // 5. Recalculate purchase statuses (parallel)
+      await Promise.all(
+        handlerResult.purchasesToUpdate.map(purchaseId =>
+          require('../../../lib/payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
+        )
+      );
+
+      // 6. Create ledger entry if amount changed
+      for (const ledgerOp of handlerResult.ledgerOps) {
+        await ledgerService.createEntry(ledgerOp.entry, tx);
       }
 
-      // 6. Recalculate payment_status for all affected purchases
-      for (const purchaseId of Array.from(allPurchaseIds) as number[]) {
-        const purchase = await tx.purchase.findUnique({
-          where: { id: purchaseId },
-          select: { total: true, invoice_no: true }
-        });
-
-        if (!purchase) continue;
-
-        // Get total allocated to this purchase
-        const allocSum = await tx.payment_allocations.aggregate({
-          where: { purchase_id: purchaseId },
-          _sum: { allocated_amount: true }
-        });
-
-        const totalAllocated = Number(allocSum._sum.allocated_amount || 0);
-        const totalBill = Number(purchase.total);
-
-        // Calculate new payment status
-        let newStatus: number = 0; // Unpaid
-        if (totalAllocated === 0) {
-          newStatus = 0;
-        } else if (totalAllocated >= totalBill - 0.01) {
-          newStatus = 1; // Fully Paid
-        } else {
-          newStatus = 2; // Partially Paid
-        }
-
-        // Update purchase payment status
-        await tx.purchase.update({
-          where: { id: purchaseId as number },
-          data: { payment_status: newStatus }
-        });
-
-        // Create ledger adjustment entry for this allocation change
-        const oldAlloc: number = Number(oldAllocMap.get(purchaseId) || 0);
-        const newAlloc: number = Number(newAllocMap.get(purchaseId) || 0);
-        const allocDiff = newAlloc - oldAlloc;
-
-        if (allocDiff !== 0) {
-          await ledgerService.createEntry({
-            vendor_id: existingPayment.vendor_id,
-            transaction_date: payment_date,
-            transaction_type: 'PAYMENT_ADJUSTMENT',
-            reference_type: 'purchase',
-            reference_id: purchaseId,
-            reference_no: purchase.invoice_no.toString(),
-            payment_mode,
-            payment_status: newStatus,
-            payment_date,
-            debit: 0,
-            credit: Math.abs(allocDiff),
-            notes: `Payment adjustment for INV-${purchase.invoice_no}: ${allocDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(allocDiff).toFixed(2)} (Payment #${paymentId} edit)`,
-            fy: existingPayment.fy
-          }, tx);
-        }
-      }
-
-      // 7. Calculate total allocation change for balance update
-      const oldTotalAllocated = oldAllocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
-      const newTotalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0);
-      const allocDiff = newTotalAllocated - oldTotalAllocated;
-
-      // 8. Update vendor balance
-      if (amountDiff !== 0 || allocDiff !== 0) {
+      // 7. Update vendor balance
+      if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
         await balanceHandler.incrementBalanceInTransaction(tx, existingPayment.vendor_id, {
-          total_paid: amountDiff,
-          total_allocated: allocDiff
+          total_paid: handlerResult.amountDiff,
+          total_allocated: handlerResult.allocDiff
         });
       }
 
@@ -310,7 +264,7 @@ async function handleUpdatePayment(
         allocations: createdAllocations
       };
     }, {
-      timeout: 45000 // 45 seconds
+      timeout: 45000
     });
 
     return res.status(200).json({

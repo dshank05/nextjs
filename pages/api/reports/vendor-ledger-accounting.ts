@@ -143,7 +143,10 @@ export default async function handler(
     const [entries, total] = await Promise.all([
       prisma.vendor_ledger.findMany({
         where,
-        orderBy: { transaction_date: 'asc' }, // Sort by transaction_date only (ASC - oldest first)
+        orderBy: [
+          { transaction_date: 'asc' },  // Primary sort: transaction date
+          { id: 'asc' }                 // ✅ Secondary sort: id for consistent same-date ordering
+        ],
         skip,
         take: limitNum
       }),
@@ -158,8 +161,11 @@ export default async function handler(
       entry.balance = runningBalance
     })
 
+    // ✅ Filter out zero-value entries (cancelled transactions)
+    const nonZeroEntries = entries.filter(entry => entry.debit !== 0 || entry.credit !== 0)
+    
     // Format entries for accounting ledger display
-    const formattedEntries = entries.map(entry => {
+    const formattedEntries = nonZeroEntries.map(entry => {
       // Determine particulars based on transaction type and payment mode (removed "A/c" suffix)
       let particulars = ''
       

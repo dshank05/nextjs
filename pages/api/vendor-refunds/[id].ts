@@ -142,6 +142,7 @@ async function handleGetRefund(
 /**
  * PUT /api/vendor-refunds/[id]
  * Update an existing vendor refund
+ * REFACTORED: Now uses transaction-handler for clean, maintainable code
  */
 async function handleUpdateRefund(
   req: NextApiRequest,
@@ -186,20 +187,25 @@ async function handleUpdateRefund(
         throw new Error('Refund not found');
       }
 
-      // 2. Calculate differences
-      const oldAmount = Number(existingRefund.refund_amount);
-      const newAmount = Number(refund_amount);
-      const amountDiff = newAmount - oldAmount;
-
-      // Get old and new allocation return IDs
-      const oldAllocations = existingRefund.allocations;
-      const oldAllocMap = new Map(oldAllocations.map(a => [a.return_id, Number(a.allocated_amount)]));
-      const newAllocMap = new Map(allocations.map((a: any) => [a.return_id, Number(a.allocated_amount)]));
-
-      const allReturnIds = new Set([
-        ...Array.from(oldAllocMap.keys()), 
-        ...Array.from(newAllocMap.keys())
-      ]);
+      // 2. Use transaction handler to calculate what needs to change
+      const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorRefundEdit({
+        refundId,
+        vendorId: existingRefund.vendor_id,
+        oldAmount: Number(existingRefund.refund_amount),
+        newAmount: Number(refund_amount),
+        oldAllocations: existingRefund.allocations.map(a => ({
+          return_id: a.return_id,
+          allocated_amount: Number(a.allocated_amount)
+        })),
+        newAllocations: allocations.map((a: any) => ({
+          return_id: a.return_id,
+          allocated_amount: Number(a.allocated_amount)
+        })),
+        refundMode: refund_mode,
+        refundDate: refund_date,
+        refundType: refund_type,
+        fy: existingRefund.fy
+      });
 
       // 3. Update refund record
       const updatedRefund = await tx.vendor_refunds.update({
@@ -213,99 +219,42 @@ async function handleUpdateRefund(
         }
       });
 
-      // 4. Delete all existing allocations
+      // 4. Delete old allocations & create new ones (parallel)
       await tx.refund_allocations.deleteMany({
         where: { refund_id: refundId }
       });
 
-      // 5. Create new allocations
-      const createdAllocations = [];
-      for (const alloc of allocations) {
-        const newAlloc = await tx.refund_allocations.create({
-          data: {
-            refund_id: refundId,
-            return_id: alloc.return_id,
-            allocated_amount: alloc.allocated_amount,
-            allocation_date: refund_date,
-            notes: alloc.notes || null
-          }
-        });
-        createdAllocations.push(newAlloc);
+      const createdAllocations = await Promise.all(
+        allocations.map((alloc: any) =>
+          tx.refund_allocations.create({
+            data: {
+              refund_id: refundId,
+              return_id: alloc.return_id,
+              allocated_amount: alloc.allocated_amount,
+              allocation_date: refund_date,
+              notes: alloc.notes || null
+            }
+          })
+        )
+      );
+
+      // 5. Recalculate return statuses (parallel)
+      await Promise.all(
+        handlerResult.returnsToUpdate.map(returnId =>
+          require('../../../lib/payment-allocation-service').recalculatePurchaseReturnStatus(returnId, tx)
+        )
+      );
+
+      // 6. Create ledger entry if amount changed (currently no-op, see handler)
+      for (const ledgerOp of handlerResult.ledgerOps) {
+        await ledgerService.createEntry(ledgerOp.entry, tx);
       }
 
-      // 6. Recalculate payment_status for all affected returns
-      for (const returnId of Array.from(allReturnIds)) {
-        const purchaseReturn = await tx.purchase_returns.findUnique({
-          where: { id: returnId as number },
-          select: { 
-            total_amount: true, 
-            total_tax: true,
-            refund_amount: true,
-            debit_note_no: true 
-          }
-        });
-
-        if (!purchaseReturn) continue;
-
-        // Get total refunded for this return
-        const refundSum = await tx.refund_allocations.aggregate({
-          where: { return_id: returnId },
-          _sum: { allocated_amount: true }
-        });
-
-        const totalRefunded = Number(refundSum._sum.allocated_amount || 0);
-        const totalReturnAmount = Number(purchaseReturn.refund_amount || (purchaseReturn.total_amount + purchaseReturn.total_tax));
-
-        // Calculate new payment status
-        let newStatus: number = 0; // Unpaid
-        if (totalRefunded === 0) {
-          newStatus = 0;
-        } else if (totalRefunded >= totalReturnAmount - 0.01) {
-          newStatus = 1; // Fully Refunded
-        } else {
-          newStatus = 2; // Partially Refunded
-        }
-
-        // Update return payment status
-        await tx.purchase_returns.update({
-          where: { id: returnId as number },
-          data: { payment_status: newStatus }
-        });
-
-        // Create ledger adjustment entry for this allocation change
-        const oldAlloc: number = Number(oldAllocMap.get(returnId as number) || 0);
-        const newAlloc: number = Number(newAllocMap.get(returnId as number) || 0);
-        const allocDiff = newAlloc - oldAlloc;
-
-        if (allocDiff !== 0) {
-          await ledgerService.createEntry({
-            vendor_id: existingRefund.vendor_id,
-            transaction_date: refund_date,
-            transaction_type: 'PAYMENT_ADJUSTMENT',
-            reference_type: 'purchase_return',
-            reference_id: returnId as number,
-            reference_no: purchaseReturn.debit_note_no || undefined,
-            payment_mode: refund_mode,
-            payment_status: newStatus,
-            payment_date: refund_date,
-            debit: Math.abs(allocDiff),
-            credit: 0,
-            notes: `Refund adjustment for ${purchaseReturn.debit_note_no}: ${allocDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(allocDiff).toFixed(2)} (Refund #${refundId} edit)`,
-            fy: existingRefund.fy
-          }, tx);
-        }
-      }
-
-      // 7. Calculate total allocation change for balance update
-      const oldTotalAllocated = oldAllocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
-      const newTotalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0);
-      const allocDiff = newTotalAllocated - oldTotalAllocated;
-
-      // 8. Update vendor balance
-      if (amountDiff !== 0 || allocDiff !== 0) {
+      // 7. Update vendor balance
+      if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
         await balanceHandler.incrementBalanceInTransaction(tx, existingRefund.vendor_id, {
-          total_refunded: amountDiff,
-          total_refund_allocated: allocDiff
+          total_refunded: handlerResult.amountDiff,
+          total_refund_allocated: handlerResult.allocDiff
         });
       }
 
@@ -314,7 +263,7 @@ async function handleUpdateRefund(
         allocations: createdAllocations
       };
     }, {
-      timeout: 45000 // 45 seconds
+      timeout: 45000
     });
 
     return res.status(200).json({

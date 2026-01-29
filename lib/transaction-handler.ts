@@ -82,6 +82,7 @@ export class TransactionHandler {
   
   /**
    * Handle return edit transaction
+   * ✅ REFACTORED: Now handles ALL logic including DEBIT_NOTE checks and updates
    * Returns all operations to perform
    */
   async handleReturnEdit(params: {
@@ -94,8 +95,12 @@ export class TransactionHandler {
     debitNoteNo: string;
     paymentMode?: number;
     paymentDate?: number;
+    returnDate: number;    // ✅ NEW: Return date for DEBIT_NOTE
     fy: number;
     totalAllocated?: number;
+    totalAmount: number;  // ✅ For DEBIT_NOTE updates
+    totalTax: number;     // ✅ For DEBIT_NOTE updates
+    tx: any;              // ✅ Transaction context for DB operations
     currentBalance?: {
       total_paid: number;
       total_allocated: number;
@@ -103,6 +108,30 @@ export class TransactionHandler {
       total_refund_allocated: number;
     };
   }): Promise<TransactionResult> {
+    // ✅ CHECK IF DEBIT_NOTE EXISTS (moved from API)
+    const existingDebitNote = await params.tx.vendor_ledger.findFirst({
+      where: {
+        vendor_id: params.vendorId,
+        transaction_type: 'DEBIT_NOTE',
+        reference_type: 'purchase_return',
+        reference_id: params.returnId
+      },
+      orderBy: { id: 'desc' }
+    });
+
+    // ✅ UPDATE DEBIT_NOTE if exists and amount changed (moved from API)
+    const amountChanged = Math.abs(params.newTotal - params.oldTotal) > 0.01;
+    if (existingDebitNote && amountChanged) {
+      await ledgerService.updateDebitNoteEntry({
+        vendor_id: params.vendorId,
+        reference_id: params.returnId,
+        reference_no: params.debitNoteNo,
+        new_total_amount: params.totalAmount,
+        new_total_tax: params.totalTax,
+        fy: params.fy
+      });
+    }
+
     // Build change set
     const changes: ChangeSet = {
       oldStatus: params.oldStatus,
@@ -114,9 +143,11 @@ export class TransactionHandler {
       debitNoteNo: params.debitNoteNo,
       paymentMode: params.paymentMode,
       paymentDate: params.paymentDate,
+      returnDate: params.returnDate,  // ✅ Pass return_date to ledger handler
       fy: params.fy,
       totalAllocated: params.totalAllocated,
-      amountChanged: params.oldTotal !== params.newTotal,
+      hasExistingDebitNote: !!existingDebitNote,  // ✅ Determined internally now
+      amountChanged: amountChanged,
       currentBalance: params.currentBalance
     };
     
@@ -133,6 +164,117 @@ export class TransactionHandler {
       ledgerOps,
       balanceOp,
       allocationChanges
+    };
+  }
+  
+  /**
+   * Handle vendor payment edit transaction
+   * Returns all operations to perform when editing a vendor payment
+   */
+  async handleVendorPaymentEdit(params: {
+    paymentId: number;
+    vendorId: number;
+    oldAmount: number;
+    newAmount: number;
+    oldAllocations: Array<{ purchase_id: number; allocated_amount: number }>;
+    newAllocations: Array<{ purchase_id: number; allocated_amount: number }>;
+    paymentMode: number;
+    paymentDate: number;
+    paymentType: string;
+    fy: number;
+  }): Promise<{
+    purchasesToUpdate: number[];
+    amountDiff: number;
+    allocDiff: number;
+    ledgerOps: LedgerOperation[];
+  }> {
+    const amountDiff = params.newAmount - params.oldAmount;
+    
+    // Get all affected purchases
+    const oldPurchaseIds = params.oldAllocations.map(a => a.purchase_id);
+    const newPurchaseIds = params.newAllocations.map(a => a.purchase_id);
+    const allIds = [...oldPurchaseIds, ...newPurchaseIds];
+    const purchasesToUpdate = allIds.filter((id, index) => allIds.indexOf(id) === index);
+    
+    // Calculate allocation difference for balance update
+    const oldTotalAllocated = params.oldAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+    const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+    const allocDiff = newTotalAllocated - oldTotalAllocated;
+    
+    // Create ledger operation ONLY if amount changed
+    const ledgerOps: LedgerOperation[] = [];
+    if (amountDiff !== 0) {
+      ledgerOps.push({
+        description: `Payment amount ${amountDiff > 0 ? 'increase' : 'decrease'}`,
+        entry: {
+          vendor_id: params.vendorId,
+          transaction_date: params.paymentDate,
+          transaction_type: 'PAYMENT_ADJUSTMENT',
+          reference_type: 'purchase',
+          reference_id: params.paymentId,
+          reference_no: `PAY-${params.paymentId}`,
+          payment_mode: params.paymentMode,
+          payment_status: 1,
+          payment_date: params.paymentDate,
+          debit: amountDiff < 0 ? Math.abs(amountDiff) : 0,
+          credit: amountDiff > 0 ? amountDiff : 0,
+          notes: `Payment #${params.paymentId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.paymentType === 'MIXED' ? ' (Mixed: partial allocation + advance)' : params.paymentType === 'DIRECT' ? ' (Direct advance)' : ' (Bill specific)'}`,
+          fy: params.fy
+        }
+      });
+    }
+    
+    return {
+      purchasesToUpdate,
+      amountDiff,
+      allocDiff,
+      ledgerOps
+    };
+  }
+  
+  /**
+   * Handle vendor refund edit transaction
+   * Returns all operations to perform when editing a vendor refund
+   * NOTE: Currently not fully implemented - vendor refunds don't need complex ledger adjustments
+   */
+  async handleVendorRefundEdit(params: {
+    refundId: number;
+    vendorId: number;
+    oldAmount: number;
+    newAmount: number;
+    oldAllocations: Array<{ return_id: number; allocated_amount: number }>;
+    newAllocations: Array<{ return_id: number; allocated_amount: number }>;
+    refundMode: number;
+    refundDate: number;
+    refundType: string;
+    fy: number;
+  }): Promise<{
+    returnsToUpdate: number[];
+    amountDiff: number;
+    allocDiff: number;
+    ledgerOps: LedgerOperation[];
+  }> {
+    const amountDiff = params.newAmount - params.oldAmount;
+    
+    // Get all affected returns
+    const oldReturnIds = params.oldAllocations.map(a => a.return_id);
+    const newReturnIds = params.newAllocations.map(a => a.return_id);
+    const allIds = [...oldReturnIds, ...newReturnIds];
+    const returnsToUpdate = allIds.filter((id, index) => allIds.indexOf(id) === index);
+    
+    // Calculate allocation difference for balance update
+    const oldTotalAllocated = params.oldAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+    const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+    const allocDiff = newTotalAllocated - oldTotalAllocated;
+    
+    // TODO: Add ledger operation when REFUND_ADJUSTMENT type is added to schema
+    const ledgerOps: LedgerOperation[] = [];
+    
+    return {
+      returnsToUpdate,
+      amountDiff,
+      allocDiff,
+      ledgerOps
     };
   }
   

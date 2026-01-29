@@ -415,6 +415,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         payment_mode: true,
         debit_note_no: true,
         vendor_id: true,
+        return_date: true,  // ✅ Add for date change detection
         fy: true,
         total_amount: true,
         total_tax: true,
@@ -424,14 +425,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     if (!existingReturn) {
       return res.status(404).json({ message: 'Return not found' })
-    }
-
-    // Block editing if refunded
-    if (existingReturn.payment_status === 1) {
-      return res.status(400).json({
-        message: 'Cannot edit a refunded return. The refund has already been processed.',
-        error_code: 'REFUNDED_RETURN_EDIT_BLOCKED'
-      })
     }
 
     // Check if Type A (has refund allocations) or Type B (marked as refunded during creation)
@@ -579,61 +572,85 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         })
       ])
 
-      // Recalculate return_status for affected purchases
-      const returnWithPurchase = await tx.purchase_returns.findUnique({
-        where: { id: returnId },
-        select: { purchase_id: true }
-      })
-
-      if (returnWithPurchase?.purchase_id) {
-        const purchaseRecord = await tx.purchase.findUnique({
-          where: { id: returnWithPurchase.purchase_id },
-          select: { invoice_no: true }
+        // Recalculate return_status for affected purchases
+        const returnWithPurchase = await tx.purchase_returns.findUnique({
+          where: { id: returnId },
+          select: { purchase_id: true }
         })
 
-        if (purchaseRecord) {
-          const allPurchaseItems = await tx.purchaseitems.findMany({
-            where: { invoice_no: purchaseRecord.invoice_no },
-            select: { id: true, qty: true }
+        if (returnWithPurchase?.purchase_id) {
+          const purchaseRecord = await tx.purchase.findUnique({
+            where: { id: returnWithPurchase.purchase_id },
+            select: { invoice_no: true }
           })
 
-          const allReturns = await tx.purchase_return_items.findMany({
-            where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
-            select: { purchase_item_id: true, return_qty: true }
-          })
+          if (purchaseRecord) {
+            const allPurchaseItems = await tx.purchaseitems.findMany({
+              where: { invoice_no: purchaseRecord.invoice_no },
+              select: { id: true, qty: true }
+            })
 
-          const returnMap = new Map()
-          allReturns.forEach(r => {
-            const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
-            existing.qty += r.return_qty
-            returnMap.set(r.purchase_item_id, existing)
-          })
+            const allReturns = await tx.purchase_return_items.findMany({
+              where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
+              select: { purchase_item_id: true, return_qty: true }
+            })
 
-          let fullyReturnedCount = 0
-          let hasAnyReturns = false
-          for (const item of allPurchaseItems) {
-            const returnData = returnMap.get(item.id)
-            if (returnData && returnData.qty > 0) {
-              hasAnyReturns = true
-              if (returnData.qty >= (item.qty || 0)) {
-                fullyReturnedCount++
+            const returnMap = new Map()
+            allReturns.forEach(r => {
+              const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
+              existing.qty += r.return_qty
+              returnMap.set(r.purchase_item_id, existing)
+            })
+
+            let fullyReturnedCount = 0
+            let hasAnyReturns = false
+            for (const item of allPurchaseItems) {
+              const returnData = returnMap.get(item.id)
+              if (returnData && returnData.qty > 0) {
+                hasAnyReturns = true
+                if (returnData.qty >= (item.qty || 0)) {
+                  fullyReturnedCount++
+                }
               }
             }
+
+            const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
+
+            await tx.purchase.update({
+              where: { id: returnWithPurchase.purchase_id },
+              data: { return_status: returnStatus }
+            })
           }
-
-          const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
-
-          await tx.purchase.update({
-            where: { id: returnWithPurchase.purchase_id },
-            data: { return_status: returnStatus }
-          })
         }
-      }
 
       // ✅ USE TRANSACTION HANDLER FOR ALL LEDGER/ALLOCATION/BALANCE OPERATIONS
+      // ✅ REFACTORED: Handler now handles DEBIT_NOTE checks and updates internally
       const oldPaymentStatus = existingReturn.payment_status
       const newPaymentStatus = finalPaymentStatus
       const oldTotal = (existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)
+
+      // ✅ Calculate final return date (like purchase PUT)
+      const finalReturnDate = return_date
+        ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000)
+        : existingReturn.return_date
+
+      const dateChanged = return_date && finalReturnDate !== existingReturn.return_date
+
+      // ✅ DIRECTLY UPDATE DEBIT_NOTE when date changes (like purchase)
+      if (dateChanged) {
+        await tx.vendor_ledger.updateMany({
+          where: {
+            vendor_id: existingReturn.vendor_id,
+            reference_type: 'purchase_return',
+            reference_id: returnId,
+            transaction_type: 'DEBIT_NOTE'
+          },
+          data: {
+            transaction_date: finalReturnDate
+          }
+        })
+      }
+
       const totalAllocated = existingAllocations.reduce(
         (sum, alloc) => sum + Number(alloc.allocated_amount),
         0
@@ -650,26 +667,30 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       });
 
-      // Get all operations from handler
-      const handlerResult = await transactionHandler.handleReturnEdit({
-        oldStatus: oldPaymentStatus,
-        newStatus: newPaymentStatus,
-        oldTotal: oldTotal,
-        newTotal: newTotal,
-        vendorId: existingReturn.vendor_id,
-        returnId: returnId,
-        debitNoteNo: existingReturn.debit_note_no || '',
-        paymentMode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : existingReturn.payment_mode,
-        paymentDate: payment_date ? parseInt(payment_date.toString()) : Math.floor(Date.now() / 1000),
-        fy: existingReturn.fy,
-        totalAllocated: totalAllocated,
-        currentBalance: vendor ? {
-          total_paid: Number(vendor.total_paid),
-          total_allocated: Number(vendor.total_allocated),
-          total_refunded: Number(vendor.total_refunded),
-          total_refund_allocated: Number(vendor.total_refund_allocated)
-        } : undefined
-      })
+        // ✅ Get all operations from handler (now handles DEBIT_NOTE logic internally)
+        const handlerResult = await transactionHandler.handleReturnEdit({
+          oldStatus: oldPaymentStatus,
+          newStatus: newPaymentStatus,
+          oldTotal: oldTotal,
+          newTotal: newTotal,
+          vendorId: existingReturn.vendor_id,
+          returnId: returnId,
+          debitNoteNo: existingReturn.debit_note_no || '',
+          paymentMode: payment_mode !== undefined ? parseInt(payment_mode.toString()) : existingReturn.payment_mode,
+          paymentDate: payment_date ? parseInt(payment_date.toString()) : Math.floor(Date.now() / 1000),
+          returnDate: finalReturnDate,  // ✅ Pass return_date (not payment_date) for DEBIT_NOTE
+          fy: existingReturn.fy,
+          totalAllocated: totalAllocated,
+          totalAmount: totalAmount,  // ✅ Pass for DEBIT_NOTE updates
+          totalTax: totalTax,        // ✅ Pass for DEBIT_NOTE updates
+          tx: tx,                    // ✅ Pass transaction context
+          currentBalance: vendor ? {
+            total_paid: Number(vendor.total_paid),
+            total_allocated: Number(vendor.total_allocated),
+            total_refunded: Number(vendor.total_refunded),
+            total_refund_allocated: Number(vendor.total_refund_allocated)
+          } : undefined
+        })
 
       // Execute all operations (ledger, allocations, balance) in transaction
       await transactionHandler.executeInTransaction(tx, handlerResult)

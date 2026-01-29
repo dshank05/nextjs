@@ -18,10 +18,12 @@ export interface ChangeSet {
   debitNoteNo?: string;
   paymentMode?: number;
   paymentDate?: number;
+  returnDate?: number;  // ✅ NEW: Return date for DEBIT_NOTE entries
   fy: number;
   totalAllocated?: number;
   isTypeA?: boolean; // Has existing allocations
   amountChanged: boolean;
+  hasExistingDebitNote?: boolean; // ✅ NEW: Indicates if DEBIT_NOTE already exists for this return
   currentBalance?: {
     total_paid: number;
     total_allocated: number;
@@ -305,20 +307,47 @@ export class LedgerHandler {
   
   /**
    * Get ledger operations for return status changes
-   * Handles all 9 cases for return edit
+   * ✅ FIXED: Returns only use DEBIT_NOTE (not PURCHASE_ADJUSTMENT)
+   * Handles: CREATE DEBIT_NOTE when reaching status=1, REFUND_REVERSAL when leaving status=1
+   * Note: Amount changes handled via ledgerService.updateDebitNoteEntry() in transaction handler
    */
   getReturnLedgerOps(changes: ChangeSet): LedgerOperation[] {
     const ops: LedgerOperation[] = [];
     const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
-    const timestamp = Math.floor(Date.now() / 1000);
+    const returnDate = changes.returnDate || Math.floor(Date.now() / 1000);  // ✅ Use return_date not payment_date
     
     switch (statusChange) {
-      case '1→0': // Refunded → Unpaid
-        // Reverse refund
+      case '0→1': // Incomplete → Complete
+      case '2→1': // Partial → Complete
+        // ✅ CREATE DEBIT_NOTE if it doesn't exist (first time reaching status=1)
+        if (!changes.hasExistingDebitNote) {
+          ops.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: returnDate,  // ✅ Use return_date for DEBIT_NOTE
+              transaction_type: 'DEBIT_NOTE',
+              reference_type: 'purchase_return',
+              reference_id: changes.returnId!,
+              reference_no: changes.debitNoteNo!,
+              debit: 0,
+              credit: changes.newTotal,
+              notes: `Debit note ${changes.debitNoteNo} - return marked as complete`,
+              fy: changes.fy
+            },
+            description: 'Create DEBIT_NOTE entry (first time complete)'
+          });
+        }
+        // ✅ Amount changes handled via updateDebitNoteEntry() in API (not here)
+        break;
+        
+      case '1→0': // Complete → Incomplete
+        // ❌ REFUND_REVERSAL: When moving away from complete status
+        // Note: We don't actually delete DEBIT_NOTE, just mark status change
+        // The DEBIT_NOTE amount adjustment is handled via updateDebitNoteEntry()
         ops.push({
           entry: {
             vendor_id: changes.vendorId,
-            transaction_date: timestamp,
+            transaction_date: returnDate,  // ✅ Use return_date
             transaction_type: 'REFUND_REVERSAL',
             reference_type: 'purchase_return',
             reference_id: changes.returnId!,
@@ -327,182 +356,43 @@ export class LedgerHandler {
             credit: changes.oldTotal,
             payment_mode: changes.paymentMode,
             payment_status: 0,
-            notes: `Refund reversed for ${changes.debitNoteNo} - unmarked as unpaid`,
+            notes: `Return ${changes.debitNoteNo} unmarked from complete status`,
             fy: changes.fy
           },
-          description: 'Refund reversal'
+          description: 'Refund reversal (unmarking complete)'
         });
+        break;
         
-        // If amount changed, adjust return
-        if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
+      case '2→0': // Partial → Incomplete
+        // ❌ REFUND_REVERSAL: Only if DEBIT_NOTE exists
+        if (changes.hasExistingDebitNote) {
           ops.push({
             entry: {
               vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+              transaction_date: returnDate,  // ✅ Use return_date
+              transaction_type: 'REFUND_REVERSAL',
               reference_type: 'purchase_return',
               reference_id: changes.returnId!,
               reference_no: changes.debitNoteNo!,
-              debit: difference < 0 ? Math.abs(difference) : 0,
-              credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
+              debit: 0,
+              credit: changes.totalAllocated || changes.oldTotal,
+              payment_mode: changes.paymentMode,
+              payment_status: 0,
+              notes: `All refunds reversed for ${changes.debitNoteNo} - unmarked as incomplete`,
               fy: changes.fy
             },
-            description: 'Return adjustment after unmarking'
+            description: 'Refund reversal (partial to incomplete)'
           });
         }
         break;
         
-      case '0→1': // Unpaid → Refunded
-        // If amount changed, adjust return first
-        if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
-              reference_type: 'purchase_return',
-              reference_id: changes.returnId!,
-              reference_no: changes.debitNoteNo!,
-              debit: difference < 0 ? Math.abs(difference) : 0,
-              credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as complete)`,
-              fy: changes.fy
-            },
-            description: 'Return adjustment before marking complete'
-          });
-        }
-        
-        // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry for returns
-        // Balance adjusts automatically from DEBIT_NOTE entry
-        // ops.push({
-        //   entry: {
-        //     vendor_id: changes.vendorId,
-        //     transaction_date: changes.paymentDate || timestamp,
-        //     transaction_type: 'REFUND_RECEIVED',
-        //     reference_type: 'purchase_return',
-        //     reference_id: changes.returnId!,
-        //     reference_no: changes.debitNoteNo!,
-        //     debit: changes.newTotal,
-        //     credit: 0,
-        //     payment_mode: changes.paymentMode,
-        //     payment_status: 1,
-        //     payment_date: changes.paymentDate || timestamp,
-        //     notes: `Refund received for ${changes.debitNoteNo}`,
-        //     fy: changes.fy
-        //   },
-        //   description: 'Refund received'
-        // });
-        break;
-        
-      case '2→1': // Partial → Complete
-        // If amount changed, adjust return first
-        if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
-              reference_type: 'purchase_return',
-              reference_id: changes.returnId!,
-              reference_no: changes.debitNoteNo!,
-              debit: difference < 0 ? Math.abs(difference) : 0,
-              credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as complete)`,
-              fy: changes.fy
-            },
-            description: 'Return adjustment before marking complete'
-          });
-        }
-        
-        // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry for returns
-        // Balance adjusts automatically from DEBIT_NOTE entry
-        // const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
-        // ops.push({
-        //   entry: {
-        //     vendor_id: changes.vendorId,
-        //     transaction_date: changes.paymentDate || timestamp,
-        //     transaction_type: 'REFUND_RECEIVED',
-        //     reference_type: 'purchase_return',
-        //     reference_id: changes.returnId!,
-        //     reference_no: changes.debitNoteNo!,
-        //     debit: remainingAmount,
-        //     credit: 0,
-        //     payment_mode: changes.paymentMode,
-        //     payment_status: 1,
-        //     payment_date: changes.paymentDate || timestamp,
-        //     notes: `Refund for remaining amount ₹${remainingAmount} for ${changes.debitNoteNo} (marked as fully complete)`,
-        //     fy: changes.fy
-        //   },
-        //   description: 'Refund for remaining amount'
-        // });
-        break;
-        
-      case '2→0': // Partial → Unpaid
-        // Reverse all refunds
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: timestamp,
-            transaction_type: 'REFUND_REVERSAL',
-            reference_type: 'purchase_return',
-            reference_id: changes.returnId!,
-            reference_no: changes.debitNoteNo!,
-            debit: 0,
-            credit: changes.totalAllocated || 0,
-            payment_mode: changes.paymentMode,
-            payment_status: 0,
-            notes: `All refunds (₹${changes.totalAllocated}) reversed for ${changes.debitNoteNo} - unmarked as unpaid`,
-            fy: changes.fy
-          },
-          description: 'Refund reversal for all allocations'
-        });
-        
-        // If amount changed, adjust return
-        if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
-              reference_type: 'purchase_return',
-              reference_id: changes.returnId!,
-              reference_no: changes.debitNoteNo!,
-              debit: difference < 0 ? Math.abs(difference) : 0,
-              credit: difference > 0 ? difference : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
-              fy: changes.fy
-            },
-            description: 'Return adjustment after unmarking'
-          });
-        }
-        break;
-        
-      case '0→0': // Unpaid → Unpaid (amount change)
-      case '1→1': // Refunded → Refunded (amount change)
+      case '0→0': // Incomplete → Incomplete (amount change)
+      case '1→1': // Complete → Complete (amount change)
       case '2→2': // Partial → Partial (amount change)
-        if (changes.amountChanged) {
-          const diff = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
-              reference_type: 'purchase_return',
-              reference_id: changes.returnId!,
-              reference_no: changes.debitNoteNo!,
-              debit: diff < 0 ? Math.abs(diff) : 0,
-              credit: diff > 0 ? diff : 0,
-              notes: `Return ${changes.debitNoteNo} amount ${diff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(diff)}`,
-              fy: changes.fy
-            },
-            description: 'Return adjustment'
-          });
-        }
+      case '1→2': // Complete → Partial (amount increase)
+      case '0→2': // Incomplete → Partial
+        // ✅ Amount changes handled via updateDebitNoteEntry() in API (not here)
+        // No ledger operations needed from handler
         break;
     }
     

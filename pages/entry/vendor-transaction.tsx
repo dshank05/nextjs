@@ -110,12 +110,13 @@ export default function VendorTransactionEntry() {
   const fetchOutstandingBills = async (vendorId: number) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/purchases?vendor=${vendorId}&status=0,2&limit=1000&sortOrder=asc`)
+      // ✅ FIX #2: Fetch ALL bills (paid and unpaid) for edit mode flexibility
+      const res = await fetch(`/api/purchases?vendor=${vendorId}&limit=1000&sortOrder=asc`)
       const data = await res.json()
       
       if (data.purchases) {
         const bills: OutstandingBill[] = data.purchases
-          .filter((p: any) => p.remaining_amount > 0)
+          .filter((p: any) => p.remaining_amount > 0) // Still filter for bills with outstanding amounts
           .map((p: any) => ({
             purchase_id: p.id,
             invoice_no: p.invoice_no,
@@ -229,28 +230,55 @@ export default function VendorTransactionEntry() {
         // Set FY
         setCurrentFY(transaction.fy)
         
-        // Wait for vendor to be set, then fetch outstanding items
-        // The useEffect will handle fetching bills/returns when vendor changes
-        
-        // After a brief delay, set allocations
-        setTimeout(() => {
-          if (isExpense && transaction.allocations) {
-            // Fetch all bills first, then set allocations
-            fetchOutstandingBills(transaction.vendor.id).then(() => {
-              setOutstandingBills(prev => prev.map(bill => {
-                const alloc = transaction.allocations.find((a: any) => a.purchase_id === bill.purchase_id)
-                return alloc ? { ...bill, allocated: alloc.allocated_amount } : bill
-              }))
+        // ✅ FIX: Load allocated bills/returns for edit mode
+        if (isExpense && transaction.allocations) {
+          // Build list of allocated bills with their data
+          const allocatedBills: OutstandingBill[] = transaction.allocations.map((alloc: any) => ({
+            purchase_id: alloc.purchase_id,
+            invoice_no: alloc.invoice_no,
+            invoice_date: alloc.invoice_date,
+            total_bill: alloc.purchase_total,
+            total_paid: alloc.allocated_amount, // This bill has this much paid
+            outstanding_amount: alloc.purchase_total - alloc.allocated_amount,
+            payment_status: alloc.payment_status,
+            allocated: alloc.allocated_amount
+          }))
+          
+          // Set the allocated bills immediately
+          setOutstandingBills(allocatedBills)
+          
+          // Then fetch other outstanding bills and merge
+          fetchOutstandingBills(transaction.vendor.id).then(() => {
+            setOutstandingBills(prev => {
+              // Keep allocated bills, add new outstanding bills not already in list
+              const allocatedIds = new Set(allocatedBills.map(b => b.purchase_id))
+              const newBills = prev.filter(b => !allocatedIds.has(b.purchase_id))
+              return [...allocatedBills, ...newBills]
             })
-          } else if (!isExpense && transaction.allocations) {
-            fetchOutstandingReturns(transaction.vendor.id).then(() => {
-              setOutstandingReturns(prev => prev.map(ret => {
-                const alloc = transaction.allocations.find((a: any) => a.return_id === ret.return_id)
-                return alloc ? { ...ret, allocated: alloc.allocated_amount } : ret
-              }))
+          })
+        } else if (!isExpense && transaction.allocations) {
+          // Build list of allocated returns with their data
+          const allocatedReturns: OutstandingReturn[] = transaction.allocations.map((alloc: any) => ({
+            return_id: alloc.return_id,
+            return_no: alloc.return_no || `PR-${alloc.return_id}`,
+            return_date: alloc.allocation_date,
+            total_return: alloc.return_total || 0,
+            total_refunded: alloc.allocated_amount,
+            outstanding_refund: 0,
+            payment_status: alloc.payment_status || 0,
+            allocated: alloc.allocated_amount
+          }))
+          
+          setOutstandingReturns(allocatedReturns)
+          
+          fetchOutstandingReturns(transaction.vendor.id).then(() => {
+            setOutstandingReturns(prev => {
+              const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
+              const newReturns = prev.filter(r => !allocatedIds.has(r.return_id))
+              return [...allocatedReturns, ...newReturns]
             })
-          }
-        }, 500)
+          })
+        }
         
         // Clean up sessionStorage after use
         SessionStorageService.remove(module, id)

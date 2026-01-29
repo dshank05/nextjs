@@ -81,7 +81,7 @@ export default function PurchaseReturnDetailPage() {
       // Transform API data to match our interface
       // Convert status number to text
       const statusText = returnInfo.payment_status === 1 ? 'Complete' : 'Incomplete'
-      
+
       const returnData: PurchaseReturn = {
         id: returnInfo.id,
         return_no: returnInfo.return_no,
@@ -156,7 +156,7 @@ export default function PurchaseReturnDetailPage() {
   // Enhanced Excel export using new layout system
   const handleExportPageAsExcel = async () => {
     if (!returnData) return;
-    
+
     try {
       const { exportToExcelWithLayout } = await import('../../../lib/export-utils-enhanced');
       const { preparePurchaseReturnDataForExport } = await import('../../../lib/export-layouts/purchase-return-view-layout');
@@ -181,7 +181,7 @@ export default function PurchaseReturnDetailPage() {
   // Enhanced PDF export using new layout system
   const handlePrintOrPDF = async (output: 'print' | 'pdf' = 'print') => {
     if (!returnData) return;
-    
+
     try {
       if (output === 'pdf') {
         // Use new enhanced PDF export
@@ -303,7 +303,7 @@ export default function PurchaseReturnDetailPage() {
                 {returnData.statusText}
               </span>
             </div>
-            {(fullApiData as any)?.refund_summary && (
+            {/* {(fullApiData as any)?.refund_summary && (
               <div
                 className="flex justify-between"
 
@@ -319,7 +319,7 @@ export default function PurchaseReturnDetailPage() {
 
                 </span>
               </div>
-            )}
+            )} */}
           </div>
 
           {/* Column 2: Vendor Info */}
@@ -390,7 +390,7 @@ export default function PurchaseReturnDetailPage() {
         {/* Actions Row - Separate from columns */}
         <div className="border-t border-slate-700 mt-6 pt-4 px-6">
           <div className="flex justify-end items-center gap-3">
-            <ExportMenu 
+            <ExportMenu
               data={[returnData]}
               columns={[]}
               config={{

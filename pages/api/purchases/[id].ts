@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { transactionHandler } from '../../../lib/transaction-handler'
+import { ledgerService } from '../../../lib/ledger-service'
 
 export default async function handler(
   req: NextApiRequest,
@@ -367,6 +368,24 @@ export default async function handler(
           packing_forwarding_total
         } = req.body
 
+        // Get existing purchase
+        const existingPurchase = await prisma.purchase.findUnique({
+          where: { id: purchaseId }
+        })
+
+        if (!existingPurchase) {
+          return res.status(404).json({ message: 'Purchase not found' })
+        }
+
+        // ===== BLOCK VENDOR CHANGES =====
+        // Vendor changes are not allowed as they would corrupt ledger entries and payment allocations
+        if (vendor_id !== undefined && vendor_id !== null && parseInt(vendor_id) !== existingPurchase.vendor_id) {
+          return res.status(400).json({
+            message: 'Vendor cannot be changed after purchase creation. Please delete and recreate the purchase if needed.',
+            error_code: 'VENDOR_CHANGE_NOT_ALLOWED'
+          })
+        }
+
         // Validation
         const validPaymentStatuses = [0, 1, 2]
         const validPaymentModes = [0, 1]
@@ -389,15 +408,6 @@ export default async function handler(
           return res.status(400).json({
             message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
           })
-        }
-
-        // Get existing purchase
-        const existingPurchase = await prisma.purchase.findUnique({
-          where: { id: purchaseId }
-        })
-
-        if (!existingPurchase) {
-          return res.status(404).json({ message: 'Purchase not found' })
         }
 
         // Check if Type A (has payment allocations) or Type B (marked as paid during creation)
@@ -583,7 +593,7 @@ export default async function handler(
               bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
               staff_id: staff_id ? parseInt(staff_id.toString()) : null,
               invoice_date: finalInvoiceDate,  // ✅ Use already-calculated finalInvoiceDate
-              vendor_id: vendor_id ? parseInt(vendor_id.toString()) : existingPurchase.vendor_id,
+              // vendor_id is NOT updated - changes are blocked above
               notes: notes || null,
               descriptions: descriptions || null,
               payment_status: finalPaymentStatus,
@@ -837,12 +847,14 @@ export default async function handler(
           return res.status(400).json({ message: 'Invalid purchase ID' })
         }
 
-        // ✅ RESTRICTION: Check payment status before deletion
+        // ✅ GET PURCHASE INFO BEFORE DELETION
         const purchase = await prisma.purchase.findUnique({
           where: { id: purchaseId },
           select: { 
             invoice_no: true,
-            payment_status: true
+            payment_status: true,
+            vendor_id: true,
+            return_status: true
           }
         })
 
@@ -850,29 +862,146 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
-        // Block deletion if paid
-        if (purchase.payment_status === 1) {
+        // ✅ Block deletion if has returns
+        if (purchase.return_status === 1 || purchase.return_status === 2) {
           return res.status(400).json({
-            message: 'Cannot delete paid purchase. Please unmark as paid first.',
-            error_code: 'PURCHASE_PAID'
+            message: 'Cannot delete purchase with returns. Please delete the returns first.',
+            error_code: 'HAS_RETURNS'
           })
         }
 
-        // Delete associated items
-        await prisma.purchaseitems.deleteMany({
-          where: { invoice_no: purchase.invoice_no }
+        // ✅ MOVE ALL OPERATIONS INTO TRANSACTION
+        await prisma.$transaction(async (tx) => {
+          // Get purchase items to restore stock before deleting
+          const purchaseItems = await tx.purchaseitems.findMany({
+            where: { invoice_no: purchase.invoice_no },
+            select: { id: true, product_id: true, qty: true }
+          })
+
+          // ✅ PARALLEL OPTIMIZATION: Restore stock for all items in parallel
+          const stockRestorePromises = purchaseItems
+            .map(item => {
+              if (item.product_id && item.qty) {
+                return tx.product.update({
+                  where: { id: item.product_id },
+                  data: {
+                    stock: { decrement: item.qty } // Remove stock that was added
+                  }
+                })
+              }
+              return Promise.resolve()
+            })
+            .filter(p => p !== Promise.resolve())
+
+          // Execute stock restoration and item deletions in parallel
+          await Promise.all([
+            ...stockRestorePromises,
+            tx.purchaseitems.deleteMany({
+              where: { invoice_no: purchase.invoice_no }
+            })
+          ])
+
+          // Delete bill_to record if exists
+          await tx.bill_to.deleteMany({
+            where: { invoice_no: purchase.invoice_no }
+          })
+
+          // ✅ PAYMENT/LEDGER CLEANUP (if purchase was paid/partially paid)
+          if (purchase.payment_status === 1 || purchase.payment_status === 2) {
+            const allocations = await tx.payment_allocations.findMany({
+              where: { purchase_id: purchaseId },
+              select: { payment_id: true, allocated_amount: true }
+            })
+            
+            // Calculate total paid for balance reversal
+            const totalPaid = allocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+            
+            // Delete payment allocations
+            await tx.payment_allocations.deleteMany({
+              where: { purchase_id: purchaseId }
+            })
+            
+            // Delete vendor_payments if no other allocations exist
+            for (const alloc of allocations) {
+              const remainingAllocs = await tx.payment_allocations.count({
+                where: { payment_id: alloc.payment_id }
+              })
+              
+              if (remainingAllocs === 0) {
+                await tx.vendor_payments.delete({
+                  where: { id: alloc.payment_id }
+                })
+              }
+            }
+
+            // ✅ REVERSE VENDOR BALANCE
+            if (totalPaid > 0 && purchase.vendor_id !== 0) {
+              const vendor = await tx.vendor_details.findUnique({
+                where: { id: purchase.vendor_id },
+                select: {
+                  total_paid: true,
+                  total_allocated: true
+                }
+              })
+
+              if (vendor) {
+                await tx.vendor_details.update({
+                  where: { id: purchase.vendor_id },
+                  data: {
+                    total_paid: Number(vendor.total_paid) - totalPaid,
+                    total_allocated: Number(vendor.total_allocated) - totalPaid
+                  }
+                })
+              }
+            }
+          }
+
+          // ✅ CREATE REVERSAL ENTRIES INSTEAD OF DELETING (preserves audit trail)
+          const ledgerEntries = await tx.vendor_ledger.findMany({
+            where: {
+              reference_type: 'purchase',
+              reference_id: purchaseId
+            }
+          })
+
+          // Create reversal entry for each ledger entry using ledgerService
+          for (const entry of ledgerEntries) {
+            await ledgerService.createEntry({
+              vendor_id: entry.vendor_id,
+              transaction_date: Math.floor(Date.now() / 1000),
+              transaction_type: `${entry.transaction_type}_REVERSAL` as any,
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              reference_no: entry.reference_no || '',
+              debit: entry.credit,  // ✅ Swap debit/credit to reverse
+              credit: entry.debit,   // ✅ Swap debit/credit to reverse
+              notes: `Reversal: Purchase ${entry.reference_no} deleted`,
+              fy: entry.fy
+            }, tx)
+          }
+
+          // Delete purchase record
+          await tx.purchase.delete({
+            where: { id: purchaseId }
+          })
+        }, {
+          timeout: 45000 // 45 seconds timeout for delete operations
         })
 
-        // Then delete purchase
-        await prisma.purchase.delete({
-          where: { id: purchaseId }
+        res.status(200).json({
+          success: true,
+          message: 'Purchase deleted successfully'
         })
-
-        res.status(204).end()
 
       } catch (error) {
         console.error('Delete purchase error:', error)
-        res.status(500).json({ message: 'Failed to delete purchase', error: error instanceof Error ? error.message : 'Unknown error' })
+        res.status(500).json({ 
+          message: 'Failed to delete purchase', 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        })
       }
       break
 

@@ -154,6 +154,104 @@ export async function validatePaymentAllocation(
 }
 
 /**
+ * Calculate purchase payment status (0/1/2) for vendor payments
+ * 0 = Unpaid, 1 = Fully Paid, 2 = Partially Paid
+ */
+export async function calculatePurchasePaymentStatus(
+  purchaseId: number,
+  tx?: any
+): Promise<number> {
+  const db = tx || prisma;
+  
+  // Get purchase total
+  const purchase = await db.purchase.findUnique({
+    where: { id: purchaseId },
+    select: { total: true }
+  });
+
+  if (!purchase) return 0;
+
+  // Get total allocated payments
+  const allocations = await db.payment_allocations.aggregate({
+    where: { purchase_id: purchaseId },
+    _sum: { allocated_amount: true }
+  });
+
+  const totalPaid = Number(allocations._sum.allocated_amount || 0);
+  const totalAmount = Number(purchase.total);
+
+  if (totalPaid === 0) return 0;        // Unpaid
+  if (totalPaid >= totalAmount - 0.01) return 1; // Fully Paid (with tolerance)
+  return 2;                             // Partially Paid
+}
+
+/**
+ * Calculate purchase return refund status (0/1/2) for vendor refunds
+ * 0 = Unpaid, 1 = Fully Refunded, 2 = Partially Refunded
+ */
+export async function calculatePurchaseReturnRefundStatus(
+  returnId: number,
+  tx?: any
+): Promise<number> {
+  const db = tx || prisma;
+  
+  // Get return refund amount
+  const returnRecord = await db.purchase_returns.findUnique({
+    where: { id: returnId },
+    select: { 
+      refund_amount: true,
+      total_amount: true,
+      total_tax: true
+    }
+  });
+
+  if (!returnRecord) return 0;
+
+  // Get total allocated refunds
+  const allocations = await db.refund_allocations.aggregate({
+    where: { return_id: returnId },
+    _sum: { allocated_amount: true }
+  });
+
+  const totalRefunded = Number(allocations._sum.allocated_amount || 0);
+  const totalRefund = returnRecord.refund_amount || (returnRecord.total_amount + returnRecord.total_tax);
+
+  if (totalRefunded === 0) return 0;        // Unpaid
+  if (totalRefunded >= totalRefund - 0.01) return 1; // Fully Refunded (with tolerance)
+  return 2;                                 // Partially Refunded
+}
+
+/**
+ * Recalculate and update purchase payment_status
+ */
+export async function recalculatePurchaseStatus(
+  purchaseId: number,
+  tx: any
+): Promise<void> {
+  const newStatus = await calculatePurchasePaymentStatus(purchaseId, tx);
+  
+  await tx.purchase.update({
+    where: { id: purchaseId },
+    data: { payment_status: newStatus }
+  });
+}
+
+/**
+ * Recalculate and update purchase return payment_status
+ */
+export async function recalculatePurchaseReturnStatus(
+  returnId: number,
+  tx: any
+): Promise<void> {
+  const newStatus = await calculatePurchaseReturnRefundStatus(returnId, tx);
+  
+  await tx.purchase_returns.update({
+    where: { id: returnId },
+    data: { payment_status: newStatus }
+  });
+}
+
+/**
  * Validate refund allocation (supports both customer and vendor returns)
  */
 export async function validateRefundAllocation(
