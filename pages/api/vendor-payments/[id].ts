@@ -21,6 +21,8 @@ export default async function handler(
     return handleGetPayment(req, res);
   } else if (req.method === 'PUT') {
     return handleUpdatePayment(req, res);
+  } else if (req.method === 'DELETE') {
+    return handleDeletePayment(req, res);
   } else {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -276,6 +278,66 @@ async function handleUpdatePayment(
     console.error('Error updating payment:', error);
     return res.status(500).json({
       error: 'Failed to update payment',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}
+
+/**
+ * DELETE /api/vendor-payments/[id]
+ * Delete a vendor payment and reverse all operations (POST reversal)
+ * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ */
+async function handleDeletePayment(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  try {
+    const { id } = req.query;
+
+    if (!id) {
+      return res.status(400).json({ error: 'Payment ID is required' });
+    }
+
+    const paymentId = parseInt(id as string);
+
+    // Get payment info before deletion
+    const payment = await prisma.vendor_payments.findUnique({
+      where: { id: paymentId },
+      select: {
+        vendor_id: true,
+        payment_amount: true,
+        payment_type: true
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // Get delete operations from handler
+    const deleteOps = await require('../../../lib/transaction-handler').transactionHandler.handlePaymentDelete({
+      paymentId,
+      vendorId: payment.vendor_id,
+      paymentAmount: Number(payment.payment_amount),
+      paymentType: payment.payment_type || 'BILL_SPECIFIC'
+    });
+
+    // Execute in transaction
+    await prisma.$transaction(async (tx) => {
+      await require('../../../lib/transaction-handler').transactionHandler.executeDeleteInTransaction(tx, deleteOps);
+    }, {
+      timeout: 45000
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting payment:', error);
+    return res.status(500).json({
+      error: 'Failed to delete payment',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

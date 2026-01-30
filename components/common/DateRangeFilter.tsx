@@ -40,18 +40,22 @@ export const DateRangeFilter: React.FC<DateRangeFilterProps> = ({
   // Update dates when props change - ensure local timezone
   useEffect(() => {
     if (startDate) {
-      const [year, month, day] = startDate.split('-').map(Number);
+      // Strip time component if present (e.g., "2026-01-01T12:00:00" → "2026-01-01")
+      const dateOnly = startDate.split('T')[0];
+      const [year, month, day] = dateOnly.split('-').map(Number);
       setStartDateState(new Date(year, month - 1, day)); // month is 0-based
-      setStartDateInput(startDate);
+      setStartDateInput(dateOnly);
     } else {
       setStartDateState(null);
       setStartDateInput('');
     }
 
     if (endDate) {
-      const [year, month, day] = endDate.split('-').map(Number);
+      // Strip time component if present (e.g., "2026-01-31T12:00:00" → "2026-01-31")
+      const dateOnly = endDate.split('T')[0];
+      const [year, month, day] = dateOnly.split('-').map(Number);
       setEndDateState(new Date(year, month - 1, day)); // month is 0-based
-      setEndDateInput(endDate);
+      setEndDateInput(dateOnly);
     } else {
       setEndDateState(null);
       setEndDateInput('');

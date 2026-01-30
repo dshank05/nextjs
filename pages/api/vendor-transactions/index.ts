@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { PrismaClient } from '@prisma/client';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
+import { parseDateRange } from '../../../lib/date-utils';
 
 const prisma = new PrismaClient();
 
@@ -79,14 +80,15 @@ async function handleListTransactions(
     if (type === 'all' || type === 'expense') {
       const expenseWhere = { ...baseWhere };
       
-      if (dateFrom || dateTo) {
-        expenseWhere.payment_date = {};
-        if (dateFrom) {
-          expenseWhere.payment_date.gte = parseInt(dateFrom as string);
-        }
-        if (dateTo) {
-          expenseWhere.payment_date.lte = parseInt(dateTo as string);
-        }
+      if (dateFrom && dateTo) {
+        const { startTimestamp, endTimestamp } = parseDateRange(
+          dateFrom as string,
+          dateTo as string
+        );
+        expenseWhere.payment_date = {
+          gte: startTimestamp,
+          lte: endTimestamp
+        };
       }
 
       if (payment_type) {
@@ -136,14 +138,15 @@ async function handleListTransactions(
     if (type === 'all' || type === 'income') {
       const incomeWhere = { ...baseWhere };
       
-      if (dateFrom || dateTo) {
-        incomeWhere.refund_date = {};
-        if (dateFrom) {
-          incomeWhere.refund_date.gte = parseInt(dateFrom as string);
-        }
-        if (dateTo) {
-          incomeWhere.refund_date.lte = parseInt(dateTo as string);
-        }
+      if (dateFrom && dateTo) {
+        const { startTimestamp, endTimestamp } = parseDateRange(
+          dateFrom as string,
+          dateTo as string
+        );
+        incomeWhere.refund_date = {
+          gte: startTimestamp,
+          lte: endTimestamp
+        };
       }
 
       if (payment_type) {

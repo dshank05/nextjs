@@ -8,6 +8,7 @@ import {
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
+import { parseDateRange } from '../../../lib/date-utils';
 
 const prisma = new PrismaClient();
 
@@ -58,9 +59,12 @@ async function handleCreatePayment(
       });
     }
 
+    // Convert vendor_id to integer at the start
+    const vendorId = parseInt(vendor_id);
+
     // Validate allocations
     const validation = await validatePaymentAllocation(
-      vendor_id,
+      vendorId,
       payment_amount,
       allocations,
       payment_type
@@ -95,7 +99,7 @@ async function handleCreatePayment(
       // 1. Create payment record
       const payment = await tx.vendor_payments.create({
         data: {
-          vendor_id,
+          vendor_id: parseInt(vendor_id),
           payment_date,
           payment_amount,
           payment_mode,
@@ -156,7 +160,7 @@ async function handleCreatePayment(
 
         // Create ledger entry for this allocation (INSIDE TRANSACTION)
         await ledgerService.createEntry({
-          vendor_id,
+          vendor_id: vendorId,
           transaction_date: payment_date,
           transaction_type: 'PAYMENT',
           reference_type: 'purchase',
@@ -172,17 +176,52 @@ async function handleCreatePayment(
         }, tx);
       }
 
-      // ✅ MOVE BALANCE UPDATE INSIDE TRANSACTION
+      // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (payment_type === 'DIRECT') {
+        // Direct payment - create standalone ledger entry
+        await ledgerService.createEntry({
+          vendor_id: vendorId,
+          transaction_date: payment_date,
+          transaction_type: 'PAYMENT',
+          reference_type: 'payment',
+          reference_id: payment.id,
+          reference_no: payment.id.toString(),
+          payment_mode,
+          payment_date,
+          debit: 0,
+          credit: payment_amount,
+          notes: `Direct advance payment ₹${payment_amount}`,
+          fy: financialYear
+        }, tx);
+
         // Direct payment - no allocations
-        await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
           total_paid: payment_amount
         });
       } else {
         // Bill-specific or mixed payment - has allocations
         const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
+        const unallocatedAmount = payment_amount - totalAllocated;
+
+        // If MIXED payment with unallocated amount, create ledger entry
+        if (payment_type === 'MIXED' && unallocatedAmount > 0) {
+          await ledgerService.createEntry({
+            vendor_id: vendorId,
+            transaction_date: payment_date,
+            transaction_type: 'PAYMENT',
+            reference_type: 'payment',
+            reference_id: payment.id,
+            reference_no: payment.id.toString(),
+            payment_mode,
+            payment_date,
+            debit: 0,
+            credit: unallocatedAmount,
+            notes: `Advance payment ₹${unallocatedAmount} (unallocated from Payment #${payment.id})`,
+            fy: financialYear
+          }, tx);
+        }
         
-        await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
           total_paid: payment_amount,
           total_allocated: totalAllocated
         });
@@ -241,18 +280,15 @@ async function handleListPayments(
       where.vendor_id = parseInt(vendor_id as string);
     }
 
-    if (dateFrom || dateTo) {
-      where.payment_date = {};
-      if (dateFrom) {
-        const startDate = new Date(dateFrom as string);
-        startDate.setHours(0, 0, 0, 0);
-        where.payment_date.gte = Math.floor(startDate.getTime() / 1000);
-      }
-      if (dateTo) {
-        const endDate = new Date(dateTo as string);
-        endDate.setHours(23, 59, 59, 999);  // ✅ End of day
-        where.payment_date.lte = Math.floor(endDate.getTime() / 1000);
-      }
+    if (dateFrom && dateTo) {
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        dateFrom as string,
+        dateTo as string
+      );
+      where.payment_date = {
+        gte: startTimestamp,
+        lte: endTimestamp
+      };
     }
 
     if (payment_mode !== undefined) {

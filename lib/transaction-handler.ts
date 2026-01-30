@@ -21,6 +21,17 @@ export interface TransactionResult {
   allocationChanges: AllocationChange[];
 }
 
+export interface DeleteOperation {
+  type: 'STOCK_RESTORE' | 'DELETE_ALLOCATIONS' | 'DELETE_RECORD' | 'RECALCULATE_STATUS' | 'LEDGER_REVERSAL' | 'BALANCE_UPDATE';
+  data: any;
+  parallel?: boolean; // Can be executed in parallel with other operations
+}
+
+export interface DeleteResult {
+  operations: DeleteOperation[];
+  vendorId: number;
+}
+
 export class TransactionHandler {
   /**
    * Handle purchase edit transaction
@@ -129,6 +140,32 @@ export class TransactionHandler {
         new_total_amount: params.totalAmount,
         new_total_tax: params.totalTax,
         fy: params.fy
+      });
+    }
+
+    // ✅ DELETE EXISTING REFUND_REVERSAL ENTRIES to prevent duplicates
+    // When user edits Complete→Incomplete multiple times, we want only ONE reversal entry
+    // This ensures clean ledger and prevents accumulation of duplicate reversals
+    if (params.oldStatus === 1 && params.newStatus === 0) {
+      await params.tx.vendor_ledger.deleteMany({
+        where: {
+          vendor_id: params.vendorId,
+          reference_type: 'purchase_return',
+          reference_id: params.returnId,
+          transaction_type: 'REFUND_REVERSAL'
+        }
+      });
+    }
+
+    // ✅ Also handle Partial→Incomplete case (2→0)
+    if (params.oldStatus === 2 && params.newStatus === 0) {
+      await params.tx.vendor_ledger.deleteMany({
+        where: {
+          vendor_id: params.vendorId,
+          reference_type: 'purchase_return',
+          reference_id: params.returnId,
+          transaction_type: 'REFUND_REVERSAL'
+        }
       });
     }
 
@@ -537,6 +574,608 @@ export class TransactionHandler {
           }
         }
       }
+    }
+  }
+  
+  /**
+   * Handle purchase deletion
+   * Returns all operations needed to delete a purchase
+   */
+  async handlePurchaseDelete(params: {
+    purchaseId: number;
+    vendorId: number;
+    invoiceNo: number;
+    paymentStatus: number;
+    returnStatus: number;
+  }): Promise<DeleteResult> {
+    const operations: DeleteOperation[] = [];
+    
+    // Operation 1: Get and restore stock (parallel)
+    operations.push({
+      type: 'STOCK_RESTORE',
+      data: { invoiceNo: params.invoiceNo },
+      parallel: true
+    });
+    
+    // Operation 2: Delete allocations if paid
+    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+      operations.push({
+        type: 'DELETE_ALLOCATIONS',
+        data: { 
+          entityType: 'purchase',
+          entityId: params.purchaseId,
+          paymentStatus: params.paymentStatus
+        },
+        parallel: false
+      });
+    }
+    
+    // Operation 3: Delete items and bill_to
+    operations.push({
+      type: 'DELETE_RECORD',
+      data: {
+        type: 'purchase',
+        invoiceNo: params.invoiceNo,
+        purchaseId: params.purchaseId
+      },
+      parallel: false
+    });
+    
+    // Operation 4: Create ledger reversals (parallel)
+    operations.push({
+      type: 'LEDGER_REVERSAL',
+      data: {
+        entityType: 'purchase',
+        entityId: params.purchaseId,
+        vendorId: params.vendorId
+      },
+      parallel: true
+    });
+    
+    // Operation 5: Update balance if paid
+    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+      operations.push({
+        type: 'BALANCE_UPDATE',
+        data: {
+          vendorId: params.vendorId,
+          paymentStatus: params.paymentStatus
+        },
+        parallel: false
+      });
+    }
+    
+    return {
+      operations,
+      vendorId: params.vendorId
+    };
+  }
+  
+  /**
+   * Handle purchase return deletion
+   * Returns all operations needed to delete a return
+   */
+  async handleReturnDelete(params: {
+    returnId: number;
+    vendorId: number;
+    paymentStatus: number;
+  }): Promise<DeleteResult> {
+    const operations: DeleteOperation[] = [];
+    
+    // Operation 1: Get and restore stock (parallel)
+    operations.push({
+      type: 'STOCK_RESTORE',
+      data: { returnId: params.returnId },
+      parallel: true
+    });
+    
+    // Operation 2: Delete refund allocations if refunded
+    if (params.paymentStatus === 1) {
+      operations.push({
+        type: 'DELETE_ALLOCATIONS',
+        data: { 
+          entityType: 'return',
+          entityId: params.returnId,
+          paymentStatus: params.paymentStatus
+        },
+        parallel: false
+      });
+    }
+    
+    // Operation 3: Delete return items
+    operations.push({
+      type: 'DELETE_RECORD',
+      data: {
+        type: 'return',
+        returnId: params.returnId
+      },
+      parallel: false
+    });
+    
+    // Operation 4: Create ledger reversals (parallel)
+    operations.push({
+      type: 'LEDGER_REVERSAL',
+      data: {
+        entityType: 'purchase_return',
+        entityId: params.returnId,
+        vendorId: params.vendorId
+      },
+      parallel: true
+    });
+    
+    // Operation 5: Update balance if refunded
+    if (params.paymentStatus === 1) {
+      operations.push({
+        type: 'BALANCE_UPDATE',
+        data: {
+          vendorId: params.vendorId,
+          paymentStatus: params.paymentStatus
+        },
+        parallel: false
+      });
+    }
+    
+    return {
+      operations,
+      vendorId: params.vendorId
+    };
+  }
+  
+  /**
+   * Handle payment deletion
+   * Returns all operations needed to delete a payment
+   */
+  async handlePaymentDelete(params: {
+    paymentId: number;
+    vendorId: number;
+    paymentAmount: number;
+    paymentType: string;
+  }): Promise<DeleteResult> {
+    const operations: DeleteOperation[] = [];
+    
+    // Operation 1: Delete allocations and recalculate statuses
+    operations.push({
+      type: 'DELETE_ALLOCATIONS',
+      data: { 
+        entityType: 'payment',
+        entityId: params.paymentId
+      },
+      parallel: false
+    });
+    
+    // Operation 2: Recalculate purchase statuses (can be parallel)
+    operations.push({
+      type: 'RECALCULATE_STATUS',
+      data: {
+        entityType: 'payment',
+        entityId: params.paymentId
+      },
+      parallel: true
+    });
+    
+    // Operation 3: Delete payment record
+    operations.push({
+      type: 'DELETE_RECORD',
+      data: {
+        type: 'payment',
+        paymentId: params.paymentId
+      },
+      parallel: false
+    });
+    
+    // Operation 4: Create ledger reversals (parallel)
+    operations.push({
+      type: 'LEDGER_REVERSAL',
+      data: {
+        entityType: 'payment',
+        entityId: params.paymentId,
+        vendorId: params.vendorId
+      },
+      parallel: true
+    });
+    
+    // Operation 5: Update balance
+    operations.push({
+      type: 'BALANCE_UPDATE',
+      data: {
+        vendorId: params.vendorId,
+        paymentAmount: params.paymentAmount,
+        paymentType: params.paymentType
+      },
+      parallel: false
+    });
+    
+    return {
+      operations,
+      vendorId: params.vendorId
+    };
+  }
+  
+  /**
+   * Handle refund deletion
+   * Returns all operations needed to delete a refund
+   */
+  async handleRefundDelete(params: {
+    refundId: number;
+    vendorId: number;
+    refundAmount: number;
+    refundType: string;
+  }): Promise<DeleteResult> {
+    const operations: DeleteOperation[] = [];
+    
+    // Operation 1: Delete allocations and recalculate statuses
+    operations.push({
+      type: 'DELETE_ALLOCATIONS',
+      data: { 
+        entityType: 'refund',
+        entityId: params.refundId
+      },
+      parallel: false
+    });
+    
+    // Operation 2: Recalculate return statuses (can be parallel)
+    operations.push({
+      type: 'RECALCULATE_STATUS',
+      data: {
+        entityType: 'refund',
+        entityId: params.refundId
+      },
+      parallel: true
+    });
+    
+    // Operation 3: Delete refund record
+    operations.push({
+      type: 'DELETE_RECORD',
+      data: {
+        type: 'refund',
+        refundId: params.refundId
+      },
+      parallel: false
+    });
+    
+    // Operation 4: Create ledger reversals (parallel)
+    operations.push({
+      type: 'LEDGER_REVERSAL',
+      data: {
+        entityType: 'refund',
+        entityId: params.refundId,
+        vendorId: params.vendorId
+      },
+      parallel: true
+    });
+    
+    // Operation 5: Update balance
+    operations.push({
+      type: 'BALANCE_UPDATE',
+      data: {
+        vendorId: params.vendorId,
+        refundAmount: params.refundAmount,
+        refundType: params.refundType
+      },
+      parallel: false
+    });
+    
+    return {
+      operations,
+      vendorId: params.vendorId
+    };
+  }
+  
+  /**
+   * Execute DELETE operations within a transaction
+   * Optimized with parallel execution where safe
+   */
+  async executeDeleteInTransaction(
+    tx: any,
+    result: DeleteResult
+  ): Promise<void> {
+    for (const operation of result.operations) {
+      switch (operation.type) {
+        case 'STOCK_RESTORE':
+          await this.executeStockRestore(tx, operation.data);
+          break;
+          
+        case 'DELETE_ALLOCATIONS':
+          await this.executeDeleteAllocations(tx, operation.data);
+          break;
+          
+        case 'DELETE_RECORD':
+          await this.executeDeleteRecord(tx, operation.data);
+          break;
+          
+        case 'RECALCULATE_STATUS':
+          await this.executeRecalculateStatus(tx, operation.data);
+          break;
+          
+        case 'LEDGER_REVERSAL':
+          await this.executeLedgerReversal(tx, operation.data);
+          break;
+          
+        case 'BALANCE_UPDATE':
+          await this.executeBalanceUpdate(tx, operation.data);
+          break;
+      }
+    }
+  }
+  
+  // Helper methods for DELETE operations
+  
+  private async executeStockRestore(tx: any, data: any): Promise<void> {
+    if (data.invoiceNo !== undefined) {
+      // Purchase: restore stock for all items
+      const items = await tx.purchaseitems.findMany({
+        where: { invoice_no: data.invoiceNo },
+        select: { product_id: true, qty: true }
+      });
+      
+      // Parallel stock updates
+      await Promise.all(
+        items.map(item => 
+          item.product_id && item.qty ? 
+          tx.product.update({
+            where: { id: item.product_id },
+            data: { stock: { decrement: item.qty } }
+          }) : Promise.resolve()
+        )
+      );
+    } else if (data.returnId !== undefined) {
+      // Return: restore stock for all items
+      const returnItems = await tx.purchase_return_items.findMany({
+        where: { purchase_return_id: data.returnId },
+        select: { purchase_item_id: true, return_qty: true }
+      });
+      
+      const purchaseItemIds = returnItems.map(item => item.purchase_item_id);
+      const purchaseItems = await tx.purchaseitems.findMany({
+        where: { id: { in: purchaseItemIds } },
+        select: { id: true, product_id: true }
+      });
+      
+      const itemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]));
+      
+      // Parallel stock updates
+      await Promise.all(
+        returnItems.map(item => {
+          const productId = itemMap.get(item.purchase_item_id);
+          return productId ? 
+          tx.product.update({
+            where: { id: productId },
+            data: { stock: { increment: item.return_qty } }
+          }) : Promise.resolve();
+        })
+      );
+    }
+  }
+  
+  private async executeDeleteAllocations(tx: any, data: any): Promise<void> {
+    if (data.entityType === 'purchase') {
+      const allocations = await tx.payment_allocations.findMany({
+        where: { purchase_id: data.entityId },
+        select: { payment_id: true, allocated_amount: true }
+      });
+      
+      const totalPaid = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
+      
+      await tx.payment_allocations.deleteMany({
+        where: { purchase_id: data.entityId }
+      });
+      
+      // Delete orphaned payments
+      for (const alloc of allocations) {
+        const remaining = await tx.payment_allocations.count({
+          where: { payment_id: alloc.payment_id }
+        });
+        if (remaining === 0) {
+          await tx.vendor_payments.delete({ where: { id: alloc.payment_id } });
+        }
+      }
+      
+      // Store for balance update
+      data.totalPaid = totalPaid;
+      
+    } else if (data.entityType === 'return') {
+      const allocations = await tx.refund_allocations.findMany({
+        where: { return_id: data.entityId },
+        select: { refund_id: true, allocated_amount: true }
+      });
+      
+      const totalRefunded = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
+      
+      await tx.refund_allocations.deleteMany({
+        where: { return_id: data.entityId }
+      });
+      
+      // Delete orphaned refunds
+      for (const alloc of allocations) {
+        const remaining = await tx.refund_allocations.count({
+          where: { refund_id: alloc.refund_id }
+        });
+        if (remaining === 0) {
+          await tx.vendor_refunds.delete({ where: { id: alloc.refund_id } });
+        }
+      }
+      
+      // Store for balance update
+      data.totalRefunded = totalRefunded;
+      
+    } else if (data.entityType === 'payment') {
+      // ✅ Store allocated purchase IDs before deletion for ledger reversal
+      const allocations = await tx.payment_allocations.findMany({
+        where: { payment_id: data.entityId },
+        select: { purchase_id: true }
+      });
+      data.allocatedPurchaseIds = allocations.map(a => a.purchase_id);
+      
+      await tx.payment_allocations.deleteMany({
+        where: { payment_id: data.entityId }
+      });
+      
+    } else if (data.entityType === 'refund') {
+      // ✅ Store allocated return IDs before deletion for ledger reversal
+      const allocations = await tx.refund_allocations.findMany({
+        where: { refund_id: data.entityId },
+        select: { return_id: true }
+      });
+      data.allocatedReturnIds = allocations.map(a => a.return_id);
+      
+      await tx.refund_allocations.deleteMany({
+        where: { refund_id: data.entityId }
+      });
+    }
+  }
+  
+  private async executeDeleteRecord(tx: any, data: any): Promise<void> {
+    if (data.type === 'purchase') {
+      await tx.purchaseitems.deleteMany({ where: { invoice_no: data.invoiceNo } });
+      await tx.bill_to.deleteMany({ where: { invoice_no: data.invoiceNo } });
+      await tx.purchase.delete({ where: { id: data.purchaseId } });
+      
+    } else if (data.type === 'return') {
+      await tx.purchase_return_items.deleteMany({ where: { purchase_return_id: data.returnId } });
+      await tx.purchase_returns.delete({ where: { id: data.returnId } });
+      
+    } else if (data.type === 'payment') {
+      await tx.vendor_payments.delete({ where: { id: data.paymentId } });
+      
+    } else if (data.type === 'refund') {
+      await tx.vendor_refunds.delete({ where: { id: data.refundId } });
+    }
+  }
+  
+  private async executeRecalculateStatus(tx: any, data: any): Promise<void> {
+    if (data.entityType === 'payment') {
+      const allocations = await tx.payment_allocations.findMany({
+        where: { payment_id: data.entityId },
+        select: { purchase_id: true }
+      });
+      
+      // Recalculate in parallel
+      await Promise.all(
+        allocations.map(alloc => 
+          require('./payment-allocation-service').recalculatePurchaseStatus(alloc.purchase_id, tx)
+        )
+      );
+      
+    } else if (data.entityType === 'refund') {
+      const allocations = await tx.refund_allocations.findMany({
+        where: { refund_id: data.entityId },
+        select: { return_id: true }
+      });
+      
+      // Recalculate in parallel
+      await Promise.all(
+        allocations.map(alloc => 
+          require('./payment-allocation-service').recalculatePurchaseReturnStatus(alloc.return_id, tx)
+        )
+      );
+    }
+  }
+  
+  private async executeLedgerReversal(tx: any, data: any): Promise<void> {
+    let ledgerEntries = [];
+    
+    // ✅ Special handling for payment/refund deletion
+    if (data.entityType === 'payment') {
+      // Get DIRECT/unallocated payment entries
+      const directEntries = await tx.vendor_ledger.findMany({
+        where: {
+          reference_type: 'payment',
+          reference_id: data.entityId
+        }
+      });
+      
+      // Get allocated payment entries - filter by notes containing payment ID
+      const allocatedEntries = data.allocatedPurchaseIds?.length > 0 ? await tx.vendor_ledger.findMany({
+        where: {
+          transaction_type: 'PAYMENT',
+          reference_type: 'purchase',
+          reference_id: { in: data.allocatedPurchaseIds },
+          notes: { contains: `Payment #${data.entityId}` }
+        }
+      }) : [];
+      
+      ledgerEntries = [...directEntries, ...allocatedEntries];
+      
+    } else if (data.entityType === 'refund') {
+      // Get DIRECT/unallocated refund entries (no reference_type or undefined)
+      const directEntries = await tx.vendor_ledger.findMany({
+        where: {
+          transaction_type: 'REFUND_RECEIVED',
+          reference_type: null
+        }
+      });
+      
+      // Get allocated refund entries - filter by notes containing refund ID
+      const allocatedEntries = data.allocatedReturnIds?.length > 0 ? await tx.vendor_ledger.findMany({
+        where: {
+          transaction_type: 'REFUND_RECEIVED',
+          reference_type: 'purchase_return',
+          reference_id: { in: data.allocatedReturnIds },
+          notes: { contains: `Refund #${data.entityId}` }
+        }
+      }) : [];
+      
+      ledgerEntries = [...directEntries, ...allocatedEntries];
+      
+    } else {
+      // Standard handling for purchase/return
+      ledgerEntries = await tx.vendor_ledger.findMany({
+        where: {
+          reference_type: data.entityType,
+          reference_id: data.entityId
+        }
+      });
+    }
+    
+    // Create reversals in parallel
+    await Promise.all(
+      ledgerEntries.map(entry => 
+        ledgerService.createEntry({
+          vendor_id: entry.vendor_id,
+          transaction_date: Math.floor(Date.now() / 1000),
+          transaction_type: `${entry.transaction_type}_REVERSAL` as any,
+          reference_type: entry.reference_type,
+          reference_id: entry.reference_id,
+          reference_no: entry.reference_no || '',
+          payment_mode: entry.payment_mode,
+          debit: entry.credit,
+          credit: entry.debit,
+          notes: `Reversal: ${entry.transaction_type} deleted`,
+          fy: entry.fy
+        }, tx)
+      )
+    );
+  }
+  
+  private async executeBalanceUpdate(tx: any, data: any): Promise<void> {
+    if (data.paymentAmount !== undefined) {
+      // Payment deletion
+      const totalAllocated = data.paymentType === 'DIRECT' ? 0 : data.paymentAmount;
+      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
+        total_paid: -Number(data.paymentAmount),
+        total_allocated: -totalAllocated
+      });
+      
+    } else if (data.refundAmount !== undefined) {
+      // Refund deletion
+      const totalAllocated = data.refundType === 'DIRECT' ? 0 : data.refundAmount;
+      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
+        total_refunded: -Number(data.refundAmount),
+        total_refund_allocated: -totalAllocated
+      });
+      
+    } else if (data.totalPaid !== undefined) {
+      // Purchase deletion
+      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
+        total_paid: -data.totalPaid,
+        total_allocated: -data.totalPaid
+      });
+      
+    } else if (data.totalRefunded !== undefined) {
+      // Return deletion
+      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
+        total_refunded: -data.totalRefunded,
+        total_refund_allocated: -data.totalRefunded
+      });
     }
   }
 }

@@ -735,130 +735,31 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // ✅ GET RETURN INFO BEFORE DELETION
+    // Get return info before deletion
     const returnRecord = await prisma.purchase_returns.findUnique({
       where: { id: returnId },
       select: {
         vendor_id: true,
-        debit_note_no: true,
         payment_status: true
       }
-    });
+    })
 
     if (!returnRecord) {
       return res.status(404).json({ message: 'Return not found' })
     }
 
-    // ✅ MOVE ALL OPERATIONS INTO TRANSACTION
+    // Get delete operations from handler
+    const deleteOps = await transactionHandler.handleReturnDelete({
+      returnId,
+      vendorId: returnRecord.vendor_id,
+      paymentStatus: returnRecord.payment_status
+    })
+
+    // Execute in transaction
     await prisma.$transaction(async (tx) => {
-      // Get return items to restore stock before deleting
-      const returnItems = await tx.purchase_return_items.findMany({
-        where: { purchase_return_id: returnId },
-        select: { purchase_item_id: true, return_qty: true }
-      })
-
-      // Get purchase items to get product IDs
-      const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
-      const purchaseItems = await tx.purchaseitems.findMany({
-        where: { id: { in: purchaseItemIds } },
-        select: { id: true, product_id: true }
-      })
-      const purchaseItemMap = new Map(purchaseItems.map(pi => [pi.id, pi.product_id]))
-
-      // ✅ PARALLEL OPTIMIZATION: Restore stock for all items in parallel
-      const stockRestorePromises = returnItems
-        .map(returnItem => {
-          const productId = purchaseItemMap.get(returnItem.purchase_item_id)
-          if (productId) {
-            return tx.product.update({
-              where: { id: productId },
-              data: {
-                stock: { increment: returnItem.return_qty }
-              }
-            })
-          }
-          return Promise.resolve()
-        })
-        .filter(p => p !== Promise.resolve())
-
-      // Execute stock restoration and deletions in parallel
-      await Promise.all([
-        ...stockRestorePromises,
-        tx.purchase_return_items.deleteMany({
-          where: { purchase_return_id: returnId }
-        })
-      ])
-
-      // Delete return record
-      await tx.purchase_returns.delete({
-        where: { id: returnId }
-      })
-
-      // ✅ MOVE LEDGER/ALLOCATION CLEANUP INTO TRANSACTION
-      // Delete refund allocations if return was refunded
-      if (returnRecord.payment_status === 1) {
-        const allocations = await tx.refund_allocations.findMany({
-          where: { return_id: returnId },
-          select: { refund_id: true, allocated_amount: true }
-        });
-        
-        // Calculate total refunded for balance reversal
-        const totalRefunded = allocations.reduce(
-          (sum, alloc) => sum + Number(alloc.allocated_amount),
-          0
-        )
-        
-        await tx.refund_allocations.deleteMany({
-          where: { return_id: returnId }
-        });
-        
-        // Delete vendor_refunds if no other allocations exist
-        for (const alloc of allocations) {
-          const remainingAllocs = await tx.refund_allocations.count({
-            where: { refund_id: alloc.refund_id }
-          });
-          
-          if (remainingAllocs === 0) {
-            await tx.vendor_refunds.delete({
-              where: { id: alloc.refund_id }
-            });
-          }
-        }
-
-        // ✅ ADD BALANCE REVERSAL
-        if (totalRefunded > 0) {
-          await balanceHandler.incrementBalanceInTransaction(tx, returnRecord.vendor_id, {
-            total_refunded: -totalRefunded,
-            total_refund_allocated: -totalRefunded
-          });
-        }
-      }
-
-      // ✅ CREATE REVERSAL ENTRIES INSTEAD OF DELETING (preserves audit trail)
-      const ledgerEntries = await tx.vendor_ledger.findMany({
-        where: {
-          reference_type: 'purchase_return',
-          reference_id: returnId
-        }
-      });
-
-      // Create reversal entry for each ledger entry
-      for (const entry of ledgerEntries) {
-        await ledgerService.createEntry({
-          vendor_id: entry.vendor_id,
-          transaction_date: Math.floor(Date.now() / 1000),
-          transaction_type: `${entry.transaction_type}_REVERSAL` as any,
-          reference_type: 'purchase_return',
-          reference_id: returnId,
-          reference_no: entry.reference_no || '',
-          debit: entry.credit,  // ✅ Swap debit/credit to reverse
-          credit: entry.debit,   // ✅ Swap debit/credit to reverse
-          notes: `Reversal: Return ${entry.reference_no} deleted`,
-          fy: entry.fy
-        }, tx);
-      }
+      await transactionHandler.executeDeleteInTransaction(tx, deleteOps)
     }, {
-      timeout: 45000 // 45 seconds timeout for delete operations
+      timeout: 45000
     })
 
     res.status(200).json({

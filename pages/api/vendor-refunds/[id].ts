@@ -21,6 +21,8 @@ export default async function handler(
     return handleGetRefund(req, res);
   } else if (req.method === 'PUT') {
     return handleUpdateRefund(req, res);
+  } else if (req.method === 'DELETE') {
+    return handleDeleteRefund(req, res);
   } else {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -275,6 +277,66 @@ async function handleUpdateRefund(
     console.error('Error updating refund:', error);
     return res.status(500).json({
       error: 'Failed to update refund',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}
+
+/**
+ * DELETE /api/vendor-refunds/[id]
+ * Delete a vendor refund and reverse all operations (POST reversal)
+ * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ */
+async function handleDeleteRefund(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  try {
+    const { id } = req.query;
+
+    if (!id) {
+      return res.status(400).json({ error: 'Refund ID is required' });
+    }
+
+    const refundId = parseInt(id as string);
+
+    // Get refund info before deletion
+    const refund = await prisma.vendor_refunds.findUnique({
+      where: { id: refundId },
+      select: {
+        vendor_id: true,
+        refund_amount: true,
+        refund_type: true
+      }
+    });
+
+    if (!refund) {
+      return res.status(404).json({ error: 'Refund not found' });
+    }
+
+    // Get delete operations from handler
+    const deleteOps = await require('../../../lib/transaction-handler').transactionHandler.handleRefundDelete({
+      refundId,
+      vendorId: refund.vendor_id,
+      refundAmount: Number(refund.refund_amount),
+      refundType: refund.refund_type || 'RETURN_SPECIFIC'
+    });
+
+    // Execute in transaction
+    await prisma.$transaction(async (tx) => {
+      await require('../../../lib/transaction-handler').transactionHandler.executeDeleteInTransaction(tx, deleteOps);
+    }, {
+      timeout: 45000
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Refund deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting refund:', error);
+    return res.status(500).json({
+      error: 'Failed to delete refund',
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }

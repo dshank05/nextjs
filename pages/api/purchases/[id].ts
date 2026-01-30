@@ -179,7 +179,7 @@ export default async function handler(
         const returnStatus = isFullyReturned ? 'FULLY_RETURNED' :
                            hasReturns ? 'PARTIAL_RETURN' : 'NO_RETURNS'
 
-        // Get return transaction details with payment info
+        // Get return transaction details with payment info and bill-specific breakdown
         const uniqueReturnIds = new Set<number>()
         returnItems.forEach(item => {
           uniqueReturnIds.add(item.purchase_return.id)
@@ -191,6 +191,7 @@ export default async function handler(
             id: true,
             return_date: true,
             total_amount: true,
+            total_tax: true,
             refund_amount: true,
             payment_status: true,
             payment_mode: true,
@@ -199,17 +200,93 @@ export default async function handler(
           }
         })
 
-        const returnsWithDetails = returnTransactions.map(ret => ({
-          id: ret.id,
-          return_no: `PR-${ret.id.toString().padStart(3, '0')}`,
-          return_date: ret.return_date,
-          total_amount: ret.total_amount,
-          refund_amount: ret.refund_amount,
-          payment_status: ret.payment_status,
-          payment_mode: ret.payment_mode,
-          payment_date: ret.payment_date,
-          notes: ret.notes || '',
-          items_count: returnItems.filter(item => item.purchase_return.id === ret.id).length
+        // Calculate bill-specific amounts for each return
+        const returnsWithDetails = await Promise.all(returnTransactions.map(async (ret) => {
+          // Get items from THIS bill only
+          const thisBillItems = returnItems.filter(item => item.purchase_return.id === ret.id)
+          
+          // Calculate this bill's totals
+          const thisBillAmount = thisBillItems.reduce((sum, item) => {
+            const subtotal = item.unit_price * item.return_qty
+            return sum + subtotal
+          }, 0)
+          
+          const thisBillTax = thisBillItems.reduce((sum, item) => {
+            return sum + (item.tax_amount || 0)
+          }, 0)
+          
+          const thisBillTotal = thisBillAmount + thisBillTax
+          const thisBillItemsCount = thisBillItems.length
+          
+          // Count total bills in this return
+          const allReturnItems = await prisma.purchase_return_items.findMany({
+            where: { purchase_return_id: ret.id },
+            select: { purchase_item_id: true }
+          })
+          
+          const allPurchaseItemIds = allReturnItems.map(item => item.purchase_item_id)
+          const purchaseItemsData = await prisma.purchaseitems.findMany({
+            where: { id: { in: allPurchaseItemIds } },
+            select: { invoice_no: true }
+          })
+          
+          const uniqueBills = new Set(purchaseItemsData.map(item => item.invoice_no))
+          const totalBillsCount = uniqueBills.size
+          const isMultiBillReturn = totalBillsCount > 1
+          
+          // Get total items count across all bills
+          const totalItemsCount = allReturnItems.length
+          
+          // Format items from this bill with details
+          const itemsDetails = thisBillItems.map(item => {
+            const purchaseItem = purchaseItems.find(pi => pi.id === item.purchase_item_id)
+            const product = purchaseItem?.product_id ? productMap.get(purchaseItem.product_id) : null
+            
+            return {
+              product_name: purchaseItem?.name_of_product || 'Unknown Product',
+              display_name: product || purchaseItem?.name_of_product || 'Unknown Product',
+              part_number: purchaseItem?.part || '',
+              qty: item.return_qty,
+              rate: item.unit_price,
+              total: item.unit_price * item.return_qty,
+              tax_amount: item.tax_amount || 0,
+              cgst: item.cgst || 0,
+              sgst: item.sgst || 0,
+              igst: item.igst || 0
+            }
+          })
+          
+          return {
+            id: ret.id,
+            return_no: `PR-${ret.id.toString().padStart(3, '0')}`,
+            return_date: ret.return_date,
+            
+            // This bill's portion
+            this_bill_amount: thisBillAmount,
+            this_bill_tax: thisBillTax,
+            this_bill_total: thisBillTotal,
+            this_bill_items_count: thisBillItemsCount,
+            
+            // Full return totals (all bills)
+            total_amount: ret.total_amount,
+            total_tax: ret.total_tax || 0,
+            refund_amount: ret.refund_amount,
+            total_items_count: totalItemsCount,
+            total_bills_count: totalBillsCount,
+            
+            // Indicators
+            is_multi_bill_return: isMultiBillReturn,
+            has_tax: false,  // Returns don't have reverse tax calculation
+            
+            // Payment info
+            payment_status: ret.payment_status,
+            payment_mode: ret.payment_mode,
+            payment_date: ret.payment_date,
+            notes: ret.notes || '',
+            
+            // Items from this bill only
+            items: itemsDetails
+          }
         }))
 
         // Get payment allocation history
@@ -847,7 +924,7 @@ export default async function handler(
           return res.status(400).json({ message: 'Invalid purchase ID' })
         }
 
-        // ✅ GET PURCHASE INFO BEFORE DELETION
+        // Get purchase info before deletion
         const purchase = await prisma.purchase.findUnique({
           where: { id: purchaseId },
           select: { 
@@ -862,7 +939,7 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
-        // ✅ Block deletion if has returns
+        // Block deletion if has returns
         if (purchase.return_status === 1 || purchase.return_status === 2) {
           return res.status(400).json({
             message: 'Cannot delete purchase with returns. Please delete the returns first.',
@@ -870,125 +947,20 @@ export default async function handler(
           })
         }
 
-        // ✅ MOVE ALL OPERATIONS INTO TRANSACTION
+        // Get delete operations from handler
+        const deleteOps = await transactionHandler.handlePurchaseDelete({
+          purchaseId,
+          vendorId: purchase.vendor_id,
+          invoiceNo: purchase.invoice_no,
+          paymentStatus: purchase.payment_status,
+          returnStatus: purchase.return_status
+        })
+
+        // Execute in transaction
         await prisma.$transaction(async (tx) => {
-          // Get purchase items to restore stock before deleting
-          const purchaseItems = await tx.purchaseitems.findMany({
-            where: { invoice_no: purchase.invoice_no },
-            select: { id: true, product_id: true, qty: true }
-          })
-
-          // ✅ PARALLEL OPTIMIZATION: Restore stock for all items in parallel
-          const stockRestorePromises = purchaseItems
-            .map(item => {
-              if (item.product_id && item.qty) {
-                return tx.product.update({
-                  where: { id: item.product_id },
-                  data: {
-                    stock: { decrement: item.qty } // Remove stock that was added
-                  }
-                })
-              }
-              return Promise.resolve()
-            })
-            .filter(p => p !== Promise.resolve())
-
-          // Execute stock restoration and item deletions in parallel
-          await Promise.all([
-            ...stockRestorePromises,
-            tx.purchaseitems.deleteMany({
-              where: { invoice_no: purchase.invoice_no }
-            })
-          ])
-
-          // Delete bill_to record if exists
-          await tx.bill_to.deleteMany({
-            where: { invoice_no: purchase.invoice_no }
-          })
-
-          // ✅ PAYMENT/LEDGER CLEANUP (if purchase was paid/partially paid)
-          if (purchase.payment_status === 1 || purchase.payment_status === 2) {
-            const allocations = await tx.payment_allocations.findMany({
-              where: { purchase_id: purchaseId },
-              select: { payment_id: true, allocated_amount: true }
-            })
-            
-            // Calculate total paid for balance reversal
-            const totalPaid = allocations.reduce(
-              (sum, alloc) => sum + Number(alloc.allocated_amount),
-              0
-            )
-            
-            // Delete payment allocations
-            await tx.payment_allocations.deleteMany({
-              where: { purchase_id: purchaseId }
-            })
-            
-            // Delete vendor_payments if no other allocations exist
-            for (const alloc of allocations) {
-              const remainingAllocs = await tx.payment_allocations.count({
-                where: { payment_id: alloc.payment_id }
-              })
-              
-              if (remainingAllocs === 0) {
-                await tx.vendor_payments.delete({
-                  where: { id: alloc.payment_id }
-                })
-              }
-            }
-
-            // ✅ REVERSE VENDOR BALANCE
-            if (totalPaid > 0 && purchase.vendor_id !== 0) {
-              const vendor = await tx.vendor_details.findUnique({
-                where: { id: purchase.vendor_id },
-                select: {
-                  total_paid: true,
-                  total_allocated: true
-                }
-              })
-
-              if (vendor) {
-                await tx.vendor_details.update({
-                  where: { id: purchase.vendor_id },
-                  data: {
-                    total_paid: Number(vendor.total_paid) - totalPaid,
-                    total_allocated: Number(vendor.total_allocated) - totalPaid
-                  }
-                })
-              }
-            }
-          }
-
-          // ✅ CREATE REVERSAL ENTRIES INSTEAD OF DELETING (preserves audit trail)
-          const ledgerEntries = await tx.vendor_ledger.findMany({
-            where: {
-              reference_type: 'purchase',
-              reference_id: purchaseId
-            }
-          })
-
-          // Create reversal entry for each ledger entry using ledgerService
-          for (const entry of ledgerEntries) {
-            await ledgerService.createEntry({
-              vendor_id: entry.vendor_id,
-              transaction_date: Math.floor(Date.now() / 1000),
-              transaction_type: `${entry.transaction_type}_REVERSAL` as any,
-              reference_type: 'purchase',
-              reference_id: purchaseId,
-              reference_no: entry.reference_no || '',
-              debit: entry.credit,  // ✅ Swap debit/credit to reverse
-              credit: entry.debit,   // ✅ Swap debit/credit to reverse
-              notes: `Reversal: Purchase ${entry.reference_no} deleted`,
-              fy: entry.fy
-            }, tx)
-          }
-
-          // Delete purchase record
-          await tx.purchase.delete({
-            where: { id: purchaseId }
-          })
+          await transactionHandler.executeDeleteInTransaction(tx, deleteOps)
         }, {
-          timeout: 45000 // 45 seconds timeout for delete operations
+          timeout: 45000
         })
 
         res.status(200).json({

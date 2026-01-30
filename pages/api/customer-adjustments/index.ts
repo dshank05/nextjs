@@ -7,6 +7,7 @@ import {
   recordReceiptAdjustmentTransaction,
   recordRefundPaidTransaction
 } from '../../../lib/customer-ledger-service'
+import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -70,18 +71,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Date range filters
     if (dateFrom && dateTo) {
       try {
-        const startDateObj = new Date(dateFrom as string);
-        const endDateObj = new Date(dateTo as string);
+        const { startTimestamp, endTimestamp } = parseDateRange(
+          dateFrom as string,
+          dateTo as string
+        );
 
-        if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
-          const startTimestamp = Math.floor(startDateObj.getTime() / 1000);
-          const endTimestamp = Math.floor(endDateObj.getTime() / 1000);
-
-          where.transaction_date = {
-            gte: startTimestamp,
-            lte: endTimestamp
-          };
-        }
+        where.transaction_date = {
+          gte: startTimestamp,
+          lte: endTimestamp
+        };
       } catch (error) {
         console.warn('Error parsing filter dates:', error);
       }

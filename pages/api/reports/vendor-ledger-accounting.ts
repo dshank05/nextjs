@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { parseDateRange } from '../../../lib/date-utils'
 
 /**
  * Merge adjustment/reversal entries with base transactions
@@ -114,20 +115,14 @@ export default async function handler(
 
     // Date range filter - default to current month if not provided
     if (dateFrom && dateTo) {
-      // Start of day for dateFrom (00:00:00)
-      const startDate = new Date(dateFrom as string)
-      startDate.setHours(0, 0, 0, 0)
-      const startTimestamp = Math.floor(startDate.getTime() / 1000)
-      
-      // End of day for dateTo (23:59:59)
-      const endDate = new Date(dateTo as string)
-      endDate.setHours(23, 59, 59, 999)
-      const endTimestamp = Math.floor(endDate.getTime() / 1000)
-      
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        dateFrom as string,
+        dateTo as string
+      );
       where.transaction_date = {
         gte: startTimestamp,
         lte: endTimestamp
-      }
+      };
     } else {
       // Default: Current month (first day to last day)
       const now = new Date()

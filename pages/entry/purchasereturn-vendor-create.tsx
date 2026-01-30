@@ -7,6 +7,7 @@ import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
+import { formatDateForAPI } from '../../lib/date-utils';
 
 interface Vendor {
   id: string;
@@ -315,8 +316,8 @@ export default function PurchaseReturnVendorCreatePage() {
       const oneMonthAgo = new Date(today);
       oneMonthAgo.setMonth(today.getMonth() - 1);
 
-      const fromDate = oneMonthAgo.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
+      const fromDate = formatDateForAPI(oneMonthAgo);
+      const toDate = formatDateForAPI(today);
 
       setDateFrom(fromDate);
       setDateTo(toDate);

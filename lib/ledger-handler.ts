@@ -341,8 +341,9 @@ export class LedgerHandler {
         break;
         
       case '1→0': // Complete → Incomplete
-        // ❌ REFUND_REVERSAL: When moving away from complete status
-        // Note: We don't actually delete DEBIT_NOTE, just mark status change
+        // ✅ REFUND_REVERSAL: When moving away from complete status
+        // Reverses the original DEBIT_NOTE credit by creating a DEBIT entry
+        // Note: We don't delete DEBIT_NOTE, just reverse its effect
         // The DEBIT_NOTE amount adjustment is handled via updateDebitNoteEntry()
         ops.push({
           entry: {
@@ -352,8 +353,8 @@ export class LedgerHandler {
             reference_type: 'purchase_return',
             reference_id: changes.returnId!,
             reference_no: changes.debitNoteNo!,
-            debit: 0,
-            credit: changes.oldTotal,
+            debit: changes.oldTotal,  // ✅ FIX: DEBIT reverses the original CREDIT
+            credit: 0,                 // ✅ FIX: No credit
             payment_mode: changes.paymentMode,
             payment_status: 0,
             notes: `Return ${changes.debitNoteNo} unmarked from complete status`,
@@ -364,7 +365,8 @@ export class LedgerHandler {
         break;
         
       case '2→0': // Partial → Incomplete
-        // ❌ REFUND_REVERSAL: Only if DEBIT_NOTE exists
+        // ✅ REFUND_REVERSAL: Only if DEBIT_NOTE exists
+        // Reverses the FULL DEBIT_NOTE credit (not just refund allocations)
         if (changes.hasExistingDebitNote) {
           ops.push({
             entry: {
@@ -374,11 +376,11 @@ export class LedgerHandler {
               reference_type: 'purchase_return',
               reference_id: changes.returnId!,
               reference_no: changes.debitNoteNo!,
-              debit: 0,
-              credit: changes.totalAllocated || changes.oldTotal,
+              debit: changes.oldTotal,  // ✅ FIX: Always reverse full DEBIT_NOTE amount
+              credit: 0,                 // ✅ FIX: No credit
               payment_mode: changes.paymentMode,
               payment_status: 0,
-              notes: `All refunds reversed for ${changes.debitNoteNo} - unmarked as incomplete`,
+              notes: `Return ${changes.debitNoteNo} unmarked from partial to incomplete status`,
               fy: changes.fy
             },
             description: 'Refund reversal (partial to incomplete)'

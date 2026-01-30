@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
-import { Eye, ArrowUp, ArrowDown } from 'lucide-react'
+import { Eye, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { DateRangeFilter } from '../../components/common/DateRangeFilter'
 import { ExportMenu } from '../../components/common/ExportMenu'
+import { formatDateForAPI } from '../../lib/date-utils'
+import { ConfirmationModal } from '../../components/ConfirmationModal'
+import { useSnackbar } from '../../components/SnackbarProvider'
 
 interface Transaction {
   id: number
@@ -27,6 +30,7 @@ type SortOrder = 'asc' | 'desc'
 
 export default function VendorTransactionsPage() {
   const router = useRouter()
+  const { showSnackbar } = useSnackbar()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
@@ -36,6 +40,11 @@ export default function VendorTransactionsPage() {
 
   // UI state - show transactions only after vendor selection
   const [showTransactions, setShowTransactions] = useState(false)
+
+  // Delete confirmation modal
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteTransaction, setDeleteTransaction] = useState<{ id: number; type: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Filters
   const [vendors, setVendors] = useState<any[]>([])
@@ -56,8 +65,8 @@ export default function VendorTransactionsPage() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-    setDateFrom(firstDay.toISOString().split('T')[0])
-    setDateTo(lastDay.toISOString().split('T')[0])
+    setDateFrom(formatDateForAPI(firstDay))
+    setDateTo(formatDateForAPI(lastDay))
 
     fetchVendors()
   }, [])
@@ -92,20 +101,8 @@ export default function VendorTransactionsPage() {
       })
 
       if (selectedVendor) params.append('vendor_id', selectedVendor)
-      if (dateFrom) {
-        // Start of day for dateFrom (00:00:00)
-        const startDate = new Date(dateFrom)
-        startDate.setHours(0, 0, 0, 0)
-        const timestamp = Math.floor(startDate.getTime() / 1000)
-        params.append('dateFrom', timestamp.toString())
-      }
-      if (dateTo) {
-        // End of day for dateTo (23:59:59)
-        const endDate = new Date(dateTo)
-        endDate.setHours(23, 59, 59, 999)
-        const timestamp = Math.floor(endDate.getTime() / 1000)
-        params.append('dateTo', timestamp.toString())
-      }
+      if (dateFrom) params.append('dateFrom', dateFrom)
+      if (dateTo) params.append('dateTo', dateTo)
       if (paymentMode) params.append('payment_mode', paymentMode)
       if (paymentType) params.append('payment_type', paymentType)
 
@@ -135,8 +132,8 @@ export default function VendorTransactionsPage() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-    setDateFrom(firstDay.toISOString().split('T')[0])
-    setDateTo(lastDay.toISOString().split('T')[0])
+    setDateFrom(formatDateForAPI(firstDay))
+    setDateTo(formatDateForAPI(lastDay))
     setPaymentMode('')
     setPaymentType('')
     setTransactionType('all')
@@ -214,6 +211,42 @@ export default function VendorTransactionsPage() {
     const end = Math.min(totalPages, page + 2)
     for (let i = start; i <= end; i++) pages.push(i)
     return pages
+  }
+
+  const handleDeleteClick = (id: number, type: 'EXPENSE' | 'INCOME') => {
+    setDeleteTransaction({ id, type: type === 'EXPENSE' ? 'expense' : 'income' })
+    setShowDeleteModal(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTransaction) return
+
+    setDeleting(true)
+    try {
+      const endpoint = deleteTransaction.type === 'expense'
+        ? `/api/vendor-payments/${deleteTransaction.id}`
+        : `/api/vendor-refunds/${deleteTransaction.id}`
+
+      const response = await fetch(endpoint, {
+        method: 'DELETE'
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        showSnackbar('success', 'Transaction deleted successfully', 3000)
+        fetchTransactions() // Refresh list
+        setShowDeleteModal(false)
+        setDeleteTransaction(null)
+      } else {
+        showSnackbar('error', data.error || 'Failed to delete transaction', 5000)
+      }
+    } catch (error) {
+      console.error('Error deleting transaction:', error)
+      showSnackbar('error', 'Failed to delete transaction', 5000)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   // Prepare export data
@@ -490,10 +523,17 @@ export default function VendorTransactionsPage() {
                             <Link
                               href={`/vendor-transactions/view/${transaction.id}?type=${transaction.transaction_type === 'EXPENSE' ? 'expense' : 'income'}`}
                               title="View Transaction Details"
-                              className="btn-icon text-slate-300"
+                              className="btn-icon text-slate-300 hover:text-blue-400"
                             >
                               <Eye className="w-4 h-4" />
                             </Link>
+                            <button
+                              onClick={() => handleDeleteClick(transaction.id, transaction.transaction_type)}
+                              title="Delete Transaction"
+                              className="btn-icon text-red-400 hover:text-red-500"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -556,6 +596,22 @@ export default function VendorTransactionsPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onCancel={() => {
+          setShowDeleteModal(false)
+          setDeleteTransaction(null)
+        }}
+        onConfirm={handleConfirmDelete}
+        title="Delete Transaction?"
+        message={`This action is irreversible. The transaction will be permanently deleted and all allocations will be removed. Payment/refund statuses for affected bills/returns will be recalculated.`}
+        confirmText="Delete Transaction"
+        cancelText="Cancel"
+        showLoading={deleting}
+        loadingText="Deleting..."
+      />
     </div>
   )
 }

@@ -2605,10 +2605,21 @@ export default function PurchaseCreate() {
                           <td className="px-2 py-2 text-center text-xs text-slate-300" id="idx">
                             {serialNumber}
                             {isFullyReturned && (
-                              <div className="text-red-400 text-xs font-bold">🔒</div>
+                              <div 
+                                className="text-red-400 text-xs font-bold" 
+                                title={`Fully returned: ${product.returned_qty} of ${product.original_qty} items`}
+                              >
+                                🔒
+                              </div>
                             )}
                             {hasReturns && !isFullyReturned && (
-                              <div className="text-orange-400 text-xs">⚠️</div>
+                              <div 
+                                className="text-orange-400 text-xs text-center" 
+                                title={`Returned ${product.returned_qty} of ${product.original_qty} items. Available: ${product.available_qty}`}
+                              >
+                                <div>⚠️</div>
+                                <div className="text-[10px] leading-none">R:{product.returned_qty}/{product.original_qty}</div>
+                              </div>
                             )}
                           </td>
                           <td className="px-2 py-2 text-xs text-slate-200">

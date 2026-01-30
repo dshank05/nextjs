@@ -49,6 +49,13 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       baseType = 'DEBIT_NOTE'
     }
     
+    // Map REFUND_REVERSAL to DEBIT_NOTE for purchase returns
+    // When a paid return is changed from complete → incomplete, REFUND_REVERSAL is created
+    // This should cancel out the original DEBIT_NOTE entry
+    if (entry.transactionType === 'REFUND_REVERSAL' && entry.referenceType === 'purchase_return') {
+      baseType = 'DEBIT_NOTE'
+    }
+    
     // Create group key: baseType-referenceType-referenceId
     const key = entry.referenceId && entry.referenceType
       ? `${baseType}-${entry.referenceType}-${entry.referenceId}`

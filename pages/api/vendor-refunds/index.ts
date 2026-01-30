@@ -8,6 +8,7 @@ import {
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
+import { parseDateRange } from '../../../lib/date-utils';
 
 const prisma = new PrismaClient();
 
@@ -58,9 +59,12 @@ async function handleCreateRefund(
       });
     }
 
+    // Convert vendor_id to integer at the start
+    const vendorId = parseInt(vendor_id);
+
     // Validate allocations (pass 'vendor' type for purchase returns)
     const validation = await validateRefundAllocation(
-      vendor_id,
+      vendorId,
       refund_amount,
       allocations,
       'vendor', // Flag to identify vendor returns
@@ -89,7 +93,7 @@ async function handleCreateRefund(
       // 1. Create refund record
       const refund = await tx.vendor_refunds.create({
         data: {
-          vendor_id,
+          vendor_id: parseInt(vendor_id),
           refund_date,
           refund_amount,
           refund_mode,
@@ -150,7 +154,7 @@ async function handleCreateRefund(
 
         // Create ledger entry for this allocation (INSIDE TRANSACTION)
         await ledgerService.createEntry({
-          vendor_id,
+          vendor_id: vendorId,
           transaction_date: refund_date,
           transaction_type: 'REFUND_RECEIVED',
           reference_type: 'purchase_return',
@@ -166,17 +170,52 @@ async function handleCreateRefund(
         }, tx);
       }
 
-      // ✅ MOVE BALANCE UPDATE INSIDE TRANSACTION
+      // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (refund_type === 'DIRECT') {
+        // Direct refund - create standalone ledger entry
+        await ledgerService.createEntry({
+          vendor_id: vendorId,
+          transaction_date: refund_date,
+          transaction_type: 'REFUND_RECEIVED',
+          reference_type: undefined,
+          reference_id: undefined,
+          reference_no: refund.id.toString(),
+          payment_mode: refund_mode,
+          payment_date: refund_date,
+          debit: refund_amount,
+          credit: 0,
+          notes: `Direct refund received ₹${refund_amount}`,
+          fy: financialYear
+        }, tx);
+
         // Direct refund - no allocations
-        await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
           total_refunded: refund_amount
         });
       } else {
         // Return-specific or mixed refund - has allocations
         const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
+        const unallocatedAmount = refund_amount - totalAllocated;
+
+        // If MIXED refund with unallocated amount, create ledger entry
+        if (refund_type === 'MIXED' && unallocatedAmount > 0) {
+          await ledgerService.createEntry({
+            vendor_id: vendorId,
+            transaction_date: refund_date,
+            transaction_type: 'REFUND_RECEIVED',
+            reference_type: undefined,
+            reference_id: undefined,
+            reference_no: refund.id.toString(),
+            payment_mode: refund_mode,
+            payment_date: refund_date,
+            debit: unallocatedAmount,
+            credit: 0,
+            notes: `Unallocated refund received ₹${unallocatedAmount} (from Refund #${refund.id})`,
+            fy: financialYear
+          }, tx);
+        }
         
-        await balanceHandler.incrementBalanceInTransaction(tx, vendor_id, {
+        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
           total_refunded: refund_amount,
           total_refund_allocated: totalAllocated
         });
@@ -235,18 +274,15 @@ async function handleListRefunds(
       where.vendor_id = parseInt(vendor_id as string);
     }
 
-    if (dateFrom || dateTo) {
-      where.refund_date = {};
-      if (dateFrom) {
-        const startDate = new Date(dateFrom as string);
-        startDate.setHours(0, 0, 0, 0);
-        where.refund_date.gte = Math.floor(startDate.getTime() / 1000);
-      }
-      if (dateTo) {
-        const endDate = new Date(dateTo as string);
-        endDate.setHours(23, 59, 59, 999);  // ✅ End of day
-        where.refund_date.lte = Math.floor(endDate.getTime() / 1000);
-      }
+    if (dateFrom && dateTo) {
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        dateFrom as string,
+        dateTo as string
+      );
+      where.refund_date = {
+        gte: startTimestamp,
+        lte: endTimestamp
+      };
     }
 
     if (refund_mode !== undefined) {

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -33,20 +34,17 @@ async function handler(
     let dateFilter: any = {}
     if (from_date && to_date) {
       try {
-        const startDateObj = new Date(from_date as string)
-        const endDateObj = new Date(to_date as string)
+        const { startTimestamp, endTimestamp } = parseDateRange(
+          from_date as string,
+          to_date as string
+        );
 
-        if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
-          const startTimestamp = Math.floor(startDateObj.getTime() / 1000)
-          const endTimestamp = Math.floor(endDateObj.getTime() / 1000)
-
-          dateFilter = {
-            invoice_date: {
-              gte: startTimestamp,
-              lte: endTimestamp
-            }
+        dateFilter = {
+          invoice_date: {
+            gte: startTimestamp,
+            lte: endTimestamp
           }
-        }
+        };
       } catch (error) {
         console.warn('Error parsing filter dates:', error)
       }

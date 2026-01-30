@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -67,14 +68,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Add date range filter
-    if (from_date || to_date) {
-      purchaseWhere.invoice_date = {}
-      if (from_date) {
-        purchaseWhere.invoice_date.gte = Math.floor(new Date(from_date as string).getTime() / 1000)
-      }
-      if (to_date) {
-        purchaseWhere.invoice_date.lte = Math.floor(new Date(to_date as string).getTime() / 1000)
-      }
+    if (from_date && to_date) {
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        from_date as string,
+        to_date as string
+      );
+      purchaseWhere.invoice_date = {
+        gte: startTimestamp,
+        lte: endTimestamp
+      };
     }
 
     // Get total count for pagination

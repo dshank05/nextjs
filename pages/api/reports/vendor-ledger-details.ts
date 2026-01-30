@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { parseDateRange } from '../../../lib/date-utils'
 
 export default async function handler(
   req: NextApiRequest,
@@ -30,8 +31,10 @@ export default async function handler(
     // Build date filter - default to last 3 months if not provided
     let dateFilter: any = {}
     if (dateFrom && dateTo) {
-      const startTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000)
-      const endTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000)
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        dateFrom as string,
+        dateTo as string
+      );
       dateFilter = {
         gte: startTimestamp,
         lte: endTimestamp

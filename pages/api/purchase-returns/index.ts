@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -101,23 +102,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Date range filters
     if (dateFrom && dateTo) {
       try {
-        // Start of day for dateFrom (00:00:00)
-        const startDateObj = new Date(dateFrom as string);
-        startDateObj.setHours(0, 0, 0, 0);
-        
-        // End of day for dateTo (23:59:59)
-        const endDateObj = new Date(dateTo as string);
-        endDateObj.setHours(23, 59, 59, 999);
+        const { startTimestamp, endTimestamp } = parseDateRange(
+          dateFrom as string,
+          dateTo as string
+        );
 
-        if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
-          const startTimestamp = Math.floor(startDateObj.getTime() / 1000);
-          const endTimestamp = Math.floor(endDateObj.getTime() / 1000);
-
-          where.return_date = {
-            gte: startTimestamp,
-            lte: endTimestamp
-          };
-        }
+        where.return_date = {
+          gte: startTimestamp,
+          lte: endTimestamp
+        };
       } catch (error) {
         console.warn('Error parsing filter dates:', error);
       }

@@ -659,32 +659,20 @@ export default function PurchaseView() {
             </h3>
             <div className="space-y-6">
               {purchase.returns.map((ret: any) => {
-                // Get return items from purchase items history
-                const returnItems = purchase.items?.filter(item => 
-                  item.return_history?.some(h => h.return_id === ret.id.toString())
-                ).map(item => {
-                  const returnHistory = item.return_history?.find(h => h.return_id === ret.id.toString());
-                  return {
-                    ...item,
-                    return_qty: returnHistory?.qty || 0,
-                    return_unit_price: returnHistory?.unit_price || item.rate,
-                    return_tax_rate: item.gst_percentage || 0,
-                    return_tax_amount: returnHistory?.tax_amount || 0,
-                    return_cgst: returnHistory?.cgst || 0,
-                    return_sgst: returnHistory?.sgst || 0,
-                    return_igst: returnHistory?.igst || 0,
-                    return_reason: returnHistory?.notes || ''
-                  };
-                }) || [];
-
-                const totalReturnQty = returnItems.reduce((sum, item) => sum + item.return_qty, 0);
-                const totalReturnTaxableValue = returnItems.reduce((sum, item) => 
-                  sum + (item.return_qty * item.return_unit_price), 0
-                );
-                const totalReturnTax = returnItems.reduce((sum, item) => sum + item.return_tax_amount, 0);
+                // Use items from API response (already filtered to this bill)
+                const returnItems = ret.items || [];
 
                 return (
                   <div key={ret.id} className="bg-slate-800 border border-slate-700 rounded p-4">
+                    {/* Multi-Bill Indicator */}
+                    {ret.is_multi_bill_return && (
+                      <div className="bg-blue-50/10 border border-blue-500/30 rounded p-2 mb-4">
+                        <span className="text-blue-300 text-sm">
+                          ℹ️ This return includes items from {ret.total_bills_count} bills
+                        </span>
+                      </div>
+                    )}
+
                     {/* Return Summary */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                       <div>
@@ -696,8 +684,15 @@ export default function PurchaseView() {
                         <div className="text-white font-medium">{formatDate(ret.return_date)}</div>
                       </div>
                       <div>
-                        <span className="text-slate-400 text-sm">Total Amount:</span>
-                        <div className="text-white font-medium">₹{ret.total_amount?.toLocaleString('en-IN')}</div>
+                        <span className="text-slate-400 text-sm">
+                          {ret.is_multi_bill_return ? 'This Bill:' : 'Total Amount:'}
+                        </span>
+                        <div className="text-white font-medium">₹{ret.this_bill_total?.toLocaleString('en-IN')}</div>
+                        {ret.is_multi_bill_return && (
+                          <div className="text-slate-400 text-xs mt-1">
+                            Total: ₹{ret.refund_amount?.toLocaleString('en-IN')} ({ret.total_bills_count} bills)
+                          </div>
+                        )}
                       </div>
                       <div>
                         <span className="text-slate-400 text-sm">Refund Amount:</span>
@@ -717,11 +712,18 @@ export default function PurchaseView() {
                       </div>
                       <div>
                         <span className="text-slate-400 text-sm">Items:</span>
-                        <div className="text-white font-medium">{returnItems.length} item(s)</div>
+                        <div className="text-white font-medium">
+                          {ret.this_bill_items_count} item(s)
+                          {ret.is_multi_bill_return && (
+                            <span className="text-slate-400 text-xs ml-1">
+                              (Total: {ret.total_items_count})
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Return Items Table */}
+                    {/* Return Items Table - Tax columns hidden */}
                     {returnItems.length > 0 && (
                       <div className="mt-4 overflow-x-auto border-t border-slate-700 pt-4">
                         <h4 className="text-sm font-semibold text-slate-300 mb-2">Returned Items:</h4>
@@ -733,43 +735,31 @@ export default function PurchaseView() {
                               <th>Part No</th>
                               <th>Qty</th>
                               <th>Rate</th>
-                              <th>Taxable Value</th>
-                              <th>Tax %</th>
-                              <th>Tax Amount</th>
                               <th>Total</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {returnItems.map((item, index) => {
-                              const taxableValue = item.return_qty * item.return_unit_price;
-                              const total = taxableValue + item.return_tax_amount;
-
-                              return (
-                                <tr key={index} className="bg-red-900/10">
-                                  <td>{index + 1}</td>
-                                  <td className="font-medium text-white">{item.display_name || item.product_name}</td>
-                                  <td className="text-slate-300">{item.part || ''}</td>
-                                  <td className="text-slate-300 font-medium">{item.return_qty}</td>
-                                  <td className="text-slate-300">₹{item.return_unit_price?.toLocaleString('en-IN')}</td>
-                                  <td className="text-slate-300">₹{taxableValue?.toLocaleString('en-IN')}</td>
-                                  <td className="text-slate-300">{item.return_tax_rate}%</td>
-                                  <td className="text-slate-300">₹{item.return_tax_amount?.toLocaleString('en-IN')}</td>
-                                  <td className="text-slate-300 font-semibold">₹{total?.toLocaleString('en-IN')}</td>
-                                </tr>
-                              );
-                            })}
+                            {returnItems.map((item: any, index: number) => (
+                              <tr key={index} className="bg-red-900/10">
+                                <td>{index + 1}</td>
+                                <td className="font-medium text-white">{item.display_name || item.product_name}</td>
+                                <td className="text-slate-300">{item.part_number || ''}</td>
+                                <td className="text-slate-300 font-medium">{item.qty}</td>
+                                <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
+                                <td className="text-slate-300 font-semibold">₹{item.total?.toLocaleString('en-IN')}</td>
+                              </tr>
+                            ))}
                           </tbody>
                           <tfoot>
                             <tr className="border-t border-slate-700 bg-slate-800/50">
                               <td></td>
                               <td></td>
                               <td></td>
-                              <td className="text-white font-bold">{totalReturnQty}</td>
+                              <td className="text-white font-bold">
+                                {returnItems.reduce((sum: number, item: any) => sum + (item.qty || 0), 0)}
+                              </td>
                               <td></td>
-                              <td className="text-white font-bold">₹{totalReturnTaxableValue?.toLocaleString('en-IN')}</td>
-                              <td></td>
-                              <td className="text-white font-bold">₹{totalReturnTax?.toLocaleString('en-IN')}</td>
-                              <td className="text-white font-bold">₹{ret.total_amount?.toLocaleString('en-IN')}</td>
+                              <td className="text-white font-bold">₹{ret.this_bill_total?.toLocaleString('en-IN')}</td>
                             </tr>
                           </tfoot>
                         </table>
