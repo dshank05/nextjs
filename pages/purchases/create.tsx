@@ -1980,7 +1980,7 @@ export default function PurchaseCreate() {
             <div className="mb-5 border-t border-slate-600 pt-4">
               {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Product Selection</h3> */}
 
-              {/* Barcode Scanning Toggle */}
+              {/* Barcode Scanning Toggle
               <div className="mb-4 space-y-3">
                 <div className="flex items-center space-x-6">
                   <label className="flex items-center space-x-2 cursor-pointer">
@@ -1998,7 +1998,7 @@ export default function PurchaseCreate() {
                 </div>
 
                 {/* Barcode Test Input */}
-                <div className="flex items-center space-x-3 p-3 bg-slate-800 rounded border border-slate-600">
+                {/* <div className="flex items-center space-x-3 p-3 bg-slate-800 rounded border border-slate-600">
                   <label className="text-sm font-medium text-slate-300">Test Barcode:</label>
                   <input
                     type="text"
@@ -2058,7 +2058,7 @@ export default function PurchaseCreate() {
                   />
                   <span className="text-xs text-slate-500">Press Enter to test</span>
                 </div>
-              </div>
+              </div>  */}
 
               {/* Product Selection & Display Table */}
               <div className={`border border-slate-600 rounded mb-3`}>

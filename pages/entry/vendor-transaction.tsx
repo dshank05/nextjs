@@ -445,7 +445,10 @@ export default function VendorTransactionEntry() {
     setLoading(true)
     try {
       const amountNum = parseFloat(amount)
-      const timestamp = Math.floor(new Date(date).getTime() / 1000)
+      // ✅ FIX: Set time to noon to avoid timezone issues with midnight UTC
+      const dateObj = new Date(date)
+      dateObj.setHours(12, 0, 0, 0)
+      const timestamp = Math.floor(dateObj.getTime() / 1000)
       
       let endpoint = ''
       let payload: any = {}
