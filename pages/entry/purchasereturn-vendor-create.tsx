@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target, Loader } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput } from '../../components/common/ClearableInput';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
-import { formatDateForAPI } from '../../lib/date-utils';
+import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils';
 
 interface Vendor {
   id: string;
@@ -74,7 +74,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoadingEditData, setIsLoadingEditData] = useState(false);
-  
+
   // Ref to track if we're initializing vendor (to prevent multiple API calls)
   const isInitializingVendor = useRef(false);
 
@@ -87,7 +87,7 @@ export default function PurchaseReturnVendorCreatePage() {
   const [vendor, setVendor] = useState<Vendor | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [bills, setBills] = useState<PurchaseBill[]>([]);
-  
+
   // Enable tax display if ANY bill has tax
   const enableTax = useMemo(() => {
     return bills.some(bill => bill.has_tax);
@@ -121,12 +121,12 @@ export default function PurchaseReturnVendorCreatePage() {
   const [dateTo, setDateTo] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
   const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
-  
+
   // Payment tracking state
   const [paymentStatus, setPaymentStatus] = useState<number>(0); // 0=Unpaid, 1=Paid
   const [paymentMode, setPaymentMode] = useState<number>(1); // 0=Cash, 1=Bank
   const [paymentDate, setPaymentDate] = useState('');
-  
+
   // P&F state (will be in summary section)
   const [packingForwardingAmount, setPackingForwardingAmount] = useState<number>(0);
 
@@ -308,7 +308,7 @@ export default function PurchaseReturnVendorCreatePage() {
     if (selectedVendor) {
       // Set flag to prevent useEffect from triggering during initialization
       isInitializingVendor.current = true;
-      
+
       setVendor(selectedVendor);
 
       // Set default 1-month date range
@@ -316,8 +316,8 @@ export default function PurchaseReturnVendorCreatePage() {
       const oneMonthAgo = new Date(today);
       oneMonthAgo.setMonth(today.getMonth() - 1);
 
-      const fromDate = formatDateForAPI(oneMonthAgo);
-      const toDate = formatDateForAPI(today);
+      const fromDate = formatStartDateForAPI(oneMonthAgo);
+      const toDate = formatEndDateForAPI(today);
 
       setDateFrom(fromDate);
       setDateTo(toDate);
@@ -332,7 +332,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
       // Load initial 3 months of data
       await loadVendorBills(vendorId, 1, '', fromDate, toDate, false);
-      
+
       // Reset flag after loading completes
       isInitializingVendor.current = false;
     }
@@ -358,98 +358,90 @@ export default function PurchaseReturnVendorCreatePage() {
     setIsLoadingEditData(true);
     try {
       // Check session storage first (like purchase edit)
-      let returnData = SessionStorageService.get('purchase-returns', returnId);
-      
+      let returnData = null
+
       // If not in session storage, fetch from API
-      if (!returnData) {
-        console.log('📡 No cached data, fetching from API...');
-        const response = await fetch(`/api/purchase-returns/${returnId}`);
-        if (response.ok) {
-          const data = await response.json();
-          returnData = data.data;
-        } else {
-          throw new Error('Failed to load return data');
-        }
+      // if (!returnData) {
+      console.log('📡 No cached data, fetching from API...');
+      const response = await fetch(`/api/purchase-returns/${returnId}`);
+      if (response.ok) {
+        const data = await response.json();
+        returnData = data.data;
       } else {
-        console.log('✅ Loaded return data from session storage');
+        throw new Error('Failed to load return data');
       }
+      // } else {
+      //   console.log('✅ Loaded return data from session storage');
+      // }
 
       // Set return data
-        setReturnDate(returnData.return.return_date);
-        setReturnNotes(returnData.return.notes || '');
-        setPaymentStatus(returnData.return.payment_status ?? 0);
-        setPaymentMode(returnData.return.payment_mode ?? 1);
-        setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
-        setPackingForwardingAmount(returnData.return.packing_forwarding_amount || 0);
+      setReturnDate(returnData.return.return_date);
+      setReturnNotes(returnData.return.notes || '');
+      setPaymentStatus(returnData.return.payment_status ?? 0);
+      setPaymentMode(returnData.return.payment_mode ?? 1);
+      setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
+      setPackingForwardingAmount(returnData.return.packing_forwarding_amount || 0);
 
-        // Set vendor
-        const vendorData = returnData.vendor;
-        setVendor({
-          id: vendorData.id.toString(),
-          vendor_name: vendorData.vendor_name,
-          state: vendorData.state,
-          state_code: vendorData.state_code
-        });
+      // Set vendor
+      const vendorData = returnData.vendor;
+      setVendor({
+        id: vendorData.id.toString(),
+        vendor_name: vendorData.vendor_name,
+        state: vendorData.state,
+        state_code: vendorData.state_code
+      });
 
-        // Set bills and items
-        // In edit mode, set available_qty to the original_qty (from original purchase)
-        const adjustedBills = returnData.bills.map((bill: PurchaseBill) => ({
-          ...bill,
-          items: bill.items.map((item: PurchaseItem) => ({
-            ...item,
-            // In edit mode, available_qty should be the original_qty (original purchase quantity)
-            available_qty: item.original_qty || item.available_qty
-          }))
-        }));
-        
-        setBills(adjustedBills);
-        setAllLoadedBills(adjustedBills);
+      // Set bills and items
+      // ✅ FIX BUG #1: Use fresh available_qty from API, don't override with cached original_qty
+      // The API already calculates correct available_qty based on current purchase quantities
+      setBills(returnData.bills);
+      setAllLoadedBills(returnData.bills);
 
-        // Pre-select the returned items with calculated fields
-        const selectedItemsMap = new Map<string, SelectedReturnItem>();
-        adjustedBills.forEach((bill: PurchaseBill) => {
-          bill.items.forEach((item: PurchaseItem) => {
-            if (item.return_qty && item.return_qty > 0) {
-              // Calculate tax and totals
-              const subtotal = item.return_qty * item.unit_price;
-              const taxAmount = (subtotal * item.tax_rate) / 100;
+      // Pre-select the returned items with calculated fields
+      const selectedItemsMap = new Map<string, SelectedReturnItem>();
+      returnData.bills.forEach((bill: PurchaseBill) => {
+        bill.items.forEach((item: PurchaseItem) => {
+          if (item.return_qty && item.return_qty > 0) {
+            // Calculate tax and totals
+            const subtotal = item.return_qty * item.unit_price;
+            const taxAmount = (subtotal * item.tax_rate) / 100;
 
-              // Determine CGST/SGST vs IGST based on vendor state
-              const isIntraState = returnData.vendor.state === 'Uttar Pradesh';
-              let cgst = 0, sgst = 0, igst = 0;
-              if (isIntraState) {
-                cgst = taxAmount / 2;
-                sgst = taxAmount / 2;
-              } else {
-                igst = taxAmount;
-              }
-
-              const returnItem: SelectedReturnItem = {
-                ...item,
-                return_qty: item.return_qty,
-                return_reason_id: item.return_reason_id || 1,
-                subtotal,
-                tax_amount: taxAmount,
-                cgst,
-                sgst,
-                igst,
-                total: subtotal + taxAmount
-              };
-
-              selectedItemsMap.set(item.id, returnItem);
+            // Determine CGST/SGST vs IGST based on vendor state
+            const isIntraState = returnData.vendor.state === 'Uttar Pradesh';
+            let cgst = 0, sgst = 0, igst = 0;
+            if (isIntraState) {
+              cgst = taxAmount / 2;
+              sgst = taxAmount / 2;
+            } else {
+              igst = taxAmount;
             }
-          });
-        });
-        setSelectedItems(selectedItemsMap);
 
-        // Expand bills that have selected items
-        const billsToExpand = new Set<string>();
-        adjustedBills.forEach((bill: PurchaseBill) => {
-          if (bill.items.some((item: PurchaseItem) => selectedItemsMap.has(item.id))) {
-            billsToExpand.add(bill.id);
+            const returnItem: SelectedReturnItem = {
+              ...item,
+              return_qty: item.return_qty,
+              return_reason_id: item.return_reason_id || 1,
+              subtotal,
+              tax_amount: taxAmount,
+              cgst,
+              sgst,
+              igst,
+              total: subtotal + taxAmount
+            };
+
+            selectedItemsMap.set(item.id, returnItem);
           }
         });
-        setExpandedBills(billsToExpand);
+      });
+      setSelectedItems(selectedItemsMap);
+
+      // Expand bills that have selected items
+      const billsToExpand = new Set<string>();
+      returnData.bills.forEach((bill: PurchaseBill) => {
+        if (bill.items.some((item: PurchaseItem) => selectedItemsMap.has(item.id))) {
+          billsToExpand.add(bill.id);
+        }
+      });
+      setExpandedBills(billsToExpand);
 
     } catch (error) {
       console.error('Error loading return for edit:', error);
@@ -521,7 +513,7 @@ export default function PurchaseReturnVendorCreatePage() {
 
     // Use new price
     const price = Math.max(0, newPrice);
-    
+
     // Recalculate with new price
     const subtotal = selectedItem.return_qty * price;
     const taxAmount = (subtotal * item.tax_rate) / 100;
@@ -619,15 +611,15 @@ export default function PurchaseReturnVendorCreatePage() {
     }
 
     // ✅ Step 1: Aggregate return quantities by product_id
-    const returnQtyByProduct = new Map<number, { 
-      qty: number, 
-      name: string, 
-      current_stock: number 
+    const returnQtyByProduct = new Map<number, {
+      qty: number,
+      name: string,
+      current_stock: number
     }>();
-    
+
     Array.from(selectedItems.values()).forEach(item => {
       const existing = returnQtyByProduct.get(item.product_id);
-      
+
       if (existing) {
         // Product already exists, add to quantity
         existing.qty += item.return_qty;
@@ -642,8 +634,8 @@ export default function PurchaseReturnVendorCreatePage() {
     });
 
     // ✅ Step 2: Validate each product against current stock
-    const stockIssues: Array<{name: string, returning: number, available: number}> = [];
-    
+    const stockIssues: Array<{ name: string, returning: number, available: number }> = [];
+
     returnQtyByProduct.forEach((data, productId) => {
       if (data.qty > data.current_stock) {
         stockIssues.push({
@@ -653,28 +645,28 @@ export default function PurchaseReturnVendorCreatePage() {
         });
       }
     });
-    
+
     // ✅ Step 3: Show error if any stock issues
     if (stockIssues.length > 0) {
-      const errorMsg = stockIssues.map(issue => 
+      const errorMsg = stockIssues.map(issue =>
         `${issue.name}: Returning ${issue.returning} but only ${issue.available} in stock`
       ).join('\n');
-      
+
       showSnackbar('error', `Insufficient stock:\n${errorMsg}`);
       return;
     }
-    
+
     // ✅ Step 4: Check for negative quantities
     const invalidItems = Array.from(selectedItems.values()).filter(
       item => item.return_qty < 0
     );
-    
+
     if (invalidItems.length > 0) {
       const itemNames = invalidItems.map(item => item.product_name).join(', ');
       showSnackbar('error', `Invalid quantities. Must be 0 or positive for: ${itemNames}`);
       return;
     }
-    
+
     // All validations passed - show confirmation modal
     setShowConfirmationModal(true);
   };
@@ -739,6 +731,20 @@ export default function PurchaseReturnVendorCreatePage() {
     }
   };
 
+  if (isLoadingEditData) {
+    return (
+      <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+          <Loader className="w-8 h-8 animate-spin text-blue-400" />
+          <div className="text-center">
+            <p className="text-slate-200 font-medium">Loading Return Data</p>
+            <p className="text-slate-400 text-sm">Please wait while we fetch the return details...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loadingVendors) {
     return (
       <div className="space-y-6">
@@ -770,10 +776,10 @@ export default function PurchaseReturnVendorCreatePage() {
             <h1 className="text-2xl font-semibold text-slate-200 flex items-center gap-2">
               <Package className="w-6 h-6" />
               {isEditMode ? 'Edit' : 'Create'} Purchase Return {vendor?.vendor_name ? `from ${vendor.vendor_name}` : ''}  {isEditMode && returnIdParam && (
-              <p className="text-slate-400">| Return ID: {returnIdParam}</p>
-            )}
-            </h1> 
-            
+                <p className="text-slate-400">| Return ID: {returnIdParam}</p>
+              )}
+            </h1>
+
           </div>
 
           {/* Return Information - 3 Rows x 3 Columns Layout */}
@@ -971,7 +977,7 @@ export default function PurchaseReturnVendorCreatePage() {
                                 {bill.items.map((item) => {
                                   const selectedItem = selectedItems.get(item.id);
                                   return (
-                                <tr key={item.id} className={`border-t border-slate-600 ${item.is_fully_returned ? 'opacity-50 bg-slate-800/50' : ''}`}>
+                                    <tr key={item.id} className={`border-t border-slate-600 ${item.is_fully_returned ? 'opacity-50 bg-slate-800/50' : ''}`}>
                                       <td className="px-4 py-3 text-sm text-white">
                                         <div>
                                           <div className="font-medium">
@@ -1014,9 +1020,8 @@ export default function PurchaseReturnVendorCreatePage() {
                                               updateReturnPrice(item.id, newPrice, item);
                                             }
                                           }}
-                                          className={`w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm ${
-                                            !selectedItem ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
-                                          }`}
+                                          className={`w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-center text-sm ${!selectedItem ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
+                                            }`}
                                           placeholder="0"
                                           disabled={!selectedItem}
                                         />

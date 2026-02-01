@@ -939,11 +939,11 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
-        // Block deletion if has returns
-        if (purchase.return_status === 1 || purchase.return_status === 2) {
+        // Block deletion ONLY if fully returned
+        if (purchase.return_status === 2) {
           return res.status(400).json({
-            message: 'Cannot delete purchase with returns. Please delete the returns first.',
-            error_code: 'HAS_RETURNS'
+            message: 'Cannot delete fully returned purchase. All items have been returned.',
+            error_code: 'FULLY_RETURNED'
           })
         }
 

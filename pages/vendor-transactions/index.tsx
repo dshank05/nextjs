@@ -5,7 +5,7 @@ import { Eye, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { DateRangeFilter } from '../../components/common/DateRangeFilter'
 import { ExportMenu } from '../../components/common/ExportMenu'
-import { formatDateForAPI } from '../../lib/date-utils'
+import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 
@@ -65,8 +65,8 @@ export default function VendorTransactionsPage() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-    setDateFrom(formatDateForAPI(firstDay))
-    setDateTo(formatDateForAPI(lastDay))
+    setDateFrom(formatStartDateForAPI(firstDay))
+    setDateTo(formatEndDateForAPI(lastDay))
 
     fetchVendors()
   }, [])
@@ -132,8 +132,8 @@ export default function VendorTransactionsPage() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-    setDateFrom(formatDateForAPI(firstDay))
-    setDateTo(formatDateForAPI(lastDay))
+    setDateFrom(formatStartDateForAPI(firstDay))
+    setDateTo(formatEndDateForAPI(lastDay))
     setPaymentMode('')
     setPaymentType('')
     setTransactionType('all')

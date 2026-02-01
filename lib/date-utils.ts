@@ -11,28 +11,57 @@
  */
 
 /**
- * Format date for API calls - adds T12:00:00 for timezone consistency
+ * Format START date for API - beginning of day (00:00:00)
  * 
- * USE IN: Frontend pages when generating initial date ranges
+ * USE IN: Frontend pages when setting FROM date in date ranges
+ * 
+ * EXAMPLE:
+ * ```typescript
+ * const oneMonthAgo = new Date();
+ * oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+ * const fromDate = formatStartDateForAPI(oneMonthAgo); // "2025-12-30T00:00:00"
+ * ```
+ * 
+ * @param date - Date object to format
+ * @returns Date string in format "YYYY-MM-DDTHH:MM:SS" with time set to 00:00:00
+ */
+export function formatStartDateForAPI(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}T00:00:00`;
+}
+
+/**
+ * Format END date for API - end of day (23:59:59)
+ * 
+ * USE IN: Frontend pages when setting TO date in date ranges
  * 
  * EXAMPLE:
  * ```typescript
  * const today = new Date();
- * const oneMonthAgo = new Date(today);
- * oneMonthAgo.setMonth(today.getMonth() - 1);
- * 
- * const fromDate = formatDateForAPI(oneMonthAgo); // "2025-12-30T12:00:00"
- * const toDate = formatDateForAPI(today);         // "2026-01-30T12:00:00"
+ * const toDate = formatEndDateForAPI(today); // "2026-01-31T23:59:59"
  * ```
  * 
  * @param date - Date object to format
- * @returns Date string in format "YYYY-MM-DDTHH:MM:SS" with time set to 12:00:00
+ * @returns Date string in format "YYYY-MM-DDTHH:MM:SS" with time set to 23:59:59
  */
-export function formatDateForAPI(date: Date): string {
+export function formatEndDateForAPI(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}T12:00:00`;
+  return `${year}-${month}-${day}T23:59:59`;
+}
+
+/**
+ * @deprecated Use formatStartDateForAPI() or formatEndDateForAPI() instead
+ * Format date for API calls - adds T00:00:00 for backward compatibility
+ * 
+ * @param date - Date object to format
+ * @returns Date string in format "YYYY-MM-DDTHH:MM:SS" with time set to 00:00:00
+ */
+export function formatDateForAPI(date: Date): string {
+  return formatStartDateForAPI(date);
 }
 
 /**

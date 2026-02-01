@@ -3,7 +3,7 @@ import { FileText, Loader2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
 import { mergeLedgerEntries, recalculateBalance } from '../../lib/ledger-merge-utils';
-import { formatDateForAPI } from '../../lib/date-utils';
+import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils';
 
 interface LedgerEntry {
   id: number;
@@ -56,8 +56,8 @@ export default function VendorLedgerPage() {
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     
-    setDateFrom(formatDateForAPI(firstDay));
-    setDateTo(formatDateForAPI(lastDay));
+    setDateFrom(formatStartDateForAPI(firstDay));
+    setDateTo(formatEndDateForAPI(lastDay));
   }, []);
 
   // Fetch vendors on mount

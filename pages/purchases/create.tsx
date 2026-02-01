@@ -215,6 +215,9 @@ export default function PurchaseCreate() {
     total: ''
   });
 
+  // State for tracking last edited field (for smart calculation)
+  const [lastEditedField, setLastEditedField] = useState<'qty' | 'rate' | 'total' | null>(null);
+
   // State for selected vendor details (fetched on-demand, not stored in formData)
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
 
@@ -248,42 +251,16 @@ export default function PurchaseCreate() {
   // Store original data for change detection in edit mode
   const [originalData, setOriginalData] = useState<any>(null);
 
-  // Auto-calculate total when qty, rate, or gst changes (only if total is empty)
-  useEffect(() => {
-    const qty = parseFloat(templateRow.qty) || 0;
-    const rate = parseFloat(templateRow.rate) || 0;
-    const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
-
-    if (qty > 0 && rate > 0) {
-      const subtotal = qty * rate;
-      const taxAmount = (subtotal * gstPercent) / 100;
-      const total = subtotal + taxAmount;
-
-      setTemplateRow(prev => {
-        // Only auto-calculate if total field is empty (user hasn't manually entered anything)
-        if (!prev.total.trim()) {
-          return {
-            ...prev,
-            total: Math.round(total).toString()
-          };
-        }
-        // If user has entered something, leave it as-is
-        return prev;
-      });
-    } else {
-      setTemplateRow(prev => ({
-        ...prev,
-        total: prev.total || '' // Keep manual total if it exists
-      }));
-    }
-  }, [templateRow.qty, templateRow.rate, templateRow.gst, enableTax]);
+  // ❌ REMOVED: Auto-calculation useEffect
+  // Total is now only calculated when qty or rate changes, never auto-recalculates
+  // This preserves user's manual entries and prevents cursor jumping
 
   const [formData, setFormData] = useState<PurchaseFormData>({
     invoice_number: '',
     bill_reference: '',
     bill_reference_date: '',
     staff_id: null,
-    date: new Date().toISOString().split('T')[0],
+    date: '',
     vendor_name: '', // Keep for backward compatibility with validation
     contact_number: '', // Remove these after validation is updated
     email_id: '',
@@ -2291,36 +2268,47 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2 text-center w-24">
                         <input
                           type="number"
+                          step="1"
                           min="0"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder=""
                           value={templateRow.qty}
                           onChange={(e) => {
                             const newQty = e.target.value;
+                            setLastEditedField('qty');
                             
-                            // Allow empty string during editing
                             if (newQty === '') {
                               setTemplateRow(prev => ({ ...prev, qty: '', total: '' }));
                               return;
                             }
                             
-                            const qty = parseFloat(newQty);
+                            const qty = parseInt(newQty);
+                            if (isNaN(qty) || qty < 0) return;
                             
-                            // Reject negative values
-                            if (qty < 0) return;
-                            
-                            const rate = parseFloat(templateRow.rate) || 0;
-                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
-
-                            const subtotal = qty * rate;
-                            const taxAmount = (subtotal * gstPercent) / 100;
-                            const total = Math.round(subtotal + taxAmount);
-
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              qty: newQty,
-                              total: total.toString()
-                            }));
+                            // If user already entered total manually, calculate rate from it
+                            if (lastEditedField === 'total' && templateRow.total) {
+                              const total = parseInt(templateRow.total);
+                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                              const rate = qty > 0 ? total / (qty * (1 + gstPercent / 100)) : 0;
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: qty.toString(),
+                                rate: rate.toFixed(2)
+                              }));
+                            } else {
+                              // Calculate total from qty × rate
+                              const rate = parseFloat(templateRow.rate) || 0;
+                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                              const subtotal = qty * rate;
+                              const taxAmount = (subtotal * gstPercent) / 100;
+                              const total = Math.round(subtotal + taxAmount);
+                              
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: qty.toString(),
+                                total: total.toString()
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2333,27 +2321,26 @@ export default function PurchaseCreate() {
                       <td className="px-2 py-2 text-center w-32">
                         <input
                           type="number"
-                          step="1"
+                          step="0.01"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.rate}
-                            onChange={(e) => {
-                              const newRate = e.target.value;
-                              
-                              // Allow empty string during editing
-                              if (newRate === '') {
-                                setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
-                                return;
-                              }
-                              
-                              const rate = parseFloat(newRate);
-                              
-                              // Reject negative values
-                              if (rate < 0) return;
-                              
-                              const qty = parseFloat(templateRow.qty) || 0;
-                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                          onChange={(e) => {
+                            const newRate = e.target.value;
+                            setLastEditedField('rate');
+                            
+                            if (newRate === '') {
+                              setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
+                              return;
+                            }
+                            
+                            const rate = parseFloat(newRate);
+                            if (isNaN(rate) || rate < 0) return;
+                            
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
+                            if (qty > 0) {
                               const subtotal = qty * rate;
                               const taxAmount = (subtotal * gstPercent) / 100;
                               const total = Math.round(subtotal + taxAmount);
@@ -2363,7 +2350,13 @@ export default function PurchaseCreate() {
                                 rate: newRate,
                                 total: total.toString()
                               }));
-                            }}
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: newRate
+                              }));
+                            }
+                          }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
                             if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2403,34 +2396,31 @@ export default function PurchaseCreate() {
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
+                            setLastEditedField('total');
                             
-                            // Allow empty string during editing
                             if (newTotal === '') {
                               setTemplateRow(prev => ({ ...prev, total: '', rate: '' }));
                               return;
                             }
                             
-                            const enteredTotal = parseFloat(newTotal);
+                            const enteredTotal = parseInt(newTotal);
+                            if (isNaN(enteredTotal) || enteredTotal < 0) return;
                             
-                            // Reject negative values
-                            if (enteredTotal < 0) return;
-                            
-                            const qty = parseFloat(templateRow.qty) || 0;
+                            const qty = parseInt(templateRow.qty) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
                             if (qty > 0) {
-                              // Calculate rate from total considering tax
-                              // rate = total / (qty × (1 + gstPercent / 100))
+                              // Calculate rate from total considering tax - allow decimals
                               const rate = enteredTotal / (qty * (1 + gstPercent / 100));
                               setTemplateRow(prev => ({
                                 ...prev,
-                                total: newTotal,
-                                rate: Math.round(rate).toString()
+                                total: enteredTotal.toString(),
+                                rate: rate.toFixed(2)
                               }));
                             } else {
                               setTemplateRow(prev => ({
                                 ...prev,
-                                total: newTotal
+                                total: enteredTotal.toString()
                               }));
                             }
                           }}
@@ -2548,6 +2538,7 @@ export default function PurchaseCreate() {
                                   gst: '0',
                                   total: ''
                                 });
+                                setLastEditedField(null); // Reset field tracking
                                 }
                               }
                             }}

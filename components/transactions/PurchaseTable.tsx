@@ -175,6 +175,12 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
   const sortOrder = propSortOrder;
 
   const handleDeleteClick = (purchase: Purchase) => {
+    // Check if purchase has been fully returned
+    if (purchase.return_status === 2) {
+      showSnackbar('error', 'Cannot delete fully returned purchase. Returns must be deleted first.');
+      return;
+    }
+
     setPurchaseToDelete(purchase);
     setDeleteModalOpen(true);
   };
@@ -828,9 +834,9 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                     )}
                     <button
                       onClick={() => handleDeleteClick(purchase)}
-                      title="Delete Purchase"
-                      className="btn-icon text-red-400 hover:text-red-500"
-                      disabled={(purchase.return_status || 0) > 0}
+                      title={purchase.return_status === 2 ? "Cannot delete fully returned purchase" : "Delete Purchase"}
+                      className={`btn-icon text-red-400 hover:text-red-500 ${purchase.return_status === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={purchase.return_status === 2}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

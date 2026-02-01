@@ -92,46 +92,80 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Get return items with product details
-    const returnItems = await prisma.purchase_return_items.findMany({
-      where: { purchase_return_id: returnId },
-      select: {
-        id: true,
-        purchase_item_id: true,
-        return_qty: true,
-        unit_price: true,
-        tax_amount: true,
-        return_reason_id: true,
-        notes: true,
-        reason: {
-          select: {
-            id: true,
-            reason_name: true
+    // ⚡ PERFORMANCE: Parallelize all independent queries
+    const [returnItems, refundAllocations] = await Promise.all([
+      // Get return items with product details
+      prisma.purchase_return_items.findMany({
+        where: { purchase_return_id: returnId },
+        select: {
+          id: true,
+          purchase_item_id: true,
+          return_qty: true,
+          unit_price: true,
+          tax_amount: true,
+          return_reason_id: true,
+          notes: true,
+          reason: {
+            select: {
+              id: true,
+              reason_name: true
+            }
           }
         }
-      }
-    })
+      }),
+      // Get refund allocation history in parallel
+      prisma.refund_allocations.findMany({
+        where: { return_id: returnId },
+        include: {
+          refund: {
+            select: {
+              id: true,
+              refund_date: true,
+              refund_amount: true,
+              refund_mode: true,
+              refund_type: true,
+              notes: true,
+              created_at: true
+            }
+          }
+        },
+        orderBy: {
+          allocation_date: 'desc'
+        }
+      })
+    ])
 
-    // ✅ Get ALL purchase items from ALL invoices that have returned items
+    // ✅ FIX BUG #4: Get ALL items from ALL invoices (not just returned ones)
     const purchaseItemIds = returnItems.map(item => item.purchase_item_id)
-    const returnedPurchaseItems = await prisma.purchaseitems.findMany({
-      where: {
-        id: { in: purchaseItemIds }
-      },
-      select: {
-        id: true,
-        product_id: true,
-        name_of_product: true,
-        part: true,
-        qty: true,
-        rate: true,
-        gst_percentage: true,
-        invoice_no: true
-      }
-    })
     
-    // ✅ Get ALL items from ALL invoices (not just returned ones) for edit mode
+    // ⚡ PERFORMANCE: Fetch invoice numbers and get returned quantities in parallel
+    const [returnedPurchaseItems, returnedQuantities] = await Promise.all([
+      // Get the invoice numbers from returned items
+      prisma.purchaseitems.findMany({
+        where: {
+          id: { in: purchaseItemIds }
+        },
+        select: {
+          invoice_no: true
+        }
+      }),
+      // Get already returned quantities (excluding current return) - run in parallel
+      prisma.purchase_return_items.groupBy({
+        by: ['purchase_item_id'],
+        where: {
+          purchase_item_id: { in: purchaseItemIds },
+          purchase_return_id: { not: returnId }
+        },
+        _sum: {
+          return_qty: true
+        }
+      })
+    ])
+    
+    // Get ALL invoice numbers (unique)
     const invoiceNos = Array.from(new Set(returnedPurchaseItems.map(pi => pi.invoice_no)))
+    
+    // ⚡ PERFORMANCE: Fetch ALL items from invoices first
     const allPurchaseItems = await prisma.purchaseitems.findMany({
       where: {
         invoice_no: { in: invoiceNos }
@@ -148,11 +182,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
     
-    // Keep reference for backward compatibility
-    const originalPurchaseItems = allPurchaseItems
-
-    // Get product details
-    const productIds = Array.from(new Set(originalPurchaseItems.map(item => item.product_id).filter(Boolean)))
+    // Get all product IDs we need
+    const productIds = Array.from(new Set(allPurchaseItems.map(item => item.product_id).filter(Boolean)))
+    
+    // Fetch all products in one query
     const products = await prisma.product.findMany({
       where: {
         id: { in: productIds }
@@ -164,18 +197,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         stock: true
       }
     })
-
-    // Get already returned quantities for these items (excluding current return)
-    const returnedQuantities = await prisma.purchase_return_items.groupBy({
-      by: ['purchase_item_id'],
-      where: {
-        purchase_item_id: { in: purchaseItemIds },
-        purchase_return_id: { not: returnId } // Exclude current return
-      },
-      _sum: {
-        return_qty: true
-      }
-    })
+    
+    // Keep reference for backward compatibility
+    const originalPurchaseItems = allPurchaseItems
 
     // Create lookup maps
     const productMap = new Map(products.map(p => [p.id, p]))
@@ -253,28 +277,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Keep the variable name for backward compatibility
     const returnItemsWithDetails = allItemsWithDetails
 
-    // Get refund allocation history
-    const refundAllocations = await prisma.refund_allocations.findMany({
-      where: { return_id: returnId },
-      include: {
-        refund: {
-          select: {
-            id: true,
-            refund_date: true,
-            refund_amount: true,
-            refund_mode: true,
-            refund_type: true,
-            notes: true,
-            created_at: true
-          }
-        }
-      },
-      orderBy: {
-        allocation_date: 'desc'
-      }
-    })
-
-    // Calculate refund summary
+    // Calculate refund summary (refundAllocations already fetched in parallel above)
     const totalRefunded = refundAllocations.reduce(
       (sum, alloc) => sum + Number(alloc.allocated_amount),
       0

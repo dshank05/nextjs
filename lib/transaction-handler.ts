@@ -955,19 +955,12 @@ export class TransactionHandler {
       
       const totalPaid = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
+      // Delete allocations only - keep vendor_payments unchanged
       await tx.payment_allocations.deleteMany({
         where: { purchase_id: data.entityId }
       });
       
-      // Delete orphaned payments
-      for (const alloc of allocations) {
-        const remaining = await tx.payment_allocations.count({
-          where: { payment_id: alloc.payment_id }
-        });
-        if (remaining === 0) {
-          await tx.vendor_payments.delete({ where: { id: alloc.payment_id } });
-        }
-      }
+      // ✅ Removed orphaned payment deletion - payments remain as unallocated advance
       
       // Store for balance update
       data.totalPaid = totalPaid;
@@ -980,19 +973,12 @@ export class TransactionHandler {
       
       const totalRefunded = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
+      // Delete allocations only - keep vendor_refunds unchanged
       await tx.refund_allocations.deleteMany({
         where: { return_id: data.entityId }
       });
       
-      // Delete orphaned refunds
-      for (const alloc of allocations) {
-        const remaining = await tx.refund_allocations.count({
-          where: { refund_id: alloc.refund_id }
-        });
-        if (remaining === 0) {
-          await tx.vendor_refunds.delete({ where: { id: alloc.refund_id } });
-        }
-      }
+      // ✅ Removed orphaned refund deletion - refunds remain as unallocated
       
       // Store for balance update
       data.totalRefunded = totalRefunded;
@@ -1025,6 +1011,67 @@ export class TransactionHandler {
   
   private async executeDeleteRecord(tx: any, data: any): Promise<void> {
     if (data.type === 'purchase') {
+      // ✅ FIX: Delete related returns FIRST to avoid FK constraint violations
+      // Get all purchase item IDs for this invoice
+      const purchaseItems = await tx.purchaseitems.findMany({
+        where: { invoice_no: data.invoiceNo },
+        select: { id: true }
+      });
+      
+      const itemIds = purchaseItems.map(item => item.id);
+      
+      if (itemIds.length > 0) {
+        // Get return IDs that reference these purchase items
+        const returnItems = await tx.purchase_return_items.findMany({
+          where: { purchase_item_id: { in: itemIds } },
+          select: { purchase_return_id: true },
+          distinct: ['purchase_return_id']
+        });
+        
+        const returnIds = returnItems.map(r => r.purchase_return_id);
+        
+        if (returnIds.length > 0) {
+          // ✅ FIX: Create DEBIT_NOTE reversals BEFORE deleting returns
+          for (const returnId of returnIds) {
+            const debitNoteEntries = await tx.vendor_ledger.findMany({
+              where: {
+                reference_type: 'purchase_return',
+                reference_id: returnId,
+                transaction_type: 'DEBIT_NOTE'
+              }
+            });
+            
+            // Create DEBIT_NOTE_REVERSAL for each DEBIT_NOTE
+            for (const entry of debitNoteEntries) {
+              await ledgerService.createEntry({
+                vendor_id: entry.vendor_id,
+                transaction_date: Math.floor(Date.now() / 1000),
+                transaction_type: 'DEBIT_NOTE_REVERSAL',
+                reference_type: 'purchase_return',
+                reference_id: entry.reference_id,
+                reference_no: entry.reference_no || '',
+                payment_mode: entry.payment_mode,
+                debit: entry.credit,  // Reverse: swap credit → debit
+                credit: entry.debit,  // Reverse: swap debit → credit
+                notes: `Reversal: DEBIT_NOTE deleted (purchase deletion)`,
+                fy: entry.fy
+              }, tx);
+            }
+          }
+          
+          // Delete return items first (child records)
+          await tx.purchase_return_items.deleteMany({
+            where: { purchase_item_id: { in: itemIds } }
+          });
+          
+          // Delete purchase_returns records (parent records)
+          await tx.purchase_returns.deleteMany({
+            where: { id: { in: returnIds } }
+          });
+        }
+      }
+      
+      // NOW safe to delete purchase items (no more FK references)
       await tx.purchaseitems.deleteMany({ where: { invoice_no: data.invoiceNo } });
       await tx.bill_to.deleteMany({ where: { invoice_no: data.invoiceNo } });
       await tx.purchase.delete({ where: { id: data.purchaseId } });
@@ -1164,16 +1211,14 @@ export class TransactionHandler {
       });
       
     } else if (data.totalPaid !== undefined) {
-      // Purchase deletion
+      // Purchase deletion - only update allocated (payment record kept)
       await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_paid: -data.totalPaid,
         total_allocated: -data.totalPaid
       });
       
     } else if (data.totalRefunded !== undefined) {
-      // Return deletion
+      // Return deletion - only update refund_allocated (refund record kept)
       await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_refunded: -data.totalRefunded,
         total_refund_allocated: -data.totalRefunded
       });
     }
