@@ -359,6 +359,9 @@ export default function PurchaseCreate() {
     // Only fetch last invoice number in create mode, not edit mode
     if (!isEditMode) {
       fetchLastInvoiceNumber();
+      // ✅ Set default date to today in create mode
+      const today = new Date().toISOString().split('T')[0];
+      setFormData(prev => ({ ...prev, date: today }));
     }
   }, [isEditMode]);
 

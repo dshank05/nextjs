@@ -32,7 +32,8 @@ export default async function handler(
       vendor_id: parseInt(vendor_id as string)
     }
 
-    // Date range filter - default to current month if not provided
+    // ✅ Date range filter - ONLY apply if user provides date range via UI
+    // Otherwise, show ALL entries (no date filter)
     if (dateFrom && dateTo) {
       const { startTimestamp, endTimestamp } = parseDateRange(
         dateFrom as string,
@@ -42,15 +43,6 @@ export default async function handler(
         gte: startTimestamp,
         lte: endTimestamp
       };
-    } else {
-      // Default: Current month (first day to last day)
-      const now = new Date()
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-      const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
-      where.transaction_date = {
-        gte: Math.floor(firstDayOfMonth.getTime() / 1000),
-        lte: Math.floor(lastDayOfMonth.getTime() / 1000)
-      }
     }
 
     // Fetch ledger entries
@@ -77,7 +69,7 @@ export default async function handler(
 
     // ✅ Filter out zero-value entries (cancelled transactions)
     const nonZeroEntries = entries.filter(entry => entry.debit !== 0 || entry.credit !== 0)
-    
+
     // ✅ Return RAW entries - all formatting/merging happens on client-side
     const formattedEntries = nonZeroEntries.map(entry => {
       return {

@@ -663,33 +663,42 @@ export default async function handler(
           })
 
           // Update purchase record
+          // ✅ FIX: Build update data with proper relation syntax for staff
+          const updateData: any = {
+            bill_reference: bill_reference || null,
+            bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
+            invoice_date: finalInvoiceDate,  // ✅ Use already-calculated finalInvoiceDate
+            // vendor_id is NOT updated - changes are blocked above
+            notes: notes || null,
+            descriptions: descriptions || null,
+            payment_status: finalPaymentStatus,
+            payment_mode: parsedPaymentMode,
+            transport: transport_name || null,
+            transport_name: transport_name || null,
+            vehicle_number: vehicle_number || null,
+            packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty.toString()) : 0,
+            packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate.toString()) : 0,
+            packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total.toString()) : 0,
+            items_total: calculatedItemsTotal,
+            total_taxable_value: calculatedItemsTotal,
+            total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
+            total_sgst: total_sgst ? parseFloat(total_sgst.toString()) : 0,
+            total_igst: total_igst ? parseFloat(total_igst.toString()) : 0,
+            total_tax: calculatedTotalTax,
+            total: newTotal,
+            freight: transport_cost ? parseFloat(transport_cost.toString()) : 0
+          };
+
+          // ✅ FIX: Handle staff relation properly
+          if (staff_id) {
+            updateData.staff = { connect: { id: parseInt(staff_id.toString()) } };
+          } else if (staff_id === null) {
+            updateData.staff = { disconnect: true };
+          }
+
           const updatedPurchase = await tx.purchase.update({
             where: { id: purchaseId },
-            data: {
-              bill_reference: bill_reference || null,
-              bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
-              staff_id: staff_id ? parseInt(staff_id.toString()) : null,
-              invoice_date: finalInvoiceDate,  // ✅ Use already-calculated finalInvoiceDate
-              // vendor_id is NOT updated - changes are blocked above
-              notes: notes || null,
-              descriptions: descriptions || null,
-              payment_status: finalPaymentStatus,
-              payment_mode: parsedPaymentMode,
-              transport: transport_name || null,
-              transport_name: transport_name || null,
-              vehicle_number: vehicle_number || null,
-              packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty.toString()) : 0,
-              packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate.toString()) : 0,
-              packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total.toString()) : 0,
-              items_total: calculatedItemsTotal,
-              total_taxable_value: calculatedItemsTotal,
-              total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
-              total_sgst: total_sgst ? parseFloat(total_sgst.toString()) : 0,
-              total_igst: total_igst ? parseFloat(total_igst.toString()) : 0,
-              total_tax: calculatedTotalTax,
-              total: newTotal,
-              freight: transport_cost ? parseFloat(transport_cost.toString()) : 0,
-            }
+            data: updateData
           })
 
           // Handle item updates

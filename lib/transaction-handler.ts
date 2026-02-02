@@ -169,6 +169,32 @@ export class TransactionHandler {
       });
     }
 
+    // ✅ FIX: Delete REFUND_REVERSAL when going Incomplete→Complete
+    // This handles the 1→0→1 path where REFUND_REVERSAL was created on 1→0
+    // When going 0→1 again, delete the reversal so DEBIT_NOTE stands alone
+    if (params.oldStatus === 0 && params.newStatus === 1) {
+      await params.tx.vendor_ledger.deleteMany({
+        where: {
+          vendor_id: params.vendorId,
+          reference_type: 'purchase_return',
+          reference_id: params.returnId,
+          transaction_type: 'REFUND_REVERSAL'
+        }
+      });
+    }
+
+    // ✅ FIX: Also handle Partial→Complete case (2→1)
+    if (params.oldStatus === 2 && params.newStatus === 1) {
+      await params.tx.vendor_ledger.deleteMany({
+        where: {
+          vendor_id: params.vendorId,
+          reference_type: 'purchase_return',
+          reference_id: params.returnId,
+          transaction_type: 'REFUND_REVERSAL'
+        }
+      });
+    }
+
     // Build change set
     const changes: ChangeSet = {
       oldStatus: params.oldStatus,
@@ -318,6 +344,7 @@ export class TransactionHandler {
   /**
    * Execute all operations within a transaction
    * This is the main method that APIs should call
+   * ✅ FIXED: Checks for existing PAYMENT entries to avoid duplicates
    */
   async executeInTransaction(
     tx: any,
@@ -327,30 +354,57 @@ export class TransactionHandler {
     const adjustmentEntryIds: { vendorId: number; entryId: number }[] = [];
     
     for (const op of result.ledgerOps) {
+      let entryToCreate = op.entry;
+      
+      // ✅ Check if this operation requires existence check
+      if (op.checkExisting && op.checkExisting.useAdjustmentIfExists) {
+        const existingEntry = await tx.vendor_ledger.findFirst({
+          where: {
+            vendor_id: op.entry.vendor_id,
+            transaction_type: op.checkExisting.transactionType,
+            reference_type: op.entry.reference_type,
+            reference_id: op.entry.reference_id
+          },
+          select: { credit: true }
+        });
+        
+        if (existingEntry) {
+          // Entry exists - use PAYMENT_ADJUSTMENT instead
+          const creditDiff = op.entry.credit - Number(existingEntry.credit);
+          entryToCreate = {
+            ...op.entry,
+            transaction_type: 'PAYMENT_ADJUSTMENT',
+            credit: creditDiff > 0 ? creditDiff : 0,
+            debit: creditDiff < 0 ? Math.abs(creditDiff) : 0,
+            notes: `Payment ${creditDiff > 0 ? 'increased' : 'adjusted'} by ₹${Math.abs(creditDiff).toFixed(2)} for purchase ${op.entry.reference_no}`
+          };
+        }
+      }
+      
       // Create the entry
       const createdEntry = await tx.vendor_ledger.create({
         data: {
-          vendor_id: op.entry.vendor_id,
-          transaction_date: op.entry.transaction_date,
-          transaction_type: op.entry.transaction_type,
-          reference_type: op.entry.reference_type,
-          reference_id: op.entry.reference_id,
-          reference_no: op.entry.reference_no,
-          payment_mode: op.entry.payment_mode,
-          payment_status: op.entry.payment_status,
-          payment_date: op.entry.payment_date,
-          debit: op.entry.debit,
-          credit: op.entry.credit,
-          balance: await ledgerService.getLatestBalance(op.entry.vendor_id, tx) + op.entry.debit - op.entry.credit,
-          notes: op.entry.notes || '',
-          fy: op.entry.fy
+          vendor_id: entryToCreate.vendor_id,
+          transaction_date: entryToCreate.transaction_date,
+          transaction_type: entryToCreate.transaction_type,
+          reference_type: entryToCreate.reference_type,
+          reference_id: entryToCreate.reference_id,
+          reference_no: entryToCreate.reference_no,
+          payment_mode: entryToCreate.payment_mode,
+          payment_status: entryToCreate.payment_status,
+          payment_date: entryToCreate.payment_date,
+          debit: entryToCreate.debit,
+          credit: entryToCreate.credit,
+          balance: await ledgerService.getLatestBalance(entryToCreate.vendor_id, tx) + entryToCreate.debit - entryToCreate.credit,
+          notes: entryToCreate.notes || '',
+          fy: entryToCreate.fy
         }
       });
       
       // Track if this is an adjustment entry
-      if (op.entry.transaction_type.includes('_ADJUSTMENT')) {
+      if (entryToCreate.transaction_type.includes('_ADJUSTMENT')) {
         adjustmentEntryIds.push({
-          vendorId: op.entry.vendor_id,
+          vendorId: entryToCreate.vendor_id,
           entryId: createdEntry.id
         });
       }

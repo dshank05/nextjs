@@ -110,13 +110,19 @@ export default function VendorTransactionEntry() {
   const fetchOutstandingBills = async (vendorId: number) => {
     setLoading(true)
     try {
-      // ✅ FIX #2: Fetch ALL bills (paid and unpaid) for edit mode flexibility
       const res = await fetch(`/api/purchases?vendor=${vendorId}&limit=1000&sortOrder=asc`)
       const data = await res.json()
       
       if (data.purchases) {
         const bills: OutstandingBill[] = data.purchases
-          .filter((p: any) => p.remaining_amount > 0) // Still filter for bills with outstanding amounts
+          .filter((p: any) => {
+            // ✅ FIX: In edit mode, include ALL bills (allow editing allocated bills)
+            // In create mode, only show bills with outstanding amounts
+            if (isEditMode) {
+              return true // Show all bills in edit mode
+            }
+            return p.remaining_amount > 0 // Show only outstanding in create mode
+          })
           .map((p: any) => ({
             purchase_id: p.id,
             invoice_no: p.invoice_no,
@@ -239,7 +245,8 @@ export default function VendorTransactionEntry() {
             invoice_date: alloc.invoice_date,
             total_bill: alloc.purchase_total,
             total_paid: alloc.allocated_amount, // This bill has this much paid
-            outstanding_amount: alloc.purchase_total - alloc.allocated_amount,
+            // ✅ FIX 1: Cap outstanding at 0 to prevent showing negative amounts
+            outstanding_amount: Math.max(0, alloc.purchase_total - alloc.allocated_amount),
             payment_status: alloc.payment_status,
             allocated: alloc.allocated_amount
           }))
@@ -364,6 +371,12 @@ export default function VendorTransactionEntry() {
     
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
+      // ✅ FIX 3: Check if any bill has allocation > total_bill
+      const hasOverAllocation = outstandingBills.some(
+        bill => (bill.allocated || 0) > bill.total_bill
+      )
+      if (hasOverAllocation) return true
+      
       if (allocated === 0) return true
       if (Math.abs(amountNum - allocated) > 0.01) return true
       return false
@@ -408,6 +421,18 @@ export default function VendorTransactionEntry() {
     
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
+      // ✅ FIX 4: Check for over-allocation on any bill
+      const overAllocatedBills = outstandingBills.filter(
+        bill => (bill.allocated || 0) > bill.total_bill
+      )
+      
+      if (overAllocatedBills.length > 0) {
+        setError(
+          `Cannot allocate more than bill amount. Options: 1) Reduce payment amount to match bills, or 2) Switch to MIXED payment type.`
+        )
+        return
+      }
+      
       if (Math.abs(totalAllocated - amountNum) > 0.01) {
         setError(`Total allocated (₹${totalAllocated.toFixed(2)}) must equal amount (₹${amountNum.toFixed(2)})`)
         return
@@ -802,7 +827,7 @@ export default function VendorTransactionEntry() {
                                   step="0.01"
                                   value={bill.allocated || ''}
                                   onChange={(e) => handleBillAllocationChange(bill.purchase_id, e.target.value)}
-                                  max={bill.outstanding_amount}
+                                  max={bill.total_bill}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="0"

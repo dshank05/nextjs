@@ -208,29 +208,36 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // Create the main return record with debit note and P&F fields
+      // ✅ FIX: Use Prisma relation syntax instead of direct field assignment
+      const returnData: any = {
+        debit_note_no: debitNoteNo,
+        note_type: 'DEBIT',
+        vendor: { connect: { id: parseInt(vendor_id) } },
+        return_date: returnDateTimestamp,
+        total_amount: totalAmount,
+        total_tax: totalTax,
+        status: 1,
+        notes: return_notes || '',
+        fy: financialYear,
+        payment_status: paymentStatusValue,
+        payment_mode: paymentModeValue,
+        payment_date: paymentDateValue,
+        refund_amount: refundAmount,
+        include_packing_forwarding: 0,
+        include_freight: 0,
+        pf_calculation_method: 3,
+        freight_calculation_method: 3,
+        packing_forwarding_amount: packingForwardingAmount,
+        freight_amount: freightAmount
+      };
+
+      // Add purchase relation if available (optional)
+      if (affectedPurchases.length > 0) {
+        returnData.purchase = { connect: { id: affectedPurchases[0].id } };
+      }
+
       const returnRecord = await tx.purchase_returns.create({
-        data: {
-          debit_note_no: debitNoteNo,
-          note_type: 'DEBIT',
-          vendor_id: parseInt(vendor_id),
-          purchase_id: affectedPurchases.length > 0 ? affectedPurchases[0].id : null,
-          return_date: returnDateTimestamp,
-          total_amount: totalAmount,
-          total_tax: totalTax,
-          status: 1,
-          notes: return_notes || '',
-          fy: financialYear,
-          payment_status: paymentStatusValue,
-          payment_mode: paymentModeValue,
-          payment_date: paymentDateValue,
-          refund_amount: refundAmount,
-          include_packing_forwarding: 0,
-          include_freight: 0,
-          pf_calculation_method: 3,
-          freight_calculation_method: 3,
-          packing_forwarding_amount: packingForwardingAmount,
-          freight_amount: freightAmount
-        }
+        data: returnData
       })
 
       // ✅ PARALLEL OPTIMIZATION: Create return items and update stock in parallel
@@ -403,7 +410,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         // await tx.refund_allocations.create({
         //   data: {
         //     refund_id: refund.id,
-        //     return_id: returnRecord.id,
+        //    te return_id: returnRecord.id,
         //     allocated_amount: refundAmount,
         //     allocation_date: returnDateTimestamp,
         //     notes: 'Allocated during return creation'

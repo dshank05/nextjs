@@ -35,12 +35,69 @@ export interface ChangeSet {
 export interface LedgerOperation {
   entry: LedgerEntryData;
   description: string;
+  checkExisting?: {
+    transactionType: string;
+    useAdjustmentIfExists: boolean;
+  };
 }
 
 export class LedgerHandler {
   /**
+   * Calculate advance balance and payment breakdown
+   * Helper for payment ledger notes
+   */
+  private calculateAdvanceBreakdown(
+    total: number,
+    currentBalance?: {
+      total_paid: number;
+      total_allocated: number;
+      total_refunded: number;
+      total_refund_allocated: number;
+    }
+  ): { advanceUsed: number; newPayment: number; hasAdvance: boolean } {
+    const advanceBalance = currentBalance 
+      ? Number(currentBalance.total_paid) - Number(currentBalance.total_allocated)
+      : 0;
+    
+    const advanceUsed = Math.min(Math.max(0, advanceBalance), total);
+    const newPayment = total - advanceUsed;
+    
+    return {
+      advanceUsed,
+      newPayment,
+      hasAdvance: advanceUsed > 0
+    };
+  }
+  
+  /**
+   * Generate payment notes with advance information
+   */
+  private generatePaymentNotes(
+    invoiceNo: string,
+    total: number,
+    currentBalance?: {
+      total_paid: number;
+      total_allocated: number;
+      total_refunded: number;
+      total_refund_allocated: number;
+    }
+  ): string {
+    const { advanceUsed, newPayment, hasAdvance } = this.calculateAdvanceBreakdown(total, currentBalance);
+    
+    if (advanceUsed >= total) {
+      return `Payment for purchase ${invoiceNo} (fully from ₹${advanceUsed.toFixed(2)} advance)`;
+    } else if (hasAdvance) {
+      return `Payment for purchase ${invoiceNo} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment)`;
+    } else {
+      return `Payment made for purchase ${invoiceNo}`;
+    }
+  }
+  
+  /**
    * Get ledger operations for purchase status changes
    * Handles all 9 cases for purchase edit
+   * ✅ FIXED: Checks for existing PAYMENT entries to avoid duplicates
+   * ✅ FIXED: Shows advance balance usage in payment notes
    */
   getPurchaseLedgerOps(changes: ChangeSet): LedgerOperation[] {
     const ops: LedgerOperation[] = [];
@@ -110,7 +167,9 @@ export class LedgerHandler {
           });
         }
         
-        // Second: Create payment
+        // Second: Create payment with advance information
+        // ✅ FIXED: Shows advance balance usage in notes
+        // ✅ FIXED: Checks for existing PAYMENT and uses PAYMENT_ADJUSTMENT if found
         ops.push({
           entry: {
             vendor_id: changes.vendorId,
@@ -124,10 +183,14 @@ export class LedgerHandler {
             payment_mode: changes.paymentMode,
             payment_status: 1,
             payment_date: changes.paymentDate || timestamp,
-            notes: `Payment made for purchase ${changes.invoiceNo}`,
+            notes: this.generatePaymentNotes(changes.invoiceNo!, changes.newTotal, changes.currentBalance),
             fy: changes.fy
           },
-          description: 'Payment creation'
+          description: 'Payment creation',
+          checkExisting: {
+            transactionType: 'PAYMENT',
+            useAdjustmentIfExists: true
+          }
         });
         break;
         
@@ -154,7 +217,9 @@ export class LedgerHandler {
           });
         }
         
-        // Second: Create payment for remaining amount
+        // Second: Create payment for remaining amount with advance information
+        // ✅ FIXED: Shows advance balance usage in notes
+        // ✅ FIXED: Checks for existing PAYMENT and uses PAYMENT_ADJUSTMENT if found
         ops.push({
           entry: {
             vendor_id: changes.vendorId,
@@ -168,10 +233,14 @@ export class LedgerHandler {
             payment_mode: changes.paymentMode,
             payment_status: 1,
             payment_date: changes.paymentDate || timestamp,
-            notes: `Payment for remaining amount ₹${remainingAmount} for purchase ${changes.invoiceNo} (marked as fully paid)`,
+            notes: this.generatePaymentNotes(changes.invoiceNo!, remainingAmount, changes.currentBalance),
             fy: changes.fy
           },
-          description: 'Payment for remaining amount'
+          description: 'Payment for remaining amount',
+          checkExisting: {
+            transactionType: 'PAYMENT',
+            useAdjustmentIfExists: true
+          }
         });
         break;
         

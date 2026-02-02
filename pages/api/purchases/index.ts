@@ -491,7 +491,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // ===== STEP 3: DATA PREPARATION ===== 
     // ✅ TIMEZONE SAFE: Add T12:00:00 to avoid timezone shift
-    const invoiceDate = new Date(date + 'T12:00:00').getTime() / 1000
+    // ✅ VALIDATION: Fallback to current date if not provided
+    const invoiceDate = date 
+      ? Math.floor(new Date(date + 'T12:00:00').getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal +
       parseFloat(packing_forwarding_total?.toString()) +
@@ -501,36 +504,49 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // ===== STEP 4: OPTIMIZED DATABASE TRANSACTION =====
     const purchase = await prisma.$transaction(async (tx) => {
       // ===== DB OPERATION 1: Create purchase record =====
+      // ✅ FIX: Build data object based on vendor_id to avoid mixing relation and unchecked syntax
+      const purchaseData: any = {
+        invoice_no: invoiceNumberToUse,
+        bill_reference: bill_reference,
+        bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
+        items_total: itemsTotal,
+        freight: parseFloat(req.body.transport_cost?.toString()) || 0,
+        total_taxable_value: itemsTotal,
+        total_cgst: parseFloat(total_cgst?.toString()) || 0,
+        total_sgst: parseFloat(total_sgst?.toString()) || 0,
+        total_igst: parseFloat(total_igst?.toString()) || 0,
+        total_tax: parseFloat(total_tax?.toString()) || 0,
+        total: calculatedGrandTotal,
+        notes: notes || '',
+        descriptions: descriptions,
+        packing_forwarding_qty: parseFloat(packing_forwarding_qty?.toString()) || 0,
+        packing_forwarding_rate: parseFloat(packing_forwarding_rate?.toString()) || 0,
+        packing_forwarding_total: parseFloat(packing_forwarding_total?.toString()) || 0,
+        invoice_date: Math.floor(invoiceDate),
+        updated_at: new Date().toISOString().split('T')[0],
+        payment_status: payment_status || 0,
+        payment_mode: payment_mode,
+        fy: currentFy,
+        transport: req.body.transport_name || '',
+        transport_name: req.body.transport_name,
+        vehicle_number: req.body.vehicle_number,
+        return_status: 0
+      };
+
+      // Add staff relation if provided
+      if (staff_id) {
+        purchaseData.staff = { connect: { id: parseInt(staff_id) } };
+      }
+
+      // Handle vendor: use relation for real vendors, direct field for "Other" (vendor_id = 0)
+      if (parseInt(vendor_id) === 0) {
+        purchaseData.vendor_id = 0;
+      } else {
+        purchaseData.vendor = { connect: { id: parseInt(vendor_id) } };
+      }
+
       const purchase = await tx.purchase.create({
-        data: {
-          invoice_no: invoiceNumberToUse,
-          bill_reference: bill_reference,
-          bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
-          staff_id: staff_id ? parseInt(staff_id) : null,
-          vendor_id: parseInt(vendor_id),
-          items_total: itemsTotal,
-          freight: parseFloat(req.body.transport_cost?.toString()) || 0,
-          total_taxable_value: itemsTotal,
-          total_cgst: parseFloat(total_cgst?.toString()) || 0,
-          total_sgst: parseFloat(total_sgst?.toString()) || 0,
-          total_igst: parseFloat(total_igst?.toString()) || 0,
-          total_tax: parseFloat(total_tax?.toString()) || 0,
-          total: calculatedGrandTotal,
-          notes: notes || '',
-          descriptions: descriptions,
-          packing_forwarding_qty: parseFloat(packing_forwarding_qty?.toString()) || 0,
-          packing_forwarding_rate: parseFloat(packing_forwarding_rate?.toString()) || 0,
-          packing_forwarding_total: parseFloat(packing_forwarding_total?.toString()) || 0,
-          invoice_date: Math.floor(invoiceDate),
-          updated_at: new Date().toISOString().split('T')[0],
-          payment_status: payment_status || 0,
-          payment_mode: payment_mode,
-          fy: currentFy,
-          transport: req.body.transport_name || '',
-          transport_name: req.body.transport_name,
-          vehicle_number: req.body.vehicle_number,
-          return_status: 0
-        }
+        data: purchaseData
       });
 
       // ===== DB OPERATION 2: Create bill_to record =====
