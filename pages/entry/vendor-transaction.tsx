@@ -629,7 +629,7 @@ export default function VendorTransactionEntry() {
           setOutstandingReturns([])
           setAmount('')
           setMode(1)
-          setDate(new Date().toISOString().split('T')[0])
+          setDate(getLocalDateString())
           setNotes('')
           setError('')
         }

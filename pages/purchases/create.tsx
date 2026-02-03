@@ -9,6 +9,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
+import { getLocalDateString } from '../../lib/date-utils';
 
 
 interface Vendor {
@@ -360,8 +361,7 @@ export default function PurchaseCreate() {
     if (!isEditMode) {
       fetchLastInvoiceNumber();
       // ✅ Set default date to today in create mode
-      const today = new Date().toISOString().split('T')[0];
-      setFormData(prev => ({ ...prev, date: today }));
+      setFormData(prev => ({ ...prev, date: getLocalDateString() }));
     }
   }, [isEditMode]);
 
