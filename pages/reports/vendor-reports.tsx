@@ -242,7 +242,13 @@ export default function VendorLedgerPage() {
             }
             config={{
               title: activeView === 'outstanding' ? 'Vendor Outstanding Report' : 'Debit Notes Report',
-              fileName: `${activeView === 'outstanding' ? 'Vendor_Outstanding' : 'Debit_Notes'}_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `${activeView === 'outstanding' ? 'Vendor_Outstanding' : 'Debit_Notes'}_Report_${(() => {
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = String(today.getMonth() + 1).padStart(2, '0');
+                const day = String(today.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+              })()}`
             }}
           />
         </div>

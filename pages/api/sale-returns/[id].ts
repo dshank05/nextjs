@@ -217,13 +217,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Create lookup maps
     const productMap = new Map(products.map(p => [p.id, p.display_name]))
 
-    // Format return date
+    // Format return date in local timezone
     let formattedReturnDate = ''
     try {
       if (returnRecord.return_date) {
         const dateObj = new Date(returnRecord.return_date * 1000)
         if (!isNaN(dateObj.getTime())) {
-          formattedReturnDate = dateObj.toISOString().split('T')[0]
+          const year = dateObj.getFullYear();
+          const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+          const day = String(dateObj.getDate()).padStart(2, '0');
+          formattedReturnDate = `${year}-${month}-${day}`;
         }
       }
     } catch (error) {
@@ -278,7 +281,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         return_reason: returnItem?.reason?.reason_name || 'Unknown Reason',
         notes: returnItem?.notes || '',
         bill_reference: invoice.invoice_no?.toString() || 'N/A',
-        invoice_date: invoice.invoice_date ? new Date(invoice.invoice_date * 1000).toISOString().split('T')[0] : ''
+        invoice_date: invoice.invoice_date ? (() => {
+          const date = new Date(invoice.invoice_date * 1000);
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        })() : ''
       }
     })
 
@@ -287,7 +296,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       id: invoice.id?.toString() || returnRecord.id.toString(),
       invoice_no: invoice.invoice_no?.toString() || 'N/A',
       bill_reference: invoice.invoice_no?.toString() || (isInvoicex ? 'Salex Return' : 'Sale Return'),
-      invoice_date: invoice.invoice_date ? new Date(invoice.invoice_date * 1000).toISOString().split('T')[0] : '',
+      invoice_date: invoice.invoice_date ? (() => {
+        const date = new Date(invoice.invoice_date * 1000);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })() : '',
       total_amount: returnRecord.total_amount,
       has_tax: (returnRecord.total_tax || 0) > 0,
       available_items: allItemsWithDetails.length,

@@ -138,9 +138,10 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       // ✅ Calculate NET amount (fixes double debit/credit display bug)
       const netAmount = totalDebit - totalCredit
       
-      // ✅ Calculate earliest date (for sorting/position) and latest date (for display)
-      const earliestDate = Math.min(...group.map(e => e.date))
-      const latestDate = Math.max(...group.map(e => e.date))
+      // ✅ FIX: Find the BASE transaction (not _ADJUSTMENT) to use its date
+      // This keeps the entry at its original chronological position
+      const baseTransaction = group.find(e => !e.transactionType.includes('_ADJUSTMENT') && !e.transactionType.includes('_REVERSAL')) || group[0]
+      const baseDate = baseTransaction.date
       
       // ✅ Special display for deletion (merged reversals)
       const isDeletion = group.every(e => e.transactionType.endsWith('_REVERSAL') && e.referenceType === 'purchase')
@@ -161,7 +162,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
             voucherType = 'Purchase'
             break
           case 'PAYMENT':
-            particulars = firstEntry.paymentMode === 0 ? 'Cash' : 'Bank'
+            particulars = baseTransaction.paymentMode === 0 ? 'Cash' : 'Bank'
             voucherType = 'Payment'
             break
           case 'DEBIT_NOTE':
@@ -169,7 +170,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
             voucherType = 'Debit Note'
             break
           case 'REFUND_RECEIVED':
-            particulars = firstEntry.paymentMode === 0 ? 'Cash' : 'Bank'
+            particulars = baseTransaction.paymentMode === 0 ? 'Cash' : 'Bank'
             voucherType = 'Refund'
             break
           default:
@@ -178,20 +179,21 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
         }
       }
       
-      // Create merged entry (keep first entry's metadata)
+      // Create merged entry using BASE transaction for sorting, date, and metadata
       merged.push({
-        ...firstEntry,
-        transaction_date: earliestDate,  // Preserves original position
-        display_date: latestDate,        // Shows updated date in UI
-        date: latestDate,  // For backward compatibility
-        formattedDate: new Date(latestDate * 1000).toLocaleDateString('en-IN'),
+        ...baseTransaction,  // ✅ FIX: Use base transaction, not firstEntry
+        transaction_date: baseDate,  // Use base transaction date for sorting
+        display_date: baseDate,      // Use base transaction date for display too
+        date: baseDate,              // Keep entry at original position
+        formattedDate: new Date(baseDate * 1000).toLocaleDateString('en-IN'),
         debit: netAmount > 0 ? netAmount : 0,        // Show in debit column only if NET is positive
         credit: netAmount < 0 ? Math.abs(netAmount) : 0,  // Show in credit column only if NET is negative
+        paymentMode: baseTransaction.paymentMode,    // Use base transaction payment mode
         // ✅ Update display names
         particulars,
         voucherType,
         // Balance will be recalculated later
-        transactionType: firstEntry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
+        transactionType: baseTransaction.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
       })
     }
   })
@@ -200,7 +202,15 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
   // ✅ Filter out entries that NET to zero (deleted/cancelled transactions)
   return merged
     .filter(entry => entry.debit !== 0 || entry.credit !== 0)  // Keep only non-zero entries
-    .sort((a, b) => (a.transaction_date || a.date) - (b.transaction_date || b.date))  // Sort by transaction_date (earliest)
+    .sort((a, b) => {
+      // Primary sort: by date
+      const dateDiff = (a.transaction_date || a.date) - (b.transaction_date || b.date)
+      if (dateDiff !== 0) return dateDiff
+      
+      // ✅ Secondary sort: by ID (matches backend ORDER BY logic)
+      // This ensures PURCHASE (id:418) shows before PAYMENT (id:419) on same date
+      return a.id - b.id
+    })
 }
 
 /**

@@ -197,7 +197,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           unit_price: item.rate || 0,
           tax_rate: item.gst_percentage || 0,
           bill_reference: purchase.bill_reference || '',
-          invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
+          invoice_date: purchase.invoice_date ? (() => {
+            const date = new Date(purchase.invoice_date * 1000);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })() : '',
           current_stock: product?.stock || 0  // Current stock from product table
         }
       })
@@ -209,7 +215,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           id: purchase.id.toString(),
           invoice_no: purchase.invoice_no.toString(),
           bill_reference: purchase.bill_reference || `BILL-${purchase.invoice_no}`,
-          invoice_date: purchase.invoice_date ? new Date(purchase.invoice_date * 1000).toISOString().split('T')[0] : '',
+          invoice_date: purchase.invoice_date ? (() => {
+            const date = new Date(purchase.invoice_date * 1000);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })() : '',
           total_amount: purchase.total || 0,
           has_tax: (purchase.total_tax || 0) > 0,
           available_items: availableItems.length,

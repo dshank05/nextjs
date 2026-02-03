@@ -3,7 +3,7 @@ import { FileText, Loader2 } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
 import { mergeLedgerEntries, recalculateBalance } from '../../lib/ledger-merge-utils';
-import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils';
+import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
 
 interface LedgerEntry {
   id: number;
@@ -212,7 +212,7 @@ export default function VendorLedgerPage() {
               ]}
               config={{
                 title: `Vendor Ledger - ${selectedVendorName}`,
-                fileName: `Vendor_Ledger_${selectedVendorName}_${new Date().toISOString().split('T')[0]}`
+                fileName: `Vendor_Ledger_${selectedVendorName}_${getLocalDateString()}`
               }}
             />
           </div>

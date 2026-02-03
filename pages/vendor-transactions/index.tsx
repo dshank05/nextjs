@@ -5,7 +5,7 @@ import { Eye, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { DateRangeFilter } from '../../components/common/DateRangeFilter'
 import { ExportMenu } from '../../components/common/ExportMenu'
-import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils'
+import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 
@@ -274,7 +274,7 @@ export default function VendorTransactionsPage() {
 
   const exportConfig = {
     title: 'Vendor Transactions',
-    fileName: `vendor-transactions-${new Date().toISOString().split('T')[0]}`
+    fileName: `vendor-transactions-${getLocalDateString()}`
   }
 
   return (

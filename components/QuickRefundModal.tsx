@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, DollarSign } from 'lucide-react';
 import { useSnackbar } from './SnackbarProvider';
+import { getLocalDateString } from '../lib/date-utils';
 
 interface QuickRefundModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export default function QuickRefundModal({
   const { showSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [refundAmount, setRefundAmount] = useState(outstandingAmount.toString());
-  const [refundDate, setRefundDate] = useState(new Date().toISOString().split('T')[0]);
+  const [refundDate, setRefundDate] = useState(getLocalDateString());
   const [refundMode, setRefundMode] = useState<number>(1); // 0=Cash, 1=Bank
   const [notes, setNotes] = useState('');
 

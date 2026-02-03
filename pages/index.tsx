@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { format, subDays } from 'date-fns'
+import { getLocalDateString } from '../lib/date-utils'
 
 interface DashboardStats {
   totalProducts: number
@@ -46,12 +47,10 @@ export default function Dashboard() {
   })
   const [loading, setLoading] = useState(true)
   const [selectedSalesDate, setSelectedSalesDate] = useState(() => {
-    const today = new Date()
-    return today.toISOString().split('T')[0] // YYYY-MM-DD format
+    return getLocalDateString() // YYYY-MM-DD format in local timezone
   })
   const [selectedPurchasesDate, setSelectedPurchasesDate] = useState(() => {
-    const today = new Date()
-    return today.toISOString().split('T')[0] // YYYY-MM-DD format
+    return getLocalDateString() // YYYY-MM-DD format in local timezone
   })
   const [dailySalesStats, setDailySalesStats] = useState<DailyStats | null>(null)
   const [dailyPurchasesStats, setDailyPurchasesStats] = useState<DailyStats | null>(null)
@@ -63,8 +62,11 @@ export default function Dashboard() {
   // Generate last 5 days for navigation
   const last5Days = Array.from({ length: 5 }, (_, i) => {
     const date = subDays(new Date(), i)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
     return {
-      date: date.toISOString().split('T')[0],
+      date: `${year}-${month}-${day}`, // Local timezone date string
       label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : format(date, 'MMM d')
     }
   })

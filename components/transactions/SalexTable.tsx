@@ -5,6 +5,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface SalexItem {
   id: number;
@@ -336,7 +337,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             ]}
             config={{
               title: 'Salex Report',
-              fileName: `Salex_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `Salex_Report_${getLocalDateString()}`
             }}
           />
           {actionButton && (

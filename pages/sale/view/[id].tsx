@@ -7,6 +7,7 @@ import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common/ExportMenu';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
 import QuickPaymentModal from '../../../components/QuickPaymentModal';
+import { getLocalDateString } from '../../../lib/date-utils';
 
 interface InvoiceItem {
   product_id: number;
@@ -471,7 +472,7 @@ export default function InvoiceView() {
               ]}
               config={{
                 title: 'Sales Invoice Details',
-                fileName: `Sale_Invoice_${invoice.invoice_no}_${new Date().toISOString().split('T')[0]}`
+                fileName: `Sale_Invoice_${invoice.invoice_no}_${getLocalDateString()}`
               }}
               onExport={(exportType) => {
                 if (exportType === 'excel') {

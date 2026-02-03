@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, DollarSign } from 'lucide-react';
 import { useSnackbar } from './SnackbarProvider';
+import { getLocalDateString } from '../lib/date-utils';
 
 interface PaymentHistory {
   allocation_id: number;
@@ -41,7 +42,7 @@ export default function QuickPaymentModal({
   const { showSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(outstandingAmount.toString());
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(getLocalDateString());
   const [paymentMode, setPaymentMode] = useState<number>(1); // 0=Cash, 1=Bank
   const [notes, setNotes] = useState('');
 

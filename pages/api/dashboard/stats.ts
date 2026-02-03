@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { getLocalDateString } from '../../../lib/date-utils'
 
 export default async function handler(
   req: NextApiRequest,
@@ -16,7 +17,7 @@ export default async function handler(
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
     const todayStartUnix = Math.floor(todayStart.getTime() / 1000)
     const todayEndUnix = Math.floor(todayEnd.getTime() / 1000)
-    const todayDateString = now.toISOString().split('T')[0] // YYYY-MM-DD format
+    const todayDateString = getLocalDateString() // YYYY-MM-DD format in local timezone
 
     // Run all queries in parallel for better performance
     const [

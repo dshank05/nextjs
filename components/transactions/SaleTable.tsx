@@ -5,6 +5,7 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface SaleItem {
   id: number;
@@ -328,7 +329,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
             ]}
             config={{
               title: 'Sale Report',
-              fileName: `Sale_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `Sale_Report_${getLocalDateString()}`
             }}
           />
           {actionButton && (

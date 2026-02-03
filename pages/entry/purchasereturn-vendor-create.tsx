@@ -7,7 +7,7 @@ import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
-import { formatStartDateForAPI, formatEndDateForAPI } from '../../lib/date-utils';
+import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
 
 interface Vendor {
   id: string;
@@ -120,7 +120,7 @@ export default function PurchaseReturnVendorCreatePage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(getLocalDateString());
 
   // Payment tracking state
   const [paymentStatus, setPaymentStatus] = useState<number>(0); // 0=Unpaid, 1=Paid
@@ -379,7 +379,13 @@ export default function PurchaseReturnVendorCreatePage() {
       setReturnNotes(returnData.return.notes || '');
       setPaymentStatus(returnData.return.payment_status ?? 0);
       setPaymentMode(returnData.return.payment_mode ?? 1);
-      setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
+      setPaymentDate(returnData.return.payment_date ? (() => {
+        const date = new Date(returnData.return.payment_date * 1000);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })() : '');
       setPackingForwardingAmount(returnData.return.packing_forwarding_amount || 0);
 
       // Set vendor
@@ -821,7 +827,7 @@ export default function PurchaseReturnVendorCreatePage() {
                     setPaymentStatus(newStatus);
                     // Auto-set payment date to today if marking as paid
                     if (newStatus === 1) {
-                      setPaymentDate(new Date().toISOString().split('T')[0]);
+                      setPaymentDate(getLocalDateString());
                     } else {
                       setPaymentDate('');
                     }

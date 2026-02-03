@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Eye } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ClearableInput, ExportMenu } from '../../components/common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface DebitNote {
   id: number;
@@ -201,7 +202,7 @@ export default function DebitNotesReport() {
             ]}
             config={{
               title: 'Debit Notes Report',
-              fileName: `Debit_Notes_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `Debit_Notes_Report_${getLocalDateString()}`
             }}
           />
         </div>

@@ -7,6 +7,7 @@ import SessionStorageService from '../../../lib/sessionStorage';
 import RefundHistoryModal from '../../../components/RefundHistoryModal';
 import QuickRefundModal from '../../../components/QuickRefundModal';
 import { ExportMenu } from '../../../components/common/ExportMenu';
+import { getLocalDateString } from '../../../lib/date-utils';
 
 interface PurchaseReturn {
   id: number;
@@ -395,7 +396,7 @@ export default function PurchaseReturnDetailPage() {
               columns={[]}
               config={{
                 title: `Purchase Return #${returnData.return_no}`,
-                fileName: `purchase-return-${returnData.return_no}-${new Date().toISOString().split('T')[0]}`
+                fileName: `purchase-return-${returnData.return_no}-${getLocalDateString()}`
               }}
               onExport={(exportType) => {
                 if (exportType === 'excel') {

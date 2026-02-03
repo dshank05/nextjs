@@ -5,6 +5,7 @@ import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
+import { getLocalDateString } from '../../lib/date-utils'
 
 interface OutstandingBill {
   purchase_id: number
@@ -15,6 +16,7 @@ interface OutstandingBill {
   outstanding_amount: number
   payment_status: number
   allocated?: number
+  isInCurrentPayment?: boolean  // Track if bill is part of current payment being edited
 }
 
 interface OutstandingReturn {
@@ -26,6 +28,7 @@ interface OutstandingReturn {
   outstanding_refund: number
   payment_status: number
   allocated?: number
+  isInCurrentPayment?: boolean  // Track if return is part of current refund being edited
 }
 
 interface Vendor {
@@ -47,7 +50,7 @@ export default function VendorTransactionEntry() {
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for EXPENSE
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
   const [outstandingReturns, setOutstandingReturns] = useState<OutstandingReturn[]>([])
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState<string>(getLocalDateString())
   const [mode, setMode] = useState<number>(1)
   const [amount, setAmount] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
@@ -107,8 +110,10 @@ export default function VendorTransactionEntry() {
     }
   }
 
-  const fetchOutstandingBills = async (vendorId: number) => {
-    setLoading(true)
+  const fetchOutstandingBills = async (vendorId: number, skipStateUpdate = false) => {
+    if (!skipStateUpdate) {
+      setLoading(true)
+    }
     try {
       const res = await fetch(`/api/purchases?vendor=${vendorId}&limit=1000&sortOrder=asc`)
       const data = await res.json()
@@ -116,12 +121,15 @@ export default function VendorTransactionEntry() {
       if (data.purchases) {
         const bills: OutstandingBill[] = data.purchases
           .filter((p: any) => {
-            // ✅ FIX: In edit mode, include ALL bills (allow editing allocated bills)
             // In create mode, only show bills with outstanding amounts
-            if (isEditMode) {
-              return true // Show all bills in edit mode
+            // In edit mode with skipStateUpdate, return ALL bills (will be filtered later)
+            if (isEditMode && skipStateUpdate) {
+              return true
             }
-            return p.remaining_amount > 0 // Show only outstanding in create mode
+            if (isEditMode) {
+              return true
+            }
+            return p.remaining_amount > 0
           })
           .map((p: any) => ({
             purchase_id: p.id,
@@ -131,28 +139,44 @@ export default function VendorTransactionEntry() {
             total_paid: p.total_paid || 0,
             outstanding_amount: p.remaining_amount,
             payment_status: p.payment_status,
-            allocated: 0
+            allocated: 0,
+            isInCurrentPayment: false
           }))
         
-        setOutstandingBills(bills)
+        if (!skipStateUpdate) {
+          setOutstandingBills(bills)
+        }
+        return bills
       }
+      return []
     } catch (error) {
       console.error('Error fetching outstanding bills:', error)
       setError('Failed to load outstanding bills')
+      return []
     } finally {
-      setLoading(false)
+      if (!skipStateUpdate) {
+        setLoading(false)
+      }
     }
   }
 
-  const fetchOutstandingReturns = async (vendorId: number) => {
-    setLoading(true)
+  const fetchOutstandingReturns = async (vendorId: number, skipStateUpdate = false) => {
+    if (!skipStateUpdate) {
+      setLoading(true)
+    }
     try {
       const res = await fetch(`/api/purchase-returns?vendor=${vendorId}&limit=1000&sortOrder=asc`)
       const data = await res.json()
       
       if (data.returns) {
         const returns: OutstandingReturn[] = data.returns
-          .filter((r: any) => r.remaining_refund > 0)
+          .filter((r: any) => {
+            // In edit mode with skipStateUpdate, return ALL returns (will be filtered later)
+            if (isEditMode && skipStateUpdate) {
+              return true
+            }
+            return r.remaining_refund > 0
+          })
           .map((r: any) => ({
             return_id: r.id,
             return_no: r.return_no,
@@ -161,16 +185,24 @@ export default function VendorTransactionEntry() {
             total_refunded: r.total_refunded || 0,
             outstanding_refund: r.remaining_refund,
             payment_status: r.payment_status,
-            allocated: 0
+            allocated: 0,
+            isInCurrentPayment: false
           }))
         
-        setOutstandingReturns(returns)
+        if (!skipStateUpdate) {
+          setOutstandingReturns(returns)
+        }
+        return returns
       }
+      return []
     } catch (error) {
       console.error('Error fetching outstanding returns:', error)
       setError('Failed to load outstanding returns')
+      return []
     } finally {
-      setLoading(false)
+      if (!skipStateUpdate) {
+        setLoading(false)
+      }
     }
   }
 
@@ -228,7 +260,10 @@ export default function VendorTransactionEntry() {
         // Set date
         const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
         const dateObj = new Date(dateTimestamp * 1000)
-        setDate(dateObj.toISOString().split('T')[0])
+        const year = dateObj.getFullYear()
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+        const day = String(dateObj.getDate()).padStart(2, '0')
+        setDate(`${year}-${month}-${day}`)
         
         // Set notes
         setNotes(transaction.notes || '')
@@ -236,34 +271,38 @@ export default function VendorTransactionEntry() {
         // Set FY
         setCurrentFY(transaction.fy)
         
-        // ✅ FIX: Load allocated bills/returns for edit mode
-        if (isExpense && transaction.allocations) {
+        // ✅ FIX: Load allocated bills/returns for edit mode with proper merging
+        if (isExpense && transaction.allocations && transaction.allocations.length > 0) {
           // Build list of allocated bills with their data
           const allocatedBills: OutstandingBill[] = transaction.allocations.map((alloc: any) => ({
             purchase_id: alloc.purchase_id,
             invoice_no: alloc.invoice_no,
             invoice_date: alloc.invoice_date,
             total_bill: alloc.purchase_total,
-            total_paid: alloc.allocated_amount, // This bill has this much paid
+            total_paid: alloc.allocated_amount,
             // ✅ FIX 1: Cap outstanding at 0 to prevent showing negative amounts
             outstanding_amount: Math.max(0, alloc.purchase_total - alloc.allocated_amount),
             payment_status: alloc.payment_status,
-            allocated: alloc.allocated_amount
+            allocated: alloc.allocated_amount,
+            isInCurrentPayment: true  // Mark as part of current payment
           }))
           
-          // Set the allocated bills immediately
-          setOutstandingBills(allocatedBills)
+          // Fetch fresh bills WITHOUT overwriting state
+          const freshBills = await fetchOutstandingBills(transaction.vendor.id, true)
           
-          // Then fetch other outstanding bills and merge
-          fetchOutstandingBills(transaction.vendor.id).then(() => {
-            setOutstandingBills(prev => {
-              // Keep allocated bills, add new outstanding bills not already in list
-              const allocatedIds = new Set(allocatedBills.map(b => b.purchase_id))
-              const newBills = prev.filter(b => !allocatedIds.has(b.purchase_id))
-              return [...allocatedBills, ...newBills]
-            })
-          })
-        } else if (!isExpense && transaction.allocations) {
+          // Merge: Keep allocated bills, add fresh bills not in allocations
+          const allocatedIds = new Set(allocatedBills.map(b => b.purchase_id))
+          const otherBills = freshBills.filter(b => !allocatedIds.has(b.purchase_id))
+          
+          // ✅ FIX 3: Filter to only show bills that are either:
+          // 1. In current payment, OR
+          // 2. Have outstanding amount > 0
+          const billsToShow = [...allocatedBills, ...otherBills].filter(bill =>
+            bill.isInCurrentPayment || bill.outstanding_amount > 0
+          )
+          
+          setOutstandingBills(billsToShow)
+        } else if (!isExpense && transaction.allocations && transaction.allocations.length > 0) {
           // Build list of allocated returns with their data
           const allocatedReturns: OutstandingReturn[] = transaction.allocations.map((alloc: any) => ({
             return_id: alloc.return_id,
@@ -271,20 +310,25 @@ export default function VendorTransactionEntry() {
             return_date: alloc.allocation_date,
             total_return: alloc.return_total || 0,
             total_refunded: alloc.allocated_amount,
-            outstanding_refund: 0,
+            outstanding_refund: Math.max(0, (alloc.return_total || 0) - alloc.allocated_amount),
             payment_status: alloc.payment_status || 0,
-            allocated: alloc.allocated_amount
+            allocated: alloc.allocated_amount,
+            isInCurrentPayment: true  // Mark as part of current refund
           }))
           
-          setOutstandingReturns(allocatedReturns)
+          // Fetch fresh returns WITHOUT overwriting state
+          const freshReturns = await fetchOutstandingReturns(transaction.vendor.id, true)
           
-          fetchOutstandingReturns(transaction.vendor.id).then(() => {
-            setOutstandingReturns(prev => {
-              const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
-              const newReturns = prev.filter(r => !allocatedIds.has(r.return_id))
-              return [...allocatedReturns, ...newReturns]
-            })
-          })
+          // Merge: Keep allocated returns, add fresh returns not in allocations
+          const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
+          const otherReturns = freshReturns.filter(r => !allocatedIds.has(r.return_id))
+          
+          // Filter to only show returns with outstanding > 0 or in current payment
+          const returnsToShow = [...allocatedReturns, ...otherReturns].filter(ret =>
+            ret.isInCurrentPayment || ret.outstanding_refund > 0
+          )
+          
+          setOutstandingReturns(returnsToShow)
         }
         
         // Clean up sessionStorage after use
@@ -322,19 +366,48 @@ export default function VendorTransactionEntry() {
     if (operationType === 'EXPENSE') {
       const updated = outstandingBills.map(bill => {
         if (remaining <= 0) return { ...bill, allocated: 0 }
-        const toAllocate = Math.min(remaining, bill.outstanding_amount)
+        
+        // ✅ FIX: In edit mode, bills in current payment can accept up to total_bill
+        // Other bills can only accept up to outstanding_amount
+        const maxAllocation = bill.isInCurrentPayment 
+          ? bill.total_bill 
+          : bill.outstanding_amount
+        
+        const toAllocate = Math.min(remaining, maxAllocation)
         remaining -= toAllocate
         return { ...bill, allocated: toAllocate }
       })
       setOutstandingBills(updated)
+      
+      // ✅ Show snackbar feedback
+      const totalAllocated = updated.reduce((sum, b) => sum + (b.allocated || 0), 0)
+      if (totalAllocated === 0) {
+        showSnackbar('warning', 'No bills available for allocation. All bills are fully paid.')
+      } else {
+        showSnackbar('success', `Allocated ₹${totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })} to bills`)
+      }
     } else if (operationType === 'INCOME') {
       const updated = outstandingReturns.map(ret => {
         if (remaining <= 0) return { ...ret, allocated: 0 }
-        const toAllocate = Math.min(remaining, ret.outstanding_refund)
+        
+        // ✅ FIX: Same logic for returns
+        const maxAllocation = ret.isInCurrentPayment 
+          ? ret.total_return 
+          : ret.outstanding_refund
+        
+        const toAllocate = Math.min(remaining, maxAllocation)
         remaining -= toAllocate
         return { ...ret, allocated: toAllocate }
       })
       setOutstandingReturns(updated)
+      
+      // ✅ Show snackbar feedback
+      const totalAllocated = updated.reduce((sum, r) => sum + (r.allocated || 0), 0)
+      if (totalAllocated === 0) {
+        showSnackbar('warning', 'No returns available for allocation. All returns are fully refunded.')
+      } else {
+        showSnackbar('success', `Allocated ₹${totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })} to returns`)
+      }
     }
   }
 
@@ -371,10 +444,13 @@ export default function VendorTransactionEntry() {
     
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
-      // ✅ FIX 3: Check if any bill has allocation > total_bill
-      const hasOverAllocation = outstandingBills.some(
-        bill => (bill.allocated || 0) > bill.total_bill
-      )
+      // ✅ FIX: Check allocation against appropriate max per bill
+      const hasOverAllocation = outstandingBills.some(bill => {
+        const maxAllowedAllocation = bill.isInCurrentPayment 
+          ? bill.total_bill           // Bills in current payment can reallocate up to full amount
+          : bill.outstanding_amount   // Other bills limited to outstanding
+        return (bill.allocated || 0) > maxAllowedAllocation
+      })
       if (hasOverAllocation) return true
       
       if (allocated === 0) return true
@@ -421,14 +497,22 @@ export default function VendorTransactionEntry() {
     
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
-      // ✅ FIX 4: Check for over-allocation on any bill
-      const overAllocatedBills = outstandingBills.filter(
-        bill => (bill.allocated || 0) > bill.total_bill
-      )
+      // ✅ FIX: Check for over-allocation against appropriate max per bill
+      const overAllocatedBills = outstandingBills.filter(bill => {
+        const maxAllowedAllocation = bill.isInCurrentPayment 
+          ? bill.total_bill           // Bills in current payment can reallocate up to full amount
+          : bill.outstanding_amount   // Other bills limited to outstanding
+        return (bill.allocated || 0) > maxAllowedAllocation
+      })
       
       if (overAllocatedBills.length > 0) {
+        const billsList = overAllocatedBills.map(b => {
+          const maxAllowed = b.isInCurrentPayment ? b.total_bill : b.outstanding_amount
+          const limitType = b.isInCurrentPayment ? 'Total Bill' : 'Outstanding'
+          return `Bill #${b.invoice_no} (${limitType}: ₹${maxAllowed.toLocaleString('en-IN')}, Trying to allocate: ₹${(b.allocated || 0).toLocaleString('en-IN')})`
+        }).join(', ')
         setError(
-          `Cannot allocate more than bill amount. Options: 1) Reduce payment amount to match bills, or 2) Switch to MIXED payment type.`
+          `Cannot allocate more than allowed amount. Over-allocated bills: ${billsList}. Options: 1) Reduce allocation, or 2) Switch to MIXED payment type.`
         )
         return
       }
@@ -827,7 +911,7 @@ export default function VendorTransactionEntry() {
                                   step="0.01"
                                   value={bill.allocated || ''}
                                   onChange={(e) => handleBillAllocationChange(bill.purchase_id, e.target.value)}
-                                  max={bill.total_bill}
+                                  max={bill.isInCurrentPayment ? bill.total_bill : bill.outstanding_amount}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="0"

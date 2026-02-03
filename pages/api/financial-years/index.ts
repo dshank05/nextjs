@@ -248,8 +248,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // If there's an active FY and user is trying to create a FY that starts before current FY ends
     if (activeFy && startDate < activeFy.end_date) {
+      // Format end date in local timezone for error message
+      const endYear = activeFy.end_date.getFullYear();
+      const endMonth = String(activeFy.end_date.getMonth() + 1).padStart(2, '0');
+      const endDay = String(activeFy.end_date.getDate()).padStart(2, '0');
+      const endDateString = `${endYear}-${endMonth}-${endDay}`;
+      
       return res.status(409).json({
-        message: `Cannot create future financial year. Current FY ${activeFy.fy} is still active and ends on ${activeFy.end_date.toISOString().split('T')[0]}`
+        message: `Cannot create future financial year. Current FY ${activeFy.fy} is still active and ends on ${endDateString}`
       })
     }
 
@@ -308,11 +314,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       const [year, month, day] = dateString.split('-').map(Number);
       return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
     };
+    
+    // Convert DB Date objects to YYYY-MM-DD strings in local timezone
+    const formatDbDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
 
     // Validate that the current date falls within the FY being set as current
     const currentDate = new Date()
-    const fyStart = parseDate(financialYear.start_date.toISOString().split('T')[0]) // Convert DB date to YYYY-MM-DD then parse
-    const fyEnd = parseDate(financialYear.end_date.toISOString().split('T')[0])
+    const fyStart = parseDate(formatDbDate(financialYear.start_date)) // Convert DB date to YYYY-MM-DD then parse
+    const fyEnd = parseDate(formatDbDate(financialYear.end_date))
 
     if (currentDate < fyStart) {
       return res.status(400).json({

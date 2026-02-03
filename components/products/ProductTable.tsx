@@ -6,6 +6,7 @@ import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ClearableInput, ExportMenu, ImagePreviewModal } from '../common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Product {
   id: number;
@@ -269,7 +270,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             ]}
             config={{
               title: 'Product Report',
-              fileName: `Product_Report_${new Date().toISOString().split('T')[0]}`,
+              fileName: `Product_Report_${getLocalDateString()}`,
               dropdownOptions: {
                 'Category': filterOptions.categories.map(cat => cat.name),
                 'Subcategory': dynamicSubcategories.map(sub => sub.subcategory_name),

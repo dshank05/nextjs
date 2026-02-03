@@ -7,6 +7,7 @@ import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Customer {
   id: string;
@@ -115,7 +116,7 @@ export default function SaleReturnCreatePage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [returnNotes, setReturnNotes] = useState('');
-  const [returnDate, setReturnDate] = useState(new Date().toISOString().split('T')[0]);
+  const [returnDate, setReturnDate] = useState(getLocalDateString());
 
   // Payment tracking state
   const [paymentStatus, setPaymentStatus] = useState<number>(0); // 0=Unpaid, 1=Paid
@@ -300,8 +301,15 @@ export default function SaleReturnCreatePage() {
       const threeMonthsAgo = new Date(today);
       threeMonthsAgo.setMonth(today.getMonth() - 3);
 
-      const fromDate = threeMonthsAgo.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
+      const year1 = threeMonthsAgo.getFullYear();
+      const month1 = String(threeMonthsAgo.getMonth() + 1).padStart(2, '0');
+      const day1 = String(threeMonthsAgo.getDate()).padStart(2, '0');
+      const fromDate = `${year1}-${month1}-${day1}`;
+      
+      const year2 = today.getFullYear();
+      const month2 = String(today.getMonth() + 1).padStart(2, '0');
+      const day2 = String(today.getDate()).padStart(2, '0');
+      const toDate = `${year2}-${month2}-${day2}`;
 
       setDateFrom(fromDate);
       setDateTo(toDate);
@@ -379,8 +387,15 @@ export default function SaleReturnCreatePage() {
       const threeMonthsAgo = new Date(today);
       threeMonthsAgo.setMonth(today.getMonth() - 3);
 
-      const fromDate = threeMonthsAgo.toISOString().split('T')[0];
-      const toDate = today.toISOString().split('T')[0];
+      const year1 = threeMonthsAgo.getFullYear();
+      const month1 = String(threeMonthsAgo.getMonth() + 1).padStart(2, '0');
+      const day1 = String(threeMonthsAgo.getDate()).padStart(2, '0');
+      const fromDate = `${year1}-${month1}-${day1}`;
+      
+      const year2 = today.getFullYear();
+      const month2 = String(today.getMonth() + 1).padStart(2, '0');
+      const day2 = String(today.getDate()).padStart(2, '0');
+      const toDate = `${year2}-${month2}-${day2}`;
 
       setDateFrom(fromDate);
       setDateTo(toDate);
@@ -435,7 +450,13 @@ export default function SaleReturnCreatePage() {
         setReturnNotes(returnData.return.notes || '');
         setPaymentStatus(returnData.return.payment_status ?? 0);
         setPaymentMode(returnData.return.payment_mode ?? 1);
-        setPaymentDate(returnData.return.payment_date ? new Date(returnData.return.payment_date * 1000).toISOString().split('T')[0] : '');
+        setPaymentDate(returnData.return.payment_date ? (() => {
+          const date = new Date(returnData.return.payment_date * 1000);
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        })() : '');
 
         // Set customer
         const customerData = returnData.customer;
@@ -881,7 +902,10 @@ export default function SaleReturnCreatePage() {
                       const currentFrom = new Date(loadedDateRange.from);
                       const newFrom = new Date(currentFrom);
                       newFrom.setMonth(currentFrom.getMonth() - 3);
-                      const newFromStr = newFrom.toISOString().split('T')[0];
+                      const year = newFrom.getFullYear();
+                      const month = String(newFrom.getMonth() + 1).padStart(2, '0');
+                      const day = String(newFrom.getDate()).padStart(2, '0');
+                      const newFromStr = `${year}-${month}-${day}`;
 
                       await loadCustomerBills(customer.id, 1, '', newFromStr, loadedDateRange.from, true);
                     }}

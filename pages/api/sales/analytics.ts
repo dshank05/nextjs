@@ -94,11 +94,17 @@ async function handler(
     ])
 
     // Process sales trends from recent invoices
-    const salesTrends = recentInvoices.map((invoice: any) => ({
-      sale_date: new Date(invoice.invoice_date * 1000).toISOString().split('T')[0],
-      total_sales: invoice.total,
-      invoice_count: 1
-    }))
+    const salesTrends = recentInvoices.map((invoice: any) => {
+      const date = new Date(invoice.invoice_date * 1000);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return {
+        sale_date: `${year}-${month}-${day}`,
+        total_sales: invoice.total,
+        invoice_count: 1
+      };
+    })
 
     // Group by date for trend analysis
     const dailySales = salesTrends.reduce((acc: any, sale: any) => {

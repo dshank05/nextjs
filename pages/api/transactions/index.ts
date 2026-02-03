@@ -61,12 +61,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const startDateStr = Array.isArray(startDate) ? startDate[0] : startDate
     const endDateStr = Array.isArray(endDate) ? endDate[0] : endDate
     if (startDateStr && startDateStr.trim()) {
-      const start = new Date(startDateStr).toISOString().split('T')[0]
+      const startDateObj = new Date(startDateStr);
+      const year = startDateObj.getFullYear();
+      const month = String(startDateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(startDateObj.getDate()).padStart(2, '0');
+      const start = `${year}-${month}-${day}`;
       incexpWhere.incexp_date = { gte: start }
       incexpxWhere.incexp_date = { gte: start }
     }
     if (endDateStr && endDateStr.trim()) {
-      const end = new Date(endDateStr).toISOString().split('T')[0]
+      const endDateObj = new Date(endDateStr);
+      const year = endDateObj.getFullYear();
+      const month = String(endDateObj.getMonth() + 1).padStart(2, '0');
+      const day = String(endDateObj.getDate()).padStart(2, '0');
+      const end = `${year}-${month}-${day}`;
       incexpWhere.incexp_date = incexpWhere.incexp_date
         ? { ...incexpWhere.incexp_date, lte: end }
         : { lte: end }

@@ -145,8 +145,20 @@ export default function FinancialYear() {
     setFormData({
       id: year.id,
       fy: year.fy,
-      start_date: year.start_date ? new Date(year.start_date).toISOString().split('T')[0] : '',
-      end_date: year.end_date ? new Date(year.end_date).toISOString().split('T')[0] : ''
+      start_date: year.start_date ? (() => {
+        const date = new Date(year.start_date);
+        const year_val = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year_val}-${month}-${day}`;
+      })() : '',
+      end_date: year.end_date ? (() => {
+        const date = new Date(year.end_date);
+        const year_val = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year_val}-${month}-${day}`;
+      })() : ''
     });
     setShowModal(true);
   };

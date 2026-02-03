@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Eye } from 'lucide-react';
 import { ClearableInput, ExportMenu } from '../common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Vendor {
   id: number;
@@ -112,7 +113,7 @@ export const VendorTable: React.FC<VendorTableProps> = ({ vendors, pagination, l
             ]}
             config={{
               title: 'Vendor Details Report',
-              fileName: `Vendor_Details_${new Date().toISOString().split('T')[0]}`
+              fileName: `Vendor_Details_${getLocalDateString()}`
             }}
           />
           {actionButton && (

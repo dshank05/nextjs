@@ -6,6 +6,7 @@ import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
 import { ConfirmationModal } from '../ConfirmationModal';
 import { useSnackbar } from '../SnackbarProvider';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface PurchaseItem {
   id: number;
@@ -397,7 +398,7 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
             ]}
             config={{
               title: 'Purchase Report',
-              fileName: `Purchase_Report_${new Date().toISOString().split('T')[0]}`
+              fileName: `Purchase_Report_${getLocalDateString()}`
             }}
           />
           {actionButton && (

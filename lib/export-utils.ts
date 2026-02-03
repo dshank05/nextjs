@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 import ExcelJS from 'exceljs';
+import { getLocalDateString } from './date-utils';
 
 // Types for export data
 interface Transaction {
@@ -192,7 +193,7 @@ export const exportToPDF = async (
     pdf.addImage(imgData, 'PNG', 10, position, pdfWidth, imgHeight > pdfHeight ? pdfHeight : imgHeight);
 
     // Download the PDF
-    pdf.save(`${config.fileName}_${new Date().toISOString().split('T')[0]}.pdf`);
+    pdf.save(`${config.fileName}_${getLocalDateString()}.pdf`);
   } catch (error) {
     console.error('Error exporting to PDF:', error);
     alert('Error exporting PDF. Please try again.');
@@ -278,7 +279,7 @@ export const exportToExcelGeneric = async (
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `${config.fileName}_${getLocalDateString()}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -332,7 +333,7 @@ export const printPage = async (config: {
 
       const options = {
         margin: 0.5,
-        filename: `${config.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`,
+        filename: `${config.title.replace(/\s+/g, '_')}_${getLocalDateString()}.pdf`,
         image: { type: 'jpeg' as const, quality: 0.98 },
         html2canvas: {
           scale: 1,

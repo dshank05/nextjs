@@ -4,6 +4,7 @@ import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
+import { getLocalDateString } from '../../lib/date-utils'
 
 interface OutstandingInvoice {
   id: number
@@ -39,7 +40,7 @@ export default function CustomerTransactionEntry() {
   const [operationType, setOperationType] = useState<OperationType>('')
   const [outstandingInvoices, setOutstandingInvoices] = useState<OutstandingInvoice[]>([])
   const [pendingReturns, setPendingReturns] = useState<PendingReturn[]>([])
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState<string>(getLocalDateString())
   const [mode, setMode] = useState<number>(1)
   const [amount, setAmount] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
@@ -322,7 +323,7 @@ export default function CustomerTransactionEntry() {
         setPendingReturns([])
         setAmount('')
         setMode(1)
-        setDate(new Date().toISOString().split('T')[0])
+        setDate(getLocalDateString())
         setNotes('')
         setError('')
       } else {

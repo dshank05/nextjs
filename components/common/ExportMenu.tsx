@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, FileText, FileSpreadsheet, Printer } from 'lucide-react';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Column {
   key: string;
@@ -601,7 +602,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
       const { exportToExcelGeneric } = require('../../lib/export-utils');
       exportToExcelGeneric(excelData, {
         title: config.title || 'Purchase Details',
-        fileName: `${config.fileName || 'purchase'}_${new Date().toISOString().split('T')[0]}`
+        fileName: `${config.fileName || 'purchase'}_${getLocalDateString()}`
       }, undefined, false); // false = don't show headers
 
     } catch (error) {

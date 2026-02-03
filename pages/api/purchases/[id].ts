@@ -339,7 +339,13 @@ export default async function handler(
           id: purchase.id,
           invoice_number: purchase.invoice_no?.toString() || '',
           bill_reference: purchase.bill_reference || '',
-          bill_reference_date: purchase.bill_reference_date ? new Date(purchase.bill_reference_date).toISOString().split('T')[0] : '',
+          bill_reference_date: purchase.bill_reference_date ? (() => {
+            const date = new Date(purchase.bill_reference_date);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          })() : '',
           staff_id: purchase.staff_id || null,
           date: purchase.invoice_date,  // Keep as number for proper formatting
           vendor_id: purchase.vendor_id,

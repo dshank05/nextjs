@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { PrismaClient } from '@prisma/client'
+import { getLocalDateString } from '../../../lib/date-utils'
 
 type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
@@ -286,7 +287,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             amt: invoice.total,
             payment_mode: invoice.payment_mode,
             type: 1, // 1 = Income
-            incexp_date: new Date().toISOString().split('T')[0],
+            incexp_date: getLocalDateString(),
             fy: invoice.fy,
             notes: `Invoice #${invoice.invoice_no} - Sale Transaction`
             // customer_id: customerId, // REMOVED - field doesn't exist in schema

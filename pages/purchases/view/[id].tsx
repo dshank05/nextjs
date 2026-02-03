@@ -7,6 +7,7 @@ import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
 import QuickPaymentModal from '../../../components/QuickPaymentModal';
+import { getLocalDateString } from '../../../lib/date-utils';
 
 interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
@@ -536,7 +537,7 @@ export default function PurchaseView() {
               ]}
               config={{
                 title: 'Purchase Details',
-                fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}_${new Date().toISOString().split('T')[0]}`
+                fileName: `Purchase_${purchase.invoice_number || purchase.invoice_no}_${getLocalDateString()}`
               }}
               onExport={(exportType) => {
                 if (exportType === 'excel') {

@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ExcelJS from 'exceljs';
+import { getLocalDateString } from './date-utils';
 
 // ==================== TYPE DEFINITIONS ====================
 
@@ -275,7 +276,7 @@ export const exportToExcelWithLayout = async (
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${config.fileName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = `${config.fileName}_${getLocalDateString()}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -474,7 +475,7 @@ export const exportToPDFWithLayout = async (
     }
 
     // Save PDF
-    doc.save(`${config.fileName}_${new Date().toISOString().split('T')[0]}.pdf`);
+    doc.save(`${config.fileName}_${getLocalDateString()}.pdf`);
   } catch (error) {
     console.error('Error exporting to PDF:', error);
     alert('Error exporting PDF. Please try again.');

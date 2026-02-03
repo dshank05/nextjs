@@ -16,9 +16,15 @@ export default async function handler(
       date.setDate(date.getDate() - i)
       const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
       const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999)
+      
+      // Generate YYYY-MM-DD in local timezone
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
 
       return {
-        date: date.toISOString().split('T')[0], // YYYY-MM-DD
+        date: dateString, // YYYY-MM-DD in local timezone
         startTimestamp: Math.floor(startOfDay.getTime() / 1000),
         endTimestamp: Math.floor(endOfDay.getTime() / 1000),
         label: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

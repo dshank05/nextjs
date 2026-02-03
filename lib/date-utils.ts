@@ -65,6 +65,42 @@ export function formatDateForAPI(date: Date): string {
 }
 
 /**
+ * Get local date string (YYYY-MM-DD) from browser's timezone
+ * 
+ * USE IN: Frontend forms when setting default dates or displaying dates
+ * 
+ * AVOIDS: UTC conversion issues from .toISOString()
+ * 
+ * PROBLEM WITH .toISOString().split('T')[0]:
+ * - Always converts to UTC, causing date shifts across timezones
+ * - Example: Feb 2, 2026 4:47 PM PST → Feb 3, 2026 in UTC
+ * 
+ * SOLUTION:
+ * - Uses local date methods (getFullYear, getMonth, getDate)
+ * - Respects user's timezone without conversion
+ * 
+ * @param date - Date object (defaults to now)
+ * @returns Date string in local timezone "YYYY-MM-DD"
+ * 
+ * @example
+ * ```typescript
+ * // Set form default to today (local timezone)
+ * const today = getLocalDateString();
+ * setFormData(prev => ({ ...prev, date: today }));
+ * 
+ * // Format a specific date
+ * const myDate = new Date(2026, 1, 2); // Feb 2, 2026
+ * const formatted = getLocalDateString(myDate); // "2026-02-02"
+ * ```
+ */
+export function getLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Parse date range for database queries with proper time boundaries
  * 
  * Converts date strings like "2026-01-30" to Unix timestamps with:

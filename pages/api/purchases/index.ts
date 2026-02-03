@@ -4,6 +4,7 @@ import { withObservability } from '../../../lib/withObservability'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
+import { getLocalDateString } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -523,7 +524,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         packing_forwarding_rate: parseFloat(packing_forwarding_rate?.toString()) || 0,
         packing_forwarding_total: parseFloat(packing_forwarding_total?.toString()) || 0,
         invoice_date: Math.floor(invoiceDate),
-        updated_at: new Date().toISOString().split('T')[0],
+        updated_at: getLocalDateString(),
         payment_status: payment_status || 0,
         payment_mode: payment_mode,
         fy: currentFy,

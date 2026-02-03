@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Eye, Edit, Trash2 } from 'lucide-react';
 import { ClearableInput, ExportMenu } from '../common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Customer {
   id: number;
@@ -122,7 +123,7 @@ export const CustomerTable: React.FC<CustomerTableProps> = ({ customers, paginat
             ]}
             config={{
               title: 'Customer Details Report',
-              fileName: `Customer_Details_${new Date().toISOString().split('T')[0]}`
+              fileName: `Customer_Details_${getLocalDateString()}`
             }}
           />
           {actionButton && (

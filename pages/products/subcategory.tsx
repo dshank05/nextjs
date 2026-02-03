@@ -5,6 +5,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ClearableInput } from '../../components/common';
+import { getLocalDateString } from '../../lib/date-utils';
 
 interface Category {
   id: number;
@@ -61,7 +62,7 @@ export default function Subcategories() {
       const { exportToPDF } = require('../../lib/export-utils');
       const config = {
         title: 'Product Subcategories Report',
-        fileName: `Product_Subcategories_${new Date().toISOString().split('T')[0]}`
+        fileName: `Product_Subcategories_${getLocalDateString()}`
       };
       exportToPDF(document.querySelector('.table') as HTMLElement, subcategories, config);
     } else {
@@ -96,7 +97,7 @@ export default function Subcategories() {
     const { exportToExcelGeneric } = require('../../lib/export-utils');
     const config = {
       title: 'Product Subcategories Report',
-      fileName: `Product_Subcategories_${new Date().toISOString().split('T')[0]}`
+      fileName: `Product_Subcategories_${getLocalDateString()}`
     };
     exportToExcelGeneric(exportData, config);
   };

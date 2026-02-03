@@ -264,6 +264,12 @@ export class TransactionHandler {
     const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
     const allocDiff = newTotalAllocated - oldTotalAllocated;
     
+    // ✅ FIX: Get purchase ID for PAYMENT_ADJUSTMENT ledger entry to enable proper merging
+    // PAYMENT_ADJUSTMENT must use same reference_id as original PAYMENT for ledger merge to work
+    const purchaseId = params.newAllocations[0]?.purchase_id || 
+                       params.oldAllocations[0]?.purchase_id || 
+                       params.paymentId; // Fallback for DIRECT payments (though shouldn't have adjustments)
+    
     // Create ledger operation ONLY if amount changed
     const ledgerOps: LedgerOperation[] = [];
     if (amountDiff !== 0) {
@@ -274,7 +280,7 @@ export class TransactionHandler {
           transaction_date: params.paymentDate,
           transaction_type: 'PAYMENT_ADJUSTMENT',
           reference_type: 'purchase',
-          reference_id: params.paymentId,
+          reference_id: purchaseId, // ✅ FIX: Use purchaseId instead of paymentId for proper ledger merging
           reference_no: `PAY-${params.paymentId}`,
           payment_mode: params.paymentMode,
           payment_status: 1,
