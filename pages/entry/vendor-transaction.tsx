@@ -61,6 +61,7 @@ export default function VendorTransactionEntry() {
   // Edit mode
   const isEditMode = !!edit
   const [transactionId, setTransactionId] = useState<number>(0)
+  const [isInitializing, setIsInitializing] = useState(false)
 
   useEffect(() => {
     fetchVendors()
@@ -71,6 +72,9 @@ export default function VendorTransactionEntry() {
   }, [edit, type, isEditMode])
 
   useEffect(() => {
+    // Skip if initializing (during edit load)
+    if (isInitializing) return
+    
     const vendorId = parseInt(selectedVendor)
     if (vendorId > 0 && operationType) {
       if (operationType === 'EXPENSE') {
@@ -207,6 +211,7 @@ export default function VendorTransactionEntry() {
   }
 
   const fetchTransactionForEdit = async (id: string, transactionType: string) => {
+    setIsInitializing(true)  // Prevent useEffect from refetching
     setLoading(true)
     try {
       const isExpense = transactionType === 'expense'
@@ -339,6 +344,7 @@ export default function VendorTransactionEntry() {
       setError('Failed to load transaction for editing')
     } finally {
       setLoading(false)
+      setIsInitializing(false)  // Allow useEffect to run normally after edit load completes
     }
   }
 
@@ -619,8 +625,8 @@ export default function VendorTransactionEntry() {
         showSnackbar('success', `${transactionType} ${action} successfully!`)
         
         if (isEditMode) {
-          // Redirect to transactions list after edit
-          router.push('/vendor-transactions')
+          // Redirect to transaction detail view after edit
+          router.push(`/vendor-transactions/view/${transactionId}?type=${operationType === 'EXPENSE' ? 'expense' : 'income'}`)
         } else {
           // Reset form for new entry
           setSelectedVendor('')

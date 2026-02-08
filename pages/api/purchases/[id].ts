@@ -376,8 +376,8 @@ export default async function handler(
           notes: purchase.notes || '',
 
           // Payment fields
-          payment_status: purchase.payment_status || 0,
-          payment_mode: purchase.payment_mode || 1,
+          payment_status: purchase.payment_status ?? 0,
+          payment_mode: purchase.payment_mode ?? 0,  // Default to Cash (0), use ?? to preserve 0 value
 
           // Return status summary
           return_status: {

@@ -168,30 +168,35 @@ export class LedgerHandler {
         }
         
         // Second: Create payment with advance information
-        // ✅ FIXED: Shows advance balance usage in notes
+        // ✅ FIXED: Uses advance breakdown to determine actual new payment amount
+        // ✅ FIXED: Only creates PAYMENT entry if new money is paid (not using 100% advance)
         // ✅ FIXED: Checks for existing PAYMENT and uses PAYMENT_ADJUSTMENT if found
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: changes.paymentDate || timestamp,
-            transaction_type: 'PAYMENT',
-            reference_type: 'purchase',
-            reference_id: changes.purchaseId!,
-            reference_no: changes.invoiceNo!,
-            debit: 0,
-            credit: changes.newTotal,
-            payment_mode: changes.paymentMode,
-            payment_status: 1,
-            payment_date: changes.paymentDate || timestamp,
-            notes: this.generatePaymentNotes(changes.invoiceNo!, changes.newTotal, changes.currentBalance),
-            fy: changes.fy
-          },
-          description: 'Payment creation',
-          checkExisting: {
-            transactionType: 'PAYMENT',
-            useAdjustmentIfExists: true
-          }
-        });
+        const breakdown01 = this.calculateAdvanceBreakdown(changes.newTotal, changes.currentBalance);
+        
+        if (breakdown01.newPayment > 0) {
+          ops.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: changes.paymentDate || timestamp,
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              reference_no: changes.invoiceNo!,
+              debit: 0,
+              credit: breakdown01.newPayment,  // ✅ Only NEW payment, not full total
+              payment_mode: changes.paymentMode,
+              payment_status: 1,
+              payment_date: changes.paymentDate || timestamp,
+              notes: this.generatePaymentNotes(changes.invoiceNo!, changes.newTotal, changes.currentBalance),
+              fy: changes.fy
+            },
+            description: 'Payment creation',
+            checkExisting: {
+              transactionType: 'PAYMENT',
+              useAdjustmentIfExists: true
+            }
+          });
+        }
         break;
         
       case '2→1': // Partial → Paid
@@ -218,30 +223,35 @@ export class LedgerHandler {
         }
         
         // Second: Create payment for remaining amount with advance information
-        // ✅ FIXED: Shows advance balance usage in notes
+        // ✅ FIXED: Uses advance breakdown to determine actual new payment amount
+        // ✅ FIXED: Only creates PAYMENT entry if new money is paid (not using 100% advance)
         // ✅ FIXED: Checks for existing PAYMENT and uses PAYMENT_ADJUSTMENT if found
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: changes.paymentDate || timestamp,
-            transaction_type: 'PAYMENT',
-            reference_type: 'purchase',
-            reference_id: changes.purchaseId!,
-            reference_no: changes.invoiceNo!,
-            debit: 0,
-            credit: remainingAmount,
-            payment_mode: changes.paymentMode,
-            payment_status: 1,
-            payment_date: changes.paymentDate || timestamp,
-            notes: this.generatePaymentNotes(changes.invoiceNo!, remainingAmount, changes.currentBalance),
-            fy: changes.fy
-          },
-          description: 'Payment for remaining amount',
-          checkExisting: {
-            transactionType: 'PAYMENT',
-            useAdjustmentIfExists: true
-          }
-        });
+        const breakdown21 = this.calculateAdvanceBreakdown(remainingAmount, changes.currentBalance);
+        
+        if (breakdown21.newPayment > 0) {
+          ops.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: changes.paymentDate || timestamp,
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              reference_no: changes.invoiceNo!,
+              debit: 0,
+              credit: breakdown21.newPayment,  // ✅ Only NEW payment, not full remaining
+              payment_mode: changes.paymentMode,
+              payment_status: 1,
+              payment_date: changes.paymentDate || timestamp,
+              notes: this.generatePaymentNotes(changes.invoiceNo!, remainingAmount, changes.currentBalance),
+              fy: changes.fy
+            },
+            description: 'Payment for remaining amount',
+            checkExisting: {
+              transactionType: 'PAYMENT',
+              useAdjustmentIfExists: true
+            }
+          });
+        }
         break;
         
       case '2→0': // Partial → Unpaid
@@ -348,24 +358,54 @@ export class LedgerHandler {
           });
           
           // If Type B (no allocations), also adjust payment
+          // ✅ FIXED: Uses advance breakdown for amount increases
           if (!changes.isTypeA) {
-            ops.push({
-              entry: {
-                vendor_id: changes.vendorId,
-                transaction_date: timestamp,
-                transaction_type: 'PAYMENT_ADJUSTMENT',
-                reference_type: 'purchase',
-                reference_id: changes.purchaseId!,
-                reference_no: changes.invoiceNo!,
-                debit: diff < 0 ? Math.abs(diff) : 0,
-                credit: diff > 0 ? diff : 0,
-                payment_mode: changes.paymentMode,
-                payment_status: 1,
-                notes: `Payment ${diff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(diff)} for purchase ${changes.invoiceNo}`,
-                fy: changes.fy
-              },
-              description: 'Payment adjustment (Type B)'
-            });
+            if (diff > 0) {
+              // Amount increased - check if advance can cover the increase
+              const breakdown11 = this.calculateAdvanceBreakdown(diff, changes.currentBalance);
+              
+              // Only create PAYMENT_ADJUSTMENT if new payment needed
+              if (breakdown11.newPayment > 0) {
+                ops.push({
+                  entry: {
+                    vendor_id: changes.vendorId,
+                    transaction_date: timestamp,
+                    transaction_type: 'PAYMENT_ADJUSTMENT',
+                    reference_type: 'purchase',
+                    reference_id: changes.purchaseId!,
+                    reference_no: changes.invoiceNo!,
+                    debit: 0,
+                    credit: breakdown11.newPayment,  // ✅ Only NEW payment, not full diff
+                    payment_mode: changes.paymentMode,
+                    payment_status: 1,
+                    notes: breakdown11.hasAdvance 
+                      ? `Payment increased by ₹${breakdown11.newPayment.toFixed(2)} (₹${breakdown11.advanceUsed.toFixed(2)} from advance) for purchase ${changes.invoiceNo}`
+                      : `Payment increased by ₹${Math.abs(diff)} for purchase ${changes.invoiceNo}`,
+                    fy: changes.fy
+                  },
+                  description: 'Payment adjustment (Type B increase)'
+                });
+              }
+            } else {
+              // Amount decreased - always create reversal adjustment
+              ops.push({
+                entry: {
+                  vendor_id: changes.vendorId,
+                  transaction_date: timestamp,
+                  transaction_type: 'PAYMENT_ADJUSTMENT',
+                  reference_type: 'purchase',
+                  reference_id: changes.purchaseId!,
+                  reference_no: changes.invoiceNo!,
+                  debit: Math.abs(diff),
+                  credit: 0,
+                  payment_mode: changes.paymentMode,
+                  payment_status: 1,
+                  notes: `Payment decreased by ₹${Math.abs(diff)} for purchase ${changes.invoiceNo}`,
+                  fy: changes.fy
+                },
+                description: 'Payment adjustment (Type B decrease)'
+              });
+            }
           }
         }
         break;

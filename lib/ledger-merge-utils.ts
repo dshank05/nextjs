@@ -39,19 +39,6 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
   const groups = new Map<string, LedgerEntry[]>()
   
   entries.forEach(entry => {
-    // ✅ Special handling: Group ALL reversals for same deleted purchase together
-    // This merges PURCHASE_REVERSAL, PAYMENT_REVERSAL, DEBIT_NOTE_REVERSAL, etc. into one entry
-    if (entry.transactionType.endsWith('_REVERSAL') && 
-        entry.referenceType === 'purchase' &&
-        entry.referenceId) {
-      const key = `DELETION-purchase-${entry.referenceId}`
-      if (!groups.has(key)) {
-        groups.set(key, [])
-      }
-      groups.get(key)!.push(entry)
-      return
-    }
-    
     // Determine base transaction type (remove _ADJUSTMENT, _REVERSAL suffixes)
     let baseType = entry.transactionType
       .replace('_ADJUSTMENT', '')
