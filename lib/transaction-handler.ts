@@ -304,7 +304,8 @@ export class TransactionHandler {
   /**
    * Handle vendor refund edit transaction
    * Returns all operations to perform when editing a vendor refund
-   * NOTE: Currently not fully implemented - vendor refunds don't need complex ledger adjustments
+   * ✅ FIXED: Now creates REFUND_ADJUSTMENT ledger entries when amount changes
+   * ✅ FIXED: Copies reference from existing REFUND_RECEIVED entry for proper merge
    */
   async handleVendorRefundEdit(params: {
     refundId: number;
@@ -317,6 +318,7 @@ export class TransactionHandler {
     refundDate: number;
     refundType: string;
     fy: number;
+    tx?: any; // ✅ NEW: Transaction context for querying existing entry
   }): Promise<{
     returnsToUpdate: number[];
     amountDiff: number;
@@ -336,8 +338,43 @@ export class TransactionHandler {
     const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
     const allocDiff = newTotalAllocated - oldTotalAllocated;
     
-    // TODO: Add ledger operation when REFUND_ADJUSTMENT type is added to schema
+    // ✅ FIX: Create ledger operation when amount changes
     const ledgerOps: LedgerOperation[] = [];
+    if (amountDiff !== 0 && params.tx) {
+      // ✅ QUERY: Find existing REFUND_RECEIVED entry to copy references from
+      const existingEntry = await params.tx.vendor_ledger.findFirst({
+        where: {
+          vendor_id: params.vendorId,
+          transaction_type: 'REFUND_RECEIVED',
+          OR: [
+            { reference_no: params.refundId.toString() },  // Direct refund
+            { notes: { contains: `Refund #${params.refundId}` } }  // Return-specific refund
+          ]
+        },
+        orderBy: { id: 'desc' }
+      });
+      
+      if (existingEntry) {
+        ledgerOps.push({
+          description: `Refund amount ${amountDiff > 0 ? 'increase' : 'decrease'}`,
+          entry: {
+            vendor_id: params.vendorId,
+            transaction_date: params.refundDate,
+            transaction_type: 'REFUND_ADJUSTMENT',
+            reference_type: existingEntry.reference_type as any,  // ✅ Copy from existing!
+            reference_id: existingEntry.reference_id || undefined,  // ✅ Copy from existing!
+            reference_no: existingEntry.reference_no || `REF-${params.refundId}`,  // ✅ Copy from existing!
+            payment_mode: params.refundMode,
+            payment_status: 1,
+            payment_date: params.refundDate,
+            debit: amountDiff < 0 ? Math.abs(amountDiff) : 0,  // Decrease = debit (reduces vendor credit)
+            credit: amountDiff > 0 ? amountDiff : 0,  // Increase = credit (increases vendor credit)
+            notes: `Refund #${params.refundId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`,
+            fy: params.fy
+          }
+        });
+      }
+    }
     
     return {
       returnsToUpdate,
@@ -923,43 +960,48 @@ export class TransactionHandler {
   /**
    * Execute DELETE operations within a transaction
    * Optimized with parallel execution where safe
+   * ✅ FIX: Uses shared context to pass data between operations
    */
   async executeDeleteInTransaction(
     tx: any,
     result: DeleteResult
   ): Promise<void> {
+    // ✅ Create shared context for operations to communicate
+    const sharedContext: any = {};
+    
     for (const operation of result.operations) {
       switch (operation.type) {
         case 'STOCK_RESTORE':
-          await this.executeStockRestore(tx, operation.data);
+          await this.executeStockRestore(tx, operation.data, sharedContext);
           break;
           
         case 'DELETE_ALLOCATIONS':
-          await this.executeDeleteAllocations(tx, operation.data);
+          await this.executeDeleteAllocations(tx, operation.data, sharedContext);
           break;
           
         case 'DELETE_RECORD':
-          await this.executeDeleteRecord(tx, operation.data);
+          await this.executeDeleteRecord(tx, operation.data, sharedContext);
           break;
           
         case 'RECALCULATE_STATUS':
-          await this.executeRecalculateStatus(tx, operation.data);
+          await this.executeRecalculateStatus(tx, operation.data, sharedContext);
           break;
           
         case 'LEDGER_REVERSAL':
-          await this.executeLedgerReversal(tx, operation.data);
+          await this.executeLedgerReversal(tx, operation.data, sharedContext);
           break;
           
         case 'BALANCE_UPDATE':
-          await this.executeBalanceUpdate(tx, operation.data);
+          await this.executeBalanceUpdate(tx, operation.data, sharedContext);
           break;
       }
     }
   }
   
   // Helper methods for DELETE operations
+  // ✅ All methods now accept shared context for passing data between operations
   
-  private async executeStockRestore(tx: any, data: any): Promise<void> {
+  private async executeStockRestore(tx: any, data: any, context: any): Promise<void> {
     if (data.invoiceNo !== undefined) {
       // Purchase: restore stock for all items
       const items = await tx.purchaseitems.findMany({
@@ -1006,7 +1048,7 @@ export class TransactionHandler {
     }
   }
   
-  private async executeDeleteAllocations(tx: any, data: any): Promise<void> {
+  private async executeDeleteAllocations(tx: any, data: any, context: any): Promise<void> {
     if (data.entityType === 'purchase') {
       const allocations = await tx.payment_allocations.findMany({
         where: { purchase_id: data.entityId },
@@ -1015,12 +1057,24 @@ export class TransactionHandler {
       
       const totalPaid = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
-      // Delete allocations only - keep vendor_payments unchanged
+      // Delete allocations
       await tx.payment_allocations.deleteMany({
         where: { purchase_id: data.entityId }
       });
       
-      // ✅ Removed orphaned payment deletion - payments remain as unallocated advance
+      // ✅ FIX: Delete vendor_payments records (they were auto-created with purchase)
+      // Clean approach: "Delete is the reverse of create"
+      const paymentIds = Array.from(new Set(allocations.map(a => a.payment_id)));
+      for (const paymentId of paymentIds) {
+        // Only delete if no other allocations exist for this payment
+        const remainingAllocs = await tx.payment_allocations.count({
+          where: { payment_id: paymentId }
+        });
+        
+        if (remainingAllocs === 0) {
+          await tx.vendor_payments.delete({ where: { id: paymentId } });
+        }
+      }
       
       // Store for balance update
       data.totalPaid = totalPaid;
@@ -1033,35 +1087,55 @@ export class TransactionHandler {
       
       const totalRefunded = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
-      // Delete allocations only - keep vendor_refunds unchanged
+      // Delete allocations
       await tx.refund_allocations.deleteMany({
         where: { return_id: data.entityId }
       });
       
-      // ✅ Removed orphaned refund deletion - refunds remain as unallocated
+      // ✅ FIX: Delete vendor_refunds records (they were auto-created with return)
+      // Clean approach: "Delete is the reverse of create"
+      const refundIds = Array.from(new Set(allocations.map(a => a.refund_id)));
+      for (const refundId of refundIds) {
+        // Only delete if no other allocations exist for this refund
+        const remainingAllocs = await tx.refund_allocations.count({
+          where: { refund_id: refundId }
+        });
+        
+        if (remainingAllocs === 0) {
+          await tx.vendor_refunds.delete({ where: { id: refundId } });
+        }
+      }
       
       // Store for balance update
       data.totalRefunded = totalRefunded;
       
     } else if (data.entityType === 'payment') {
-      // ✅ Store allocated purchase IDs before deletion for ledger reversal
+      // ✅ Store allocated purchase IDs before deletion for ledger reversal AND status recalculation
       const allocations = await tx.payment_allocations.findMany({
         where: { payment_id: data.entityId },
         select: { purchase_id: true }
       });
-      data.allocatedPurchaseIds = allocations.map(a => a.purchase_id);
+      const purchaseIds = allocations.map(a => a.purchase_id);
+      
+      // Store in both data (for backward compatibility) and shared context
+      data.allocatedPurchaseIds = purchaseIds;
+      context.allocatedPurchaseIds = purchaseIds; // ✅ NEW: Share with other operations
       
       await tx.payment_allocations.deleteMany({
         where: { payment_id: data.entityId }
       });
       
     } else if (data.entityType === 'refund') {
-      // ✅ Store allocated return IDs before deletion for ledger reversal
+      // ✅ Store allocated return IDs before deletion for ledger reversal AND status recalculation
       const allocations = await tx.refund_allocations.findMany({
         where: { refund_id: data.entityId },
         select: { return_id: true }
       });
-      data.allocatedReturnIds = allocations.map(a => a.return_id);
+      const returnIds = allocations.map(a => a.return_id);
+      
+      // Store in both data (for backward compatibility) and shared context
+      data.allocatedReturnIds = returnIds;
+      context.allocatedReturnIds = returnIds; // ✅ NEW: Share with other operations
       
       await tx.refund_allocations.deleteMany({
         where: { refund_id: data.entityId }
@@ -1069,7 +1143,7 @@ export class TransactionHandler {
     }
   }
   
-  private async executeDeleteRecord(tx: any, data: any): Promise<void> {
+  private async executeDeleteRecord(tx: any, data: any, context: any): Promise<void> {
     if (data.type === 'purchase') {
       // ✅ FIX: Delete related returns FIRST to avoid FK constraint violations
       // Get all purchase item IDs for this invoice
@@ -1148,36 +1222,32 @@ export class TransactionHandler {
     }
   }
   
-  private async executeRecalculateStatus(tx: any, data: any): Promise<void> {
+  private async executeRecalculateStatus(tx: any, data: any, context: any): Promise<void> {
     if (data.entityType === 'payment') {
-      const allocations = await tx.payment_allocations.findMany({
-        where: { payment_id: data.entityId },
-        select: { purchase_id: true }
-      });
+      // ✅ FIX: Use purchase IDs from shared context (already captured before deletion)
+      const purchaseIds = context.allocatedPurchaseIds || [];
       
       // Recalculate in parallel
       await Promise.all(
-        allocations.map(alloc => 
-          require('./payment-allocation-service').recalculatePurchaseStatus(alloc.purchase_id, tx)
+        purchaseIds.map(purchaseId => 
+          require('./payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
         )
       );
       
     } else if (data.entityType === 'refund') {
-      const allocations = await tx.refund_allocations.findMany({
-        where: { refund_id: data.entityId },
-        select: { return_id: true }
-      });
+      // ✅ FIX: Use return IDs from shared context (already captured before deletion)
+      const returnIds = context.allocatedReturnIds || [];
       
       // Recalculate in parallel
       await Promise.all(
-        allocations.map(alloc => 
-          require('./payment-allocation-service').recalculatePurchaseReturnStatus(alloc.return_id, tx)
+        returnIds.map(returnId => 
+          require('./payment-allocation-service').recalculatePurchaseReturnStatus(returnId, tx)
         )
       );
     }
   }
   
-  private async executeLedgerReversal(tx: any, data: any): Promise<void> {
+  private async executeLedgerReversal(tx: any, data: any, context: any): Promise<void> {
     let ledgerEntries = [];
     
     // ✅ Special handling for payment/refund deletion
@@ -1253,7 +1323,7 @@ export class TransactionHandler {
     );
   }
   
-  private async executeBalanceUpdate(tx: any, data: any): Promise<void> {
+  private async executeBalanceUpdate(tx: any, data: any, context: any): Promise<void> {
     if (data.paymentAmount !== undefined) {
       // Payment deletion
       const totalAllocated = data.paymentType === 'DIRECT' ? 0 : data.paymentAmount;

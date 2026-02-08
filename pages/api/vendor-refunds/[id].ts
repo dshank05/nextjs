@@ -206,7 +206,8 @@ async function handleUpdateRefund(
         refundMode: refund_mode,
         refundDate: refund_date,
         refundType: refund_type,
-        fy: existingRefund.fy
+        fy: existingRefund.fy,
+        tx  // ✅ Pass transaction context for querying existing entry
       });
 
       // 3. Update refund record
