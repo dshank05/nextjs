@@ -367,8 +367,8 @@ export class TransactionHandler {
             payment_mode: params.refundMode,
             payment_status: 1,
             payment_date: params.refundDate,
-            debit: amountDiff < 0 ? Math.abs(amountDiff) : 0,  // Decrease = debit (reduces vendor credit)
-            credit: amountDiff > 0 ? amountDiff : 0,  // Increase = credit (increases vendor credit)
+            debit: amountDiff > 0 ? amountDiff : 0,  // ✅ FIX: Increase = DEBIT (adds to balance)
+            credit: amountDiff < 0 ? Math.abs(amountDiff) : 0,  // ✅ FIX: Decrease = CREDIT (reduces balance)
             notes: `Refund #${params.refundId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`,
             fy: params.fy
           }
