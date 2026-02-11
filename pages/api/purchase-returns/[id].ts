@@ -1,9 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
-import { transactionHandler } from '../../../lib/transaction-handler'
-import { balanceHandler } from '../../../lib/balance-handler'
 import { ledgerService } from '../../../lib/ledger-service'
+import { balanceHandler } from '../../../lib/balance-handler'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
+import { transactionHandler } from '../../../lib/transaction-handler'
 
 async function handler(
   req: NextApiRequest,
@@ -570,7 +571,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         tx.purchase_returns.update({
           where: { id: returnId },
           data: {
-            return_date: return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : undefined,
+            return_date: return_date ? convertDateToTimestamp(return_date) : undefined,
             total_amount: totalAmount,
             total_tax: totalTax,
             refund_amount: parseFloat(refundAmount.toString()),
@@ -649,7 +650,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
       // ✅ Calculate final return date (like purchase PUT)
       const finalReturnDate = return_date
-        ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000)
+        ? convertDateToTimestamp(return_date)
         : existingReturn.return_date
 
       const dateChanged = return_date && finalReturnDate !== existingReturn.return_date

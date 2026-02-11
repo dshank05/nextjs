@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { withObservability } from '../../../lib/withObservability'
 
 async function handler(
@@ -208,7 +209,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert date to Unix timestamp
-    const invoiceDate = date ? Math.floor(new Date(date).getTime() / 1000) : existingSalex.invoice_date
+    const invoiceDate = date ? convertDateToTimestamp(date) : existingSalex.invoice_date
 
     // Calculate totals if items provided
     let itemsTotal = existingSalex.items_total

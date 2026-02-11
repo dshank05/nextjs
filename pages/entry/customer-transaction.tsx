@@ -4,7 +4,7 @@ import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
-import { getLocalDateString } from '../../lib/date-utils'
+import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
 
 interface OutstandingInvoice {
   id: number
@@ -257,10 +257,7 @@ export default function CustomerTransactionEntry() {
     setLoading(true)
     try {
       const amountNum = parseFloat(amount)
-      // ✅ FIX: Set time to noon to avoid timezone issues with midnight UTC
-      const dateObj = new Date(date)
-      dateObj.setHours(12, 0, 0, 0)
-      const timestamp = Math.floor(dateObj.getTime() / 1000)
+      const timestamp = convertDateToTimestamp(date)
       
       let endpoint = ''
       let payload: any = {}

@@ -4,6 +4,7 @@ import { withObservability } from '../../../lib/withObservability'
 import { generateNoteNumber } from '../../../lib/note-counter'
 import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -122,7 +123,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert return date to Unix timestamp
-    const returnDateTimestamp = return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : Math.floor(Date.now() / 1000)
+    const returnDateTimestamp = return_date ? convertDateToTimestamp(return_date) : Math.floor(Date.now() / 1000)
 
     // Calculate totals
     let totalAmount = 0

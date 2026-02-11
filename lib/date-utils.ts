@@ -101,6 +101,44 @@ export function getLocalDateString(date: Date = new Date()): string {
 }
 
 /**
+ * Convert YYYY-MM-DD date string to Unix timestamp at midnight local time
+ * 
+ * USE IN: ALL frontend and backend code converting date strings to timestamps
+ * 
+ * CRITICAL: This function parses dates in LOCAL timezone, not UTC.
+ * - Input "2026-02-07" becomes Feb 7, 2026 00:00:00 in server's timezone
+ * - For India deployment: Feb 7, 2026 00:00:00 IST
+ * - Ensures consistent timestamps for same date across POST/PUT operations
+ * 
+ * WHY MANUAL PARSING:
+ * - new Date("2026-02-07") interprets as UTC midnight, causing timezone shifts
+ * - In PST (UTC-8): "2026-02-07" becomes Feb 6, 4:00 PM (wrong day!)
+ * - Manual parsing creates Date in local timezone (correct)
+ * 
+ * @param dateString - Date in "YYYY-MM-DD" format
+ * @returns Unix timestamp (seconds) at 00:00:00 local time
+ * 
+ * @example
+ * ```typescript
+ * import { convertDateToTimestamp } from '../../lib/date-utils';
+ * 
+ * // Frontend: Convert date input to timestamp
+ * const timestamp = convertDateToTimestamp("2026-02-07");
+ * 
+ * // Backend: Convert received date string to timestamp
+ * const invoiceDate = convertDateToTimestamp(req.body.invoice_date);
+ * 
+ * // Result (in IST): Feb 7, 2026 00:00:00 IST
+ * // Same date, same timestamp - ledger entries merge correctly!
+ * ```
+ */
+export function convertDateToTimestamp(dateString: string): number {
+  const [year, month, day] = dateString.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return Math.floor(date.getTime() / 1000);
+}
+
+/**
  * Parse date range for database queries with proper time boundaries
  * 
  * Converts date strings like "2026-01-30" to Unix timestamps with:

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -382,7 +383,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Convert date to timestamp
     const invoiceDateTimestamp = typeof invoice_date === 'number' && invoice_date > 1000000000
       ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
-      : Math.floor(new Date(invoice_date).getTime() / 1000); // Convert date string to timestamp
+      : convertDateToTimestamp(invoice_date); // Convert date string to timestamp
 
     // ===== CRITICAL FIX: Use database transaction for atomic operations =====
     // This ensures salex creation, item creation, stock updates, and related records all succeed or all fail together
@@ -714,7 +715,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     // Convert date to Unix timestamp
     const invoiceDate = typeof date === 'number' && date > 1000000000
       ? Math.floor(date) // Already a Unix timestamp in seconds
-      : Math.floor(new Date(date).getTime() / 1000); // Convert date string to timestamp
+      : convertDateToTimestamp(date); // Convert date string to timestamp
 
     // Calculate totals if items provided
     let itemsTotal = 0

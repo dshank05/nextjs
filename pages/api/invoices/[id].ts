@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -307,7 +308,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, invoiceId: s
           invoice_no,
           invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
             ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
-            : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
+            : convertDateToTimestamp(invoice_date), // Convert date string to timestamp
           select_customer: 0, // Always 0 for manual entry
           items_total: items_total || 0,
           freight: freight || 0,

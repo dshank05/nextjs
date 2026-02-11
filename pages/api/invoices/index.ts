@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { PrismaClient } from '@prisma/client'
-import { getLocalDateString } from '../../../lib/date-utils'
+import { getLocalDateString, convertDateToTimestamp } from '../../../lib/date-utils'
 
 type TransactionClient = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>
 
@@ -240,7 +240,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           invoice_no,                                    // Invoice.invoice_no
           invoice_date: typeof invoice_date === 'number' && invoice_date > 1000000000
             ? Math.floor(invoice_date) // Already a Unix timestamp in seconds
-            : Math.floor(new Date(invoice_date).getTime() / 1000), // Convert date string to timestamp
+            : convertDateToTimestamp(invoice_date), // Convert date string to timestamp
           select_customer: 0,                            // Always 0 for manual entry
           items_total: items_total || 0,                 // Invoice.items_total
           freight: freight || 0,                         // Invoice.freight

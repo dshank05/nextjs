@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -116,7 +117,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, adjustmentId
     }
 
     // Convert adjustment date to Unix timestamp
-    const adjustmentDateTimestamp = adjustment_date ? Math.floor(new Date(adjustment_date).getTime() / 1000) : existingAdjustment.transaction_date
+    const adjustmentDateTimestamp = adjustment_date ? convertDateToTimestamp(adjustment_date) : existingAdjustment.transaction_date
 
     // Update the adjustment
     const updatedAdjustment = await prisma.customer_ledger.update({

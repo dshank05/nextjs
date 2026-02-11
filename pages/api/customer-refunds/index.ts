@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { recordRefundPaidTransaction } from '../../../lib/customer-ledger-service'
 import { parseDateRange } from '../../../lib/date-utils'
 
@@ -255,7 +256,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert refund date to Unix timestamp
-    const refundDateTimestamp = refund_date ? Math.floor(new Date(refund_date).getTime() / 1000) : Math.floor(Date.now() / 1000)
+    const refundDateTimestamp = refund_date ? convertDateToTimestamp(refund_date) : Math.floor(Date.now() / 1000)
 
     // Validate allocations
     let totalAllocated = 0

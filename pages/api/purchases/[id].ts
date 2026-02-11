@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { transactionHandler } from '../../../lib/transaction-handler'
 import { ledgerService } from '../../../lib/ledger-service'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 export default async function handler(
   req: NextApiRequest,
@@ -612,7 +613,7 @@ export default async function handler(
 
           // ✅ Calculate final invoice date early (for ledger entries) - TIMEZONE SAFE
           const finalInvoiceDate = date 
-            ? Math.floor(new Date(date + 'T12:00:00').getTime() / 1000) 
+            ? convertDateToTimestamp(date)
             : existingPurchase.invoice_date;
           
           const dateChanged = date && finalInvoiceDate !== existingPurchase.invoice_date;

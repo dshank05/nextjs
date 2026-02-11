@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -515,7 +516,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           tx.salex_returns.update({
             where: { id: returnId },
             data: {
-              return_date: return_date ? Math.floor(new Date(return_date + 'T12:00:00').getTime() / 1000) : undefined,
+              return_date: return_date ? convertDateToTimestamp(return_date) : undefined,
               total_amount: totalAmount,
               refund_amount: refundAmount,
               notes: notes || '',
@@ -589,7 +590,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           tx.sale_returns.update({
             where: { id: returnId },
             data: {
-              return_date: return_date ? Math.floor(new Date(return_date).getTime() / 1000) : undefined,
+              return_date: return_date ? convertDateToTimestamp(return_date) : undefined,
               total_amount: totalAmount,
               total_tax: totalTax,
               refund_amount: refundAmount,

@@ -55,8 +55,10 @@ export class LedgerHandler {
       total_refund_allocated: number;
     }
   ): { advanceUsed: number; newPayment: number; hasAdvance: boolean } {
+    // Include both unallocated payments AND unallocated refunds
     const advanceBalance = currentBalance 
-      ? Number(currentBalance.total_paid) - Number(currentBalance.total_allocated)
+      ? (Number(currentBalance.total_paid) - Number(currentBalance.total_allocated)) +
+        (Number(currentBalance.total_refunded) - Number(currentBalance.total_refund_allocated))
       : 0;
     
     const advanceUsed = Math.min(Math.max(0, advanceBalance), total);

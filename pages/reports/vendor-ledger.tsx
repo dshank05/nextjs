@@ -208,7 +208,8 @@ export default function VendorLedgerPage() {
                 { key: 'voucherNo', label: 'Voucher No', enabled: true },
                 { key: 'debit', label: 'Debit (₹)', enabled: true },
                 { key: 'credit', label: 'Credit (₹)', enabled: true },
-                { key: 'balance', label: 'Balance (₹)', enabled: true }
+                { key: 'balance', label: 'Balance (₹)', enabled: true },
+                { key: 'remarks', label: 'Notes', enabled: true }
               ]}
               config={{
                 title: `Vendor Ledger - ${selectedVendorName}`,
@@ -252,6 +253,7 @@ export default function VendorLedgerPage() {
                   <th className="text-right">Debit (₹)</th>
                   <th className="text-right">Credit (₹)</th>
                   <th className="text-right">Balance (₹)</th>
+                  <th>Notes</th>
                 </tr>
               </thead>
               <tbody>
@@ -270,6 +272,7 @@ export default function VendorLedgerPage() {
                     <td className="text-right font-semibold text-slate-300">
                       ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
+                    <td className="text-slate-300 text-sm">{entry.remarks || '-'}</td>
                   </tr>
                 ))}
               </tbody>

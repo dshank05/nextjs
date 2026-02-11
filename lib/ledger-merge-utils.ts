@@ -37,58 +37,58 @@ export interface LedgerEntry {
 export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
   // Group entries by reference_id + base transaction type
   const groups = new Map<string, LedgerEntry[]>()
-  
+
   entries.forEach(entry => {
     // Determine base transaction type (remove _ADJUSTMENT, _REVERSAL suffixes)
     let baseType = entry.transactionType
       .replace('_ADJUSTMENT', '')
       .replace('_REVERSAL', '')
-    
+
     // Map REFUND types to DEBIT_NOTE (fallback for old data)
     if (baseType === 'REFUND_RECEIVED') {
       baseType = 'DEBIT_NOTE'
     }
-    
+
     // Map REFUND_REVERSAL to DEBIT_NOTE for purchase returns
     // When a paid return is changed from complete → incomplete, REFUND_REVERSAL is created
     // This should cancel out the original DEBIT_NOTE entry
     if (entry.transactionType === 'REFUND_REVERSAL' && entry.referenceType === 'purchase_return') {
       baseType = 'DEBIT_NOTE'
     }
-    
+
     // ✅ NEW: Map DEBIT_NOTE_REVERSAL to DEBIT_NOTE for purchase returns
     // When a purchase with returns is deleted, DEBIT_NOTE_REVERSAL is created
     // This should cancel out the original DEBIT_NOTE entry
     if (entry.transactionType === 'DEBIT_NOTE_REVERSAL' && entry.referenceType === 'purchase_return') {
       baseType = 'DEBIT_NOTE'
     }
-    
+
     // Create group key: baseType-referenceType-referenceId
     const key = entry.referenceId && entry.referenceType
       ? `${baseType}-${entry.referenceType}-${entry.referenceId}`
       : `solo-${entry.id}` // Standalone entries without reference
-    
+
     if (!groups.has(key)) {
       groups.set(key, [])
     }
     groups.get(key)!.push(entry)
   })
-  
+
   // Merge each group
   const merged: LedgerEntry[] = []
-  
+
   groups.forEach((group) => {
     if (group.length === 1) {
       // Single entry, no merging needed - but normalize names
       const entry = group[0]
       const baseType = entry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
-      
+
       let particulars = ''
       let voucherType = ''
-      
+
       switch (baseType) {
         case 'PURCHASE':
-          particulars = 'Purchase'
+          particulars = entry.paymentMode === 0 ? 'Cash' : 'Bank'
           voucherType = 'Purchase'
           break
         case 'PAYMENT':
@@ -107,7 +107,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
           particulars = baseType.replace(/_/g, ' ')
           voucherType = baseType.replace(/_/g, ' ')
       }
-      
+
       merged.push({
         ...entry,
         particulars,
@@ -117,32 +117,32 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
     } else {
       // Multiple entries - merge them
       const firstEntry = group[0]
-      
+
       // Sum up all debits and credits
       const totalDebit = group.reduce((sum, e) => sum + e.debit, 0)
       const totalCredit = group.reduce((sum, e) => sum + e.credit, 0)
-      
+
       // ✅ Calculate NET amount (fixes double debit/credit display bug)
       const netAmount = totalDebit - totalCredit
-      
+
       // ✅ FIX: Find the BASE transaction (not _ADJUSTMENT) to use its date
       // This keeps the entry at its original chronological position
       const baseTransaction = group.find(e => !e.transactionType.includes('_ADJUSTMENT') && !e.transactionType.includes('_REVERSAL')) || group[0]
       const baseDate = baseTransaction.date
-      
+
       // ✅ Special display for deletion (merged reversals)
       const isDeletion = group.every(e => e.transactionType.endsWith('_REVERSAL') && e.referenceType === 'purchase')
-      
+
       // ✅ Normalize particulars and voucher type
       let particulars = ''
       let voucherType = ''
-      
+
       if (isDeletion) {
         particulars = 'Purchase Reversal'
         voucherType = 'Purchase Reversal'
       } else {
         const baseType = firstEntry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
-        
+
         switch (baseType) {
           case 'PURCHASE':
             particulars = 'Purchase'
@@ -165,7 +165,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
             voucherType = baseType.replace(/_/g, ' ')
         }
       }
-      
+
       // Create merged entry using BASE transaction for sorting, date, and metadata
       merged.push({
         ...baseTransaction,  // ✅ FIX: Use base transaction, not firstEntry
@@ -184,7 +184,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       })
     }
   })
-  
+
   // Sort by date to maintain chronological order
   // ✅ Filter out entries that NET to zero (deleted/cancelled transactions)
   return merged
@@ -193,7 +193,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       // Primary sort: by date
       const dateDiff = (a.transaction_date || a.date) - (b.transaction_date || b.date)
       if (dateDiff !== 0) return dateDiff
-      
+
       // ✅ Secondary sort: by ID (matches backend ORDER BY logic)
       // This ensures PURCHASE (id:418) shows before PAYMENT (id:419) on same date
       return a.id - b.id
@@ -205,7 +205,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
  */
 export function recalculateBalance(entries: LedgerEntry[]): LedgerEntry[] {
   let runningBalance = 0
-  
+
   return entries.map(entry => {
     runningBalance = runningBalance + entry.debit - entry.credit
     return {

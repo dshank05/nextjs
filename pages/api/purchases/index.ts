@@ -4,7 +4,7 @@ import { withObservability } from '../../../lib/withObservability'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
-import { getLocalDateString } from '../../../lib/date-utils'
+import { getLocalDateString, convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -491,10 +491,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // ===== STEP 3: DATA PREPARATION ===== 
-    // ✅ TIMEZONE SAFE: Add T12:00:00 to avoid timezone shift
+    // ✅ TIMEZONE SAFE: Use convertDateToTimestamp for consistent midnight local time
     // ✅ VALIDATION: Fallback to current date if not provided
     const invoiceDate = date 
-      ? Math.floor(new Date(date + 'T12:00:00').getTime() / 1000)
+      ? convertDateToTimestamp(date)
       : Math.floor(Date.now() / 1000);
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
     const calculatedGrandTotal = itemsTotal +
@@ -676,7 +676,68 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }
         });
 
-        // ✅ USE BALANCE HANDLER FOR SMART ALLOCATION (handles vendor_id = 0)
+        // ✅ Calculate advance balance and determine new payment needed
+        // Include both unallocated payments AND unallocated refunds
+        const advanceBalance = vendor 
+          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) + 
+            (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
+          : 0;
+        
+        const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
+        const newPayment = calculatedGrandTotal - advanceUsed;
+
+        // ✅ CREATE PAYMENT LEDGER ENTRY - Only if new payment needed
+        if (newPayment > 0) {
+          await ledgerService.createEntry({
+            vendor_id: parseInt(vendor_id),
+            transaction_date: Math.floor(invoiceDate),
+            transaction_type: 'PAYMENT',
+            reference_type: 'purchase',
+            reference_id: purchase.id,
+            reference_no: purchase.invoice_no.toString(),
+            debit: 0,
+            credit: newPayment,  // ✅ Only new payment, not full amount
+            payment_mode: payment_mode,
+            payment_status: 1,
+            payment_date: Math.floor(invoiceDate),
+            notes: advanceUsed > 0 
+              ? `Payment for purchase ${purchase.invoice_no} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment)`
+              : `Payment made for purchase ${purchase.invoice_no}`,
+            fy: currentFy
+          }, tx);
+        } else {
+          console.log(`[PURCHASE CREATE] No new payment needed - fully covered by ₹${advanceUsed.toFixed(2)} advance balance`);
+        }
+
+        // ✅ CREATE PAYMENT/ALLOCATION RECORDS - Only if new payment needed
+        if (newPayment > 0) {
+          const payment = await tx.vendor_payments.create({
+            data: {
+              vendor_id: parseInt(vendor_id),
+              payment_date: Math.floor(invoiceDate),
+              payment_amount: newPayment,  // ✅ Only new payment, not full amount
+              payment_mode: payment_mode,
+              payment_type: 'BILL_SPECIFIC',
+              notes: advanceUsed > 0
+                ? `Payment for purchase ${purchase.invoice_no} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new)`
+                : `Payment for purchase ${purchase.invoice_no}`,
+              fy: currentFy
+            }
+          });
+
+          await tx.payment_allocations.create({
+            data: {
+              payment_id: payment.id,
+              purchase_id: purchase.id,
+              allocated_amount: newPayment,  // ✅ Only new payment, not full amount
+              allocation_date: Math.floor(invoiceDate),
+              notes: 'Allocated during purchase creation'
+            }
+          });
+        }
+
+        // ✅ UPDATE VENDOR BALANCE
+        // Use balance handler for smart allocation (handles vendor_id = 0)
         const balanceOp = balanceHandler.getCreateBalanceOps({
           vendorId: parseInt(vendor_id),
           total: calculatedGrandTotal,
@@ -689,56 +750,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           type: 'PURCHASE'
         });
 
-        // Calculate advance for ledger notes
-        const advanceBalance = vendor 
-          ? Number(vendor.total_paid) - Number(vendor.total_allocated)
-          : 0;
-
-        // Create PAYMENT ledger entry
-        await ledgerService.createEntry({
-          vendor_id: parseInt(vendor_id),
-          transaction_date: Math.floor(invoiceDate),
-          transaction_type: 'PAYMENT',
-          reference_type: 'purchase',
-          reference_id: purchase.id,
-          reference_no: purchase.invoice_no.toString(),
-          debit: 0,
-          credit: calculatedGrandTotal,
-          payment_mode: payment_mode,
-          payment_status: 1,
-          payment_date: Math.floor(invoiceDate),
-          notes: advanceBalance > 0 
-            ? `Payment for purchase ${purchase.invoice_no} (₹${advanceBalance >= calculatedGrandTotal ? calculatedGrandTotal : advanceBalance} from advance${advanceBalance < calculatedGrandTotal ? `, ₹${calculatedGrandTotal - advanceBalance} new payment` : ''})`
-            : `Payment made for purchase ${purchase.invoice_no}`,
-          fy: currentFy
-        }, tx);
-
-        // Create payment allocation records
-        const payment = await tx.vendor_payments.create({
-          data: {
-            vendor_id: parseInt(vendor_id),
-            payment_date: Math.floor(invoiceDate),
-            payment_amount: calculatedGrandTotal,
-            payment_mode: payment_mode,
-            payment_type: 'BILL_SPECIFIC',
-            notes: advanceBalance > 0
-              ? `Payment for purchase ${purchase.invoice_no} (using ₹${Math.min(advanceBalance, calculatedGrandTotal)} advance)`
-              : `Payment for purchase ${purchase.invoice_no}`,
-            fy: currentFy
-          }
-        });
-
-        await tx.payment_allocations.create({
-          data: {
-            payment_id: payment.id,
-            purchase_id: purchase.id,
-            allocated_amount: calculatedGrandTotal,
-            allocation_date: Math.floor(invoiceDate),
-            notes: 'Allocated during purchase creation'
-          }
-        });
-
-        // ✅ UPDATE VENDOR BALANCE (skips vendor_id = 0 automatically)
         if (balanceOp) {
           await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
         }

@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -133,7 +134,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert payment date to Unix timestamp
-    const paymentDateTimestamp = payment_date ? Math.floor(new Date(payment_date).getTime() / 1000) : existingPayment.payment_date
+    const paymentDateTimestamp = payment_date ? convertDateToTimestamp(payment_date) : existingPayment.payment_date
 
     // Validate allocations
     let totalAllocated = 0

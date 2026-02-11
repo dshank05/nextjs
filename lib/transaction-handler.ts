@@ -27,6 +27,15 @@ export interface DeleteOperation {
   parallel?: boolean; // Can be executed in parallel with other operations
 }
 
+export interface LedgerReversalData {
+  entityType: 'purchase' | 'purchase_return' | 'payment' | 'refund';
+  entityId: number;
+  vendorId: number;
+  isDeletion?: boolean; // ✅ NEW: If true, DELETE entries instead of creating reversals
+  allocatedPurchaseIds?: number[];
+  allocatedReturnIds?: number[];
+}
+
 export interface DeleteResult {
   operations: DeleteOperation[];
   vendorId: number;
@@ -478,7 +487,49 @@ export class TransactionHandler {
   }
   
   /**
+   * Helper method to create payment allocation with advance balance check
+   * Returns null if payment is fully covered by existing advance balance
+   */
+  private createPaymentAllocation(
+    amount: number,
+    changes: ChangeSet
+  ): AllocationChange | null {
+    // Calculate advance balance - include both unallocated payments AND unallocated refunds
+    const advanceBalance = changes.currentBalance 
+      ? (Number(changes.currentBalance.total_paid) - Number(changes.currentBalance.total_allocated)) +
+        (Number(changes.currentBalance.total_refunded) - Number(changes.currentBalance.total_refund_allocated))
+      : 0;
+    
+    // Calculate how much advance can be used and how much new payment is needed
+    const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
+    const newPayment = amount - advanceUsed;
+    
+    // Only create payment record if new money is actually needed
+    if (newPayment <= 0) {
+      console.log(`[PAYMENT ALLOCATION] No new payment needed - fully covered by ₹${advanceUsed.toFixed(2)} advance balance`);
+      return null;
+    }
+    
+    console.log(`[PAYMENT ALLOCATION] Creating payment: ₹${newPayment.toFixed(2)} new payment + ₹${advanceUsed.toFixed(2)} from advance = ₹${amount.toFixed(2)} total`);
+    
+    return {
+      action: 'CREATE',
+      type: 'PAYMENT',
+      data: {
+        vendorId: changes.vendorId,
+        purchaseId: changes.purchaseId,
+        amount: newPayment,  // ✅ Only create payment for NEW money, not full amount
+        paymentMode: changes.paymentMode,
+        paymentDate: changes.paymentDate,
+        fy: changes.fy,
+        invoiceNo: changes.invoiceNo
+      }
+    };
+  }
+  
+  /**
    * Get allocation changes for purchase status transitions
+   * ✅ FIXED: Now checks advance balance before creating payments
    */
   private getPurchaseAllocationChanges(changes: ChangeSet): AllocationChange[] {
     const allocationChanges: AllocationChange[] = [];
@@ -486,21 +537,20 @@ export class TransactionHandler {
     
     switch (statusChange) {
       case '0→1': // Unpaid → Paid
+        // ✅ Use helper to check advance balance
+        const payment01 = this.createPaymentAllocation(changes.newTotal, changes);
+        if (payment01) {
+          allocationChanges.push(payment01);
+        }
+        break;
+        
       case '2→1': // Partial → Paid
-        // Create payment and allocation
-        allocationChanges.push({
-          action: 'CREATE',
-          type: 'PAYMENT',
-          data: {
-            vendorId: changes.vendorId,
-            purchaseId: changes.purchaseId,
-            amount: statusChange === '0→1' ? changes.newTotal : (changes.newTotal - (changes.totalAllocated || 0)),
-            paymentMode: changes.paymentMode,
-            paymentDate: changes.paymentDate,
-            fy: changes.fy,
-            invoiceNo: changes.invoiceNo
-          }
-        });
+        // ✅ Use helper to check advance balance for remaining amount
+        const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
+        const payment21 = this.createPaymentAllocation(remainingAmount, changes);
+        if (payment21) {
+          allocationChanges.push(payment21);
+        }
         break;
         
       case '1→0': // Paid → Unpaid
@@ -718,13 +768,15 @@ export class TransactionHandler {
       parallel: false
     });
     
-    // Operation 4: Create ledger reversals (parallel)
+    // Operation 4: Delete ledger entries (parallel)
+    // ✅ FIX: For purchase deletion, DELETE entries instead of creating reversals
     operations.push({
       type: 'LEDGER_REVERSAL',
       data: {
         entityType: 'purchase',
         entityId: params.purchaseId,
-        vendorId: params.vendorId
+        vendorId: params.vendorId,
+        isDeletion: true  // ✅ NEW: Delete entries, don't create reversals
       },
       parallel: true
     });
@@ -788,13 +840,15 @@ export class TransactionHandler {
       parallel: false
     });
     
-    // Operation 4: Create ledger reversals (parallel)
+    // Operation 4: Delete ledger entries (parallel)
+    // ✅ FIX: For return deletion, DELETE entries instead of creating reversals
     operations.push({
       type: 'LEDGER_REVERSAL',
       data: {
         entityType: 'purchase_return',
         entityId: params.returnId,
-        vendorId: params.vendorId
+        vendorId: params.vendorId,
+        isDeletion: true  // ✅ NEW: Delete entries, don't create reversals
       },
       parallel: true
     });
@@ -1303,24 +1357,42 @@ export class TransactionHandler {
       });
     }
     
-    // Create reversals in parallel
-    await Promise.all(
-      ledgerEntries.map(entry => 
-        ledgerService.createEntry({
-          vendor_id: entry.vendor_id,
-          transaction_date: Math.floor(Date.now() / 1000),
-          transaction_type: `${entry.transaction_type}_REVERSAL` as any,
-          reference_type: entry.reference_type,
-          reference_id: entry.reference_id,
-          reference_no: entry.reference_no || '',
-          payment_mode: entry.payment_mode,
-          debit: entry.credit,
-          credit: entry.debit,
-          notes: `Reversal: ${entry.transaction_type} deleted`,
-          fy: entry.fy
-        }, tx)
-      )
-    );
+    // ✅ FIX: For purchase/return DELETION, delete entries instead of creating reversals
+    // Philosophy: "Delete is the reverse of Create" - we remove what was added
+    if (data.isDeletion && (data.entityType === 'purchase' || data.entityType === 'purchase_return')) {
+      // Delete ledger entries (as if the transaction never happened)
+      await Promise.all(
+        ledgerEntries.map(entry => 
+          tx.vendor_ledger.delete({ where: { id: entry.id } })
+        )
+      );
+      
+      // ✅ Recalculate balances for all subsequent entries
+      if (ledgerEntries.length > 0) {
+        const vendorId = ledgerEntries[0].vendor_id;
+        await ledgerService.recalculateBalancesAfter(vendorId, 0, tx);
+      }
+    } else {
+      // ✅ EXISTING LOGIC: For edits or payment/refund deletion, create reversal entries
+      // This preserves audit trail for status changes and standalone payment/refund deletions
+      await Promise.all(
+        ledgerEntries.map(entry => 
+          ledgerService.createEntry({
+            vendor_id: entry.vendor_id,
+            transaction_date: Math.floor(Date.now() / 1000),
+            transaction_type: `${entry.transaction_type}_REVERSAL` as any,
+            reference_type: entry.reference_type,
+            reference_id: entry.reference_id,
+            reference_no: entry.reference_no || '',
+            payment_mode: entry.payment_mode,
+            debit: entry.credit,
+            credit: entry.debit,
+            notes: `Reversal: ${entry.transaction_type} deleted`,
+            fy: entry.fy
+          }, tx)
+        )
+      );
+    }
   }
   
   private async executeBalanceUpdate(tx: any, data: any, context: any): Promise<void> {

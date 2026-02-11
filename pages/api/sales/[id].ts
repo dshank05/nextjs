@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 export default async function handler(
   req: NextApiRequest,
@@ -276,7 +277,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert date to Unix timestamp
-    const invoiceDate = new Date(date).getTime() / 1000
+    const invoiceDate = convertDateToTimestamp(date)
 
     // Calculate totals if items provided
     let itemsTotal = 0

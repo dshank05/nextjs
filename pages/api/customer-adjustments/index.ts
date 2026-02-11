@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 import {
   recordReceiptReversalTransaction,
   recordSaleAdjustmentTransaction,
@@ -238,7 +239,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert adjustment date to Unix timestamp
-    const adjustmentDateTimestamp = adjustment_date ? Math.floor(new Date(adjustment_date).getTime() / 1000) : Math.floor(Date.now() / 1000)
+    const adjustmentDateTimestamp = adjustment_date ? convertDateToTimestamp(adjustment_date) : Math.floor(Date.now() / 1000)
 
     // Generate adjustment reference number
     const adjustmentId = Date.now() // Simple ID generation

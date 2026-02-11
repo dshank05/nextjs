@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { generateNoteNumber } from '../../../lib/note-counter'
 import { recordReturnTransaction } from '../../../lib/customer-ledger-service'
-import { parseDateRange } from '../../../lib/date-utils'
+import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -393,7 +393,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert return date to Unix timestamp
-    const returnDateTimestamp = return_date ? Math.floor(new Date(return_date).getTime() / 1000) : Math.floor(Date.now() / 1000)
+    const returnDateTimestamp = return_date ? convertDateToTimestamp(return_date) : Math.floor(Date.now() / 1000)
 
     // Get invoice details based on type
     const invoice = isInvoicex

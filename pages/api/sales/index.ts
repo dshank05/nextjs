@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db'
 import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { withObservability } from '../../../lib/withObservability'
 import { calculatePaymentStatus } from '../../../lib/payment-allocation-service'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -110,7 +111,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     console.log('📋 Auto-generated invoice number:', nextInvoiceNo, 'for FY:', currentFy);
 
     // Convert date to Unix timestamp
-    const invoiceDate = new Date(date).getTime() / 1000
+    const invoiceDate = convertDateToTimestamp(date)
 
     // Calculate totals
     const itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
@@ -431,7 +432,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
     // Convert date to Unix timestamp
-    const invoiceDate = new Date(date).getTime() / 1000
+    const invoiceDate = convertDateToTimestamp(date)
 
     // Calculate totals if items provided
     let itemsTotal = 0
