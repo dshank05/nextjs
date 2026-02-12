@@ -68,7 +68,7 @@ export default function QuickPaymentModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: vendorId,
-          payment_date: Math.floor(new Date(paymentDate).getTime() / 1000),
+          payment_date: paymentDate,  // Send as YYYY-MM-DD string, backend handles conversion
           payment_amount: amount,
           payment_mode: paymentMode,
           notes: notes || `Payment for purchase #${purchaseId}`,

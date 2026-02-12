@@ -705,7 +705,7 @@ export default function SaleReturnCreatePage() {
         return_notes: returnNotes,
         payment_status: paymentStatus,
         payment_mode: paymentMode,
-        payment_date: paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
+        payment_date: paymentDate || undefined,  // Send as YYYY-MM-DD string, backend handles conversion
         items: Array.from(selectedItems.values()).map(item => ({
           sale_item_id: item.sale_item_id, // Use sale_item_id not item.id
           return_qty: item.return_qty,

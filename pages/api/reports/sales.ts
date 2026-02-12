@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -26,10 +27,10 @@ async function handler(
     // Build date filters
     const dateFilter: any = {}
     if (startDateStr && startDateStr.trim()) {
-      dateFilter.invoice_date = { ...dateFilter.invoice_date, gte: Math.floor(new Date(startDateStr).getTime() / 1000) }
+      dateFilter.invoice_date = { ...dateFilter.invoice_date, gte: convertDateToTimestamp(startDateStr) }
     }
     if (endDateStr && endDateStr.trim()) {
-      dateFilter.invoice_date = { ...dateFilter.invoice_date, lte: Math.floor(new Date(endDateStr).getTime() / 1000) }
+      dateFilter.invoice_date = { ...dateFilter.invoice_date, lte: convertDateToTimestamp(endDateStr) }
     }
 
     // Financial year filter

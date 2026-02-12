@@ -595,6 +595,11 @@ export class TransactionHandler {
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
     const newPayment = amount - advanceUsed;
     
+    // ✅ FIX: Determine payment type based on allocation mix
+    // - MIXED: Both advance and new payment used
+    // - BILL_SPECIFIC: Only advance OR only new payment (both are bill-specific)
+    const paymentType = (advanceUsed > 0 && newPayment > 0) ? 'MIXED' : 'BILL_SPECIFIC';
+    
     // Create allocation for advance portion
     if (advanceUsed > 0) {
       console.log(`[PAYMENT ALLOCATION] Creating advance allocation: ₹${advanceUsed.toFixed(2)} from advance balance`);
@@ -607,7 +612,7 @@ export class TransactionHandler {
           amount: advanceUsed,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: 'ADVANCE_ALLOCATION',
+          paymentType: paymentType,  // ✅ Use MIXED or BILL_SPECIFIC
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
           notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`
@@ -627,7 +632,7 @@ export class TransactionHandler {
           amount: newPayment,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: 'BILL_SPECIFIC',
+          paymentType: paymentType,  // ✅ Use MIXED or BILL_SPECIFIC
           fy: changes.fy,
           invoiceNo: changes.invoiceNo
         }
@@ -1029,7 +1034,8 @@ export class TransactionHandler {
       data: {
         entityType: 'payment',
         entityId: params.paymentId,
-        vendorId: params.vendorId
+        vendorId: params.vendorId,
+        paymentType: params.paymentType  // ✅ Pass payment type for query selection
       },
       parallel: true
     });
@@ -1099,7 +1105,8 @@ export class TransactionHandler {
       data: {
         entityType: 'refund',
         entityId: params.refundId,
-        vendorId: params.vendorId
+        vendorId: params.vendorId,
+        refundType: params.refundType  // ✅ Pass refund type for query selection
       },
       parallel: true
     });
@@ -1416,11 +1423,10 @@ export class TransactionHandler {
   private async executeLedgerReversal(tx: any, data: any, context: any): Promise<void> {
     let ledgerEntries = [];
     
-    // ✅ NEW: Use transaction_id for payment/refund deletion
+    // ✅ SIMPLIFIED: All payment/refund types now have transaction_id, so just query by it!
     if (data.entityType === 'payment') {
-      console.log(`[LEDGER REVERSAL] Searching for PAYMENT entries with transaction_id=${data.entityId}`);
+      console.log(`[LEDGER REVERSAL] Deleting PAYMENT ledger entries for payment_id=${data.entityId}`);
       
-      // ✅ Simple query using transaction_id field
       ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
           transaction_id: data.entityId,
@@ -1428,15 +1434,11 @@ export class TransactionHandler {
         }
       });
       
-      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} PAYMENT ledger entries for transaction_id=${data.entityId}`);
-      if (ledgerEntries.length > 0) {
-        console.log('[LEDGER REVERSAL] Entry IDs:', ledgerEntries.map(e => e.id).join(', '));
-      }
+      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} PAYMENT ledger entries`);
       
     } else if (data.entityType === 'refund') {
-      console.log(`[LEDGER REVERSAL] Searching for REFUND entries with transaction_id=${data.entityId}`);
+      console.log(`[LEDGER REVERSAL] Deleting REFUND ledger entries for refund_id=${data.entityId}`);
       
-      // ✅ NEW: Use transaction_id for refund deletion (same as payment)
       ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
           transaction_id: data.entityId,
@@ -1444,10 +1446,7 @@ export class TransactionHandler {
         }
       });
       
-      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} REFUND ledger entries for transaction_id=${data.entityId}`);
-      if (ledgerEntries.length > 0) {
-        console.log('[LEDGER REVERSAL] Entry IDs:', ledgerEntries.map(e => e.id).join(', '));
-      }
+      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} REFUND ledger entries`);
       
     } else {
       // Standard handling for purchase/return

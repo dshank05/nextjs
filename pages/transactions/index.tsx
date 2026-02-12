@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TransactionTable } from '../../components/transactions/TransactionTable';
 import { TransactionFilters } from '../../components/transactions/TransactionFilters';
+import { convertDateToTimestamp } from '../../lib/date-utils';
 
 // Define types for transaction data (matching the component interfaces)
 interface TransactionItem {
@@ -247,22 +248,22 @@ export default function TransactionsPage() {
       filteredData = filteredData.filter(transaction => transaction.status === statusValue);
     }
 
-    // Date filters
+    // Date filters - using standardized convertDateToTimestamp
     if (dateFrom) {
-      const fromDate = new Date(dateFrom).getTime() / 1000;
+      const fromDate = convertDateToTimestamp(dateFrom);
       filteredData = filteredData.filter(transaction => {
         const transDate = typeof transaction.invoice_date === 'string'
-          ? new Date(transaction.invoice_date).getTime() / 1000
+          ? convertDateToTimestamp(transaction.invoice_date)
           : transaction.invoice_date;
         return transDate >= fromDate;
       });
     }
 
     if (dateTo) {
-      const toDate = new Date(dateTo).getTime() / 1000;
+      const toDate = convertDateToTimestamp(dateTo);
       filteredData = filteredData.filter(transaction => {
         const transDate = typeof transaction.invoice_date === 'string'
-          ? new Date(transaction.invoice_date).getTime() / 1000
+          ? convertDateToTimestamp(transaction.invoice_date)
           : transaction.invoice_date;
         return transDate <= toDate;
       });

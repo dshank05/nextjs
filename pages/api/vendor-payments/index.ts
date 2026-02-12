@@ -195,7 +195,8 @@ async function handleCreatePayment(
           debit: 0,
           credit: payment_amount,
           notes: `Direct advance payment ₹${payment_amount}`,
-          fy: financialYear
+          fy: financialYear,
+          transaction_id: payment.id  // ✅ FIX: Add transaction_id for deletion tracking
         }, tx);
 
         // Direct payment - no allocations
@@ -211,17 +212,18 @@ async function handleCreatePayment(
         if (payment_type === 'MIXED' && unallocatedAmount > 0) {
           await ledgerService.createEntry({
             vendor_id: vendorId,
-            transaction_date: payment_date,  // ✅ Use converted timestamp
+            transaction_date: paymentTimestamp,  // ✅ FIXED: Use converted timestamp
             transaction_type: 'PAYMENT',
             reference_type: 'payment',
             reference_id: payment.id,
             reference_no: payment.id.toString(),
             payment_mode,
-            payment_date: payment_date,  // ✅ Use converted timestamp
+            payment_date: paymentTimestamp,  // ✅ FIXED: Use converted timestamp
             debit: 0,
             credit: unallocatedAmount,
-    
-            fy: financialYear
+            notes: `Unallocated payment received ₹${unallocatedAmount} (from Payment #${payment.id})`,
+            fy: financialYear,
+            transaction_id: payment.id  // ✅ Add transaction_id for tracking
           }, tx);
         }
         

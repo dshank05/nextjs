@@ -815,8 +815,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     }
 
     if (startDate && endDate) {
-      const startTimestamp = Math.floor(new Date(startDate as string).getTime() / 1000)
-      const endTimestamp = Math.floor(new Date(endDate as string).getTime() / 1000)
+      const startTimestamp = convertDateToTimestamp(startDate as string)
+      const endTimestamp = convertDateToTimestamp(endDate as string)
       where.invoice_date = {
         gte: startTimestamp,
         lte: endTimestamp

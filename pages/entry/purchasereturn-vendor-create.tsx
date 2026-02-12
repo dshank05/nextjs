@@ -685,7 +685,7 @@ export default function PurchaseReturnVendorCreatePage() {
         return_notes: returnNotes,
         payment_status: paymentStatus, // 0=Incomplete, 1=Complete
         payment_mode: paymentMode, // 0=Cash, 1=Bank
-        payment_date: paymentStatus === 1 && paymentDate ? Math.floor(new Date(paymentDate).getTime() / 1000) : undefined,
+        payment_date: paymentStatus === 1 && paymentDate ? paymentDate : undefined,  // Send as YYYY-MM-DD string, backend handles conversion
         packing_forwarding_amount: packingForwardingAmount || 0,
         items: Array.from(selectedItems.values()).map(item => ({
           purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id

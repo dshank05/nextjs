@@ -51,7 +51,7 @@ export default function QuickRefundModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           vendor_id: vendorId,
-          refund_date: Math.floor(new Date(refundDate).getTime() / 1000),
+          refund_date: refundDate,  // Send as YYYY-MM-DD string, backend handles conversion
           refund_amount: amount,
           refund_mode: refundMode,
           notes: notes || `Refund for return #${returnId}`,

@@ -1342,7 +1342,7 @@ export default function InvoiceCreate() {
       const submitData = {
         // ===== MAIN INVOICE FIELDS =====
         invoice_no: parseInt(formData.invoice_number),               // Invoice.invoice_no
-        invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoice.invoice_date (convert to UNIX timestamp)
+        invoice_date: formData.date, // Invoice.invoice_date - backend converts to timestamp
         select_customer: 0,                                          // Invoice.select_customer (set to 0 for manual entry)
 
         // ===== CUSTOMER DETAILS (Always from form data) =====
@@ -1407,7 +1407,7 @@ export default function InvoiceCreate() {
           subcategory_id: item.subcategory_id,
           model_id: item.car_model_ids && item.car_model_ids.length > 0 ? parseInt(item.car_model_ids[0]) : null, // Invoiceitems.model_id (first car model)
           company_id: item.company_id,                                // Invoiceitems.company_id
-          invoice_date: Math.floor(new Date(formData.date).getTime() / 1000), // Invoiceitems.invoice_date
+          invoice_date: formData.date, // Invoiceitems.invoice_date - backend converts to timestamp
           fy: new Date().getFullYear()                                // Invoiceitems.fy
         })),
 

@@ -101,11 +101,15 @@ export function getLocalDateString(date: Date = new Date()): string {
 }
 
 /**
- * Convert YYYY-MM-DD date string to Unix timestamp at midnight local time
+ * Convert date (string or number) to Unix timestamp at midnight local time
  * 
- * USE IN: ALL frontend and backend code converting date strings to timestamps
+ * USE IN: ALL frontend and backend code converting dates to timestamps
  * 
- * CRITICAL: This function parses dates in LOCAL timezone, not UTC.
+ * ACCEPTS:
+ * - YYYY-MM-DD string: "2026-02-07"
+ * - Unix timestamp (number): 1770796800
+ * 
+ * CRITICAL: This function parses date strings in LOCAL timezone, not UTC.
  * - Input "2026-02-07" becomes Feb 7, 2026 00:00:00 in server's timezone
  * - For India deployment: Feb 7, 2026 00:00:00 IST
  * - Ensures consistent timestamps for same date across POST/PUT operations
@@ -115,7 +119,7 @@ export function getLocalDateString(date: Date = new Date()): string {
  * - In PST (UTC-8): "2026-02-07" becomes Feb 6, 4:00 PM (wrong day!)
  * - Manual parsing creates Date in local timezone (correct)
  * 
- * @param dateString - Date in "YYYY-MM-DD" format
+ * @param date - Date in "YYYY-MM-DD" format OR Unix timestamp (number)
  * @returns Unix timestamp (seconds) at 00:00:00 local time
  * 
  * @example
@@ -125,17 +129,26 @@ export function getLocalDateString(date: Date = new Date()): string {
  * // Frontend: Convert date input to timestamp
  * const timestamp = convertDateToTimestamp("2026-02-07");
  * 
- * // Backend: Convert received date string to timestamp
+ * // Backend: Accept both strings and timestamps
  * const invoiceDate = convertDateToTimestamp(req.body.invoice_date);
+ * 
+ * // Already a timestamp? Pass through
+ * const existing = convertDateToTimestamp(1770796800); // Returns 1770796800
  * 
  * // Result (in IST): Feb 7, 2026 00:00:00 IST
  * // Same date, same timestamp - ledger entries merge correctly!
  * ```
  */
-export function convertDateToTimestamp(dateString: string): number {
-  const [year, month, day] = dateString.split('-').map(Number);
-  const date = new Date(year, month - 1, day, 0, 0, 0, 0);
-  return Math.floor(date.getTime() / 1000);
+export function convertDateToTimestamp(date: string | number): number {
+  // If already a Unix timestamp (number), return as-is
+  if (typeof date === 'number') {
+    return Math.floor(date);
+  }
+  
+  // Parse YYYY-MM-DD string in local timezone
+  const [year, month, day] = date.split('-').map(Number);
+  const dateObj = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return Math.floor(dateObj.getTime() / 1000);
 }
 
 /**

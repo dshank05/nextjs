@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { convertDateToTimestamp } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -38,8 +39,8 @@ async function handler(
       }
     } else if (startDate && endDate) {
       dateFilter = {
-        gte: Math.floor(new Date(startDate as string).getTime() / 1000),
-        lte: Math.floor(new Date(endDate as string).getTime() / 1000)
+        gte: convertDateToTimestamp(startDate as string),
+        lte: convertDateToTimestamp(endDate as string)
       }
     }
 
