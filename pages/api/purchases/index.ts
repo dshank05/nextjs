@@ -633,6 +633,37 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       });
 
       // ===== OPTIMIZED: Parallel stock updates and ledger creation =====
+      // ✅ Issue 3 FIX: Generate PURCHASE notes showing advance usage
+      let purchaseNotes: string | undefined;
+      if (payment_status === 1) {
+        // Fetch vendor balance
+        const vendor = await tx.vendor_details.findUnique({
+          where: { id: parseInt(vendor_id) },
+          select: {
+            total_paid: true,
+            total_allocated: true,
+            total_refunded: true,
+            total_refund_allocated: true
+          }
+        });
+
+        // Calculate advance balance
+        const advanceBalance = vendor 
+          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) + 
+            (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
+          : 0;
+        
+        const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
+        const newPayment = calculatedGrandTotal - advanceUsed;
+
+        // Generate notes based on payment breakdown
+        if (advanceUsed >= calculatedGrandTotal) {
+          purchaseNotes = `Paid using ₹${advanceUsed.toFixed(2)} from advance balance`;
+        } else if (advanceUsed > 0) {
+          purchaseNotes = `Paid: ₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment`;
+        }
+      }
+
       await Promise.all([
         // Stock updates (parallel)
         Promise.all(
@@ -653,13 +684,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           })
         ),
         // Ledger entry (parallel with stock updates)
+        // ✅ Issue 3 FIX: Pass notes showing advance usage
         ledgerService.createPurchaseEntry({
           id: purchase.id,
           vendor_id: parseInt(vendor_id),
           invoice_no: purchase.invoice_no,
           invoice_date: Math.floor(invoiceDate),
           total: calculatedGrandTotal,
-          fy: currentFy
+          fy: currentFy,
+          notes: purchaseNotes  // ✅ Add advance usage notes
         }, tx)
       ]);
 

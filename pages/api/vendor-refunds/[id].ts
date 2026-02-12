@@ -222,6 +222,20 @@ async function handleUpdateRefund(
         }
       });
 
+      // ✅ Issue 5 FIX: If refund_date changed, sync all related ledger entries
+      if (existingRefund.refund_date !== refund_date) {
+        await tx.vendor_ledger.updateMany({
+          where: {
+            transaction_id: refundId,
+            transaction_type: { in: ['REFUND_RECEIVED', 'REFUND_ADJUSTMENT'] }
+          },
+          data: {
+            transaction_date: refund_date,
+            payment_date: refund_date
+          }
+        });
+      }
+
       // 4. Delete old allocations & create new ones (parallel)
       await tx.refund_allocations.deleteMany({
         where: { refund_id: refundId }

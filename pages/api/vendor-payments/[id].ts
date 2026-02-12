@@ -222,6 +222,20 @@ async function handleUpdatePayment(
         }
       });
 
+      // ✅ Issue 5 FIX: If payment_date changed, sync all related ledger entries
+      if (existingPayment.payment_date !== payment_date) {
+        await tx.vendor_ledger.updateMany({
+          where: {
+            transaction_id: paymentId,
+            transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] }
+          },
+          data: {
+            transaction_date: payment_date,
+            payment_date: payment_date
+          }
+        });
+      }
+
       // 4. Delete old allocations & create new ones (parallel)
       await tx.payment_allocations.deleteMany({
         where: { payment_id: paymentId }

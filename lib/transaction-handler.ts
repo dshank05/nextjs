@@ -273,11 +273,12 @@ export class TransactionHandler {
     const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
     const allocDiff = newTotalAllocated - oldTotalAllocated;
     
-    // ✅ FIX: Get purchase ID for PAYMENT_ADJUSTMENT ledger entry to enable proper merging
-    // PAYMENT_ADJUSTMENT must use same reference_id as original PAYMENT for ledger merge to work
+    // ✅ FIX: For DIRECT payments, use 'payment' reference_type to match original PAYMENT entry
+    // For BILL_SPECIFIC/MIXED payments, use 'purchase' reference_type
+    const isDirect = params.paymentType === 'DIRECT';
     const purchaseId = params.newAllocations[0]?.purchase_id || 
                        params.oldAllocations[0]?.purchase_id || 
-                       params.paymentId; // Fallback for DIRECT payments (though shouldn't have adjustments)
+                       params.paymentId;
     
     // Create ledger operation ONLY if amount changed
     const ledgerOps: LedgerOperation[] = [];
@@ -288,8 +289,9 @@ export class TransactionHandler {
           vendor_id: params.vendorId,
           transaction_date: params.paymentDate,
           transaction_type: 'PAYMENT_ADJUSTMENT',
-          reference_type: 'purchase',
-          reference_id: purchaseId, // ✅ FIX: Use purchaseId instead of paymentId for proper ledger merging
+          // ✅ FIX: Use 'payment' for DIRECT, 'purchase' for BILL_SPECIFIC/MIXED
+          reference_type: isDirect ? 'payment' : 'purchase',
+          reference_id: isDirect ? params.paymentId : purchaseId,
           reference_no: `PAY-${params.paymentId}`,
           payment_mode: params.paymentMode,
           payment_status: 1,
@@ -297,7 +299,8 @@ export class TransactionHandler {
           debit: amountDiff < 0 ? Math.abs(amountDiff) : 0,
           credit: amountDiff > 0 ? amountDiff : 0,
           notes: `Payment #${params.paymentId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.paymentType === 'MIXED' ? ' (Mixed: partial allocation + advance)' : params.paymentType === 'DIRECT' ? ' (Direct advance)' : ' (Bill specific)'}`,
-          fy: params.fy
+          fy: params.fy,
+          transaction_id: params.paymentId  // ✅ NEW: Set transaction_id to parent payment ID for merging
         }
       });
     }
@@ -379,7 +382,8 @@ export class TransactionHandler {
             debit: amountDiff > 0 ? amountDiff : 0,  // ✅ FIX: Increase = DEBIT (adds to balance)
             credit: amountDiff < 0 ? Math.abs(amountDiff) : 0,  // ✅ FIX: Decrease = CREDIT (reduces balance)
             notes: `Refund #${params.refundId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`,
-            fy: params.fy
+            fy: params.fy,
+            transaction_id: params.refundId  // ✅ NEW: Set transaction_id to parent refund ID for merging
           }
         });
       }
@@ -501,53 +505,60 @@ export class TransactionHandler {
         }
       }
       
-      // ✅ NEW: Get transaction_id from payment/refund maps
-      let transactionId: number | undefined;
-      let updatedNotes = entryToCreate.notes || '';
+      // ✅ Issue 6 FIX: Skip ledger creation for advance allocations
+      // When marking unpaid→paid using advance balance, we only create payment_allocations
+      // The PAYMENT ledger entry already exists from the original advance payment
+      const isAdvanceAllocation = entryToCreate.notes?.includes('Allocated from advance balance');
       
-      if (entryToCreate.transaction_type === 'PAYMENT' && entryToCreate.reference_id) {
-        transactionId = paymentMap.get(entryToCreate.reference_id);
+      if (!isAdvanceAllocation) {
+        // ✅ NEW: Get transaction_id from payment/refund maps
+        let transactionId: number | undefined;
+        let updatedNotes = entryToCreate.notes || '';
         
-        // ✅ NEW: Update notes to include payment ID
-        if (transactionId) {
-          updatedNotes = `Payment ₹${entryToCreate.credit} for bill INV-${entryToCreate.reference_no} via Payment #${transactionId}`;
+        if (entryToCreate.transaction_type === 'PAYMENT' && entryToCreate.reference_id) {
+          transactionId = paymentMap.get(entryToCreate.reference_id);
+          
+          // ✅ NEW: Update notes to include payment ID
+          if (transactionId) {
+            updatedNotes = `Payment ₹${entryToCreate.credit} for bill INV-${entryToCreate.reference_no} via Payment #${transactionId}`;
+          }
+        } else if (entryToCreate.transaction_type === 'REFUND_RECEIVED' && entryToCreate.reference_id) {
+          transactionId = refundMap.get(entryToCreate.reference_id);
+          
+          // ✅ NEW: Update notes to include refund ID
+          if (transactionId) {
+            updatedNotes = `Refund ₹${entryToCreate.debit} for return ${entryToCreate.reference_no} via Refund #${transactionId}`;
+          }
         }
-      } else if (entryToCreate.transaction_type === 'REFUND_RECEIVED' && entryToCreate.reference_id) {
-        transactionId = refundMap.get(entryToCreate.reference_id);
         
-        // ✅ NEW: Update notes to include refund ID
-        if (transactionId) {
-          updatedNotes = `Refund ₹${entryToCreate.debit} for return ${entryToCreate.reference_no} via Refund #${transactionId}`;
-        }
-      }
-      
-      // Create the entry
-      const createdEntry = await tx.vendor_ledger.create({
-        data: {
-          vendor_id: entryToCreate.vendor_id,
-          transaction_date: entryToCreate.transaction_date,
-          transaction_type: entryToCreate.transaction_type,
-          reference_type: entryToCreate.reference_type,
-          reference_id: entryToCreate.reference_id,
-          reference_no: entryToCreate.reference_no,
-          payment_mode: entryToCreate.payment_mode,
-          payment_status: entryToCreate.payment_status,
-          payment_date: entryToCreate.payment_date,
-          debit: entryToCreate.debit,
-          credit: entryToCreate.credit,
-          balance: await ledgerService.getLatestBalance(entryToCreate.vendor_id, tx) + entryToCreate.debit - entryToCreate.credit,
-          notes: updatedNotes,  // ✅ NEW: Use updated notes with payment/refund ID
-          fy: entryToCreate.fy,
-          transaction_id: transactionId  // ✅ NEW: Set transaction_id if payment/refund
-        }
-      });
-      
-      // Track if this is an adjustment entry
-      if (entryToCreate.transaction_type.includes('_ADJUSTMENT')) {
-        adjustmentEntryIds.push({
-          vendorId: entryToCreate.vendor_id,
-          entryId: createdEntry.id
+        // Create the entry (only for new payments, not advance allocations)
+        const createdEntry = await tx.vendor_ledger.create({
+          data: {
+            vendor_id: entryToCreate.vendor_id,
+            transaction_date: entryToCreate.transaction_date,
+            transaction_type: entryToCreate.transaction_type,
+            reference_type: entryToCreate.reference_type,
+            reference_id: entryToCreate.reference_id,
+            reference_no: entryToCreate.reference_no,
+            payment_mode: entryToCreate.payment_mode,
+            payment_status: entryToCreate.payment_status,
+            payment_date: entryToCreate.payment_date,
+            debit: entryToCreate.debit,
+            credit: entryToCreate.credit,
+            balance: await ledgerService.getLatestBalance(entryToCreate.vendor_id, tx) + entryToCreate.debit - entryToCreate.credit,
+            notes: updatedNotes,  // ✅ NEW: Use updated notes with payment/refund ID
+            fy: entryToCreate.fy,
+            transaction_id: transactionId  // ✅ NEW: Set transaction_id if payment/refund
+          }
         });
+        
+        // Track if this is an adjustment entry
+        if (entryToCreate.transaction_type.includes('_ADJUSTMENT')) {
+          adjustmentEntryIds.push({
+            vendorId: entryToCreate.vendor_id,
+            entryId: createdEntry.id
+          });
+        }
       }
     }
     

@@ -86,7 +86,8 @@ export default async function handler(
         paymentMode: entry.payment_mode,
         transactionType: entry.transaction_type,
         referenceType: entry.reference_type,
-        referenceId: entry.reference_id
+        referenceId: entry.reference_id,
+        transaction_id: entry.transaction_id  // ✅ NEW: Send transaction_id for grouping logic
       }
     })
 

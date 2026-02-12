@@ -20,6 +20,7 @@ export interface LedgerEntry {
   referenceId: number
   transaction_date?: number  // For sorting (earliest)
   display_date?: number      // For display (latest)
+  transaction_id?: number | null  // ✅ NEW: Links PAYMENT/REFUND with their adjustments
 }
 
 /**
@@ -75,10 +76,24 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       baseType = 'DEBIT_NOTE'
     }
 
-    // Create group key: baseType-referenceType-referenceId
-    const key = entry.referenceId && entry.referenceType
-      ? `${baseType}-${entry.referenceType}-${entry.referenceId}`
-      : `solo-${entry.id}` // Standalone entries without reference
+    // ✅ Issue 4 FIX: Create group key with transaction_id for PAYMENT/REFUND entries
+    // This keeps separate payments/refunds apart while allowing them to merge with their adjustments
+    let key: string
+    
+    if ((baseType === 'PAYMENT' || baseType === 'REFUND' || baseType === 'REFUND_RECEIVED') && entry.transaction_id) {
+      // PAYMENT/REFUND with transaction_id: Group by transaction_id
+      // Example: Payment #149 and Payment #150 stay separate (different transaction_id)
+      // But Payment #150 + its adjustment merge (same transaction_id=150)
+      key = entry.referenceId && entry.referenceType
+        ? `${baseType}-${entry.referenceType}-${entry.referenceId}-txn${entry.transaction_id}`
+        : `solo-${entry.id}`
+    } else {
+      // Other transaction types (PURCHASE, DEBIT_NOTE) OR old data without transaction_id:
+      // Use existing logic (group by reference_id only)
+      key = entry.referenceId && entry.referenceType
+        ? `${baseType}-${entry.referenceType}-${entry.referenceId}`
+        : `solo-${entry.id}`
+    }
 
     if (!groups.has(key)) {
       groups.set(key, [])

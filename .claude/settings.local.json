@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node scripts/test-issue1-advance-allocation.js:*)",
+      "Bash(node scripts/test-issue1-direct.js:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}

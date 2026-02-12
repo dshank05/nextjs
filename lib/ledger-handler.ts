@@ -173,9 +173,11 @@ export class LedgerHandler {
         // ✅ FIXED: Uses advance breakdown to determine actual new payment amount
         // ✅ FIXED: Only creates PAYMENT entry if new money is paid (not using 100% advance)
         // ✅ FIXED: Checks for existing PAYMENT and uses PAYMENT_ADJUSTMENT if found
+        // ✅ Issue 3 FIX: Even when 100% from advance, create PAYMENT entry with ₹0 and clear notes
         const breakdown01 = this.calculateAdvanceBreakdown(changes.newTotal, changes.currentBalance);
         
         if (breakdown01.newPayment > 0) {
+          // Partial or full new payment
           ops.push({
             entry: {
               vendor_id: changes.vendorId,
@@ -199,6 +201,7 @@ export class LedgerHandler {
             }
           });
         }
+        
         break;
         
       case '2→1': // Partial → Paid

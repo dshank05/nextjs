@@ -181,6 +181,7 @@ export class LedgerService {
     invoice_date: number
     total: number
     fy: number
+    notes?: string  // ✅ Issue 3 FIX: Accept notes to show advance usage
   }, client: any) {
     await this.createEntry({
       vendor_id: purchase.vendor_id || 0,
@@ -191,6 +192,7 @@ export class LedgerService {
       reference_no: purchase.invoice_no.toString(),
       debit: purchase.total,
       credit: 0,
+      notes: purchase.notes,  // ✅ Issue 3 FIX: Pass notes showing advance usage
       fy: purchase.fy
     }, client)
   }
