@@ -201,9 +201,42 @@ export class BalanceHandler {
         return null;
         
       case '0→0': // Unpaid → Unpaid (amount change)
+        // No balance update - nothing paid yet
+        return null;
+        
       case '1→1': // Paid → Paid (amount change)
+        // ✅ FIX: Update balance when amount changes while status stays Paid
+        if (changes.amountChanged) {
+          const amountDiff = changes.newTotal - changes.oldTotal;
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_paid: amountDiff,
+              total_allocated: amountDiff
+            }
+          };
+        }
+        return null;
+        
       case '2→2': // Partial → Partial (amount change)
-        // No balance update for amount changes without status change
+        // ✅ FIX: Update balance if total allocated changes
+        // This happens when partial payment amount changes
+        if (changes.amountChanged && changes.totalAllocated !== undefined) {
+          // Calculate how much the allocation changed
+          const oldAllocated = changes.totalAllocated;
+          const newAllocated = Math.min(changes.newTotal, changes.totalAllocated);
+          const allocDiff = newAllocated - oldAllocated;
+          
+          if (allocDiff !== 0) {
+            return {
+              vendorId: changes.vendorId,
+              update: {
+                total_paid: allocDiff,
+                total_allocated: allocDiff
+              }
+            };
+          }
+        }
         return null;
         
       default:
@@ -311,9 +344,40 @@ export class BalanceHandler {
         return null;
         
       case '0→0': // Unpaid → Unpaid (amount change)
+        // No balance update - nothing refunded yet
+        return null;
+        
       case '1→1': // Refunded → Refunded (amount change)
+        // ✅ FIX: Update balance when amount changes while status stays Complete
+        if (changes.amountChanged) {
+          const amountDiff = changes.newTotal - changes.oldTotal;
+          return {
+            vendorId: changes.vendorId,
+            update: {
+              total_refunded: amountDiff,
+              total_refund_allocated: amountDiff
+            }
+          };
+        }
+        return null;
+        
       case '2→2': // Partial → Partial (amount change)
-        // No balance update for amount changes without status change
+        // ✅ FIX: Update balance if total allocated changes
+        if (changes.amountChanged && changes.totalAllocated !== undefined) {
+          const oldAllocated = changes.totalAllocated;
+          const newAllocated = Math.min(changes.newTotal, changes.totalAllocated);
+          const allocDiff = newAllocated - oldAllocated;
+          
+          if (allocDiff !== 0) {
+            return {
+              vendorId: changes.vendorId,
+              update: {
+                total_refunded: allocDiff,
+                total_refund_allocated: allocDiff
+              }
+            };
+          }
+        }
         return null;
         
       default:

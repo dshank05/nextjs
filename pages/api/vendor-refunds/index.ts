@@ -166,7 +166,8 @@ async function handleCreateRefund(
           debit: allocation.allocated_amount,
           credit: 0,
           notes: `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`,
-          fy: financialYear
+          fy: financialYear,
+          transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
         }, tx);
       }
 
@@ -177,15 +178,16 @@ async function handleCreateRefund(
           vendor_id: vendorId,
           transaction_date: refund_date,
           transaction_type: 'REFUND_RECEIVED',
-          reference_type: undefined,
-          reference_id: undefined,
+          reference_type: 'payment',  // ✅ FIX: Use 'payment' so merge works
+          reference_id: refund.id,     // ✅ FIX: Use refund ID
           reference_no: refund.id.toString(),
           payment_mode: refund_mode,
           payment_date: refund_date,
           debit: refund_amount,
           credit: 0,
           notes: `Direct refund received ₹${refund_amount}`,
-          fy: financialYear
+          fy: financialYear,
+          transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
         }, tx);
 
         // Direct refund - no allocations
@@ -203,15 +205,16 @@ async function handleCreateRefund(
             vendor_id: vendorId,
             transaction_date: refund_date,
             transaction_type: 'REFUND_RECEIVED',
-            reference_type: undefined,
-            reference_id: undefined,
+            reference_type: 'payment',  // ✅ FIX: Use 'payment' so merge works
+            reference_id: refund.id,     // ✅ FIX: Use refund ID
             reference_no: refund.id.toString(),
             payment_mode: refund_mode,
             payment_date: refund_date,
             debit: unallocatedAmount,
             credit: 0,
             notes: `Unallocated refund received ₹${unallocatedAmount} (from Refund #${refund.id})`,
-            fy: financialYear
+            fy: financialYear,
+            transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
           }, tx);
         }
         

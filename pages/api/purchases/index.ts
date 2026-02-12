@@ -686,8 +686,68 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
         const newPayment = calculatedGrandTotal - advanceUsed;
 
-        // ✅ CREATE PAYMENT LEDGER ENTRY - Only if new payment needed
+        // ✅ CREATE PAYMENT/ALLOCATION RECORDS FOR ADVANCE PORTION (CREATE FIRST!)
+        let advancePaymentId: number | undefined;
+        if (advanceUsed > 0) {
+          console.log(`[PURCHASE CREATE] Creating advance allocation: ₹${advanceUsed.toFixed(2)}`);
+          const advancePayment = await tx.vendor_payments.create({
+            data: {
+              vendor_id: parseInt(vendor_id),
+              payment_date: Math.floor(invoiceDate),
+              payment_amount: advanceUsed,
+              payment_mode: payment_mode,
+              payment_type: 'BILL_SPECIFIC',
+              notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`,
+              fy: currentFy
+            }
+          });
+          
+          advancePaymentId = advancePayment.id;
+
+          await tx.payment_allocations.create({
+            data: {
+              payment_id: advancePayment.id,
+              purchase_id: purchase.id,
+              allocated_amount: advanceUsed,
+              allocation_date: Math.floor(invoiceDate),
+              notes: 'Allocated from existing advance balance'
+            }
+          });
+        }
+
+        // ✅ CREATE PAYMENT/ALLOCATION RECORDS FOR NEW PAYMENT PORTION (CREATE FIRST!)
+        let newPaymentId: number | undefined;
         if (newPayment > 0) {
+          console.log(`[PURCHASE CREATE] Creating new payment: ₹${newPayment.toFixed(2)}`);
+          const payment = await tx.vendor_payments.create({
+            data: {
+              vendor_id: parseInt(vendor_id),
+              payment_date: Math.floor(invoiceDate),
+              payment_amount: newPayment,
+              payment_mode: payment_mode,
+              payment_type: 'BILL_SPECIFIC',
+              notes: advanceUsed > 0
+                ? `New payment for purchase ${purchase.invoice_no}: ₹${newPayment.toFixed(2)}`
+                : `Payment for purchase ${purchase.invoice_no}`,
+              fy: currentFy
+            }
+          });
+          
+          newPaymentId = payment.id;
+
+          await tx.payment_allocations.create({
+            data: {
+              payment_id: payment.id,
+              purchase_id: purchase.id,
+              allocated_amount: newPayment,
+              allocation_date: Math.floor(invoiceDate),
+              notes: 'Allocated during purchase creation'
+            }
+          });
+        }
+        
+        // ✅ NOW CREATE PAYMENT LEDGER ENTRY - Only if new payment needed, WITH transaction_id
+        if (newPayment > 0 && newPaymentId) {
           await ledgerService.createEntry({
             vendor_id: parseInt(vendor_id),
             transaction_date: Math.floor(invoiceDate),
@@ -700,40 +760,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             payment_mode: payment_mode,
             payment_status: 1,
             payment_date: Math.floor(invoiceDate),
-            notes: advanceUsed > 0 
-              ? `Payment for purchase ${purchase.invoice_no} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment)`
-              : `Payment made for purchase ${purchase.invoice_no}`,
-            fy: currentFy
+            notes: `Payment ₹${newPayment} for bill INV-${purchase.invoice_no} via Payment #${newPaymentId}`,
+            fy: currentFy,
+            transaction_id: newPaymentId  // ✅ NEW: Set transaction_id for deletion tracking
           }, tx);
-        } else {
+        } else if (newPayment === 0) {
           console.log(`[PURCHASE CREATE] No new payment needed - fully covered by ₹${advanceUsed.toFixed(2)} advance balance`);
-        }
-
-        // ✅ CREATE PAYMENT/ALLOCATION RECORDS - Only if new payment needed
-        if (newPayment > 0) {
-          const payment = await tx.vendor_payments.create({
-            data: {
-              vendor_id: parseInt(vendor_id),
-              payment_date: Math.floor(invoiceDate),
-              payment_amount: newPayment,  // ✅ Only new payment, not full amount
-              payment_mode: payment_mode,
-              payment_type: 'BILL_SPECIFIC',
-              notes: advanceUsed > 0
-                ? `Payment for purchase ${purchase.invoice_no} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new)`
-                : `Payment for purchase ${purchase.invoice_no}`,
-              fy: currentFy
-            }
-          });
-
-          await tx.payment_allocations.create({
-            data: {
-              payment_id: payment.id,
-              purchase_id: purchase.id,
-              allocated_amount: newPayment,  // ✅ Only new payment, not full amount
-              allocation_date: Math.floor(invoiceDate),
-              notes: 'Allocated during purchase creation'
-            }
-          });
         }
 
         // ✅ UPDATE VENDOR BALANCE

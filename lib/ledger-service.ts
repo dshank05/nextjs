@@ -21,6 +21,7 @@ export interface LedgerEntryData {
   credit: number
   notes?: string
   fy: number
+  transaction_id?: number  // Stores payment_id or refund_id for tracking deletions
 }
 
 export class LedgerService {
@@ -66,7 +67,8 @@ export class LedgerService {
         credit: data.credit,
         balance: newBalance,
         notes: entryNotes,
-        fy: data.fy
+        fy: data.fy,
+        transaction_id: data.transaction_id  // ✅ Store payment_id or refund_id
       }
     })
   }

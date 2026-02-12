@@ -345,6 +345,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           fy: financialYear
         }, tx)
 
+        // ✅ FIX: Update vendor balance fields for complete returns
+        await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
+          total_refunded: refundAmount,
+          total_refund_allocated: refundAmount
+        });
+
         // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry
         // Balance adjusts automatically from DEBIT_NOTE entry only
         // const vendor = await tx.vendor_details.findUnique({

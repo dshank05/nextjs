@@ -397,11 +397,79 @@ export class TransactionHandler {
    * Execute all operations within a transaction
    * This is the main method that APIs should call
    * ✅ FIXED: Checks for existing PAYMENT entries to avoid duplicates
+   * ✅ NEW: Creates payments BEFORE ledger entries to set transaction_id during creation
    */
   async executeInTransaction(
     tx: any,
     result: TransactionResult
   ): Promise<void> {
+    // 0. Execute allocation changes FIRST to create payments and get payment IDs
+    const paymentMap = new Map<number, number>(); // purchase_id -> payment_id
+    const refundMap = new Map<number, number>(); // return_id -> refund_id
+    
+    for (const change of result.allocationChanges) {
+      if (change.action === 'CREATE') {
+        if (change.type === 'PAYMENT') {
+          // Create payment record
+          const payment = await tx.vendor_payments.create({
+            data: {
+              vendor_id: change.data.vendorId,
+              payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
+              payment_amount: change.data.amount,
+              payment_mode: change.data.paymentMode || 1,
+              payment_type: change.data.paymentType || 'BILL_SPECIFIC',
+              notes: change.data.notes || `Payment for purchase ${change.data.invoiceNo}`,
+              fy: change.data.fy
+            }
+          });
+          
+          // Store payment ID for this purchase
+          paymentMap.set(change.data.purchaseId, payment.id);
+          
+          // Create allocation record
+          await tx.payment_allocations.create({
+            data: {
+              payment_id: payment.id,
+              purchase_id: change.data.purchaseId,
+              allocated_amount: change.data.amount,
+              allocation_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
+              notes: 'Allocated during purchase edit'
+            }
+          });
+        } else if (change.type === 'REFUND') {
+          // Create refund record
+          const refund = await tx.vendor_refunds.create({
+            data: {
+              vendor_id: change.data.vendorId,
+              refund_date: change.data.refundDate || Math.floor(Date.now() / 1000),
+              refund_amount: change.data.amount,
+              refund_mode: change.data.refundMode || 1,
+              refund_type: 'RETURN_SPECIFIC',
+              notes: `Refund for return ${change.data.debitNoteNo}`,
+              fy: change.data.fy
+            }
+          });
+          
+          // Store refund ID for this return
+          refundMap.set(change.data.returnId, refund.id);
+          
+          // Create allocation record
+          await tx.refund_allocations.create({
+            data: {
+              refund_id: refund.id,
+              return_id: change.data.returnId,
+              allocated_amount: change.data.amount,
+              allocation_date: change.data.refundDate || Math.floor(Date.now() / 1000),
+              notes: 'Allocated during return edit'
+            }
+          });
+        }
+      } else if (change.action === 'DELETE') {
+        // Handle deletions (this was previously in executeAllocationChange)
+        await this.executeAllocationChange(tx, change);
+      }
+    }
+    
     // 1. Execute ledger operations and track adjustment entries
     const adjustmentEntryIds: { vendorId: number; entryId: number }[] = [];
     
@@ -433,6 +501,26 @@ export class TransactionHandler {
         }
       }
       
+      // ✅ NEW: Get transaction_id from payment/refund maps
+      let transactionId: number | undefined;
+      let updatedNotes = entryToCreate.notes || '';
+      
+      if (entryToCreate.transaction_type === 'PAYMENT' && entryToCreate.reference_id) {
+        transactionId = paymentMap.get(entryToCreate.reference_id);
+        
+        // ✅ NEW: Update notes to include payment ID
+        if (transactionId) {
+          updatedNotes = `Payment ₹${entryToCreate.credit} for bill INV-${entryToCreate.reference_no} via Payment #${transactionId}`;
+        }
+      } else if (entryToCreate.transaction_type === 'REFUND_RECEIVED' && entryToCreate.reference_id) {
+        transactionId = refundMap.get(entryToCreate.reference_id);
+        
+        // ✅ NEW: Update notes to include refund ID
+        if (transactionId) {
+          updatedNotes = `Refund ₹${entryToCreate.debit} for return ${entryToCreate.reference_no} via Refund #${transactionId}`;
+        }
+      }
+      
       // Create the entry
       const createdEntry = await tx.vendor_ledger.create({
         data: {
@@ -448,8 +536,9 @@ export class TransactionHandler {
           debit: entryToCreate.debit,
           credit: entryToCreate.credit,
           balance: await ledgerService.getLatestBalance(entryToCreate.vendor_id, tx) + entryToCreate.debit - entryToCreate.credit,
-          notes: entryToCreate.notes || '',
-          fy: entryToCreate.fy
+          notes: updatedNotes,  // ✅ NEW: Use updated notes with payment/refund ID
+          fy: entryToCreate.fy,
+          transaction_id: transactionId  // ✅ NEW: Set transaction_id if payment/refund
         }
       });
       
@@ -471,12 +560,12 @@ export class TransactionHandler {
       );
     }
     
-    // 2. Execute allocation changes
-    for (const change of result.allocationChanges) {
-      await this.executeAllocationChange(tx, change);
-    }
+    // NOTE: Old step 2 "Execute allocation changes" has been MOVED to step 0 above
+    // This allows us to create payments BEFORE ledger entries, so transaction_id can be
+    // set during ledger creation instead of requiring an UPDATE query later.
+    // CREATE operations are now inline in step 0, DELETE operations call executeAllocationChange.
     
-    // 3. Execute balance update
+    // 2. Execute balance update
     if (result.balanceOp) {
       await balanceHandler.incrementBalanceInTransaction(
         tx,
@@ -487,13 +576,15 @@ export class TransactionHandler {
   }
   
   /**
-   * Helper method to create payment allocation with advance balance check
-   * Returns null if payment is fully covered by existing advance balance
+   * Helper method to create payment allocations with advance balance check
+   * Returns array of allocations (0, 1, or 2) for advance usage and new payment
    */
   private createPaymentAllocation(
     amount: number,
     changes: ChangeSet
-  ): AllocationChange | null {
+  ): AllocationChange[] {
+    const allocations: AllocationChange[] = [];
+    
     // Calculate advance balance - include both unallocated payments AND unallocated refunds
     const advanceBalance = changes.currentBalance 
       ? (Number(changes.currentBalance.total_paid) - Number(changes.currentBalance.total_allocated)) +
@@ -504,32 +595,55 @@ export class TransactionHandler {
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
     const newPayment = amount - advanceUsed;
     
-    // Only create payment record if new money is actually needed
-    if (newPayment <= 0) {
-      console.log(`[PAYMENT ALLOCATION] No new payment needed - fully covered by ₹${advanceUsed.toFixed(2)} advance balance`);
-      return null;
+    // Create allocation for advance portion
+    if (advanceUsed > 0) {
+      console.log(`[PAYMENT ALLOCATION] Creating advance allocation: ₹${advanceUsed.toFixed(2)} from advance balance`);
+      allocations.push({
+        action: 'CREATE',
+        type: 'PAYMENT',
+        data: {
+          vendorId: changes.vendorId,
+          purchaseId: changes.purchaseId,
+          amount: advanceUsed,
+          paymentMode: changes.paymentMode,
+          paymentDate: changes.paymentDate,
+          paymentType: 'ADVANCE_ALLOCATION',
+          fy: changes.fy,
+          invoiceNo: changes.invoiceNo,
+          notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`
+        }
+      });
     }
     
-    console.log(`[PAYMENT ALLOCATION] Creating payment: ₹${newPayment.toFixed(2)} new payment + ₹${advanceUsed.toFixed(2)} from advance = ₹${amount.toFixed(2)} total`);
+    // Create allocation for new payment portion
+    if (newPayment > 0) {
+      console.log(`[PAYMENT ALLOCATION] Creating new payment: ₹${newPayment.toFixed(2)} new payment`);
+      allocations.push({
+        action: 'CREATE',
+        type: 'PAYMENT',
+        data: {
+          vendorId: changes.vendorId,
+          purchaseId: changes.purchaseId,
+          amount: newPayment,
+          paymentMode: changes.paymentMode,
+          paymentDate: changes.paymentDate,
+          paymentType: 'BILL_SPECIFIC',
+          fy: changes.fy,
+          invoiceNo: changes.invoiceNo
+        }
+      });
+    }
     
-    return {
-      action: 'CREATE',
-      type: 'PAYMENT',
-      data: {
-        vendorId: changes.vendorId,
-        purchaseId: changes.purchaseId,
-        amount: newPayment,  // ✅ Only create payment for NEW money, not full amount
-        paymentMode: changes.paymentMode,
-        paymentDate: changes.paymentDate,
-        fy: changes.fy,
-        invoiceNo: changes.invoiceNo
-      }
-    };
+    if (allocations.length === 0) {
+      console.log(`[PAYMENT ALLOCATION] No allocations created (amount: ₹${amount}, advance: ₹${advanceBalance})`);
+    }
+    
+    return allocations;
   }
   
   /**
    * Get allocation changes for purchase status transitions
-   * ✅ FIXED: Now checks advance balance before creating payments
+   * ✅ FIXED: Now creates allocations for both advance and new payment
    */
   private getPurchaseAllocationChanges(changes: ChangeSet): AllocationChange[] {
     const allocationChanges: AllocationChange[] = [];
@@ -537,20 +651,16 @@ export class TransactionHandler {
     
     switch (statusChange) {
       case '0→1': // Unpaid → Paid
-        // ✅ Use helper to check advance balance
-        const payment01 = this.createPaymentAllocation(changes.newTotal, changes);
-        if (payment01) {
-          allocationChanges.push(payment01);
-        }
+        // ✅ Use helper to check advance balance and create allocations
+        const allocations01 = this.createPaymentAllocation(changes.newTotal, changes);
+        allocationChanges.push(...allocations01);
         break;
         
       case '2→1': // Partial → Paid
         // ✅ Use helper to check advance balance for remaining amount
         const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
-        const payment21 = this.createPaymentAllocation(remainingAmount, changes);
-        if (payment21) {
-          allocationChanges.push(payment21);
-        }
+        const allocations21 = this.createPaymentAllocation(remainingAmount, changes);
+        allocationChanges.push(...allocations21);
         break;
         
       case '1→0': // Paid → Unpaid
@@ -630,8 +740,8 @@ export class TransactionHandler {
             payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
             payment_amount: change.data.amount,
             payment_mode: change.data.paymentMode || 1,
-            payment_type: 'BILL_SPECIFIC',
-            notes: `Payment for purchase ${change.data.invoiceNo}`,
+            payment_type: change.data.paymentType || 'BILL_SPECIFIC',
+            notes: change.data.notes || `Payment for purchase ${change.data.invoiceNo}`,
             fy: change.data.fy
           }
         });
@@ -1132,6 +1242,7 @@ export class TransactionHandler {
       
       // Store for balance update
       data.totalPaid = totalPaid;
+      context.totalPaid = totalPaid; // ✅ FIX: Share with BALANCE_UPDATE operation
       
     } else if (data.entityType === 'return') {
       const allocations = await tx.refund_allocations.findMany({
@@ -1162,6 +1273,7 @@ export class TransactionHandler {
       
       // Store for balance update
       data.totalRefunded = totalRefunded;
+      context.totalRefunded = totalRefunded; // ✅ FIX: Share with BALANCE_UPDATE operation
       
     } else if (data.entityType === 'payment') {
       // ✅ Store allocated purchase IDs before deletion for ledger reversal AND status recalculation
@@ -1304,48 +1416,38 @@ export class TransactionHandler {
   private async executeLedgerReversal(tx: any, data: any, context: any): Promise<void> {
     let ledgerEntries = [];
     
-    // ✅ Special handling for payment/refund deletion
+    // ✅ NEW: Use transaction_id for payment/refund deletion
     if (data.entityType === 'payment') {
-      // Get DIRECT/unallocated payment entries
-      const directEntries = await tx.vendor_ledger.findMany({
+      console.log(`[LEDGER REVERSAL] Searching for PAYMENT entries with transaction_id=${data.entityId}`);
+      
+      // ✅ Simple query using transaction_id field
+      ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
-          reference_type: 'payment',
-          reference_id: data.entityId
+          transaction_id: data.entityId,
+          transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] }
         }
       });
       
-      // Get allocated payment entries - filter by notes containing payment ID
-      const allocatedEntries = data.allocatedPurchaseIds?.length > 0 ? await tx.vendor_ledger.findMany({
-        where: {
-          transaction_type: 'PAYMENT',
-          reference_type: 'purchase',
-          reference_id: { in: data.allocatedPurchaseIds },
-          notes: { contains: `Payment #${data.entityId}` }
-        }
-      }) : [];
-      
-      ledgerEntries = [...directEntries, ...allocatedEntries];
+      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} PAYMENT ledger entries for transaction_id=${data.entityId}`);
+      if (ledgerEntries.length > 0) {
+        console.log('[LEDGER REVERSAL] Entry IDs:', ledgerEntries.map(e => e.id).join(', '));
+      }
       
     } else if (data.entityType === 'refund') {
-      // Get DIRECT/unallocated refund entries (no reference_type or undefined)
-      const directEntries = await tx.vendor_ledger.findMany({
+      console.log(`[LEDGER REVERSAL] Searching for REFUND entries with transaction_id=${data.entityId}`);
+      
+      // ✅ NEW: Use transaction_id for refund deletion (same as payment)
+      ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
-          transaction_type: 'REFUND_RECEIVED',
-          reference_type: null
+          transaction_id: data.entityId,
+          transaction_type: { in: ['REFUND_RECEIVED', 'REFUND_ADJUSTMENT'] }
         }
       });
       
-      // Get allocated refund entries - filter by notes containing refund ID
-      const allocatedEntries = data.allocatedReturnIds?.length > 0 ? await tx.vendor_ledger.findMany({
-        where: {
-          transaction_type: 'REFUND_RECEIVED',
-          reference_type: 'purchase_return',
-          reference_id: { in: data.allocatedReturnIds },
-          notes: { contains: `Refund #${data.entityId}` }
-        }
-      }) : [];
-      
-      ledgerEntries = [...directEntries, ...allocatedEntries];
+      console.log(`[LEDGER REVERSAL] Found ${ledgerEntries.length} REFUND ledger entries for transaction_id=${data.entityId}`);
+      if (ledgerEntries.length > 0) {
+        console.log('[LEDGER REVERSAL] Entry IDs:', ledgerEntries.map(e => e.id).join(', '));
+      }
       
     } else {
       // Standard handling for purchase/return
@@ -1412,16 +1514,16 @@ export class TransactionHandler {
         total_refund_allocated: -totalAllocated
       });
       
-    } else if (data.totalPaid !== undefined) {
-      // Purchase deletion - only update allocated (payment record kept)
+    } else if (context.totalPaid !== undefined) {
+      // ✅ FIX: Purchase deletion - use context.totalPaid shared from DELETE_ALLOCATIONS
       await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_allocated: -data.totalPaid
+        total_allocated: -context.totalPaid
       });
       
-    } else if (data.totalRefunded !== undefined) {
-      // Return deletion - only update refund_allocated (refund record kept)
+    } else if (context.totalRefunded !== undefined) {
+      // ✅ FIX: Return deletion - use context.totalRefunded shared from DELETE_ALLOCATIONS
       await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_refund_allocated: -data.totalRefunded
+        total_refund_allocated: -context.totalRefunded
       });
     }
   }

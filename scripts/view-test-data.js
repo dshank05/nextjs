@@ -180,7 +180,39 @@ async function viewTestData() {
       console.log('  (No refund allocations found)\n')
     }
 
-    // 10. VENDOR LEDGER ⭐ MOST IMPORTANT
+    // 10. VENDOR DETAILS - BALANCE FIELDS ⭐ CRITICAL FOR DEBUGGING
+    const vendors = await prisma.vendor_details.findMany({
+      orderBy: { id: 'asc' },
+      select: {
+        id: true,
+        vendor_name: true,
+        total_paid: true,
+        total_allocated: true,
+        total_refunded: true,
+        total_refund_allocated: true,
+        account_balance: true
+      }
+    })
+    console.log('👥 VENDOR BALANCE FIELDS: ' + vendors.length + ' vendors ⭐ CRITICAL FOR DEBUGGING')
+    if (vendors.length > 0) {
+      console.table(vendors.map(v => ({
+        id: v.id,
+        name: v.vendor_name ? v.vendor_name.substring(0, 20) : '',
+        total_paid: v.total_paid,
+        total_allocated: v.total_allocated,
+        payment_adv: Number(v.total_paid) - Number(v.total_allocated),
+        total_refunded: v.total_refunded,
+        total_refund_alloc: v.total_refund_allocated,
+        refund_adv: Number(v.total_refunded) - Number(v.total_refund_allocated),
+        calc_advance: (Number(v.total_paid) - Number(v.total_allocated)) + 
+                       (Number(v.total_refunded) - Number(v.total_refund_allocated)),
+        account_bal: v.account_balance
+      })))
+    } else {
+      console.log('  (No vendors found)\n')
+    }
+
+    // 11. VENDOR LEDGER ⭐ MOST IMPORTANT
     const ledger = await prisma.vendor_ledger.findMany({
       orderBy: [
         { vendor_id: 'asc' },

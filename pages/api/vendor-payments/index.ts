@@ -8,7 +8,7 @@ import {
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
-import { parseDateRange } from '../../../lib/date-utils';
+import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
 
 const prisma = new PrismaClient();
 
@@ -94,13 +94,16 @@ async function handleCreatePayment(
       });
     }
 
+    // ✅ FIX: Convert payment_date using date-utils to ensure consistent timezone handling
+    const paymentTimestamp = convertDateToTimestamp(payment_date);
+
     // Create payment and allocations in a transaction with extended timeout
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create payment record
       const payment = await tx.vendor_payments.create({
         data: {
           vendor_id: parseInt(vendor_id),
-          payment_date,
+          payment_date: paymentTimestamp,  // ✅ Use converted timestamp
           payment_amount,
           payment_mode,
           payment_type,
@@ -118,7 +121,7 @@ async function handleCreatePayment(
             payment_id: payment.id,
             purchase_id: allocation.purchase_id,
             allocated_amount: allocation.allocated_amount,
-            allocation_date: payment_date,
+            allocation_date: paymentTimestamp,  // ✅ Use converted timestamp
             notes: allocation.notes || null
           }
         });
@@ -161,18 +164,19 @@ async function handleCreatePayment(
         // Create ledger entry for this allocation (INSIDE TRANSACTION)
         await ledgerService.createEntry({
           vendor_id: vendorId,
-          transaction_date: payment_date,
+          transaction_date: paymentTimestamp,  // ✅ Use converted timestamp
           transaction_type: 'PAYMENT',
           reference_type: 'purchase',
           reference_id: allocation.purchase_id,
           reference_no: purchase?.invoice_no.toString(),
           payment_mode,
           payment_status: newStatus,
-          payment_date,
+          payment_date: paymentTimestamp,  // ✅ Use converted timestamp
           debit: 0,
           credit: allocation.allocated_amount,
           notes: `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`,
-          fy: financialYear
+          fy: financialYear,
+          transaction_id: payment.id  // ✅ NEW: Store payment ID for deletion tracking
         }, tx);
       }
 
@@ -181,13 +185,13 @@ async function handleCreatePayment(
         // Direct payment - create standalone ledger entry
         await ledgerService.createEntry({
           vendor_id: vendorId,
-          transaction_date: payment_date,
+          transaction_date: paymentTimestamp,  // ✅ Use converted timestamp
           transaction_type: 'PAYMENT',
           reference_type: 'payment',
           reference_id: payment.id,
           reference_no: payment.id.toString(),
           payment_mode,
-          payment_date,
+          payment_date: paymentTimestamp,  // ✅ Use converted timestamp
           debit: 0,
           credit: payment_amount,
           notes: `Direct advance payment ₹${payment_amount}`,
@@ -207,16 +211,16 @@ async function handleCreatePayment(
         if (payment_type === 'MIXED' && unallocatedAmount > 0) {
           await ledgerService.createEntry({
             vendor_id: vendorId,
-            transaction_date: payment_date,
+            transaction_date: payment_date,  // ✅ Use converted timestamp
             transaction_type: 'PAYMENT',
             reference_type: 'payment',
             reference_id: payment.id,
             reference_no: payment.id.toString(),
             payment_mode,
-            payment_date,
+            payment_date: payment_date,  // ✅ Use converted timestamp
             debit: 0,
             credit: unallocatedAmount,
-            notes: `Advance payment ₹${unallocatedAmount} (unallocated from Payment #${payment.id})`,
+    
             fy: financialYear
           }, tx);
         }

@@ -74,6 +74,18 @@ async function clearTestData() {
     const purchases = await prisma.purchase.deleteMany({})
     console.log(`   ✅ Deleted ${purchases.count} purchases\n`)
 
+    console.log('🔄 Resetting vendor balance fields...')
+    const vendorUpdate = await prisma.vendor_details.updateMany({
+      data: {
+        total_paid: 0,
+        total_allocated: 0,
+        total_refunded: 0,
+        total_refund_allocated: 0,
+        account_balance: 0
+      }
+    })
+    console.log(`   ✅ Reset balance fields for ${vendorUpdate.count} vendors\n`)
+
     console.log('='.repeat(80))
     console.log('✅ ALL TEST DATA CLEARED SUCCESSFULLY!')
     console.log('='.repeat(80))

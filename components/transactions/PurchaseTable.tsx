@@ -837,7 +837,6 @@ export const PurchaseTable: React.FC<PurchaseTableProps> = ({
                       onClick={() => handleDeleteClick(purchase)}
                       title={purchase.return_status === 2 ? "Cannot delete fully returned purchase" : "Delete Purchase"}
                       className={`btn-icon text-red-400 hover:text-red-500 ${purchase.return_status === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      disabled={purchase.return_status === 2}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

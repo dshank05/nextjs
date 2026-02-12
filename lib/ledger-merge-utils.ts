@@ -44,8 +44,20 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       .replace('_ADJUSTMENT', '')
       .replace('_REVERSAL', '')
 
-    // Map REFUND types to DEBIT_NOTE (fallback for old data)
-    if (baseType === 'REFUND_RECEIVED') {
+    // Map REFUND types to DEBIT_NOTE for purchase returns
+    // But NOT for standalone refunds (reference_type='payment')
+    if (baseType === 'REFUND_RECEIVED' && entry.referenceType === 'purchase_return') {
+      baseType = 'DEBIT_NOTE'
+    }
+    
+    // ✅ NEW: Normalize REFUND_RECEIVED to REFUND for standalone refunds
+    // This allows REFUND_RECEIVED + REFUND_ADJUSTMENT to merge
+    if (baseType === 'REFUND_RECEIVED' && entry.referenceType === 'payment') {
+      baseType = 'REFUND'
+    }
+    
+    // ✅ NEW: Also handle REFUND (after removing _ADJUSTMENT) for purchase returns
+    if (baseType === 'REFUND' && entry.referenceType === 'purchase_return') {
       baseType = 'DEBIT_NOTE'
     }
 
@@ -166,6 +178,25 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
         }
       }
 
+      // ✅ Build merged notes/remarks - show NET amount, not breakdown
+      const baseType = firstEntry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
+      let mergedRemarks = baseTransaction.remarks || ''
+      
+      // For refunds, update to show final NET amount
+      if (baseType === 'REFUND' || baseType === 'REFUND_RECEIVED') {
+        const netAmountAbs = Math.abs(netAmount)
+        mergedRemarks = `Direct refund received ₹${netAmountAbs.toLocaleString('en-IN')}`
+      }
+      // For payments, update to show final NET amount
+      else if (baseType === 'PAYMENT') {
+        const netAmountAbs = Math.abs(netAmount)
+        mergedRemarks = `Payment made ₹${netAmountAbs.toLocaleString('en-IN')}`
+      }
+      // For purchases, keep original remarks
+      else if (baseType === 'PURCHASE') {
+        mergedRemarks = baseTransaction.remarks || 'Purchase'
+      }
+
       // Create merged entry using BASE transaction for sorting, date, and metadata
       merged.push({
         ...baseTransaction,  // ✅ FIX: Use base transaction, not firstEntry
@@ -179,6 +210,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
         // ✅ Update display names
         particulars,
         voucherType,
+        remarks: mergedRemarks,  // ✅ Show NET amount in remarks
         // Balance will be recalculated later
         transactionType: baseTransaction.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
       })
