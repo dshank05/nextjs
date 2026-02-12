@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { FileText, Loader2 } from 'lucide-react';
+import { FileText, Loader2, RefreshCw } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
 import { mergeLedgerEntries, recalculateBalance } from '../../lib/ledger-merge-utils';
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
+import useLocalStorageState from 'use-local-storage-state';
 
 interface LedgerEntry {
   id: number;
@@ -44,10 +45,16 @@ export default function VendorLedgerPage() {
     totalPages: 0
   });
 
-  // Filters
-  const [selectedVendor, setSelectedVendor] = useState<string>('');
-  const [dateFrom, setDateFrom] = useState<string>('');
-  const [dateTo, setDateTo] = useState<string>('');
+  // Filters with state persistence
+  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-ledger-vendor', {
+    defaultValue: ''
+  });
+  const [dateFrom, setDateFrom] = useLocalStorageState<string>('vendor-ledger-dateFrom', {
+    defaultValue: ''
+  });
+  const [dateTo, setDateTo] = useLocalStorageState<string>('vendor-ledger-dateTo', {
+    defaultValue: ''
+  });
   const [vendors, setVendors] = useState<Vendor[]>([]);
 
   // Set default dates to current month on mount
@@ -191,7 +198,7 @@ export default function VendorLedgerPage() {
           </div>
         </div>
 
-        {/* Export Menu */}
+        {/* Export Menu and Refresh Button */}
         {selectedVendor && (
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm text-slate-400">
@@ -199,7 +206,17 @@ export default function VendorLedgerPage() {
                 <span className="font-medium text-white">Ledger for: {selectedVendorName}</span>
               )}
             </div>
-            <ExportMenu
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => fetchData()}
+                disabled={loading}
+                className="btn-secondary flex items-center gap-2 px-4 py-2"
+                title="Refresh ledger data"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+              <ExportMenu
               data={accountingEntries}
               columns={[
                 { key: 'formattedDate', label: 'Date', enabled: true },
@@ -215,7 +232,8 @@ export default function VendorLedgerPage() {
                 title: `Vendor Ledger - ${selectedVendorName}`,
                 fileName: `Vendor_Ledger_${selectedVendorName}_${getLocalDateString()}`
               }}
-            />
+              />
+            </div>
           </div>
         )}
 

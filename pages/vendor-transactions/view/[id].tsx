@@ -181,7 +181,7 @@ export default function ViewVendorTransactionPage() {
             <h1 className={`text-xl font-bold ${
               isExpense ? 'text-blue-100' : 'text-green-100'
             }`}>
-              {isExpense ? 'EXPENSE' : 'INCOME'} Transaction #{transaction.id} • {transaction.vendor.name}
+              {isExpense ? 'PAYMENT' : 'RECEIPT'} Transaction #{transaction.id} • {transaction.vendor.name}
             </h1>
           </div>
         </div>

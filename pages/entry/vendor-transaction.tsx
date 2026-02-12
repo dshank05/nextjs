@@ -6,6 +6,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
+import useLocalStorageState from 'use-local-storage-state'
 
 interface OutstandingBill {
   purchase_id: number
@@ -45,7 +46,9 @@ export default function VendorTransactionEntry() {
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [selectedVendor, setSelectedVendor] = useState<string>('')
+  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-transaction-vendor', {
+    defaultValue: ''
+  })
   const [operationType, setOperationType] = useState<OperationType>('')
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for EXPENSE
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
@@ -83,7 +86,7 @@ export default function VendorTransactionEntry() {
       } else if (operationType === 'INCOME') {
         // ✅ Auto-set DIRECT for INCOME
         setPaymentType('DIRECT')
-        fetchOutstandingReturns(vendorId)
+        setOutstandingReturns([])
         setOutstandingBills([])
       }
     } else {
@@ -621,11 +624,14 @@ export default function VendorTransactionEntry() {
         const action = isEditMode ? 'updated' : 'recorded'
         showSnackbar('success', `${transactionType} ${action} successfully!`)
         
-        if (isEditMode) {
-          // Redirect to transaction detail view after edit
-          router.push(`/vendor-transactions/view/${transactionId}?type=${operationType === 'EXPENSE' ? 'expense' : 'income'}`)
+        // Extract transaction ID from response
+        const createdId = isEditMode ? transactionId : (data.data?.payment?.id || data.data?.refund?.id)
+        
+        // Redirect to transaction detail view after creation/edit
+        if (createdId) {
+          router.push(`/vendor-transactions/view/${createdId}?type=${operationType === 'EXPENSE' ? 'expense' : 'income'}`)
         } else {
-          // Reset form for new entry
+          // Fallback: Reset form if ID not found (shouldn't happen)
           setSelectedVendor('')
           setOperationType('')
           setOutstandingBills([])
@@ -698,7 +704,7 @@ export default function VendorTransactionEntry() {
                       onChange={(e) => setOperationType(e.target.value as OperationType)}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-slate-300">EXPENSE (Pay Vendor)</span>
+                    <span className="text-slate-300">PAYMENT (Pay Vendor)</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
@@ -709,7 +715,7 @@ export default function VendorTransactionEntry() {
                       onChange={(e) => setOperationType(e.target.value as OperationType)}
                       className="w-4 h-4 text-blue-600"
                     />
-                    <span className="text-slate-300">INCOME (Receive Refund)</span>
+                    <span className="text-slate-300">RECEIPT (Receive Refund)</span>
                   </label>
                 </div>
               </div>
@@ -761,7 +767,7 @@ export default function VendorTransactionEntry() {
                         className="w-4 h-4 text-blue-600"
                       />
                       <div>
-                        <span className="text-slate-300 font-medium">Direct Advance</span>
+                        <span className="text-slate-300 font-medium">On Account</span>
                         <p className="text-xs text-slate-400">No allocation, all advance</p>
                       </div>
                     </label>
@@ -832,7 +838,7 @@ export default function VendorTransactionEntry() {
               {paymentType === 'DIRECT' ? (
                 <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-6 text-center">
                   <DollarSign className="w-12 h-12 text-blue-400 mx-auto mb-3" />
-                  <h3 className="text-lg font-medium text-blue-300 mb-2">Direct Advance {operationType === 'EXPENSE' ? 'Payment' : 'Refund'}</h3>
+                  <h3 className="text-lg font-medium text-blue-300 mb-2">On Account {operationType === 'EXPENSE' ? 'Payment' : 'Refund'}</h3>
                   <p className="text-slate-300">
                     {operationType === 'EXPENSE' 
                       ? `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be added as advance payment to vendor`
@@ -1012,7 +1018,7 @@ export default function VendorTransactionEntry() {
         title="Confirm Transaction"
         message={
           paymentType === 'DIRECT'
-            ? `Record direct advance ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}? This will be added to vendor's advance balance.`
+            ? `Record on account ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}? This will be added to vendor's advance balance.`
             : paymentType === 'MIXED'
             ? `Record ${operationType === 'EXPENSE' ? 'payment' : 'refund'} of ₹${amountNum?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} with ₹${totalAllocated?.toLocaleString('en-IN', { minimumFractionDigits: 2 })} allocated to ${
                 operationType === 'EXPENSE' 

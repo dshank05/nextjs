@@ -8,6 +8,7 @@ import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
+import useLocalStorageState from 'use-local-storage-state'
 
 interface Transaction {
   id: number
@@ -48,7 +49,9 @@ export default function VendorTransactionsPage() {
 
   // Filters
   const [vendors, setVendors] = useState<any[]>([])
-  const [selectedVendor, setSelectedVendor] = useState<string>('')
+  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-transactions-vendor', {
+    defaultValue: ''
+  })
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [paymentMode, setPaymentMode] = useState<string>('')
