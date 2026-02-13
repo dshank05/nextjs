@@ -152,6 +152,15 @@ export default function SalexPage() {
     };
   }, []);
 
+  // ✅ Clear sessionStorage when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('salex-page-filters');
+      }
+    };
+  }, []);
+
   const fetchSalex = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
     try {
       // Cancel any pending request

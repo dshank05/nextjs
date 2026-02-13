@@ -203,6 +203,15 @@ export default function Products() {
     };
   }, []);
 
+  // ✅ Clear sessionStorage when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('products-page-filters');
+      }
+    };
+  }, []);
+
   const handlePageChange = (newPage: number) => {
     if (newPage > 0 && newPage <= pagination.totalPages) {
       console.log("new page", newPage)

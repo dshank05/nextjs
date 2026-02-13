@@ -59,6 +59,7 @@ export class TransactionHandler {
     fy: number;
     totalAllocated?: number;
     isTypeA?: boolean;
+    hasPaymentLedger?: boolean;  // ✅ NEW: Indicates if PAYMENT/PAYMENT_ADJUSTMENT exists (real payment vs advance)
     currentBalance?: {
       total_paid: number;
       total_allocated: number;
@@ -80,6 +81,7 @@ export class TransactionHandler {
       fy: params.fy,
       totalAllocated: params.totalAllocated,
       isTypeA: params.isTypeA,
+      hasPaymentLedger: params.hasPaymentLedger,  // ✅ NEW: Pass to ledger handler
       amountChanged: params.oldTotal !== params.newTotal,
       currentBalance: params.currentBalance
     };

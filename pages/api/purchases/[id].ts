@@ -574,6 +574,8 @@ export default async function handler(
 
         // Start transaction
         const result = await prisma.$transaction(async (tx) => {
+          // ✅ FIX: Use user's payment_status input directly, don't auto-calculate
+          // This allows proper 1→0 transitions that deallocate payments and restore advance balance
           let finalPaymentStatus = parsedPaymentStatus
           
           // Calculate totals
@@ -594,22 +596,6 @@ export default async function handler(
           }
 
           const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax
-          
-          // For Type A purchases, calculate status from allocations
-          if (isTypeA) {
-            const totalAllocated = existingAllocations.reduce(
-              (sum, alloc) => sum + Number(alloc.allocated_amount),
-              0
-            )
-            
-            if (totalAllocated >= newTotal) {
-              finalPaymentStatus = 1
-            } else if (totalAllocated > 0) {
-              finalPaymentStatus = 2
-            } else {
-              finalPaymentStatus = 0
-            }
-          }
 
           // ✅ Calculate final invoice date early (for ledger entries) - TIMEZONE SAFE
           const finalInvoiceDate = date 
@@ -888,6 +874,16 @@ export default async function handler(
             }
           });
 
+          // ✅ CHECK IF PAYMENT LEDGER EXISTS (to detect advance vs real payment)
+          const hasPaymentLedger = await tx.vendor_ledger.findFirst({
+            where: {
+              vendor_id: existingPurchase.vendor_id,
+              reference_type: 'purchase',
+              reference_id: purchaseId,
+              transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] }
+            }
+          });
+
           // Get all operations from handler
           const handlerResult = await transactionHandler.handlePurchaseEdit({
             oldStatus: oldPaymentStatus,
@@ -902,6 +898,7 @@ export default async function handler(
             fy: existingPurchase.fy,
             totalAllocated: totalAllocated,
             isTypeA: isTypeA,
+            hasPaymentLedger: hasPaymentLedger !== null,  // ✅ NEW: Pass payment ledger detection
             currentBalance: vendor ? {
               total_paid: Number(vendor.total_paid),
               total_allocated: Number(vendor.total_allocated),

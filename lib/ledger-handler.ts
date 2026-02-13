@@ -22,6 +22,7 @@ export interface ChangeSet {
   fy: number;
   totalAllocated?: number;
   isTypeA?: boolean; // Has existing allocations
+  hasPaymentLedger?: boolean; // ✅ NEW: Indicates if PAYMENT/PAYMENT_ADJUSTMENT exists (real payment vs advance)
   amountChanged: boolean;
   hasExistingDebitNote?: boolean; // ✅ NEW: Indicates if DEBIT_NOTE already exists for this return
   currentBalance?: {
@@ -108,24 +109,27 @@ export class LedgerHandler {
     
     switch (statusChange) {
       case '1→0': // Paid → Unpaid
-        // First: Reverse payment
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: timestamp,
-            transaction_type: 'PAYMENT_REVERSAL',
-            reference_type: 'purchase',
-            reference_id: changes.purchaseId!,
-            reference_no: changes.invoiceNo!,
-            debit: changes.oldTotal,
-            credit: 0,
-            payment_mode: changes.paymentMode,
-            payment_status: 0,
-            notes: `Payment reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
-            fy: changes.fy
-          },
-          description: 'Payment reversal'
-        });
+        // First: Reverse payment (only if real payment exists, not advance allocation)
+        // ✅ FIX: Skip PAYMENT_REVERSAL if no PAYMENT ledger exists (was advance allocation only)
+        if (changes.hasPaymentLedger) {
+          ops.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: timestamp,
+              transaction_type: 'PAYMENT_REVERSAL',
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              reference_no: changes.invoiceNo!,
+              debit: changes.oldTotal,
+              credit: 0,
+              payment_mode: changes.paymentMode,
+              payment_status: 0,
+              notes: `Payment reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
+              fy: changes.fy
+            },
+            description: 'Payment reversal'
+          });
+        }
         
         // Second: If amount changed, adjust purchase
         if (changes.amountChanged) {
@@ -260,24 +264,27 @@ export class LedgerHandler {
         break;
         
       case '2→0': // Partial → Unpaid
-        // First: Reverse all payments
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: timestamp,
-            transaction_type: 'PAYMENT_REVERSAL',
-            reference_type: 'purchase',
-            reference_id: changes.purchaseId!,
-            reference_no: changes.invoiceNo!,
-            debit: changes.totalAllocated || 0,
-            credit: 0,
-            payment_mode: changes.paymentMode,
-            payment_status: 0,
-            notes: `All payments (₹${changes.totalAllocated}) reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
-            fy: changes.fy
-          },
-          description: 'Payment reversal for all allocations'
-        });
+        // First: Reverse all payments (only if real payment exists, not advance allocation)
+        // ✅ FIX: Skip PAYMENT_REVERSAL if no PAYMENT ledger exists (was advance allocation only)
+        if (changes.hasPaymentLedger) {
+          ops.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: timestamp,
+              transaction_type: 'PAYMENT_REVERSAL',
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              reference_no: changes.invoiceNo!,
+              debit: changes.totalAllocated || 0,
+              credit: 0,
+              payment_mode: changes.paymentMode,
+              payment_status: 0,
+              notes: `All payments (₹${changes.totalAllocated}) reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
+              fy: changes.fy
+            },
+            description: 'Payment reversal for all allocations'
+          });
+        }
         
         // Second: If amount changed, adjust purchase
         if (changes.amountChanged) {
@@ -364,7 +371,8 @@ export class LedgerHandler {
           
           // If Type B (no allocations), also adjust payment
           // ✅ FIXED: Uses advance breakdown for amount increases
-          if (!changes.isTypeA) {
+          // ✅ FIX: Skip PAYMENT_ADJUSTMENT if no PAYMENT ledger exists (was advance allocation only)
+          if (!changes.isTypeA && changes.hasPaymentLedger) {
             if (diff > 0) {
               // Amount increased - check if advance can cover the increase
               const breakdown11 = this.calculateAdvanceBreakdown(diff, changes.currentBalance);

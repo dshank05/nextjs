@@ -142,6 +142,17 @@ export default function VendorLedgerPage() {
 
   const selectedVendorName = vendors.find(v => v.id.toString() === selectedVendor)?.vendor_name || '';
 
+  // ✅ Clear localStorage when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('vendor-ledger-vendor');
+        localStorage.removeItem('vendor-ledger-dateFrom');
+        localStorage.removeItem('vendor-ledger-dateTo');
+      }
+    };
+  }, []);
+
   // Calculate summary totals
   const totalDebit = accountingEntries.reduce((sum, entry) => sum + entry.debit, 0);
   const totalCredit = accountingEntries.reduce((sum, entry) => sum + entry.credit, 0);

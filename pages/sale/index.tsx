@@ -152,6 +152,15 @@ export default function SalePage() {
     };
   }, []);
 
+  // ✅ Clear sessionStorage when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('sales-page-filters');
+      }
+    };
+  }, []);
+
   const fetchSales = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
     try {
       // Cancel any pending request

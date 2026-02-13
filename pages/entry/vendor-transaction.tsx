@@ -74,6 +74,16 @@ export default function VendorTransactionEntry() {
     }
   }, [edit, type, isEditMode])
 
+  // Clear localStorage when component unmounts (user navigates away)
+  useEffect(() => {
+    return () => {
+      // Cleanup: Clear localStorage when leaving page
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('vendor-transaction-vendor')
+      }
+    }
+  }, [])
+
   useEffect(() => {
     // Skip if initializing (during edit load)
     if (isInitializing) return
@@ -265,13 +275,10 @@ export default function VendorTransactionEntry() {
         const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
         setMode(payMode)
         
-        // Set date
+        // Set date - ✅ FIX: Use getLocalDateString to avoid timezone issues
         const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
         const dateObj = new Date(dateTimestamp * 1000)
-        const year = dateObj.getFullYear()
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-        const day = String(dateObj.getDate()).padStart(2, '0')
-        setDate(`${year}-${month}-${day}`)
+        setDate(getLocalDateString(dateObj))
         
         // Set notes
         setNotes(transaction.notes || '')
@@ -623,6 +630,11 @@ export default function VendorTransactionEntry() {
         const transactionType = operationType === 'EXPENSE' ? 'Payment' : 'Refund'
         const action = isEditMode ? 'updated' : 'recorded'
         showSnackbar('success', `${transactionType} ${action} successfully!`)
+        
+        // Clear localStorage after successful transaction to start fresh next time
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('vendor-transaction-vendor')
+        }
         
         // Extract transaction ID from response
         const createdId = isEditMode ? transactionId : (data.data?.payment?.id || data.data?.refund?.id)

@@ -58,9 +58,9 @@ export default function VendorTransactionsPage() {
   const [paymentType, setPaymentType] = useState<string>('')
   const [transactionType, setTransactionType] = useState<TransactionType>('all')
 
-  // Sorting
+  // Sorting - ✅ FIX: Changed to ascending order to show oldest transactions first
   const [sortBy, setSortBy] = useState<SortField>('date')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
   // Initialize with current month date range
   useEffect(() => {
