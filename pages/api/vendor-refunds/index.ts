@@ -153,6 +153,11 @@ async function handleCreateRefund(
         });
 
         // Create ledger entry for this allocation (INSIDE TRANSACTION)
+        // ✅ Use custom notes if provided, otherwise use auto-generated notes
+        const ledgerNotes = notes?.trim() 
+          ? notes 
+          : `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`;
+        
         await ledgerService.createEntry({
           vendor_id: vendorId,
           transaction_date: refund_date,
@@ -165,7 +170,7 @@ async function handleCreateRefund(
           payment_date: refund_date,
           debit: allocation.allocated_amount,
           credit: 0,
-          notes: `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`,
+          notes: ledgerNotes,
           fy: financialYear,
           transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
         }, tx);
@@ -174,6 +179,11 @@ async function handleCreateRefund(
       // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (refund_type === 'DIRECT') {
         // Direct refund - create standalone ledger entry
+        // ✅ Use custom notes if provided, otherwise use auto-generated notes
+        const directLedgerNotes = notes?.trim() 
+          ? notes 
+          : `Direct refund received ₹${refund_amount}`;
+        
         await ledgerService.createEntry({
           vendor_id: vendorId,
           transaction_date: refund_date,
@@ -185,7 +195,7 @@ async function handleCreateRefund(
           payment_date: refund_date,
           debit: refund_amount,
           credit: 0,
-          notes: `Direct refund received ₹${refund_amount}`,
+          notes: directLedgerNotes,
           fy: financialYear,
           transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
         }, tx);

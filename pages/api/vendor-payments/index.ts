@@ -162,6 +162,11 @@ async function handleCreatePayment(
         });
 
         // Create ledger entry for this allocation (INSIDE TRANSACTION)
+        // ✅ Use custom notes if provided, otherwise use auto-generated notes
+        const ledgerNotes = notes?.trim() 
+          ? notes 
+          : `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`;
+        
         await ledgerService.createEntry({
           vendor_id: vendorId,
           transaction_date: paymentTimestamp,  // ✅ Use converted timestamp
@@ -174,7 +179,7 @@ async function handleCreatePayment(
           payment_date: paymentTimestamp,  // ✅ Use converted timestamp
           debit: 0,
           credit: allocation.allocated_amount,
-          notes: `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`,
+          notes: ledgerNotes,
           fy: financialYear,
           transaction_id: payment.id  // ✅ NEW: Store payment ID for deletion tracking
         }, tx);
@@ -183,6 +188,11 @@ async function handleCreatePayment(
       // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (payment_type === 'DIRECT') {
         // Direct payment - create standalone ledger entry
+        // ✅ Use custom notes if provided, otherwise use auto-generated notes
+        const directLedgerNotes = notes?.trim() 
+          ? notes 
+          : `Direct advance payment ₹${payment_amount}`;
+        
         await ledgerService.createEntry({
           vendor_id: vendorId,
           transaction_date: paymentTimestamp,  // ✅ Use converted timestamp
@@ -194,7 +204,7 @@ async function handleCreatePayment(
           payment_date: paymentTimestamp,  // ✅ Use converted timestamp
           debit: 0,
           credit: payment_amount,
-          notes: `Direct advance payment ₹${payment_amount}`,
+          notes: directLedgerNotes,
           fy: financialYear,
           transaction_id: payment.id  // ✅ FIX: Add transaction_id for deletion tracking
         }, tx);
