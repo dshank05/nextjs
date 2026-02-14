@@ -1347,7 +1347,7 @@ export class TransactionHandler {
       // ✅ Store allocated purchase IDs AND amounts before deletion
       const allocations = await tx.payment_allocations.findMany({
         where: { payment_id: data.entityId },
-      N  select: { purchase_id: true, allocated_amount: true }
+        select: { purchase_id: true, allocated_amount: true }
       });
       const purchaseIds = allocations.map(a => a.purchase_id);
       const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
