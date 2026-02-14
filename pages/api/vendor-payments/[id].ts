@@ -114,10 +114,10 @@ async function handleGetPayment(
         allocated_amount: Number(alloc.allocated_amount),
         purchase_total: Number(alloc.purchase.total),
         payment_status: alloc.purchase.payment_status,
-        payment_status_text: 
+        payment_status_text:
           alloc.purchase.payment_status === 0 ? 'Unpaid' :
-          alloc.purchase.payment_status === 1 ? 'Fully Paid' :
-          alloc.purchase.payment_status === 2 ? 'Partially Paid' : 'Unknown',
+            alloc.purchase.payment_status === 1 ? 'Fully Paid' :
+              alloc.purchase.payment_status === 2 ? 'Partially Paid' : 'Unknown',
         allocation_date: alloc.allocation_date,
         notes: alloc.notes
       })),
@@ -226,9 +226,9 @@ async function handleUpdatePayment(
       if (existingPayment.payment_date !== payment_date) {
         await tx.vendor_ledger.updateMany({
           where: {
-            transaction_id: paymentId,
-            transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] }
-          },
+          transaction_id: paymentId,
+          transaction_type: 'PAYMENT'  // No more PAYMENT_ADJUSTMENT
+        },
           data: {
             transaction_date: payment_date,
             payment_date: payment_date
@@ -255,24 +255,38 @@ async function handleUpdatePayment(
         )
       );
 
-      // 5. Recalculate purchase statuses (parallel)
-      await Promise.all(
-        handlerResult.purchasesToUpdate.map(purchaseId =>
-          require('../../../lib/payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
-        )
-      );
+      // 5. Recalculate purchase statuses (parallel) - with safety check
+      if (handlerResult.purchasesToUpdate && handlerResult.purchasesToUpdate.length > 0) {
+        await Promise.all(
+          handlerResult.purchasesToUpdate.map(purchaseId =>
+            require('../../../lib/payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
+          )
+        );
+      }
 
-      // 6. Create ledger entry if amount changed
-      for (const ledgerOp of handlerResult.ledgerOps) {
-        await ledgerService.createEntry(ledgerOp.entry, tx);
+      // 6. Create ledger entry if amount changed - with safety check
+      if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+        for (const ledgerOp of handlerResult.ledgerOps) {
+          await ledgerService.createEntry(ledgerOp.entry, tx);
+        }
       }
 
       // 7. Update vendor balance
       if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
-        await balanceHandler.incrementBalanceInTransaction(tx, existingPayment.vendor_id, {
-          total_paid: handlerResult.amountDiff,
-          total_allocated: handlerResult.allocDiff
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          existingPayment.vendor_id, 
+          {
+            total_paid: handlerResult.amountDiff,
+            total_allocated: handlerResult.allocDiff
+          },
+          {
+            type: 'payment_edit',
+            id: paymentId,
+            reference_no: `PAY-${paymentId}`,
+            notes: `Payment edited: amount ${handlerResult.amountDiff !== 0 ? `₹${handlerResult.amountDiff > 0 ? '+' : ''}${handlerResult.amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${handlerResult.allocDiff !== 0 ? `₹${handlerResult.allocDiff > 0 ? '+' : ''}${handlerResult.allocDiff.toFixed(2)}` : 'unchanged'}`
+          }
+        );
       }
 
       return {

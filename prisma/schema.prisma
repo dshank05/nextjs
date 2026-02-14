@@ -593,6 +593,7 @@ model vendor_details {
   returns                 purchase_returns[]
   payments                vendor_payments[]
   refunds                 vendor_refunds[]
+  balance_logs            vendor_balance_logs[]
 
   @@index([vendor_name], map: "idx_vendor_name")
   @@index([contact_no], map: "idx_vendor_contact_no")
@@ -1088,4 +1089,29 @@ model deadstock {
   @@index([product_id], map: "idx_deadstock_product_id")
   @@index([created_at], map: "idx_deadstock_created_at")
   @@map("deadstock")
+}
+
+// ============================================================================
+// VENDOR BALANCE AUDIT LOG SYSTEM
+// ============================================================================
+
+model vendor_balance_logs {
+  id            Int      @id @default(autoincrement())
+  vendor_id     Int
+  column_name   String   @db.VarChar(50) // 'total_paid' | 'total_allocated' | 'total_refunded' | 'total_refund_allocated'
+  change_amount Decimal  @db.Decimal(10, 2)
+  old_value     Decimal  @db.Decimal(10, 2)
+  new_value     Decimal  @db.Decimal(10, 2)
+  source_type   String   @db.VarChar(50) // 'purchase_create' | 'purchase_edit' | etc.
+  source_id     Int
+  reference_no  String?  @db.VarChar(50)
+  created_at    DateTime @default(now())
+  created_by    Int?
+  notes         String?  @db.Text
+  vendor        vendor_details @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
+
+  @@index([vendor_id, created_at(sort: Desc)], map: "idx_vendor_date")
+  @@index([column_name], map: "idx_column")
+  @@index([source_type, source_id], map: "idx_source")
+  @@map("vendor_balance_logs")
 }

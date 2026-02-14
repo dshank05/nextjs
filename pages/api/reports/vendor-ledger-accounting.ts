@@ -51,7 +51,8 @@ export default async function handler(
         where,
         orderBy: [
           { transaction_date: 'asc' },  // Primary sort: transaction date
-          { id: 'asc' }                 // ✅ Secondary sort: id for consistent same-date ordering
+          { created_at: 'asc' },        // ✅ NEW: Secondary sort by creation time (not updated_at)
+          { id: 'asc' }                 // ✅ Tertiary sort: id for absolute consistency
         ],
         skip,
         take: limitNum

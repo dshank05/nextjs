@@ -210,9 +210,17 @@ async function handleCreatePayment(
         }, tx);
 
         // Direct payment - no allocations
-        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
-          total_paid: payment_amount
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          vendorId, 
+          { total_paid: payment_amount },
+          {
+            type: 'payment_create',
+            id: payment.id,
+            reference_no: `PAY-${payment.id}`,
+            notes: `Direct payment: ₹${payment_amount}`
+          }
+        );
       } else {
         // Bill-specific or mixed payment - has allocations
         const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
@@ -237,10 +245,20 @@ async function handleCreatePayment(
           }, tx);
         }
         
-        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
-          total_paid: payment_amount,
-          total_allocated: totalAllocated
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          vendorId, 
+          {
+            total_paid: payment_amount,
+            total_allocated: totalAllocated
+          },
+          {
+            type: 'payment_create',
+            id: payment.id,
+            reference_no: `PAY-${payment.id}`,
+            notes: `Payment: ₹${payment_amount} (allocated: ₹${totalAllocated}${unallocatedAmount > 0 ? `, advance: ₹${unallocatedAmount}` : ''})`
+          }
+        );
       }
 
       return {

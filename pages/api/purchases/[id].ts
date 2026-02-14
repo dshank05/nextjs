@@ -574,11 +574,7 @@ export default async function handler(
 
         // Start transaction
         const result = await prisma.$transaction(async (tx) => {
-          // ✅ FIX: Use user's payment_status input directly, don't auto-calculate
-          // This allows proper 1→0 transitions that deallocate payments and restore advance balance
-          let finalPaymentStatus = parsedPaymentStatus
-          
-          // Calculate totals
+          // Calculate totals first
           let calculatedItemsTotal = 0
           let calculatedPackingTotal = 0
           let calculatedTotalTax = 0
@@ -597,6 +593,27 @@ export default async function handler(
 
           const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax
 
+          // ✅ Calculate total allocated from existing allocations
+          const totalAllocated = existingAllocations.reduce(
+            (sum, alloc) => sum + Number(alloc.allocated_amount),
+            0
+          );
+
+          // ✅ Calculate final payment status
+          // UI only sends 0 (Unpaid) or 1 (Paid)
+          // Server calculates 2 (Partial) when user sends 1 but allocations don't cover full amount
+          let finalPaymentStatus = parsedPaymentStatus;
+          
+          // If user sends "Paid" (1) and has allocations (Type A), check if they cover the full amount
+          if (parsedPaymentStatus === 1 && isTypeA && totalAllocated > 0) {
+            if (totalAllocated >= newTotal) {
+              finalPaymentStatus = 1;  // Fully Paid
+            } else {
+              finalPaymentStatus = 2;  // Partially Paid (server overrides!)
+            }
+          }
+          // If user sends "Unpaid" (0), always respect it for deallocation
+
           // ✅ Calculate final invoice date early (for ledger entries) - TIMEZONE SAFE
           const finalInvoiceDate = date 
             ? convertDateToTimestamp(date)
@@ -604,12 +621,12 @@ export default async function handler(
           
           const dateChanged = date && finalInvoiceDate !== existingPurchase.invoice_date;
 
-          // ✅ ALWAYS update ALL purchase-related ledger entries (PURCHASE + PURCHASE_ADJUSTMENT)
+          // ✅ UPDATE purchase ledger entry
           await tx.vendor_ledger.updateMany({
             where: {
               reference_type: 'purchase',
               reference_id: purchaseId,
-              transaction_type: { in: ['PURCHASE', 'PURCHASE_ADJUSTMENT'] }
+              transaction_type: 'PURCHASE'  // No more PURCHASE_ADJUSTMENT
             },
             data: {
               transaction_date: finalInvoiceDate
@@ -733,78 +750,31 @@ export default async function handler(
               })
             })
 
-            // Process deletions
+            // ✅ OPTIMIZATION 1: Collect deletions, additions, and updates
+            const itemsToDelete: Array<{ id: number; productId: number; qty: number }> = []
+            const itemsToAdd: Array<{ productId: number; data: any }> = []
+            const itemsToUpdate: Array<{ id: number; productId: number; data: any; qtyDiff: number; rateChanged: boolean }> = []
+
+            // Identify deletions
             for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
               if (!newItemsMap.has(productId)) {
-                if (existingData.qty > 0) {
-                  await tx.product.update({
-                    where: { id: productId },
-                    data: {
-                      stock: {
-                        decrement: existingData.qty
-                      }
-                    }
-                  })
-                }
-                await tx.purchaseitems.delete({
-                  where: { id: existingData.id }
+                itemsToDelete.push({
+                  id: existingData.id,
+                  productId,
+                  qty: existingData.qty
                 })
               }
             }
 
-            // Process additions and updates
+            // Identify additions and updates
             for (const [productId, newData] of Array.from(newItemsMap.entries())) {
               const existingData = existingItemsMap.get(productId)
 
               if (!existingData) {
-                const product = await tx.product.findUnique({
-                  where: { id: productId }
-                })
-
-                if (!product) {
-                  throw new Error(`Product with ID ${productId} not found`)
-                }
-
-                const modelId = newData.model_id ? parseInt(newData.model_id) : null
-                const companyId = newData.company_id ? parseInt(newData.company_id) : null
-
-                await tx.purchaseitems.create({
-                  data: {
-                    invoice_no: updatedPurchase.invoice_no,
-                    product_id: productId,
-                    name_of_product: newData.name_of_product || product.product_name || '',
-                    category_id: newData.category_id || product.product_category_id || null,
-                    subcategory_id: newData.subcategory_id || product.product_subcategory_id || null,
-                    model_id: modelId,
-                    company_id: companyId,
-                    car_model: newData.car_model || '',
-                    vendor_id: updatedPurchase.vendor_id,
-                    hsn: product.hsn || '',
-                    part: newData.part || '',
-                    qty: parseFloat(newData.qty),
-                    rate: parseFloat(newData.rate),
-                    subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
-                    gst_percentage: parseFloat(newData.gst_percentage) || 0,
-                    cgst: parseFloat(newData.cgst) || 0,
-                    sgst: parseFloat(newData.sgst) || 0,
-                    igst: parseFloat(newData.igst) || 0,
-                    tax: parseFloat(newData.tax) || 0,
-                    fy: updatedPurchase.fy,
-                    invoice_date: updatedPurchase.invoice_date
-                  }
-                })
-
-                await tx.product.update({
-                  where: { id: productId },
-                  data: {
-                    stock: {
-                      increment: parseFloat(newData.qty.toString())
-                    },
-                    latest_purchase_rate: parseFloat(newData.rate.toString()),
-                    last_purchase_date: updatedPurchase.invoice_date
-                  }
-                })
+                // New item
+                itemsToAdd.push({ productId, data: newData })
               } else {
+                // Check if update needed
                 const qtyDifference = newData.qty - existingData.qty
                 const rateChanged = Math.abs(newData.rate - existingData.item.rate) > 0.001
                 const subtotalChanged = Math.abs(newData.total - existingData.item.subtotal) > 0.001
@@ -814,43 +784,149 @@ export default async function handler(
                 const needsUpdate = Math.abs(qtyDifference) > 0.001 || rateChanged || subtotalChanged || nameChanged || carModelChanged
 
                 if (needsUpdate) {
-                  await tx.purchaseitems.update({
-                    where: { id: existingData.id },
+                  itemsToUpdate.push({
+                    id: existingData.id,
+                    productId,
+                    data: newData,
+                    qtyDiff: qtyDifference,
+                    rateChanged
+                  })
+                }
+              }
+            }
+
+            // ✅ OPTIMIZATION 2: Execute deletions in parallel
+            if (itemsToDelete.length > 0) {
+              await Promise.all([
+                // Delete all items at once
+                tx.purchaseitems.deleteMany({
+                  where: { id: { in: itemsToDelete.map(item => item.id) } }
+                }),
+                // Parallel stock decrements
+                ...itemsToDelete.map(item =>
+                  item.qty > 0
+                    ? tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { decrement: item.qty } }
+                      })
+                    : Promise.resolve()
+                )
+              ])
+            }
+
+            // ✅ OPTIMIZATION 3: Batch load products for new items
+            if (itemsToAdd.length > 0) {
+              const newProductIds = itemsToAdd.map(item => item.productId)
+              const products = await tx.product.findMany({
+                where: { id: { in: newProductIds } },
+                select: {
+                  id: true,
+                  product_name: true,
+                  product_category_id: true,
+                  product_subcategory_id: true,
+                  hsn: true
+                }
+              })
+
+              const productMap = new Map(products.map(p => [p.id, p]))
+
+              // Validate all products exist
+              for (const item of itemsToAdd) {
+                if (!productMap.has(item.productId)) {
+                  throw new Error(`Product with ID ${item.productId} not found`)
+                }
+              }
+
+              // ✅ OPTIMIZATION 4: Bulk insert new items
+              const bulkInsertData = itemsToAdd.map(item => {
+                const product = productMap.get(item.productId)!
+                const newData = item.data
+                const modelId = newData.model_id ? parseInt(newData.model_id) : null
+                const companyId = newData.company_id ? parseInt(newData.company_id) : null
+
+                return {
+                  invoice_no: updatedPurchase.invoice_no,
+                  product_id: item.productId,
+                  name_of_product: newData.name_of_product || product.product_name || '',
+                  category_id: newData.category_id || product.product_category_id || null,
+                  subcategory_id: newData.subcategory_id || product.product_subcategory_id || null,
+                  model_id: modelId,
+                  company_id: companyId,
+                  car_model: newData.car_model || '',
+                  vendor_id: updatedPurchase.vendor_id,
+                  hsn: product.hsn || '',
+                  part: newData.part || '',
+                  qty: parseFloat(newData.qty),
+                  rate: parseFloat(newData.rate),
+                  subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
+                  gst_percentage: parseFloat(newData.gst_percentage) || 0,
+                  cgst: parseFloat(newData.cgst) || 0,
+                  sgst: parseFloat(newData.sgst) || 0,
+                  igst: parseFloat(newData.igst) || 0,
+                  tax: parseFloat(newData.tax) || 0,
+                  fy: updatedPurchase.fy,
+                  invoice_date: updatedPurchase.invoice_date
+                }
+              })
+
+              // Parallel: Bulk insert + stock updates
+              await Promise.all([
+                tx.purchaseitems.createMany({ data: bulkInsertData }),
+                ...itemsToAdd.map(item => 
+                  tx.product.update({
+                    where: { id: item.productId },
                     data: {
-                      qty: parseFloat(newData.qty),
-                      rate: parseFloat(newData.rate),
-                      subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
-                      name_of_product: newData.name_of_product,
-                      car_model: newData.car_model,
-                      gst_percentage: parseFloat(newData.gst_percentage) || 0,
-                      cgst: parseFloat(newData.cgst) || 0,
-                      sgst: parseFloat(newData.sgst) || 0,
-                      igst: parseFloat(newData.igst) || 0,
-                      tax: parseFloat(newData.tax) || 0
+                      stock: { increment: parseFloat(item.data.qty.toString()) },
+                      latest_purchase_rate: parseFloat(item.data.rate.toString()),
+                      last_purchase_date: updatedPurchase.invoice_date
                     }
                   })
+                )
+              ])
+            }
 
+            // ✅ OPTIMIZATION 5: Parallel item updates
+            if (itemsToUpdate.length > 0) {
+              await Promise.all([
+                // Parallel item updates
+                ...itemsToUpdate.map(item =>
+                  tx.purchaseitems.update({
+                    where: { id: item.id },
+                    data: {
+                      qty: parseFloat(item.data.qty),
+                      rate: parseFloat(item.data.rate),
+                      subtotal: parseFloat(item.data.qty) * parseFloat(item.data.rate),
+                      name_of_product: item.data.name_of_product,
+                      car_model: item.data.car_model,
+                      gst_percentage: parseFloat(item.data.gst_percentage) || 0,
+                      cgst: parseFloat(item.data.cgst) || 0,
+                      sgst: parseFloat(item.data.sgst) || 0,
+                      igst: parseFloat(item.data.igst) || 0,
+                      tax: parseFloat(item.data.tax) || 0
+                    }
+                  })
+                ),
+                // Parallel stock updates
+                ...itemsToUpdate.map(item => {
                   const productUpdateData: any = {}
 
-                  if (Math.abs(qtyDifference) > 0.001) {
-                    productUpdateData.stock = {
-                      increment: qtyDifference
-                    }
+                  if (Math.abs(item.qtyDiff) > 0.001) {
+                    productUpdateData.stock = { increment: item.qtyDiff }
                   }
 
-                  if (rateChanged) {
-                    productUpdateData.latest_purchase_rate = parseFloat(newData.rate.toString())
+                  if (item.rateChanged) {
+                    productUpdateData.latest_purchase_rate = parseFloat(item.data.rate.toString())
                     productUpdateData.last_purchase_date = updatedPurchase.invoice_date
                   }
 
-                  if (Object.keys(productUpdateData).length > 0) {
-                    await tx.product.update({
-                      where: { id: productId },
-                      data: productUpdateData
-                    })
-                  }
-                }
-              }
+                  return Object.keys(productUpdateData).length > 0
+                    ? tx.product.update({
+                        where: { id: item.productId },
+                        data: productUpdateData
+                      })
+                    : Promise.resolve()
+                })
+              ])
             }
           }
 
@@ -858,10 +934,7 @@ export default async function handler(
           const oldPaymentStatus = existingPurchase.payment_status
           const newPaymentStatus = finalPaymentStatus
           const oldTotal = existingPurchase.total
-          const totalAllocated = existingAllocations.reduce(
-            (sum, alloc) => sum + Number(alloc.allocated_amount),
-            0
-          )
+          // totalAllocated already calculated above for status calculation
 
           // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE ALLOCATION
           const vendor = await tx.vendor_details.findUnique({

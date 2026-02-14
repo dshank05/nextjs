@@ -4,6 +4,8 @@
  * Ensures transaction safety and consistency
  */
 
+import { BalanceLogService, BalanceColumn, SourceType, BalanceLogEntry } from './balance-log-service';
+
 export interface BalanceUpdate {
   total_paid?: number;
   total_allocated?: number;
@@ -441,29 +443,118 @@ export class BalanceHandler {
   /**
    * Optimized balance update using Prisma increment
    * FASTER - uses single UPDATE with increment operations
+   * NOW WITH AUDIT LOGGING
    * 
    * @param tx - Prisma transaction client
    * @param vendorId - Vendor ID
    * @param updates - Balance updates (positive = add, negative = subtract)
+   * @param source - Optional source info for audit log
    */
   async incrementBalanceInTransaction(
     tx: any,
     vendorId: number,
-    updates: BalanceUpdate
+    updates: BalanceUpdate,
+    source?: {
+      type: SourceType;
+      id: number;
+      reference_no?: string;
+      userId?: number;
+      notes?: string;
+    }
   ): Promise<void> {
+    // Get current balance BEFORE update (for logging)
+    const currentBalance = await tx.vendor_details.findUnique({
+      where: { id: vendorId },
+      select: {
+        total_paid: true,
+        total_allocated: true,
+        total_refunded: true,
+        total_refund_allocated: true
+      }
+    });
+
+    if (!currentBalance) {
+      throw new Error(`Vendor ${vendorId} not found`);
+    }
+
     const data: any = {};
+    const logEntries: BalanceLogEntry[] = [];
     
+    // Process each column update
     if (updates.total_paid !== undefined && updates.total_paid !== 0) {
       data.total_paid = { increment: updates.total_paid };
+      
+      if (source) {
+        logEntries.push({
+          vendor_id: vendorId,
+          column_name: 'total_paid',
+          change_amount: updates.total_paid,
+          old_value: Number(currentBalance.total_paid),
+          new_value: Number(currentBalance.total_paid) + updates.total_paid,
+          source_type: source.type,
+          source_id: source.id,
+          reference_no: source.reference_no,
+          created_by: source.userId,
+          notes: source.notes
+        });
+      }
     }
+    
     if (updates.total_allocated !== undefined && updates.total_allocated !== 0) {
       data.total_allocated = { increment: updates.total_allocated };
+      
+      if (source) {
+        logEntries.push({
+          vendor_id: vendorId,
+          column_name: 'total_allocated',
+          change_amount: updates.total_allocated,
+          old_value: Number(currentBalance.total_allocated),
+          new_value: Number(currentBalance.total_allocated) + updates.total_allocated,
+          source_type: source.type,
+          source_id: source.id,
+          reference_no: source.reference_no,
+          created_by: source.userId,
+          notes: source.notes
+        });
+      }
     }
+    
     if (updates.total_refunded !== undefined && updates.total_refunded !== 0) {
       data.total_refunded = { increment: updates.total_refunded };
+      
+      if (source) {
+        logEntries.push({
+          vendor_id: vendorId,
+          column_name: 'total_refunded',
+          change_amount: updates.total_refunded,
+          old_value: Number(currentBalance.total_refunded),
+          new_value: Number(currentBalance.total_refunded) + updates.total_refunded,
+          source_type: source.type,
+          source_id: source.id,
+          reference_no: source.reference_no,
+          created_by: source.userId,
+          notes: source.notes
+        });
+      }
     }
+    
     if (updates.total_refund_allocated !== undefined && updates.total_refund_allocated !== 0) {
       data.total_refund_allocated = { increment: updates.total_refund_allocated };
+      
+      if (source) {
+        logEntries.push({
+          vendor_id: vendorId,
+          column_name: 'total_refund_allocated',
+          change_amount: updates.total_refund_allocated,
+          old_value: Number(currentBalance.total_refund_allocated),
+          new_value: Number(currentBalance.total_refund_allocated) + updates.total_refund_allocated,
+          source_type: source.type,
+          source_id: source.id,
+          reference_no: source.reference_no,
+          created_by: source.userId,
+          notes: source.notes
+        });
+      }
     }
     
     // Calculate balance increment
@@ -479,10 +570,16 @@ export class BalanceHandler {
     
     // Only update if there are changes
     if (Object.keys(data).length > 0) {
+      // Update vendor balance
       await tx.vendor_details.update({
         where: { id: vendorId },
         data
       });
+
+      // Log all changes (if source provided)
+      if (logEntries.length > 0) {
+        await BalanceLogService.logMultipleChanges(tx, logEntries);
+      }
     }
   }
 }

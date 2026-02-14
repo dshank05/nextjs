@@ -201,9 +201,17 @@ async function handleCreateRefund(
         }, tx);
 
         // Direct refund - no allocations
-        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
-          total_refunded: refund_amount
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          vendorId, 
+          { total_refunded: refund_amount },
+          {
+            type: 'refund_create',
+            id: refund.id,
+            reference_no: `REF-${refund.id}`,
+            notes: `Direct refund: ₹${refund_amount}`
+          }
+        );
       } else {
         // Return-specific or mixed refund - has allocations
         const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
@@ -228,10 +236,20 @@ async function handleCreateRefund(
           }, tx);
         }
         
-        await balanceHandler.incrementBalanceInTransaction(tx, vendorId, {
-          total_refunded: refund_amount,
-          total_refund_allocated: totalAllocated
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          vendorId, 
+          {
+            total_refunded: refund_amount,
+            total_refund_allocated: totalAllocated
+          },
+          {
+            type: 'refund_create',
+            id: refund.id,
+            reference_no: `REF-${refund.id}`,
+            notes: `Refund: ₹${refund_amount} (allocated: ₹${totalAllocated}${unallocatedAmount > 0 ? `, unallocated: ₹${unallocatedAmount}` : ''})`
+          }
+        );
       }
 
       return {

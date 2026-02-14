@@ -311,6 +311,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       created_at: alloc.refund.created_at
     }))
 
+    // ⚡ PERFORMANCE FIX: Fetch ALL purchase details in ONE query (not N queries in loop)
+    const purchasesForBills = await prisma.purchase.findMany({
+      where: { invoice_no: { in: invoiceNos } },
+      select: {
+        id: true,
+        invoice_no: true,
+        invoice_date: true
+      }
+    })
+    
+    // Create lookup map for O(1) access
+    const purchaseMap = new Map(purchasesForBills.map(p => [p.invoice_no, p]))
+    
     // ✅ Group items by invoice_no to show multiple bills
     const billsMap = new Map<number, any>()
     
@@ -320,15 +333,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       if (!invoiceNo) continue
       
       if (!billsMap.has(invoiceNo)) {
-        // Get purchase details for this invoice
-        const purchaseForBill = await prisma.purchase.findFirst({
-          where: { invoice_no: invoiceNo },
-          select: {
-            id: true,
-            invoice_no: true,
-            invoice_date: true
-          }
-        })
+        // ⚡ Get purchase details from map (O(1)) instead of database query
+        const purchaseForBill = purchaseMap.get(invoiceNo)
         
         billsMap.set(invoiceNo, {
           id: purchaseForBill?.id?.toString() || invoiceNo.toString(),

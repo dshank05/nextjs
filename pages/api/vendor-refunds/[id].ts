@@ -227,7 +227,7 @@ async function handleUpdateRefund(
         await tx.vendor_ledger.updateMany({
           where: {
             transaction_id: refundId,
-            transaction_type: { in: ['REFUND_RECEIVED', 'REFUND_ADJUSTMENT'] }
+            transaction_type: 'REFUND_RECEIVED'  // No more REFUND_ADJUSTMENT
           },
           data: {
             transaction_date: refund_date,
@@ -269,10 +269,20 @@ async function handleUpdateRefund(
 
       // 7. Update vendor balance
       if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
-        await balanceHandler.incrementBalanceInTransaction(tx, existingRefund.vendor_id, {
-          total_refunded: handlerResult.amountDiff,
-          total_refund_allocated: handlerResult.allocDiff
-        });
+        await balanceHandler.incrementBalanceInTransaction(
+          tx, 
+          existingRefund.vendor_id, 
+          {
+            total_refunded: handlerResult.amountDiff,
+            total_refund_allocated: handlerResult.allocDiff
+          },
+          {
+            type: 'refund_edit',
+            id: refundId,
+            reference_no: `REF-${refundId}`,
+            notes: `Refund edited: amount ${handlerResult.amountDiff !== 0 ? `₹${handlerResult.amountDiff > 0 ? '+' : ''}${handlerResult.amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${handlerResult.allocDiff !== 0 ? `₹${handlerResult.allocDiff > 0 ? '+' : ''}${handlerResult.allocDiff.toFixed(2)}` : 'unchanged'}`
+          }
+        );
       }
 
       return {

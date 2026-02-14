@@ -8,7 +8,36 @@ import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
-import useLocalStorageState from 'use-local-storage-state'
+
+// ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
+function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+  // Hydration fix: Read from sessionStorage only after component mounts
+  useEffect(() => {
+    try {
+      const item = window.sessionStorage.getItem(key);
+      if (item) {
+        setStoredValue(JSON.parse(item));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [key]);
+
+  const setValue = (value: T) => {
+    try {
+      setStoredValue(value);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
 
 interface Transaction {
   id: number
@@ -49,9 +78,7 @@ export default function VendorTransactionsPage() {
 
   // Filters
   const [vendors, setVendors] = useState<any[]>([])
-  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-transactions-vendor', {
-    defaultValue: ''
-  })
+  const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-transactions-vendor', '')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [paymentMode, setPaymentMode] = useState<string>('')

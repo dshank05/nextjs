@@ -816,7 +816,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         });
 
         if (balanceOp) {
-          await balanceHandler.incrementBalanceInTransaction(tx, balanceOp.vendorId, balanceOp.update);
+          await balanceHandler.incrementBalanceInTransaction(
+            tx, 
+            balanceOp.vendorId, 
+            balanceOp.update,
+            {
+              type: 'purchase_create',
+              id: purchase.id,
+              reference_no: `INV-${purchase.invoice_no}`,
+              notes: advanceUsed > 0 
+                ? `Purchase: ₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment`
+                : `Purchase: ₹${calculatedGrandTotal.toFixed(2)} paid`
+            }
+          );
         }
       }
 

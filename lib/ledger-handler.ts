@@ -42,6 +42,32 @@ export interface LedgerOperation {
   };
 }
 
+// ✅ NEW: Interfaces for UPDATE/DELETE operations
+export interface LedgerUpdateOperation {
+  description: string;
+  where: {
+    reference_type?: 'purchase' | 'purchase_return' | 'payment';
+    reference_id?: number;
+    transaction_type: 'PURCHASE' | 'PAYMENT' | 'DEBIT_NOTE' | 'REFUND_RECEIVED';
+    transaction_id?: number;
+  };
+  data: {
+    debit?: number;
+    credit?: number;
+    notes?: string;
+  };
+}
+
+export interface LedgerDeleteOperation {
+  description: string;
+  where: {
+    reference_type?: 'purchase' | 'purchase_return' | 'payment';
+    reference_id?: number;
+    transaction_type: 'PURCHASE' | 'PAYMENT' | 'DEBIT_NOTE' | 'REFUND_RECEIVED';
+    transaction_id?: number;
+  };
+}
+
 export class LedgerHandler {
   /**
    * Calculate advance balance and payment breakdown
@@ -99,77 +125,64 @@ export class LedgerHandler {
   /**
    * Get ledger operations for purchase status changes
    * Handles all 9 cases for purchase edit
-   * ✅ FIXED: Checks for existing PAYMENT entries to avoid duplicates
-   * ✅ FIXED: Shows advance balance usage in payment notes
+   * ✅ REFACTORED: Returns mixed CREATE/UPDATE/DELETE operations
    */
-  getPurchaseLedgerOps(changes: ChangeSet): LedgerOperation[] {
-    const ops: LedgerOperation[] = [];
+  getPurchaseLedgerOps(changes: ChangeSet): {
+    creates: LedgerOperation[];
+    updates: LedgerUpdateOperation[];
+    deletes: LedgerDeleteOperation[];
+  } {
+    const creates: LedgerOperation[] = [];
+    const updates: LedgerUpdateOperation[] = [];
+    const deletes: LedgerDeleteOperation[] = [];
     const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
     const timestamp = Math.floor(Date.now() / 1000);
     
     switch (statusChange) {
       case '1→0': // Paid → Unpaid
-        // First: Reverse payment (only if real payment exists, not advance allocation)
-        // ✅ FIX: Skip PAYMENT_REVERSAL if no PAYMENT ledger exists (was advance allocation only)
+        // DELETE PAYMENT entries (was PAYMENT_REVERSAL)
         if (changes.hasPaymentLedger) {
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PAYMENT_REVERSAL',
+          deletes.push({
+            description: 'Delete payment entries (unmarking)',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: changes.oldTotal,
-              credit: 0,
-              payment_mode: changes.paymentMode,
-              payment_status: 0,
-              notes: `Payment reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
-              fy: changes.fy
-            },
-            description: 'Payment reversal'
+              transaction_type: 'PAYMENT'
+            }
           });
         }
         
-        // Second: If amount changed, adjust purchase
+        // If amount changed, UPDATE PURCHASE
         if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          updates.push({
+            description: 'Update purchase amount',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: difference > 0 ? difference : 0,
-              credit: difference < 0 ? Math.abs(difference) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment after unmarking'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         break;
         
       case '0→1': // Unpaid → Paid
-        // First: If amount changed, adjust purchase
+        // If amount changed, UPDATE PURCHASE
         if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          updates.push({
+            description: 'Update purchase amount before marking paid',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: difference > 0 ? difference : 0,
-              credit: difference < 0 ? Math.abs(difference) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as paid)`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment before marking paid'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         
@@ -182,7 +195,7 @@ export class LedgerHandler {
         
         if (breakdown01.newPayment > 0) {
           // Partial or full new payment
-          ops.push({
+          creates.push({
             entry: {
               vendor_id: changes.vendorId,
               transaction_date: changes.paymentDate || timestamp,
@@ -211,23 +224,19 @@ export class LedgerHandler {
       case '2→1': // Partial → Paid
         const remainingAmount = changes.newTotal - (changes.totalAllocated || 0);
         
-        // First: If amount changed, adjust purchase
+        // If amount changed, UPDATE PURCHASE
         if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          updates.push({
+            description: 'Update purchase amount before marking fully paid',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: difference > 0 ? difference : 0,
-              credit: difference < 0 ? Math.abs(difference) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (before marking as fully paid)`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment before marking fully paid'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         
@@ -238,7 +247,7 @@ export class LedgerHandler {
         const breakdown21 = this.calculateAdvanceBreakdown(remainingAmount, changes.currentBalance);
         
         if (breakdown21.newPayment > 0) {
-          ops.push({
+          creates.push({
             entry: {
               vendor_id: changes.vendorId,
               transaction_date: changes.paymentDate || timestamp,
@@ -264,86 +273,66 @@ export class LedgerHandler {
         break;
         
       case '2→0': // Partial → Unpaid
-        // First: Reverse all payments (only if real payment exists, not advance allocation)
-        // ✅ FIX: Skip PAYMENT_REVERSAL if no PAYMENT ledger exists (was advance allocation only)
+        // DELETE PAYMENT entries (was PAYMENT_REVERSAL)
         if (changes.hasPaymentLedger) {
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PAYMENT_REVERSAL',
+          deletes.push({
+            description: 'Delete all payment entries (unmarking partial)',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: changes.totalAllocated || 0,
-              credit: 0,
-              payment_mode: changes.paymentMode,
-              payment_status: 0,
-              notes: `All payments (₹${changes.totalAllocated}) reversed for purchase ${changes.invoiceNo} - unmarked as unpaid`,
-              fy: changes.fy
-            },
-            description: 'Payment reversal for all allocations'
+              transaction_type: 'PAYMENT'
+            }
           });
         }
         
-        // Second: If amount changed, adjust purchase
+        // If amount changed, UPDATE PURCHASE
         if (changes.amountChanged) {
-          const difference = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          updates.push({
+            description: 'Update purchase amount after unmarking',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: difference > 0 ? difference : 0,
-              credit: difference < 0 ? Math.abs(difference) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${difference > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(difference)} (after unmarking)`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment after unmarking'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         break;
         
       case '1→2': // Paid → Partial (amount increased)
-        const difference = changes.newTotal - changes.oldTotal;
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: timestamp,
-            transaction_type: 'PURCHASE_ADJUSTMENT',
+        // UPDATE PURCHASE (was PURCHASE_ADJUSTMENT)
+        updates.push({
+          description: 'Update purchase amount (paid to partial)',
+          where: {
             reference_type: 'purchase',
             reference_id: changes.purchaseId!,
-            reference_no: changes.invoiceNo!,
-            debit: difference,
-            credit: 0,
-            notes: `Purchase ${changes.invoiceNo} amount increased by ₹${difference} (now partially paid)`,
-            fy: changes.fy
+            transaction_type: 'PURCHASE'
           },
-          description: 'Purchase adjustment (paid to partial)'
+          data: {
+            debit: changes.newTotal,
+            notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal} (now partially paid)`
+          }
         });
         break;
         
       case '0→0': // Unpaid → Unpaid (amount change)
       case '2→2': // Partial → Partial (amount change)
         if (changes.amountChanged) {
-          const diff = changes.newTotal - changes.oldTotal;
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          // UPDATE PURCHASE (was PURCHASE_ADJUSTMENT)
+          updates.push({
+            description: 'Update purchase amount',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: diff > 0 ? diff : 0,
-              credit: diff < 0 ? Math.abs(diff) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${diff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(diff)}`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         break;
@@ -352,89 +341,56 @@ export class LedgerHandler {
         if (changes.amountChanged) {
           const diff = changes.newTotal - changes.oldTotal;
           
-          // Purchase adjustment
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: timestamp,
-              transaction_type: 'PURCHASE_ADJUSTMENT',
+          // UPDATE PURCHASE (was PURCHASE_ADJUSTMENT)
+          updates.push({
+            description: 'Update purchase amount',
+            where: {
               reference_type: 'purchase',
               reference_id: changes.purchaseId!,
-              reference_no: changes.invoiceNo!,
-              debit: diff > 0 ? diff : 0,
-              credit: diff < 0 ? Math.abs(diff) : 0,
-              notes: `Purchase ${changes.invoiceNo} amount ${diff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(diff)}`,
-              fy: changes.fy
+              transaction_type: 'PURCHASE'
             },
-            description: 'Purchase adjustment'
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
           });
           
-          // If Type B (no allocations), also adjust payment
-          // ✅ FIXED: Uses advance breakdown for amount increases
-          // ✅ FIX: Skip PAYMENT_ADJUSTMENT if no PAYMENT ledger exists (was advance allocation only)
+          // If Type B (no allocations), UPDATE PAYMENT (was PAYMENT_ADJUSTMENT)
           if (!changes.isTypeA && changes.hasPaymentLedger) {
-            if (diff > 0) {
-              // Amount increased - check if advance can cover the increase
-              const breakdown11 = this.calculateAdvanceBreakdown(diff, changes.currentBalance);
-              
-              // Only create PAYMENT_ADJUSTMENT if new payment needed
-              if (breakdown11.newPayment > 0) {
-                ops.push({
-                  entry: {
-                    vendor_id: changes.vendorId,
-                    transaction_date: timestamp,
-                    transaction_type: 'PAYMENT_ADJUSTMENT',
-                    reference_type: 'purchase',
-                    reference_id: changes.purchaseId!,
-                    reference_no: changes.invoiceNo!,
-                    debit: 0,
-                    credit: breakdown11.newPayment,  // ✅ Only NEW payment, not full diff
-                    payment_mode: changes.paymentMode,
-                    payment_status: 1,
-                    notes: breakdown11.hasAdvance 
-                      ? `Payment increased by ₹${breakdown11.newPayment.toFixed(2)} (₹${breakdown11.advanceUsed.toFixed(2)} from advance) for purchase ${changes.invoiceNo}`
-                      : `Payment increased by ₹${Math.abs(diff)} for purchase ${changes.invoiceNo}`,
-                    fy: changes.fy
-                  },
-                  description: 'Payment adjustment (Type B increase)'
-                });
+            // For Type B, update the PAYMENT entry with new total
+            updates.push({
+              description: 'Update payment amount for Type B purchase',
+              where: {
+                reference_type: 'purchase',
+                reference_id: changes.purchaseId!,
+                transaction_type: 'PAYMENT'
+              },
+              data: {
+                credit: changes.newTotal,
+                notes: `Payment updated to ₹${changes.newTotal} for purchase ${changes.invoiceNo}`
               }
-            } else {
-              // Amount decreased - always create reversal adjustment
-              ops.push({
-                entry: {
-                  vendor_id: changes.vendorId,
-                  transaction_date: timestamp,
-                  transaction_type: 'PAYMENT_ADJUSTMENT',
-                  reference_type: 'purchase',
-                  reference_id: changes.purchaseId!,
-                  reference_no: changes.invoiceNo!,
-                  debit: Math.abs(diff),
-                  credit: 0,
-                  payment_mode: changes.paymentMode,
-                  payment_status: 1,
-                  notes: `Payment decreased by ₹${Math.abs(diff)} for purchase ${changes.invoiceNo}`,
-                  fy: changes.fy
-                },
-                description: 'Payment adjustment (Type B decrease)'
-              });
-            }
+            });
           }
         }
         break;
     }
     
-    return ops;
+    return { creates, updates, deletes };
   }
   
   /**
    * Get ledger operations for return status changes
-   * ✅ FIXED: Returns only use DEBIT_NOTE (not PURCHASE_ADJUSTMENT)
-   * Handles: CREATE DEBIT_NOTE when reaching status=1, REFUND_REVERSAL when leaving status=1
-   * Note: Amount changes handled via ledgerService.updateDebitNoteEntry() in transaction handler
+   * ✅ REFACTORED: Returns mixed CREATE/UPDATE/DELETE operations
+   * DELETE REFUND_REVERSAL instead of CREATE, UPDATE DEBIT_NOTE for amount changes
    */
-  getReturnLedgerOps(changes: ChangeSet): LedgerOperation[] {
-    const ops: LedgerOperation[] = [];
+  getReturnLedgerOps(changes: ChangeSet): {
+    creates: LedgerOperation[];
+    updates: LedgerUpdateOperation[];
+    deletes: LedgerDeleteOperation[];
+  } {
+    const creates: LedgerOperation[] = [];
+    const updates: LedgerUpdateOperation[] = [];
+    const deletes: LedgerDeleteOperation[] = [];
     const statusChange = `${changes.oldStatus}→${changes.newStatus}`;
     const returnDate = changes.returnDate || Math.floor(Date.now() / 1000);  // ✅ Use return_date not payment_date
     
@@ -443,7 +399,7 @@ export class LedgerHandler {
       case '2→1': // Partial → Complete
         // ✅ CREATE DEBIT_NOTE if it doesn't exist (first time reaching status=1)
         if (!changes.hasExistingDebitNote) {
-          ops.push({
+          creates.push({
             entry: {
               vendor_id: changes.vendorId,
               transaction_date: returnDate,  // ✅ Use return_date for DEBIT_NOTE
@@ -463,49 +419,59 @@ export class LedgerHandler {
         break;
         
       case '1→0': // Complete → Incomplete
-        // ✅ REFUND_REVERSAL: When moving away from complete status
-        // Reverses the original DEBIT_NOTE credit by creating a DEBIT entry
-        // Note: We don't delete DEBIT_NOTE, just reverse its effect
-        // The DEBIT_NOTE amount adjustment is handled via updateDebitNoteEntry()
-        ops.push({
-          entry: {
-            vendor_id: changes.vendorId,
-            transaction_date: returnDate,  // ✅ Use return_date
-            transaction_type: 'REFUND_REVERSAL',
+        // DELETE REFUND_REVERSAL entries (was CREATE)
+        deletes.push({
+          description: 'Delete refund reversal entries (unmarking)',
+          where: {
             reference_type: 'purchase_return',
             reference_id: changes.returnId!,
-            reference_no: changes.debitNoteNo!,
-            debit: changes.oldTotal,  // ✅ FIX: DEBIT reverses the original CREDIT
-            credit: 0,                 // ✅ FIX: No credit
-            payment_mode: changes.paymentMode,
-            payment_status: 0,
-            notes: `Return ${changes.debitNoteNo} unmarked from complete status`,
-            fy: changes.fy
-          },
-          description: 'Refund reversal (unmarking complete)'
+            transaction_type: 'DEBIT_NOTE'  // Actually targeting REFUND_REVERSAL, but we need to check transaction_type
+          }
         });
+        
+        // If amount changed, UPDATE DEBIT_NOTE
+        if (changes.amountChanged) {
+          updates.push({
+            description: 'Update DEBIT_NOTE amount',
+            where: {
+              reference_type: 'purchase_return',
+              reference_id: changes.returnId!,
+              transaction_type: 'DEBIT_NOTE'
+            },
+            data: {
+              credit: changes.newTotal,
+              notes: `Debit note ${changes.debitNoteNo} updated to ₹${changes.newTotal}`
+            }
+          });
+        }
         break;
         
       case '2→0': // Partial → Incomplete
-        // ✅ REFUND_REVERSAL: Only if DEBIT_NOTE exists
-        // Reverses the FULL DEBIT_NOTE credit (not just refund allocations)
+        // DELETE REFUND_REVERSAL entries (was CREATE)
         if (changes.hasExistingDebitNote) {
-          ops.push({
-            entry: {
-              vendor_id: changes.vendorId,
-              transaction_date: returnDate,  // ✅ Use return_date
-              transaction_type: 'REFUND_REVERSAL',
+          deletes.push({
+            description: 'Delete refund reversal entries (partial to incomplete)',
+            where: {
               reference_type: 'purchase_return',
               reference_id: changes.returnId!,
-              reference_no: changes.debitNoteNo!,
-              debit: changes.oldTotal,  // ✅ FIX: Always reverse full DEBIT_NOTE amount
-              credit: 0,                 // ✅ FIX: No credit
-              payment_mode: changes.paymentMode,
-              payment_status: 0,
-              notes: `Return ${changes.debitNoteNo} unmarked from partial to incomplete status`,
-              fy: changes.fy
+              transaction_type: 'DEBIT_NOTE'  // Actually REFUND_REVERSAL
+            }
+          });
+        }
+        
+        // If amount changed, UPDATE DEBIT_NOTE
+        if (changes.amountChanged) {
+          updates.push({
+            description: 'Update DEBIT_NOTE amount',
+            where: {
+              reference_type: 'purchase_return',
+              reference_id: changes.returnId!,
+              transaction_type: 'DEBIT_NOTE'
             },
-            description: 'Refund reversal (partial to incomplete)'
+            data: {
+              credit: changes.newTotal,
+              notes: `Debit note ${changes.debitNoteNo} updated to ₹${changes.newTotal}`
+            }
           });
         }
         break;
@@ -515,12 +481,25 @@ export class LedgerHandler {
       case '2→2': // Partial → Partial (amount change)
       case '1→2': // Complete → Partial (amount increase)
       case '0→2': // Incomplete → Partial
-        // ✅ Amount changes handled via updateDebitNoteEntry() in API (not here)
-        // No ledger operations needed from handler
+        // UPDATE DEBIT_NOTE for amount changes (was updateDebitNoteEntry)
+        if (changes.amountChanged && changes.hasExistingDebitNote) {
+          updates.push({
+            description: 'Update DEBIT_NOTE amount',
+            where: {
+              reference_type: 'purchase_return',
+              reference_id: changes.returnId!,
+              transaction_type: 'DEBIT_NOTE'
+            },
+            data: {
+              credit: changes.newTotal,
+              notes: `Debit note ${changes.debitNoteNo} updated to ₹${changes.newTotal}`
+            }
+          });
+        }
         break;
     }
     
-    return ops;
+    return { creates, updates, deletes };
   }
 }
 

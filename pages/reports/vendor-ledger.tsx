@@ -1,10 +1,43 @@
 import { useState, useEffect } from 'react';
-import { FileText, Loader2, RefreshCw } from 'lucide-react';
+import { FileText, Loader2, RefreshCw, Edit2, Check, X } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ExportMenu, SearchableSelect } from '../../components/common';
-import { mergeLedgerEntries, recalculateBalance } from '../../lib/ledger-merge-utils';
+import { mergeLedgerEntries, recalculateBalance} from '../../lib/ledger-merge-utils';
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
-import useLocalStorageState from 'use-local-storage-state';
+import { useSnackbar } from '../../components/SnackbarProvider';
+
+// ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
+// Fixed hydration issue by using useEffect to sync after mount
+function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+  const [mounted, setMounted] = useState(false);
+
+  // Hydration fix: Read from sessionStorage only after component mounts
+  useEffect(() => {
+    setMounted(true);
+    try {
+      const item = window.sessionStorage.getItem(key);
+      if (item) {
+        setStoredValue(JSON.parse(item));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [key]);
+
+  const setValue = (value: T) => {
+    try {
+      setStoredValue(value);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
 
 interface LedgerEntry {
   id: number;
@@ -36,6 +69,7 @@ interface Vendor {
 }
 
 export default function VendorLedgerPage() {
+  const { showSnackbar } = useSnackbar();
   const [accountingEntries, setAccountingEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [pagination, setPagination] = useState<Pagination>({
@@ -45,17 +79,15 @@ export default function VendorLedgerPage() {
     totalPages: 0
   });
 
-  // Filters with state persistence
-  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-ledger-vendor', {
-    defaultValue: ''
-  });
-  const [dateFrom, setDateFrom] = useLocalStorageState<string>('vendor-ledger-dateFrom', {
-    defaultValue: ''
-  });
-  const [dateTo, setDateTo] = useLocalStorageState<string>('vendor-ledger-dateTo', {
-    defaultValue: ''
-  });
+  // ✅ Filters with sessionStorage persistence (unique per tab, persists on refresh)
+  const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-ledger-vendor', '');
+  const [dateFrom, setDateFrom] = useSessionStorage<string>('vendor-ledger-dateFrom', '');
+  const [dateTo, setDateTo] = useSessionStorage<string>('vendor-ledger-dateTo', '');
   const [vendors, setVendors] = useState<Vendor[]>([]);
+
+  // ✅ NEW: Inline note editing state
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editedNote, setEditedNote] = useState<string>('');
 
   // Set default dates to current month on mount
   useEffect(() => {
@@ -142,16 +174,65 @@ export default function VendorLedgerPage() {
 
   const selectedVendorName = vendors.find(v => v.id.toString() === selectedVendor)?.vendor_name || '';
 
-  // ✅ Clear localStorage when component unmounts (user navigates away)
-  useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('vendor-ledger-vendor');
-        localStorage.removeItem('vendor-ledger-dateFrom');
-        localStorage.removeItem('vendor-ledger-dateTo');
-      }
-    };
-  }, []);
+  // ✅ NEW: Inline editing handlers
+  const handleEditNote = (entryId: number, currentNote: string) => {
+    setEditingNoteId(entryId);
+    setEditedNote(currentNote || '');
+  };
+
+  const handleSaveNote = async (entryId: number) => {
+    const oldNote = accountingEntries.find(e => e.id === entryId)?.remarks || '';
+    
+    if (editedNote === oldNote) {
+      // No change, just cancel
+      setEditingNoteId(null);
+      return;
+    }
+
+    // ✅ OPTIMISTIC UPDATE: Save to UI immediately
+    setAccountingEntries(prev =>
+      prev.map(entry =>
+        entry.id === entryId
+          ? { ...entry, remarks: editedNote }
+          : entry
+      )
+    );
+    
+    // Close edit mode immediately
+    setEditingNoteId(null);
+
+    // ✅ API call in background
+    try {
+      const response = await fetch(`/api/vendor-ledger/${entryId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: editedNote })
+      });
+
+      if (!response.ok) throw new Error('Failed to update note');
+
+      // Success - no snackbar needed, UI already updated
+    } catch (error) {
+      console.error('Failed to update note:', error);
+      
+      // ✅ Revert on error
+      setAccountingEntries(prev =>
+        prev.map(entry =>
+          entry.id === entryId
+            ? { ...entry, remarks: oldNote }
+            : entry
+        )
+      );
+      
+      // Show error snackbar
+      showSnackbar('error', 'Failed to save note. Please try again.', 3000);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
+    setEditedNote('');
+  };
 
   // Calculate summary totals
   const totalDebit = accountingEntries.reduce((sum, entry) => sum + entry.debit, 0);
@@ -301,7 +382,53 @@ export default function VendorLedgerPage() {
                     <td className="text-right font-semibold text-slate-300">
                       ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="text-slate-300 text-sm">{entry.remarks || '-'}</td>
+                    <td className="text-slate-300 text-sm">
+                      {editingNoteId === entry.id ? (
+                        /* Edit Mode: Input box with save/cancel */
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={editedNote}
+                            onChange={(e) => setEditedNote(e.target.value)}
+                            className="flex-1 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-white focus:outline-none focus:border-blue-500"
+                            placeholder="Enter notes..."
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveNote(entry.id);
+                              if (e.key === 'Escape') handleCancelEdit();
+                            }}
+                          />
+                          <button
+                            onClick={() => handleSaveNote(entry.id)}
+                            className="p-1 text-green-400 hover:bg-green-900/30 rounded"
+                            title="Save (Enter)"
+                          >
+                            <Check size={16} />
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="p-1 text-red-400 hover:bg-red-900/30 rounded"
+                            title="Cancel (Esc)"
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        /* Display Mode: Show text with hover edit button */
+                        <div className="flex items-center gap-2 group">
+                          <span className="flex-1">
+                            {entry.remarks || <span className="text-slate-500 italic">No notes</span>}
+                          </span>
+                          <button
+                            onClick={() => handleEditNote(entry.id, entry.remarks)}
+                            className="p-1 text-slate-400 hover:text-blue-400 hover:bg-blue-900/20 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Edit note"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

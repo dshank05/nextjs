@@ -76,19 +76,16 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
       baseType = 'DEBIT_NOTE'
     }
 
-    // ✅ Issue 4 FIX: Create group key with transaction_id for PAYMENT/REFUND entries
-    // This keeps separate payments/refunds apart while allowing them to merge with their adjustments
-    // ✅ NEW: Add date check - only merge entries on the same date
+    // ✅ Issue 8 FIX: Group PAYMENT entries by transaction_id ONLY (ignore referenceId)
+    // This consolidates multi-allocation payments (e.g., ₹5000 to 2 bills) into single row
     const dateKey = new Date(entry.date * 1000).toDateString()
     let key: string
     
     if ((baseType === 'PAYMENT' || baseType === 'REFUND' || baseType === 'REFUND_RECEIVED') && entry.transaction_id) {
-      // PAYMENT/REFUND with transaction_id: Group by transaction_id + date
-      // Example: Payment #149 and Payment #150 stay separate (different transaction_id)
-      // But Payment #150 + its adjustment merge (same transaction_id=150 AND same date)
-      key = entry.referenceId && entry.referenceType
-        ? `${baseType}-${entry.referenceType}-${entry.referenceId}-txn${entry.transaction_id}-${dateKey}`
-        : `solo-${entry.id}`
+      // PAYMENT/REFUND with transaction_id: Group by transaction_id ONLY
+      // Example: Payment #185 allocated to purchase 231 + 232 → Single merged entry
+      // This shows consolidated payment amount instead of separate allocations
+      key = `${baseType}-txn${entry.transaction_id}`
     } else {
       // Other transaction types (PURCHASE, DEBIT_NOTE) OR old data without transaction_id:
       // Use existing logic (group by reference_id + date)
@@ -195,23 +192,38 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
         }
       }
 
-      // ✅ Build merged notes/remarks - show NET amount, not breakdown
-      const baseType = firstEntry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '')
-      let mergedRemarks = baseTransaction.remarks || ''
+      // ✅ SMART NOTES HANDLING: Generate consolidated note or preserve user edits
+      let mergedRemarks = '';
       
-      // For refunds, update to show final NET amount
-      if (baseType === 'REFUND' || baseType === 'REFUND_RECEIVED') {
-        const netAmountAbs = Math.abs(netAmount)
-        mergedRemarks = `Direct refund received ₹${netAmountAbs.toLocaleString('en-IN')}`
-      }
-      // For payments, update to show final NET amount
-      else if (baseType === 'PAYMENT') {
-        const netAmountAbs = Math.abs(netAmount)
-        mergedRemarks = `Payment made ₹${netAmountAbs.toLocaleString('en-IN')}`
-      }
-      // For purchases, keep original remarks
-      else if (baseType === 'PURCHASE') {
-        mergedRemarks = baseTransaction.remarks || 'Purchase'
+      // Calculate base type for notes logic
+      const baseType = firstEntry.transactionType.replace('_ADJUSTMENT', '').replace('_REVERSAL', '');
+      
+      // Check if this is a consolidated PAYMENT with multiple allocations
+      const isConsolidatedPayment = baseType === 'PAYMENT' && group.length > 1;
+      
+      if (isConsolidatedPayment) {
+        // Check if ANY entry has user-edited (non-auto-generated) notes
+        const hasCustomNotes = group.some(e => {
+          const notes = e.remarks || '';
+          // User-edited if notes don't match auto-generated patterns
+          return notes && 
+                 !notes.includes('Payment ₹') && 
+                 !notes.includes('for bill INV-') &&
+                 !notes.includes('via Payment #');
+        });
+        
+        if (hasCustomNotes) {
+          // Preserve user-edited note from base transaction
+          mergedRemarks = baseTransaction.remarks || '';
+        } else {
+          // All notes are auto-generated - create consolidated note
+          const totalAmount = Math.abs(netAmount);
+          const txnId = baseTransaction.transaction_id;
+          mergedRemarks = `Payment ₹${totalAmount.toLocaleString('en-IN')} via Payment #${txnId}`;
+        }
+      } else {
+        // Single entry or non-payment - preserve original remarks
+        mergedRemarks = baseTransaction.remarks || '';
       }
 
       // Create merged entry using BASE transaction for sorting, date, and metadata

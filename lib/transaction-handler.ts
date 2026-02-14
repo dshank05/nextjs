@@ -4,7 +4,7 @@
  * Coordinates ledger, balance, and allocation operations
  */
 
-import { ledgerHandler, LedgerOperation, ChangeSet } from './ledger-handler';
+import { ledgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDeleteOperation, ChangeSet } from './ledger-handler';
 import { balanceHandler, BalanceOperation } from './balance-handler';
 import { ledgerService } from './ledger-service';
 
@@ -16,9 +16,17 @@ export interface AllocationChange {
 }
 
 export interface TransactionResult {
-  ledgerOps: LedgerOperation[];
+  ledgerOps: LedgerOperation[];           // CREATE operations (keep for backward compatibility)
+  ledgerCreates: LedgerOperation[];       // NEW: Explicit CREATE operations
+  ledgerUpdates: LedgerUpdateOperation[]; // NEW: UPDATE operations
+  ledgerDeletes: LedgerDeleteOperation[]; // NEW: DELETE operations
   balanceOp: BalanceOperation | null;
   allocationChanges: AllocationChange[];
+  context?: {                             // NEW: Context for balance logging
+    entityType?: 'purchase' | 'return' | 'payment' | 'refund';
+    entityId?: number;
+    referenceNo?: string;
+  };
 }
 
 export interface DeleteOperation {
@@ -86,8 +94,8 @@ export class TransactionHandler {
       currentBalance: params.currentBalance
     };
     
-    // Get ledger operations
-    const ledgerOps = ledgerHandler.getPurchaseLedgerOps(changes);
+    // Get ledger operations (NEW: Returns mixed CREATE/UPDATE/DELETE)
+    const ledgerResult = ledgerHandler.getPurchaseLedgerOps(changes);
     
     // Get balance operation
     const balanceOp = balanceHandler.getPurchaseBalanceOps(changes);
@@ -96,9 +104,17 @@ export class TransactionHandler {
     const allocationChanges = this.getPurchaseAllocationChanges(changes);
     
     return {
-      ledgerOps,
+      ledgerOps: ledgerResult.creates,     // For backward compatibility
+      ledgerCreates: ledgerResult.creates,
+      ledgerUpdates: ledgerResult.updates,
+      ledgerDeletes: ledgerResult.deletes,
       balanceOp,
-      allocationChanges
+      allocationChanges,
+      context: {                           // ✅ NEW: Pass purchase context for logging
+        entityType: 'purchase',
+        entityId: params.purchaseId,
+        referenceNo: params.invoiceNo
+      }
     };
   }
   
@@ -130,7 +146,7 @@ export class TransactionHandler {
       total_refund_allocated: number;
     };
   }): Promise<TransactionResult> {
-    // ✅ CHECK IF DEBIT_NOTE EXISTS (moved from API)
+    // ✅ CHECK IF DEBIT_NOTE EXISTS (for ledger handler)
     const existingDebitNote = await params.tx.vendor_ledger.findFirst({
       where: {
         vendor_id: params.vendorId,
@@ -141,70 +157,8 @@ export class TransactionHandler {
       orderBy: { id: 'desc' }
     });
 
-    // ✅ UPDATE DEBIT_NOTE if exists and amount changed (moved from API)
+    // Calculate if amount changed
     const amountChanged = Math.abs(params.newTotal - params.oldTotal) > 0.01;
-    if (existingDebitNote && amountChanged) {
-      await ledgerService.updateDebitNoteEntry({
-        vendor_id: params.vendorId,
-        reference_id: params.returnId,
-        reference_no: params.debitNoteNo,
-        new_total_amount: params.totalAmount,
-        new_total_tax: params.totalTax,
-        fy: params.fy
-      });
-    }
-
-    // ✅ DELETE EXISTING REFUND_REVERSAL ENTRIES to prevent duplicates
-    // When user edits Complete→Incomplete multiple times, we want only ONE reversal entry
-    // This ensures clean ledger and prevents accumulation of duplicate reversals
-    if (params.oldStatus === 1 && params.newStatus === 0) {
-      await params.tx.vendor_ledger.deleteMany({
-        where: {
-          vendor_id: params.vendorId,
-          reference_type: 'purchase_return',
-          reference_id: params.returnId,
-          transaction_type: 'REFUND_REVERSAL'
-        }
-      });
-    }
-
-    // ✅ Also handle Partial→Incomplete case (2→0)
-    if (params.oldStatus === 2 && params.newStatus === 0) {
-      await params.tx.vendor_ledger.deleteMany({
-        where: {
-          vendor_id: params.vendorId,
-          reference_type: 'purchase_return',
-          reference_id: params.returnId,
-          transaction_type: 'REFUND_REVERSAL'
-        }
-      });
-    }
-
-    // ✅ FIX: Delete REFUND_REVERSAL when going Incomplete→Complete
-    // This handles the 1→0→1 path where REFUND_REVERSAL was created on 1→0
-    // When going 0→1 again, delete the reversal so DEBIT_NOTE stands alone
-    if (params.oldStatus === 0 && params.newStatus === 1) {
-      await params.tx.vendor_ledger.deleteMany({
-        where: {
-          vendor_id: params.vendorId,
-          reference_type: 'purchase_return',
-          reference_id: params.returnId,
-          transaction_type: 'REFUND_REVERSAL'
-        }
-      });
-    }
-
-    // ✅ FIX: Also handle Partial→Complete case (2→1)
-    if (params.oldStatus === 2 && params.newStatus === 1) {
-      await params.tx.vendor_ledger.deleteMany({
-        where: {
-          vendor_id: params.vendorId,
-          reference_type: 'purchase_return',
-          reference_id: params.returnId,
-          transaction_type: 'REFUND_REVERSAL'
-        }
-      });
-    }
 
     // Build change set
     const changes: ChangeSet = {
@@ -225,8 +179,8 @@ export class TransactionHandler {
       currentBalance: params.currentBalance
     };
     
-    // Get ledger operations
-    const ledgerOps = ledgerHandler.getReturnLedgerOps(changes);
+    // Get ledger operations (NEW: Returns mixed CREATE/UPDATE/DELETE)
+    const ledgerResult = ledgerHandler.getReturnLedgerOps(changes);
     
     // Get balance operation
     const balanceOp = balanceHandler.getReturnBalanceOps(changes);
@@ -235,7 +189,10 @@ export class TransactionHandler {
     const allocationChanges = this.getReturnAllocationChanges(changes);
     
     return {
-      ledgerOps,
+      ledgerOps: ledgerResult.creates,     // For backward compatibility
+      ledgerCreates: ledgerResult.creates,
+      ledgerUpdates: ledgerResult.updates,
+      ledgerDeletes: ledgerResult.deletes,
       balanceOp,
       allocationChanges
     };
@@ -243,7 +200,7 @@ export class TransactionHandler {
   
   /**
    * Handle vendor payment edit transaction
-   * Returns all operations to perform when editing a vendor payment
+   * ✅ REFACTORED: Returns UPDATE operations instead of PAYMENT_ADJUSTMENT
    */
   async handleVendorPaymentEdit(params: {
     paymentId: number;
@@ -256,12 +213,7 @@ export class TransactionHandler {
     paymentDate: number;
     paymentType: string;
     fy: number;
-  }): Promise<{
-    purchasesToUpdate: number[];
-    amountDiff: number;
-    allocDiff: number;
-    ledgerOps: LedgerOperation[];
-  }> {
+  }): Promise<TransactionResult> {
     const amountDiff = params.newAmount - params.oldAmount;
     
     // Get all affected purchases
@@ -275,51 +227,45 @@ export class TransactionHandler {
     const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
     const allocDiff = newTotalAllocated - oldTotalAllocated;
     
-    // ✅ FIX: For DIRECT payments, use 'payment' reference_type to match original PAYMENT entry
-    // For BILL_SPECIFIC/MIXED payments, use 'purchase' reference_type
-    const isDirect = params.paymentType === 'DIRECT';
-    const purchaseId = params.newAllocations[0]?.purchase_id || 
-                       params.oldAllocations[0]?.purchase_id || 
-                       params.paymentId;
+    const ledgerUpdates: LedgerUpdateOperation[] = [];
     
-    // Create ledger operation ONLY if amount changed
-    const ledgerOps: LedgerOperation[] = [];
+    // UPDATE PAYMENT ledger entry if amount changed
     if (amountDiff !== 0) {
-      ledgerOps.push({
-        description: `Payment amount ${amountDiff > 0 ? 'increase' : 'decrease'}`,
-        entry: {
-          vendor_id: params.vendorId,
-          transaction_date: params.paymentDate,
-          transaction_type: 'PAYMENT_ADJUSTMENT',
-          // ✅ FIX: Use 'payment' for DIRECT, 'purchase' for BILL_SPECIFIC/MIXED
-          reference_type: isDirect ? 'payment' : 'purchase',
-          reference_id: isDirect ? params.paymentId : purchaseId,
-          reference_no: `PAY-${params.paymentId}`,
-          payment_mode: params.paymentMode,
-          payment_status: 1,
-          payment_date: params.paymentDate,
-          debit: amountDiff < 0 ? Math.abs(amountDiff) : 0,
-          credit: amountDiff > 0 ? amountDiff : 0,
-          notes: `Payment #${params.paymentId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.paymentType === 'MIXED' ? ' (Mixed: partial allocation + advance)' : params.paymentType === 'DIRECT' ? ' (Direct advance)' : ' (Bill specific)'}`,
-          fy: params.fy,
-          transaction_id: params.paymentId  // ✅ NEW: Set transaction_id to parent payment ID for merging
+      ledgerUpdates.push({
+        description: 'Update payment amount',
+        where: {
+          transaction_id: params.paymentId,
+          transaction_type: 'PAYMENT'
+        },
+        data: {
+          credit: params.newAmount,
+          notes: `Payment #${params.paymentId} updated to ₹${params.newAmount.toFixed(2)}${params.paymentType === 'MIXED' ? ' (Mixed: partial allocation + advance)' : params.paymentType === 'DIRECT' ? ' (Direct advance)' : ' (Bill specific)'}`
         }
       });
     }
     
+    // Balance update
+    const balanceOp: BalanceOperation | null = (amountDiff !== 0 || allocDiff !== 0) ? {
+      vendorId: params.vendorId,
+      update: {
+        total_paid: amountDiff,
+        total_allocated: allocDiff
+      }
+    } : null;
+    
     return {
-      purchasesToUpdate,
-      amountDiff,
-      allocDiff,
-      ledgerOps
+      ledgerOps: [],
+      ledgerCreates: [],
+      ledgerUpdates,
+      ledgerDeletes: [],
+      balanceOp,
+      allocationChanges: []  // Handled separately in API
     };
   }
   
   /**
    * Handle vendor refund edit transaction
-   * Returns all operations to perform when editing a vendor refund
-   * ✅ FIXED: Now creates REFUND_ADJUSTMENT ledger entries when amount changes
-   * ✅ FIXED: Copies reference from existing REFUND_RECEIVED entry for proper merge
+   * ✅ REFACTORED: Returns UPDATE operations instead of REFUND_ADJUSTMENT
    */
   async handleVendorRefundEdit(params: {
     refundId: number;
@@ -332,13 +278,8 @@ export class TransactionHandler {
     refundDate: number;
     refundType: string;
     fy: number;
-    tx?: any; // ✅ NEW: Transaction context for querying existing entry
-  }): Promise<{
-    returnsToUpdate: number[];
-    amountDiff: number;
-    allocDiff: number;
-    ledgerOps: LedgerOperation[];
-  }> {
+    tx?: any;
+  }): Promise<TransactionResult> {
     const amountDiff = params.newAmount - params.oldAmount;
     
     // Get all affected returns
@@ -352,51 +293,116 @@ export class TransactionHandler {
     const newTotalAllocated = params.newAllocations.reduce((sum, a) => sum + a.allocated_amount, 0);
     const allocDiff = newTotalAllocated - oldTotalAllocated;
     
-    // ✅ FIX: Create ledger operation when amount changes
-    const ledgerOps: LedgerOperation[] = [];
-    if (amountDiff !== 0 && params.tx) {
-      // ✅ QUERY: Find existing REFUND_RECEIVED entry to copy references from
-      const existingEntry = await params.tx.vendor_ledger.findFirst({
+    const ledgerUpdates: LedgerUpdateOperation[] = [];
+    
+    // UPDATE REFUND_RECEIVED ledger entry if amount changed
+    if (amountDiff !== 0) {
+      ledgerUpdates.push({
+        description: 'Update refund amount',
         where: {
-          vendor_id: params.vendorId,
-          transaction_type: 'REFUND_RECEIVED',
-          OR: [
-            { reference_no: params.refundId.toString() },  // Direct refund
-            { notes: { contains: `Refund #${params.refundId}` } }  // Return-specific refund
-          ]
+          transaction_id: params.refundId,
+          transaction_type: 'REFUND_RECEIVED'
         },
-        orderBy: { id: 'desc' }
+        data: {
+          debit: params.newAmount,
+          notes: `Refund #${params.refundId} updated to ₹${params.newAmount.toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`
+        }
       });
-      
-      if (existingEntry) {
-        ledgerOps.push({
-          description: `Refund amount ${amountDiff > 0 ? 'increase' : 'decrease'}`,
-          entry: {
-            vendor_id: params.vendorId,
-            transaction_date: params.refundDate,
-            transaction_type: 'REFUND_ADJUSTMENT',
-            reference_type: existingEntry.reference_type as any,  // ✅ Copy from existing!
-            reference_id: existingEntry.reference_id || undefined,  // ✅ Copy from existing!
-            reference_no: existingEntry.reference_no || `REF-${params.refundId}`,  // ✅ Copy from existing!
-            payment_mode: params.refundMode,
-            payment_status: 1,
-            payment_date: params.refundDate,
-            debit: amountDiff > 0 ? amountDiff : 0,  // ✅ FIX: Increase = DEBIT (adds to balance)
-            credit: amountDiff < 0 ? Math.abs(amountDiff) : 0,  // ✅ FIX: Decrease = CREDIT (reduces balance)
-            notes: `Refund #${params.refundId} amount ${amountDiff > 0 ? 'increased' : 'decreased'} by ₹${Math.abs(amountDiff).toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`,
-            fy: params.fy,
-            transaction_id: params.refundId  // ✅ NEW: Set transaction_id to parent refund ID for merging
-          }
-        });
-      }
     }
     
+    // Balance update
+    const balanceOp: BalanceOperation | null = (amountDiff !== 0 || allocDiff !== 0) ? {
+      vendorId: params.vendorId,
+      update: {
+        total_refunded: amountDiff,
+        total_refund_allocated: allocDiff
+      }
+    } : null;
+    
     return {
-      returnsToUpdate,
-      amountDiff,
-      allocDiff,
-      ledgerOps
+      ledgerOps: [],
+      ledgerCreates: [],
+      ledgerUpdates,
+      ledgerDeletes: [],
+      balanceOp,
+      allocationChanges: []  // Handled separately in API
     };
+  }
+  
+  /**
+   * Execute ledger UPDATE operations
+   * Updates existing ledger entries and recalculates balances
+   */
+  private async executeLedgerUpdates(
+    tx: any,
+    updates: LedgerUpdateOperation[]
+  ): Promise<void> {
+    for (const update of updates) {
+      console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
+      
+      // Get entries before update for balance recalculation
+      const entries = await tx.vendor_ledger.findMany({
+        where: update.where,
+        select: { id: true, vendor_id: true }
+      });
+      
+      if (entries.length === 0) {
+        console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
+        continue;
+      }
+      
+      // Execute UPDATE
+      await tx.vendor_ledger.updateMany({
+        where: update.where,
+        data: update.data
+      });
+      
+      // Recalculate balances after update
+      const firstEntry = entries[0];
+      await ledgerService.recalculateBalancesAfter(
+        firstEntry.vendor_id,
+        firstEntry.id,
+        tx
+      );
+      
+      console.log(`[LEDGER UPDATE] Updated ${entries.length} entries and recalculated balances`);
+    }
+  }
+  
+  /**
+   * Execute ledger DELETE operations
+   * Deletes ledger entries and recalculates balances
+   */
+  private async executeLedgerDeletes(
+    tx: any,
+    deletes: LedgerDeleteOperation[]
+  ): Promise<void> {
+    for (const deleteOp of deletes) {
+      console.log(`[LEDGER DELETE] ${deleteOp.description}`, deleteOp.where);
+      
+      // Get entry info before deletion for balance recalculation
+      const entries = await tx.vendor_ledger.findMany({
+        where: deleteOp.where,
+        select: { id: true, vendor_id: true }
+      });
+      
+      if (entries.length === 0) {
+        console.warn(`[LEDGER DELETE] No entries found for deletion:`, deleteOp.where);
+        continue;
+      }
+      
+      const vendorId = entries[0].vendor_id;
+      
+      // Delete entries
+      await tx.vendor_ledger.deleteMany({
+        where: deleteOp.where
+      });
+      
+      // Recalculate balances after deletion (from start)
+      await ledgerService.recalculateBalancesAfter(vendorId, 0, tx);
+      
+      console.log(`[LEDGER DELETE] Deleted ${entries.length} entries and recalculated balances`);
+    }
   }
   
   /**
@@ -404,6 +410,7 @@ export class TransactionHandler {
    * This is the main method that APIs should call
    * ✅ FIXED: Checks for existing PAYMENT entries to avoid duplicates
    * ✅ NEW: Creates payments BEFORE ledger entries to set transaction_id during creation
+   * ✅ NEW: Executes UPDATE and DELETE operations
    */
   async executeInTransaction(
     tx: any,
@@ -482,31 +489,6 @@ export class TransactionHandler {
     for (const op of result.ledgerOps) {
       let entryToCreate = op.entry;
       
-      // ✅ Check if this operation requires existence check
-      if (op.checkExisting && op.checkExisting.useAdjustmentIfExists) {
-        const existingEntry = await tx.vendor_ledger.findFirst({
-          where: {
-            vendor_id: op.entry.vendor_id,
-            transaction_type: op.checkExisting.transactionType,
-            reference_type: op.entry.reference_type,
-            reference_id: op.entry.reference_id
-          },
-          select: { credit: true }
-        });
-        
-        if (existingEntry) {
-          // Entry exists - use PAYMENT_ADJUSTMENT instead
-          const creditDiff = op.entry.credit - Number(existingEntry.credit);
-          entryToCreate = {
-            ...op.entry,
-            transaction_type: 'PAYMENT_ADJUSTMENT',
-            credit: creditDiff > 0 ? creditDiff : 0,
-            debit: creditDiff < 0 ? Math.abs(creditDiff) : 0,
-            notes: `Payment ${creditDiff > 0 ? 'increased' : 'adjusted'} by ₹${Math.abs(creditDiff).toFixed(2)} for purchase ${op.entry.reference_no}`
-          };
-        }
-      }
-      
       // ✅ Issue 6 FIX: Skip ledger creation for advance allocations
       // When marking unpaid→paid using advance balance, we only create payment_allocations
       // The PAYMENT ledger entry already exists from the original advance payment
@@ -573,6 +555,16 @@ export class TransactionHandler {
       );
     }
     
+    // 1c. Execute ledger UPDATES (NEW)
+    if (result.ledgerUpdates && result.ledgerUpdates.length > 0) {
+      await this.executeLedgerUpdates(tx, result.ledgerUpdates);
+    }
+    
+    // 1d. Execute ledger DELETES (NEW)
+    if (result.ledgerDeletes && result.ledgerDeletes.length > 0) {
+      await this.executeLedgerDeletes(tx, result.ledgerDeletes);
+    }
+    
     // NOTE: Old step 2 "Execute allocation changes" has been MOVED to step 0 above
     // This allows us to create payments BEFORE ledger entries, so transaction_id can be
     // set during ledger creation instead of requiring an UPDATE query later.
@@ -580,10 +572,64 @@ export class TransactionHandler {
     
     // 2. Execute balance update
     if (result.balanceOp) {
+      // Determine source type and details based on balance operation context
+      let sourceType: any;
+      let sourceId: number | undefined;
+      let referenceNo: string | undefined;
+      let notes: string | undefined;
+      
+      // Check what type of operation this is based on what data is present
+      if (result.ledgerCreates.length > 0) {
+        const firstOp = result.ledgerCreates[0];
+        if (firstOp.entry.transaction_type === 'PURCHASE') {
+          sourceType = 'purchase_edit';
+          sourceId = firstOp.entry.reference_id;
+          referenceNo = `INV-${firstOp.entry.reference_no}`;
+          notes = 'Purchase edited';
+        } else if (firstOp.entry.transaction_type === 'DEBIT_NOTE') {
+          sourceType = 'return_edit';
+          sourceId = firstOp.entry.reference_id;
+          referenceNo = firstOp.entry.reference_no;
+          notes = 'Return edited';
+        } else if (firstOp.entry.transaction_type === 'PAYMENT') {
+          sourceType = 'payment_edit';
+          sourceId = firstOp.entry.transaction_id;
+          referenceNo = `PAY-${firstOp.entry.transaction_id}`;
+          notes = 'Payment edit via status change';
+        }
+      }
+      
+      // ✅ NEW: Use context if we couldn't determine from ledger operations
+      if (!sourceType && result.context) {
+        if (result.context.entityType === 'purchase') {
+          sourceType = 'purchase_edit';
+          sourceId = result.context.entityId;
+          referenceNo = `INV-${result.context.referenceNo}`;
+          notes = 'Purchase status changed';
+        } else if (result.context.entityType === 'return') {
+          sourceType = 'return_edit';
+          sourceId = result.context.entityId;
+          referenceNo = result.context.referenceNo || '';
+          notes = 'Return status changed';
+        }
+      }
+      
+      // Default source if we still couldn't determine
+      if (!sourceType) {
+        sourceType = 'status_change';
+        notes = 'Balance adjusted via status change';
+      }
+      
       await balanceHandler.incrementBalanceInTransaction(
         tx,
         result.balanceOp.vendorId,
-        result.balanceOp.update
+        result.balanceOp.update,
+        sourceId && referenceNo ? {
+          type: sourceType,
+          id: sourceId,
+          reference_no: referenceNo,
+          notes: notes || 'Balance update'
+        } : undefined
       );
     }
   }
@@ -915,7 +961,9 @@ export class TransactionHandler {
         type: 'BALANCE_UPDATE',
         data: {
           vendorId: params.vendorId,
-          paymentStatus: params.paymentStatus
+          paymentStatus: params.paymentStatus,
+          purchaseId: params.purchaseId,  // ✅ Pass for logging
+          invoiceNo: params.invoiceNo      // ✅ Pass for logging
         },
         parallel: false
       });
@@ -1296,32 +1344,36 @@ export class TransactionHandler {
       context.totalRefunded = totalRefunded; // ✅ FIX: Share with BALANCE_UPDATE operation
       
     } else if (data.entityType === 'payment') {
-      // ✅ Store allocated purchase IDs before deletion for ledger reversal AND status recalculation
+      // ✅ Store allocated purchase IDs AND amounts before deletion
       const allocations = await tx.payment_allocations.findMany({
         where: { payment_id: data.entityId },
-        select: { purchase_id: true }
+      N  select: { purchase_id: true, allocated_amount: true }
       });
       const purchaseIds = allocations.map(a => a.purchase_id);
+      const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
       // Store in both data (for backward compatibility) and shared context
       data.allocatedPurchaseIds = purchaseIds;
-      context.allocatedPurchaseIds = purchaseIds; // ✅ NEW: Share with other operations
+      context.allocatedPurchaseIds = purchaseIds; // ✅ Share with other operations
+      context.totalAllocatedPayment = totalAllocated; // ✅ NEW: Share total allocated for balance update
       
       await tx.payment_allocations.deleteMany({
         where: { payment_id: data.entityId }
       });
       
     } else if (data.entityType === 'refund') {
-      // ✅ Store allocated return IDs before deletion for ledger reversal AND status recalculation
+      // ✅ Store allocated return IDs AND amounts before deletion
       const allocations = await tx.refund_allocations.findMany({
         where: { refund_id: data.entityId },
-        select: { return_id: true }
+        select: { return_id: true, allocated_amount: true }
       });
       const returnIds = allocations.map(a => a.return_id);
+      const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
       // Store in both data (for backward compatibility) and shared context
       data.allocatedReturnIds = returnIds;
-      context.allocatedReturnIds = returnIds; // ✅ NEW: Share with other operations
+      context.allocatedReturnIds = returnIds; // ✅ Share with other operations
+      context.totalAllocatedRefund = totalAllocated; // ✅ NEW: Share total allocated for balance update
       
       await tx.refund_allocations.deleteMany({
         where: { refund_id: data.entityId }
@@ -1351,33 +1403,14 @@ export class TransactionHandler {
         const returnIds = returnItems.map(r => r.purchase_return_id);
         
         if (returnIds.length > 0) {
-          // ✅ FIX: Create DEBIT_NOTE reversals BEFORE deleting returns
-          for (const returnId of returnIds) {
-            const debitNoteEntries = await tx.vendor_ledger.findMany({
-              where: {
-                reference_type: 'purchase_return',
-                reference_id: returnId,
-                transaction_type: 'DEBIT_NOTE'
-              }
-            });
-            
-            // Create DEBIT_NOTE_REVERSAL for each DEBIT_NOTE
-            for (const entry of debitNoteEntries) {
-              await ledgerService.createEntry({
-                vendor_id: entry.vendor_id,
-                transaction_date: Math.floor(Date.now() / 1000),
-                transaction_type: 'DEBIT_NOTE_REVERSAL',
-                reference_type: 'purchase_return',
-                reference_id: entry.reference_id,
-                reference_no: entry.reference_no || '',
-                payment_mode: entry.payment_mode,
-                debit: entry.credit,  // Reverse: swap credit → debit
-                credit: entry.debit,  // Reverse: swap debit → credit
-                notes: `Reversal: DEBIT_NOTE deleted (purchase deletion)`,
-                fy: entry.fy
-              }, tx);
+          // ✅ DELETE DEBIT_NOTE ledger entries directly (no reversal needed)
+          await tx.vendor_ledger.deleteMany({
+            where: {
+              reference_type: 'purchase_return',
+              reference_id: { in: returnIds },
+              transaction_type: 'DEBIT_NOTE'
             }
-          }
+          });
           
           // Delete return items first (child records)
           await tx.purchase_return_items.deleteMany({
@@ -1443,7 +1476,7 @@ export class TransactionHandler {
       ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
           transaction_id: data.entityId,
-          transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] }
+          transaction_type: 'PAYMENT'  // No more PAYMENT_ADJUSTMENT
         }
       });
       
@@ -1455,7 +1488,7 @@ export class TransactionHandler {
       ledgerEntries = await tx.vendor_ledger.findMany({
         where: {
           transaction_id: data.entityId,
-          transaction_type: { in: ['REFUND_RECEIVED', 'REFUND_ADJUSTMENT'] }
+          transaction_type: 'REFUND_RECEIVED'  // No more REFUND_ADJUSTMENT
         }
       });
       
@@ -1471,9 +1504,16 @@ export class TransactionHandler {
       });
     }
     
-    // ✅ FIX: For purchase/return DELETION, delete entries instead of creating reversals
+    // ✅ FIX: For ALL deletions (purchase/return/payment/refund), delete entries instead of creating reversals
     // Philosophy: "Delete is the reverse of Create" - we remove what was added
-    if (data.isDeletion && (data.entityType === 'purchase' || data.entityType === 'purchase_return')) {
+    // For payment/refund: Always treat as deletion (no isDeletion flag needed)
+    // For purchase/return: Only delete if isDeletion flag is set
+    const shouldDelete = 
+      data.entityType === 'payment' || 
+      data.entityType === 'refund' ||
+      (data.isDeletion && (data.entityType === 'purchase' || data.entityType === 'purchase_return'));
+    
+    if (shouldDelete) {
       // Delete ledger entries (as if the transaction never happened)
       await Promise.all(
         ledgerEntries.map(entry => 
@@ -1487,8 +1527,8 @@ export class TransactionHandler {
         await ledgerService.recalculateBalancesAfter(vendorId, 0, tx);
       }
     } else {
-      // ✅ EXISTING LOGIC: For edits or payment/refund deletion, create reversal entries
-      // This preserves audit trail for status changes and standalone payment/refund deletions
+      // ✅ EXISTING LOGIC: For status change edits, create reversal entries
+      // This preserves audit trail for status changes
       await Promise.all(
         ledgerEntries.map(entry => 
           ledgerService.createEntry({
@@ -1511,32 +1551,82 @@ export class TransactionHandler {
   
   private async executeBalanceUpdate(tx: any, data: any, context: any): Promise<void> {
     if (data.paymentAmount !== undefined) {
-      // Payment deletion
-      const totalAllocated = data.paymentType === 'DIRECT' ? 0 : data.paymentAmount;
-      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_paid: -Number(data.paymentAmount),
-        total_allocated: -totalAllocated
-      });
+      // Payment deletion - use ACTUAL allocated amount from context, not paymentAmount
+      // ✅ FIX: For MIXED payments (e.g., ₹50k total with ₹30k allocated), we need:
+      //   total_paid: -50000 (full payment amount)
+      //   total_allocated: -30000 (actual allocated, NOT 50000!)
+      const actualAllocated = context.totalAllocatedPayment !== undefined 
+        ? context.totalAllocatedPayment 
+        : (data.paymentType === 'DIRECT' ? 0 : data.paymentAmount);
+      
+      await balanceHandler.incrementBalanceInTransaction(
+        tx, 
+        data.vendorId, 
+        {
+          total_paid: -Number(data.paymentAmount),
+          total_allocated: -actualAllocated
+        },
+        {
+          type: 'payment_delete',
+          id: context.paymentId || 0,
+          reference_no: `PAY-${context.paymentId || '?'}`,
+          notes: `Payment deleted: ₹${data.paymentAmount}`
+        }
+      );
       
     } else if (data.refundAmount !== undefined) {
-      // Refund deletion
-      const totalAllocated = data.refundType === 'DIRECT' ? 0 : data.refundAmount;
-      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_refunded: -Number(data.refundAmount),
-        total_refund_allocated: -totalAllocated
-      });
+      // Refund deletion - use ACTUAL allocated amount from context, not refundAmount
+      // ✅ FIX: Same logic as payment - use actual allocated amount
+      const actualAllocated = context.totalAllocatedRefund !== undefined 
+        ? context.totalAllocatedRefund 
+        : (data.refundType === 'DIRECT' ? 0 : data.refundAmount);
+      
+      await balanceHandler.incrementBalanceInTransaction(
+        tx, 
+        data.vendorId, 
+        {
+          total_refunded: -Number(data.refundAmount),
+          total_refund_allocated: -actualAllocated
+        },
+        {
+          type: 'refund_delete',
+          id: context.refundId || 0,
+          reference_no: `REF-${context.refundId || '?'}`,
+          notes: `Refund deleted: ₹${data.refundAmount}`
+        }
+      );
       
     } else if (context.totalPaid !== undefined) {
-      // ✅ FIX: Purchase deletion - use context.totalPaid shared from DELETE_ALLOCATIONS
-      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_allocated: -context.totalPaid
-      });
+      // ✅ Purchase deletion - use context.totalPaid shared from DELETE_ALLOCATIONS
+      await balanceHandler.incrementBalanceInTransaction(
+        tx, 
+        data.vendorId, 
+        {
+          total_allocated: -context.totalPaid
+        },
+        {
+          type: 'purchase_delete',
+          id: data.purchaseId || 0,
+          reference_no: `INV-${data.invoiceNo || '?'}`,
+          notes: `Purchase deleted: deallocated ₹${context.totalPaid}`
+        }
+      );
       
     } else if (context.totalRefunded !== undefined) {
-      // ✅ FIX: Return deletion - use context.totalRefunded shared from DELETE_ALLOCATIONS
-      await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, {
-        total_refund_allocated: -context.totalRefunded
-      });
+      // ✅ Return deletion - use context.totalRefunded shared from DELETE_ALLOCATIONS
+      await balanceHandler.incrementBalanceInTransaction(
+        tx, 
+        data.vendorId, 
+        {
+          total_refund_allocated: -context.totalRefunded
+        },
+        {
+          type: 'return_delete',
+          id: context.returnId || 0,
+          reference_no: `DN-${context.debitNoteNo || '?'}`,
+          notes: `Return deleted: deallocated ₹${context.totalRefunded}`
+        }
+      );
     }
   }
 }
