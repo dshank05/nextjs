@@ -313,7 +313,7 @@ export class LedgerHandler {
           },
           data: {
             debit: changes.newTotal,
-            notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal} (now partially paid)`
+            notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
           }
         });
         break;

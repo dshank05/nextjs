@@ -345,10 +345,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           fy: financialYear
         }, tx)
 
-        // ✅ FIX: Update vendor balance fields for complete returns
+        // ✅ FIX: Update vendor balance fields for complete returns WITH LOGGING
         await balanceHandler.incrementBalanceInTransaction(tx, parseInt(vendor_id), {
           total_refunded: refundAmount,
           total_refund_allocated: refundAmount
+        }, {
+          type: 'return_create',
+          id: returnRecord.id,
+          reference_no: debitNoteNo,
+          notes: `Return complete: ₹${refundAmount}`
         });
 
         // ❌ COMMENTED OUT - Issue #6: No REFUND_RECEIVED entry

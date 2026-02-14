@@ -144,7 +144,7 @@ async function handleGetRefund(
 /**
  * PUT /api/vendor-refunds/[id]
  * Update an existing vendor refund
- * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ * ⚡ OPTIMIZED: Queries moved outside transaction
  */
 async function handleUpdateRefund(
   req: NextApiRequest,
@@ -175,42 +175,47 @@ async function handleUpdateRefund(
 
     const refundId = parseInt(id as string);
 
+    // ⚡ OPTIMIZATION: Fetch existing refund BEFORE transaction
+    const existingRefund = await prisma.vendor_refunds.findUnique({
+      where: { id: refundId },
+      include: {
+        allocations: true
+      }
+    });
+
+    if (!existingRefund) {
+      return res.status(404).json({ error: 'Refund not found' });
+    }
+
+    // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
+    const handlerParams = {
+      refundId,
+      vendorId: existingRefund.vendor_id,
+      oldAmount: Number(existingRefund.refund_amount),
+      newAmount: Number(refund_amount),
+      oldAllocations: existingRefund.allocations.map(a => ({
+        return_id: a.return_id,
+        allocated_amount: Number(a.allocated_amount)
+      })),
+      newAllocations: allocations.map((a: any) => ({
+        return_id: a.return_id,
+        allocated_amount: Number(a.allocated_amount)
+      })),
+      refundMode: refund_mode,
+      refundDate: refund_date,
+      refundType: refund_type,
+      fy: existingRefund.fy
+    };
+
     // Update refund in transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Fetch existing refund with allocations
-      const existingRefund = await tx.vendor_refunds.findUnique({
-        where: { id: refundId },
-        include: {
-          allocations: true
-        }
-      });
-
-      if (!existingRefund) {
-        throw new Error('Refund not found');
-      }
-
-      // 2. Use transaction handler to calculate what needs to change
+      // 1. Calculate what needs to change using pre-fetched data
       const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorRefundEdit({
-        refundId,
-        vendorId: existingRefund.vendor_id,
-        oldAmount: Number(existingRefund.refund_amount),
-        newAmount: Number(refund_amount),
-        oldAllocations: existingRefund.allocations.map(a => ({
-          return_id: a.return_id,
-          allocated_amount: Number(a.allocated_amount)
-        })),
-        newAllocations: allocations.map((a: any) => ({
-          return_id: a.return_id,
-          allocated_amount: Number(a.allocated_amount)
-        })),
-        refundMode: refund_mode,
-        refundDate: refund_date,
-        refundType: refund_type,
-        fy: existingRefund.fy,
-        tx  // ✅ Pass transaction context for querying existing entry
+        ...handlerParams,
+        tx  // Pass tx for any internal queries
       });
 
-      // 3. Update refund record
+      // 2. Update refund record
       const updatedRefund = await tx.vendor_refunds.update({
         where: { id: refundId },
         data: {
@@ -222,12 +227,12 @@ async function handleUpdateRefund(
         }
       });
 
-      // ✅ Issue 5 FIX: If refund_date changed, sync all related ledger entries
+      // 3. If refund_date changed, sync all related ledger entries
       if (existingRefund.refund_date !== refund_date) {
         await tx.vendor_ledger.updateMany({
           where: {
             transaction_id: refundId,
-            transaction_type: 'REFUND_RECEIVED'  // No more REFUND_ADJUSTMENT
+            transaction_type: 'REFUND_RECEIVED'
           },
           data: {
             transaction_date: refund_date,
@@ -236,58 +241,65 @@ async function handleUpdateRefund(
         });
       }
 
-      // 4. Delete old allocations & create new ones (parallel)
-      await tx.refund_allocations.deleteMany({
-        where: { refund_id: refundId }
-      });
+      // 4. ⚡ OPTIMIZATION: Parallel allocation updates
+      await Promise.all([
+        // Delete old allocations
+        tx.refund_allocations.deleteMany({
+          where: { refund_id: refundId }
+        }),
+        // Create new allocations - using createMany for bulk insert
+        tx.refund_allocations.createMany({
+          data: allocations.map((alloc: any) => ({
+            refund_id: refundId,
+            return_id: alloc.return_id,
+            allocated_amount: alloc.allocated_amount,
+            allocation_date: refund_date,
+            notes: alloc.notes || null
+          }))
+        })
+      ]);
 
-      const createdAllocations = await Promise.all(
-        allocations.map((alloc: any) =>
-          tx.refund_allocations.create({
-            data: {
-              refund_id: refundId,
-              return_id: alloc.return_id,
-              allocated_amount: alloc.allocated_amount,
-              allocation_date: refund_date,
-              notes: alloc.notes || null
-            }
-          })
-        )
-      );
+      // 5. ⚡ OPTIMIZATION: Recalculate return statuses in parallel
+      const returnsToUpdate = handlerResult.metadata?.returnsToUpdate || [];
+      if (returnsToUpdate.length > 0) {
+        await Promise.all(
+          returnsToUpdate.map(returnId =>
+            require('../../../lib/payment-allocation-service').recalculatePurchaseReturnStatus(returnId, tx)
+          )
+        );
+      }
 
-      // 5. Recalculate return statuses (parallel)
-      await Promise.all(
-        handlerResult.returnsToUpdate.map(returnId =>
-          require('../../../lib/payment-allocation-service').recalculatePurchaseReturnStatus(returnId, tx)
-        )
-      );
-
-      // 6. Create ledger entry if amount changed (currently no-op, see handler)
-      for (const ledgerOp of handlerResult.ledgerOps) {
-        await ledgerService.createEntry(ledgerOp.entry, tx);
+      // 6. Create ledger entry if amount changed
+      if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+        for (const ledgerOp of handlerResult.ledgerOps) {
+          await ledgerService.createEntry(ledgerOp.entry, tx);
+        }
       }
 
       // 7. Update vendor balance
-      if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
+      const amountDiff = handlerResult.metadata?.amountDiff || 0;
+      const allocDiff = handlerResult.metadata?.allocDiff || 0;
+
+      if (amountDiff !== 0 || allocDiff !== 0) {
         await balanceHandler.incrementBalanceInTransaction(
           tx, 
           existingRefund.vendor_id, 
           {
-            total_refunded: handlerResult.amountDiff,
-            total_refund_allocated: handlerResult.allocDiff
+            total_refunded: amountDiff,
+            total_refund_allocated: allocDiff
           },
           {
             type: 'refund_edit',
             id: refundId,
             reference_no: `REF-${refundId}`,
-            notes: `Refund edited: amount ${handlerResult.amountDiff !== 0 ? `₹${handlerResult.amountDiff > 0 ? '+' : ''}${handlerResult.amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${handlerResult.allocDiff !== 0 ? `₹${handlerResult.allocDiff > 0 ? '+' : ''}${handlerResult.allocDiff.toFixed(2)}` : 'unchanged'}`
+            notes: `Refund edited: amount ${amountDiff !== 0 ? `₹${amountDiff > 0 ? '+' : ''}${amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${allocDiff !== 0 ? `₹${allocDiff > 0 ? '+' : ''}${allocDiff.toFixed(2)}` : 'unchanged'}`
           }
         );
       }
 
       return {
         refund: updatedRefund,
-        allocations: createdAllocations
+        allocations: allocations
       };
     }, {
       timeout: 45000
@@ -309,8 +321,7 @@ async function handleUpdateRefund(
 
 /**
  * DELETE /api/vendor-refunds/[id]
- * Delete a vendor refund and reverse all operations (POST reversal)
- * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ * Delete a vendor refund and reverse all operations
  */
 async function handleDeleteRefund(
   req: NextApiRequest,

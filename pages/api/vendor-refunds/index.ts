@@ -103,78 +103,88 @@ async function handleCreateRefund(
         }
       });
 
-      // 2. Create allocations and update return status
-      const createdAllocations = [];
-      for (const allocation of allocations) {
-        // Create allocation
-        const alloc = await tx.refund_allocations.create({
-          data: {
-            refund_id: refund.id,
-            return_id: allocation.return_id,
-            allocated_amount: allocation.allocated_amount,
-            allocation_date: refund_date,
-            notes: allocation.notes || null
-          }
-        });
-        createdAllocations.push(alloc);
+      // 2. ⚡ OPTIMIZED: Parallel allocation processing
+      // Create all allocations at once
+      await tx.refund_allocations.createMany({
+        data: allocations.map(a => ({
+          refund_id: refund.id,
+          return_id: a.return_id,
+          allocated_amount: a.allocated_amount,
+          allocation_date: refund_date,
+          notes: a.notes || null
+        }))
+      });
 
-        // Get return details
-        const purchaseReturn = await tx.purchase_returns.findUnique({
-          where: { id: allocation.return_id },
-          select: {
-            debit_note_no: true,
-            total_amount: true,
-            total_tax: true,
-            refund_amount: true
-          }
-        });
-
-        // Calculate total refunded for this return (using tx client)
-        const totalRefunded = await tx.refund_allocations.aggregate({
-          where: { return_id: allocation.return_id },
+      // Batch fetch all affected returns and current allocations
+      const returnIds = allocations.map(a => a.return_id);
+      const [purchaseReturns, allocSums] = await Promise.all([
+        tx.purchase_returns.findMany({
+          where: { id: { in: returnIds } },
+          select: { id: true, debit_note_no: true, total_amount: true, total_tax: true, refund_amount: true }
+        }),
+        tx.refund_allocations.groupBy({
+          by: ['return_id'],
+          where: { return_id: { in: returnIds } },
           _sum: { allocated_amount: true }
-        });
+        })
+      ]);
 
-        const totalRefundedAmount = Number(totalRefunded._sum.allocated_amount || 0);
-        const totalReturnAmount = purchaseReturn?.refund_amount || (purchaseReturn ? purchaseReturn.total_amount + purchaseReturn.total_tax : 0);
+      // Build lookup maps for O(1) access
+      const returnMap = new Map(purchaseReturns.map(r => [r.id, r]));
+      const allocMap = new Map(allocSums.map(a => [a.return_id, Number(a._sum.allocated_amount || 0)]));
 
-        // Calculate new status
-        let newStatus = 0; // Unpaid
-        if (totalRefundedAmount >= totalReturnAmount - 0.01) {
-          newStatus = 1; // Fully refunded
-        } else if (totalRefundedAmount > 0) {
-          newStatus = 2; // Partially refunded
-        }
-
-        // Update return refund status
-        await tx.purchase_returns.update({
-          where: { id: allocation.return_id },
-          data: { payment_status: newStatus }
-        });
-
-        // Create ledger entry for this allocation (INSIDE TRANSACTION)
-        // ✅ Use custom notes if provided, otherwise use auto-generated notes
-        const ledgerNotes = notes?.trim() 
-          ? notes 
-          : `Refund received ₹${allocation.allocated_amount} for return ${purchaseReturn?.debit_note_no} via Refund #${refund.id}${newStatus === 2 ? ' (Partial)' : ''}`;
+      // Calculate statuses for all returns
+      const statusUpdates = allocations.map(allocation => {
+        const purchaseReturn = returnMap.get(allocation.return_id)!;
+        const totalRefundedAmount = allocMap.get(allocation.return_id) || 0;
+        const totalReturnAmount = purchaseReturn.refund_amount || (purchaseReturn.total_amount + purchaseReturn.total_tax);
         
-        await ledgerService.createEntry({
-          vendor_id: vendorId,
-          transaction_date: refund_date,
-          transaction_type: 'REFUND_RECEIVED',
-          reference_type: 'purchase_return',
-          reference_id: allocation.return_id,
-          reference_no: purchaseReturn?.debit_note_no || undefined,
-          payment_mode: refund_mode,
-          payment_status: newStatus,
-          payment_date: refund_date,
-          debit: allocation.allocated_amount,
-          credit: 0,
-          notes: ledgerNotes,
-          fy: financialYear,
-          transaction_id: refund.id  // ✅ NEW: Store refund ID for deletion tracking
-        }, tx);
-      }
+        const newStatus = totalRefundedAmount >= Number(totalReturnAmount) - 0.01 ? 1 : 
+          totalRefundedAmount > 0 ? 2 : 0;
+        
+        return {
+          returnId: allocation.return_id,
+          status: newStatus,
+          purchaseReturn,
+          allocation
+        };
+      });
+
+      // Execute all updates and ledger entries in parallel
+      await Promise.all([
+        // Update all return statuses
+        ...statusUpdates.map(u => 
+          tx.purchase_returns.update({
+            where: { id: u.returnId },
+            data: { payment_status: u.status }
+          })
+        ),
+        // Create all ledger entries
+        ...statusUpdates.map(u => {
+          const ledgerNotes = notes?.trim() 
+            ? notes 
+            : `Refund received ₹${u.allocation.allocated_amount} for return ${u.purchaseReturn.debit_note_no} via Refund #${refund.id}${u.status === 2 ? ' (Partial)' : ''}`;
+          
+          return ledgerService.createEntry({
+            vendor_id: vendorId,
+            transaction_date: refund_date,
+            transaction_type: 'REFUND_RECEIVED',
+            reference_type: 'purchase_return',
+            reference_id: u.allocation.return_id,
+            reference_no: u.purchaseReturn.debit_note_no || undefined,
+            payment_mode: refund_mode,
+            payment_status: u.status,
+            payment_date: refund_date,
+            debit: u.allocation.allocated_amount,
+            credit: 0,
+            notes: ledgerNotes,
+            fy: financialYear,
+            transaction_id: refund.id
+          }, tx);
+        })
+      ]);
+
+      const createdAllocations = allocations; // For response compatibility
 
       // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (refund_type === 'DIRECT') {

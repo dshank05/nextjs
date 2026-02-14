@@ -112,78 +112,88 @@ async function handleCreatePayment(
         }
       });
 
-      // 2. Create allocations and update purchase status
-      const createdAllocations = [];
-      for (const allocation of allocations) {
-        // Create allocation
-        const alloc = await tx.payment_allocations.create({
-          data: {
-            payment_id: payment.id,
-            purchase_id: allocation.purchase_id,
-            allocated_amount: allocation.allocated_amount,
-            allocation_date: paymentTimestamp,  // ✅ Use converted timestamp
-            notes: allocation.notes || null
-          }
-        });
-        createdAllocations.push(alloc);
+      // 2. ⚡ OPTIMIZED: Parallel allocation processing
+      // Create all allocations at once
+      await tx.payment_allocations.createMany({
+        data: allocations.map(a => ({
+          payment_id: payment.id,
+          purchase_id: a.purchase_id,
+          allocated_amount: a.allocated_amount,
+          allocation_date: paymentTimestamp,
+          notes: a.notes || null
+        }))
+      });
 
-        // Calculate payment status within transaction context
-        const purchase = await tx.purchase.findUnique({
-          where: { id: allocation.purchase_id },
-          select: {
-            invoice_no: true,
-            total: true
-          }
-        });
-
-        // Get total allocated to this purchase (including this new allocation)
-        const allocationsSum = await tx.payment_allocations.aggregate({
-          where: { purchase_id: allocation.purchase_id },
+      // Batch fetch all affected purchases and current allocations
+      const purchaseIds = allocations.map(a => a.purchase_id);
+      const [purchases, allocSums] = await Promise.all([
+        tx.purchase.findMany({
+          where: { id: { in: purchaseIds } },
+          select: { id: true, invoice_no: true, total: true }
+        }),
+        tx.payment_allocations.groupBy({
+          by: ['purchase_id'],
+          where: { purchase_id: { in: purchaseIds } },
           _sum: { allocated_amount: true }
-        });
+        })
+      ]);
 
-        const totalPaid = Number(allocationsSum._sum.allocated_amount || 0);
-        const totalBill = Number(purchase?.total || 0);
+      // Build lookup maps for O(1) access
+      const purchaseMap = new Map(purchases.map(p => [p.id, p]));
+      const allocMap = new Map(allocSums.map(a => [a.purchase_id, Number(a._sum.allocated_amount || 0)]));
 
-        // Calculate new status
-        let newStatus = 0;
-        if (totalPaid === 0) {
-          newStatus = 0; // Unpaid
-        } else if (totalPaid >= totalBill) {
-          newStatus = 1; // Fully Paid
-        } else {
-          newStatus = 2; // Partially Paid
-        }
-
-        // Update purchase payment status
-        await tx.purchase.update({
-          where: { id: allocation.purchase_id },
-          data: { payment_status: newStatus }
-        });
-
-        // Create ledger entry for this allocation (INSIDE TRANSACTION)
-        // ✅ Use custom notes if provided, otherwise use auto-generated notes
-        const ledgerNotes = notes?.trim() 
-          ? notes 
-          : `Payment ₹${allocation.allocated_amount} for bill INV-${purchase?.invoice_no} via Payment #${payment.id}${newStatus === 2 ? ' (Partial)' : ''}`;
+      // Calculate statuses for all purchases
+      const statusUpdates = allocations.map(allocation => {
+        const purchase = purchaseMap.get(allocation.purchase_id)!;
+        const totalPaid = allocMap.get(allocation.purchase_id) || 0;
+        const totalBill = Number(purchase.total);
         
-        await ledgerService.createEntry({
-          vendor_id: vendorId,
-          transaction_date: paymentTimestamp,  // ✅ Use converted timestamp
-          transaction_type: 'PAYMENT',
-          reference_type: 'purchase',
-          reference_id: allocation.purchase_id,
-          reference_no: purchase?.invoice_no.toString(),
-          payment_mode,
-          payment_status: newStatus,
-          payment_date: paymentTimestamp,  // ✅ Use converted timestamp
-          debit: 0,
-          credit: allocation.allocated_amount,
-          notes: ledgerNotes,
-          fy: financialYear,
-          transaction_id: payment.id  // ✅ NEW: Store payment ID for deletion tracking
-        }, tx);
-      }
+        const newStatus = totalPaid === 0 ? 0 : 
+          totalPaid >= totalBill ? 1 : 2;
+        
+        return {
+          purchaseId: allocation.purchase_id,
+          status: newStatus,
+          purchase,
+          allocation
+        };
+      });
+
+      // Execute all updates and ledger entries in parallel
+      await Promise.all([
+        // Update all purchase statuses
+        ...statusUpdates.map(u => 
+          tx.purchase.update({
+            where: { id: u.purchaseId },
+            data: { payment_status: u.status }
+          })
+        ),
+        // Create all ledger entries
+        ...statusUpdates.map(u => {
+          const ledgerNotes = notes?.trim() 
+            ? notes 
+            : `Payment ₹${u.allocation.allocated_amount} for bill INV-${u.purchase.invoice_no} via Payment #${payment.id}${u.status === 2 ? ' (Partial)' : ''}`;
+          
+          return ledgerService.createEntry({
+            vendor_id: vendorId,
+            transaction_date: paymentTimestamp,
+            transaction_type: 'PAYMENT',
+            reference_type: 'purchase',
+            reference_id: u.allocation.purchase_id,
+            reference_no: u.purchase.invoice_no.toString(),
+            payment_mode,
+            payment_status: u.status,
+            payment_date: paymentTimestamp,
+            debit: 0,
+            credit: u.allocation.allocated_amount,
+            notes: ledgerNotes,
+            fy: financialYear,
+            transaction_id: payment.id
+          }, tx);
+        })
+      ]);
+
+      const createdAllocations = allocations; // For response compatibility
 
       // ✅ CREATE LEDGER ENTRIES FOR DIRECT/MIXED UNALLOCATED AMOUNTS
       if (payment_type === 'DIRECT') {

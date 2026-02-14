@@ -145,7 +145,7 @@ async function handleGetPayment(
 /**
  * PUT /api/vendor-payments/[id]
  * Update an existing vendor payment
- * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ * ⚡ OPTIMIZED: Queries moved outside transaction
  */
 async function handleUpdatePayment(
   req: NextApiRequest,
@@ -176,41 +176,44 @@ async function handleUpdatePayment(
 
     const paymentId = parseInt(id as string);
 
+    // ⚡ OPTIMIZATION: Fetch existing payment BEFORE transaction
+    const existingPayment = await prisma.vendor_payments.findUnique({
+      where: { id: paymentId },
+      include: {
+        allocations: true
+      }
+    });
+
+    if (!existingPayment) {
+      return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
+    const handlerParams = {
+      paymentId,
+      vendorId: existingPayment.vendor_id,
+      oldAmount: Number(existingPayment.payment_amount),
+      newAmount: Number(payment_amount),
+      oldAllocations: existingPayment.allocations.map(a => ({
+        purchase_id: a.purchase_id,
+        allocated_amount: Number(a.allocated_amount)
+      })),
+      newAllocations: allocations.map((a: any) => ({
+        purchase_id: a.purchase_id,
+        allocated_amount: Number(a.allocated_amount)
+      })),
+      paymentMode: payment_mode,
+      paymentDate: payment_date,
+      paymentType: payment_type,
+      fy: existingPayment.fy
+    };
+
     // Update payment in transaction
     const result = await prisma.$transaction(async (tx) => {
-      // 1. Fetch existing payment with allocations
-      const existingPayment = await tx.vendor_payments.findUnique({
-        where: { id: paymentId },
-        include: {
-          allocations: true
-        }
-      });
+      // 1. Calculate what needs to change using pre-fetched data
+      const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorPaymentEdit(handlerParams);
 
-      if (!existingPayment) {
-        throw new Error('Payment not found');
-      }
-
-      // 2. Use transaction handler to calculate what needs to change
-      const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorPaymentEdit({
-        paymentId,
-        vendorId: existingPayment.vendor_id,
-        oldAmount: Number(existingPayment.payment_amount),
-        newAmount: Number(payment_amount),
-        oldAllocations: existingPayment.allocations.map(a => ({
-          purchase_id: a.purchase_id,
-          allocated_amount: Number(a.allocated_amount)
-        })),
-        newAllocations: allocations.map((a: any) => ({
-          purchase_id: a.purchase_id,
-          allocated_amount: Number(a.allocated_amount)
-        })),
-        paymentMode: payment_mode,
-        paymentDate: payment_date,
-        paymentType: payment_type,
-        fy: existingPayment.fy
-      });
-
-      // 3. Update payment record
+      // 2. Update payment record
       const updatedPayment = await tx.vendor_payments.update({
         where: { id: paymentId },
         data: {
@@ -222,13 +225,13 @@ async function handleUpdatePayment(
         }
       });
 
-      // ✅ Issue 5 FIX: If payment_date changed, sync all related ledger entries
+      // 3. If payment_date changed, sync all related ledger entries
       if (existingPayment.payment_date !== payment_date) {
         await tx.vendor_ledger.updateMany({
           where: {
-          transaction_id: paymentId,
-          transaction_type: 'PAYMENT'  // No more PAYMENT_ADJUSTMENT
-        },
+            transaction_id: paymentId,
+            transaction_type: 'PAYMENT'
+          },
           data: {
             transaction_date: payment_date,
             payment_date: payment_date
@@ -236,35 +239,34 @@ async function handleUpdatePayment(
         });
       }
 
-      // 4. Delete old allocations & create new ones (parallel)
-      await tx.payment_allocations.deleteMany({
-        where: { payment_id: paymentId }
-      });
+      // 4. ⚡ OPTIMIZATION: Parallel allocation updates
+      await Promise.all([
+        // Delete old allocations
+        tx.payment_allocations.deleteMany({
+          where: { payment_id: paymentId }
+        }),
+        // Create new allocations - using createMany for bulk insert
+        tx.payment_allocations.createMany({
+          data: allocations.map((alloc: any) => ({
+            payment_id: paymentId,
+            purchase_id: alloc.purchase_id,
+            allocated_amount: alloc.allocated_amount,
+            allocation_date: payment_date,
+            notes: alloc.notes || null
+          }))
+        })
+      ]);
 
-      const createdAllocations = await Promise.all(
-        allocations.map((alloc: any) =>
-          tx.payment_allocations.create({
-            data: {
-              payment_id: paymentId,
-              purchase_id: alloc.purchase_id,
-              allocated_amount: alloc.allocated_amount,
-              allocation_date: payment_date,
-              notes: alloc.notes || null
-            }
-          })
-        )
-      );
-
-      // 5. Recalculate purchase statuses (parallel) - with safety check
-      if (handlerResult.purchasesToUpdate && handlerResult.purchasesToUpdate.length > 0) {
+      // 5. ⚡ OPTIMIZATION: Recalculate purchase statuses in parallel
+      if (handlerResult.metadata?.purchasesToUpdate && handlerResult.metadata.purchasesToUpdate.length > 0) {
         await Promise.all(
-          handlerResult.purchasesToUpdate.map(purchaseId =>
+          handlerResult.metadata.purchasesToUpdate.map(purchaseId =>
             require('../../../lib/payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
           )
         );
       }
 
-      // 6. Create ledger entry if amount changed - with safety check
+      // 6. Create ledger entry if amount changed
       if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
         for (const ledgerOp of handlerResult.ledgerOps) {
           await ledgerService.createEntry(ledgerOp.entry, tx);
@@ -272,26 +274,29 @@ async function handleUpdatePayment(
       }
 
       // 7. Update vendor balance
-      if (handlerResult.amountDiff !== 0 || handlerResult.allocDiff !== 0) {
+      const amountDiff = handlerResult.metadata?.amountDiff || 0;
+      const allocDiff = handlerResult.metadata?.allocDiff || 0;
+
+      if (amountDiff !== 0 || allocDiff !== 0) {
         await balanceHandler.incrementBalanceInTransaction(
           tx, 
           existingPayment.vendor_id, 
           {
-            total_paid: handlerResult.amountDiff,
-            total_allocated: handlerResult.allocDiff
+            total_paid: amountDiff,
+            total_allocated: allocDiff
           },
           {
             type: 'payment_edit',
             id: paymentId,
             reference_no: `PAY-${paymentId}`,
-            notes: `Payment edited: amount ${handlerResult.amountDiff !== 0 ? `₹${handlerResult.amountDiff > 0 ? '+' : ''}${handlerResult.amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${handlerResult.allocDiff !== 0 ? `₹${handlerResult.allocDiff > 0 ? '+' : ''}${handlerResult.allocDiff.toFixed(2)}` : 'unchanged'}`
+            notes: `Payment edited: amount ${amountDiff !== 0 ? `₹${amountDiff > 0 ? '+' : ''}${amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${allocDiff !== 0 ? `₹${allocDiff > 0 ? '+' : ''}${allocDiff.toFixed(2)}` : 'unchanged'}`
           }
         );
       }
 
       return {
         payment: updatedPayment,
-        allocations: createdAllocations
+        allocations: allocations
       };
     }, {
       timeout: 45000
@@ -313,8 +318,7 @@ async function handleUpdatePayment(
 
 /**
  * DELETE /api/vendor-payments/[id]
- * Delete a vendor payment and reverse all operations (POST reversal)
- * REFACTORED: Now uses transaction-handler for clean, maintainable code
+ * Delete a vendor payment and reverse all operations
  */
 async function handleDeletePayment(
   req: NextApiRequest,

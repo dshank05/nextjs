@@ -2,7 +2,7 @@ export type BalanceColumn = 'total_paid' | 'total_allocated' | 'total_refunded' 
 
 export type SourceType = 
   | 'purchase_create' | 'purchase_edit' | 'purchase_delete'
-  | 'return_edit' | 'return_delete'
+  | 'return_create' | 'return_edit' | 'return_delete'
   | 'payment_create' | 'payment_edit' | 'payment_delete'
   | 'refund_create' | 'refund_edit' | 'refund_delete';
 

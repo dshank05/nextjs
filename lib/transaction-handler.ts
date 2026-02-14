@@ -27,6 +27,11 @@ export interface TransactionResult {
     entityId?: number;
     referenceNo?: string;
   };
+  metadata?: {                            // ✅ NEW: Additional metadata for specific operations
+    amountDiff?: number;
+    allocDiff?: number;
+    purchasesToUpdate?: number[];
+  };
 }
 
 export interface DeleteOperation {
@@ -259,7 +264,12 @@ export class TransactionHandler {
       ledgerUpdates,
       ledgerDeletes: [],
       balanceOp,
-      allocationChanges: []  // Handled separately in API
+      allocationChanges: [],  // Handled separately in API
+      metadata: {
+        amountDiff,
+        allocDiff,
+        purchasesToUpdate
+      }
     };
   }
   
@@ -1035,7 +1045,8 @@ export class TransactionHandler {
         type: 'BALANCE_UPDATE',
         data: {
           vendorId: params.vendorId,
-          paymentStatus: params.paymentStatus
+          paymentStatus: params.paymentStatus,
+          returnId: params.returnId  // ✅ FIX: Add returnId
         },
         parallel: false
       });
@@ -1107,7 +1118,8 @@ export class TransactionHandler {
       data: {
         vendorId: params.vendorId,
         paymentAmount: params.paymentAmount,
-        paymentType: params.paymentType
+        paymentType: params.paymentType,
+        paymentId: params.paymentId  // ✅ FIX: Add paymentId
       },
       parallel: false
     });
@@ -1178,7 +1190,8 @@ export class TransactionHandler {
       data: {
         vendorId: params.vendorId,
         refundAmount: params.refundAmount,
-        refundType: params.refundType
+        refundType: params.refundType,
+        refundId: params.refundId  // ✅ FIX: Add refundId
       },
       parallel: false
     });
@@ -1568,8 +1581,8 @@ export class TransactionHandler {
         },
         {
           type: 'payment_delete',
-          id: context.paymentId || 0,
-          reference_no: `PAY-${context.paymentId || '?'}`,
+          id: data.paymentId || 0,  // ✅ FIX: Use data.paymentId instead of context
+          reference_no: `PAY-${data.paymentId || '?'}`,
           notes: `Payment deleted: ₹${data.paymentAmount}`
         }
       );
@@ -1590,8 +1603,8 @@ export class TransactionHandler {
         },
         {
           type: 'refund_delete',
-          id: context.refundId || 0,
-          reference_no: `REF-${context.refundId || '?'}`,
+          id: data.refundId || 0,  // ✅ FIX: Use data.refundId instead of context
+          reference_no: `REF-${data.refundId || '?'}`,
           notes: `Refund deleted: ₹${data.refundAmount}`
         }
       );
@@ -1622,8 +1635,8 @@ export class TransactionHandler {
         },
         {
           type: 'return_delete',
-          id: context.returnId || 0,
-          reference_no: `DN-${context.debitNoteNo || '?'}`,
+          id: data.returnId || 0,  // ✅ FIX: Use data.returnId instead of context
+          reference_no: `DN-${data.returnId || '?'}`,
           notes: `Return deleted: deallocated ₹${context.totalRefunded}`
         }
       );
