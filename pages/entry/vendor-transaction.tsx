@@ -6,7 +6,36 @@ import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
-import useLocalStorageState from 'use-local-storage-state'
+
+// ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
+function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+
+  // Hydration fix: Read from sessionStorage only after component mounts
+  useEffect(() => {
+    try {
+      const item = window.sessionStorage.getItem(key);
+      if (item) {
+        setStoredValue(JSON.parse(item));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }, [key]);
+
+  const setValue = (value: T) => {
+    try {
+      setStoredValue(value);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
 
 interface OutstandingBill {
   purchase_id: number
@@ -46,14 +75,12 @@ export default function VendorTransactionEntry() {
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
-  const [selectedVendor, setSelectedVendor] = useLocalStorageState<string>('vendor-transaction-vendor', {
-    defaultValue: ''
-  })
+  const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-transaction-vendor', '')
   const [operationType, setOperationType] = useState<OperationType>('')
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for EXPENSE
   const [outstandingBills, setOutstandingBills] = useState<OutstandingBill[]>([])
   const [outstandingReturns, setOutstandingReturns] = useState<OutstandingReturn[]>([])
-  const [date, setDate] = useState<string>(getLocalDateString())
+  const [date, setDate] = useSessionStorage<string>('vendor-transaction-date', getLocalDateString())
   const [mode, setMode] = useState<number>(1)
   const [amount, setAmount] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
@@ -73,16 +100,6 @@ export default function VendorTransactionEntry() {
       fetchTransactionForEdit(edit as string, type as string)
     }
   }, [edit, type, isEditMode])
-
-  // Clear localStorage when component unmounts (user navigates away)
-  useEffect(() => {
-    return () => {
-      // Cleanup: Clear localStorage when leaving page
-      if (typeof window !== 'undefined') {
-        localStorage.removeItem('vendor-transaction-vendor')
-      }
-    }
-  }, [])
 
   useEffect(() => {
     // Skip if initializing (during edit load)
@@ -630,11 +647,6 @@ export default function VendorTransactionEntry() {
         const transactionType = operationType === 'EXPENSE' ? 'Payment' : 'Refund'
         const action = isEditMode ? 'updated' : 'recorded'
         showSnackbar('success', `${transactionType} ${action} successfully!`)
-        
-        // Clear localStorage after successful transaction to start fresh next time
-        if (typeof window !== 'undefined') {
-          localStorage.removeItem('vendor-transaction-vendor')
-        }
         
         // Extract transaction ID from response
         const createdId = isEditMode ? transactionId : (data.data?.payment?.id || data.data?.refund?.id)

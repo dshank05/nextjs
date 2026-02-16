@@ -269,11 +269,48 @@ async function handleUpdateRefund(
         );
       }
 
-      // 6. Create ledger entry if amount changed
-      if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+      // 6. Execute ledger operations (UPDATE existing or CREATE new)
+      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
+        console.log('[REFUND EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length);
+        for (const update of handlerResult.ledgerUpdates) {
+          console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
+          
+          const entries = await tx.vendor_ledger.findMany({
+            where: update.where,
+            select: { id: true, vendor_id: true }
+          });
+          
+          if (entries.length === 0) {
+            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
+            continue;
+          }
+          
+          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`);
+          
+          await tx.vendor_ledger.updateMany({
+            where: update.where,
+            data: update.data
+          });
+          
+          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`);
+          
+          const firstEntry = entries[0];
+          await ledgerService.recalculateBalancesAfter(
+            firstEntry.vendor_id,
+            firstEntry.id,
+            tx
+          );
+          
+          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`);
+        }
+      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+        console.log('[REFUND EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length);
         for (const ledgerOp of handlerResult.ledgerOps) {
           await ledgerService.createEntry(ledgerOp.entry, tx);
         }
+        console.log('[REFUND EDIT] Ledger entries created');
+      } else {
+        console.log('[REFUND EDIT] No ledger operations to execute');
       }
 
       // 7. Update vendor balance

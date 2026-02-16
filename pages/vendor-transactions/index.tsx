@@ -79,8 +79,8 @@ export default function VendorTransactionsPage() {
   // Filters
   const [vendors, setVendors] = useState<any[]>([])
   const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-transactions-vendor', '')
-  const [dateFrom, setDateFrom] = useState<string>('')
-  const [dateTo, setDateTo] = useState<string>('')
+  const [dateFrom, setDateFrom] = useSessionStorage<string>('vendor-transactions-dateFrom', '')
+  const [dateTo, setDateTo] = useSessionStorage<string>('vendor-transactions-dateTo', '')
   const [paymentMode, setPaymentMode] = useState<string>('')
   const [paymentType, setPaymentType] = useState<string>('')
   const [transactionType, setTransactionType] = useState<TransactionType>('all')
@@ -89,14 +89,17 @@ export default function VendorTransactionsPage() {
   const [sortBy, setSortBy] = useState<SortField>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
 
-  // Initialize with current month date range
+  // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
-    const now = new Date()
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    // ✅ Only set defaults if no stored dates exist
+    if (!dateFrom && !dateTo) {
+      const now = new Date()
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-    setDateFrom(formatStartDateForAPI(firstDay))
-    setDateTo(formatEndDateForAPI(lastDay))
+      setDateFrom(formatStartDateForAPI(firstDay))
+      setDateTo(formatEndDateForAPI(lastDay))
+    }
 
     fetchVendors()
   }, [])

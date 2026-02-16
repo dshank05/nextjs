@@ -127,7 +127,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
           break
         case 'REFUND_RECEIVED':
           particulars = entry.paymentMode === 0 ? 'Cash' : 'Bank'
-          voucherType = 'Refund'
+          voucherType = 'Receipt'
           break
         default:
           particulars = baseType.replace(/_/g, ' ')
@@ -184,7 +184,7 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
             break
           case 'REFUND_RECEIVED':
             particulars = baseTransaction.paymentMode === 0 ? 'Cash' : 'Bank'
-            voucherType = 'Refund'
+            voucherType = 'Receipt'
             break
           default:
             particulars = baseType.replace(/_/g, ' ')

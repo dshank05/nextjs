@@ -1307,23 +1307,31 @@ export class TransactionHandler {
         where: { purchase_id: data.entityId }
       });
       
-      // ✅ FIX: Delete vendor_payments records (they were auto-created with purchase)
-      // Clean approach: "Delete is the reverse of create"
       const paymentIds = Array.from(new Set(allocations.map(a => a.payment_id)));
       for (const paymentId of paymentIds) {
-        // Only delete if no other allocations exist for this payment
         const remainingAllocs = await tx.payment_allocations.count({
           where: { payment_id: paymentId }
         });
         
         if (remainingAllocs === 0) {
-          await tx.vendor_payments.delete({ where: { id: paymentId } });
+          const payment = await tx.vendor_payments.findUnique({
+            where: { id: paymentId },
+            select: { payment_type: true, payment_amount: true }
+          });
+          
+          if (payment?.payment_type === 'BILL_SPECIFIC') {
+            await tx.vendor_payments.delete({ where: { id: paymentId } });
+          } else if (payment?.payment_type === 'MIXED') {
+            await tx.vendor_payments.update({
+              where: { id: paymentId },
+              data: { payment_type: 'DIRECT' }
+            });
+          }
         }
       }
       
-      // Store for balance update
       data.totalPaid = totalPaid;
-      context.totalPaid = totalPaid; // ✅ FIX: Share with BALANCE_UPDATE operation
+      context.totalPaid = totalPaid;
       
     } else if (data.entityType === 'return') {
       const allocations = await tx.refund_allocations.findMany({

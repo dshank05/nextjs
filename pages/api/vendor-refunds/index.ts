@@ -8,7 +8,7 @@ import {
 } from '../../../lib/payment-allocation-service';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
-import { parseDateRange } from '../../../lib/date-utils';
+import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
 
 const prisma = new PrismaClient();
 
@@ -88,13 +88,16 @@ async function handleCreateRefund(
       financialYear = firstReturn?.fy;
     }
 
+    // ✅ FIX: Convert refund_date using date-utils to ensure consistent timezone handling
+    const refundTimestamp = convertDateToTimestamp(refund_date);
+
     // Create refund and allocations in a transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Create refund record
       const refund = await tx.vendor_refunds.create({
         data: {
           vendor_id: parseInt(vendor_id),
-          refund_date,
+          refund_date: refundTimestamp,  // ✅ Use converted timestamp
           refund_amount,
           refund_mode,
           refund_type,
@@ -110,7 +113,7 @@ async function handleCreateRefund(
           refund_id: refund.id,
           return_id: a.return_id,
           allocated_amount: a.allocated_amount,
-          allocation_date: refund_date,
+          allocation_date: refundTimestamp,  // ✅ Use converted timestamp
           notes: a.notes || null
         }))
       });
@@ -167,14 +170,14 @@ async function handleCreateRefund(
           
           return ledgerService.createEntry({
             vendor_id: vendorId,
-            transaction_date: refund_date,
+            transaction_date: refundTimestamp,  // ✅ Use converted timestamp
             transaction_type: 'REFUND_RECEIVED',
             reference_type: 'purchase_return',
             reference_id: u.allocation.return_id,
             reference_no: u.purchaseReturn.debit_note_no || undefined,
             payment_mode: refund_mode,
             payment_status: u.status,
-            payment_date: refund_date,
+            payment_date: refundTimestamp,  // ✅ Use converted timestamp
             debit: u.allocation.allocated_amount,
             credit: 0,
             notes: ledgerNotes,
@@ -196,13 +199,13 @@ async function handleCreateRefund(
         
         await ledgerService.createEntry({
           vendor_id: vendorId,
-          transaction_date: refund_date,
+          transaction_date: refundTimestamp,  // ✅ Use converted timestamp
           transaction_type: 'REFUND_RECEIVED',
           reference_type: 'payment',  // ✅ FIX: Use 'payment' so merge works
           reference_id: refund.id,     // ✅ FIX: Use refund ID
           reference_no: refund.id.toString(),
           payment_mode: refund_mode,
-          payment_date: refund_date,
+          payment_date: refundTimestamp,  // ✅ Use converted timestamp
           debit: refund_amount,
           credit: 0,
           notes: directLedgerNotes,
@@ -231,13 +234,13 @@ async function handleCreateRefund(
         if (refund_type === 'MIXED' && unallocatedAmount > 0) {
           await ledgerService.createEntry({
             vendor_id: vendorId,
-            transaction_date: refund_date,
+            transaction_date: refundTimestamp,  // ✅ Use converted timestamp
             transaction_type: 'REFUND_RECEIVED',
             reference_type: 'payment',  // ✅ FIX: Use 'payment' so merge works
             reference_id: refund.id,     // ✅ FIX: Use refund ID
             reference_no: refund.id.toString(),
             payment_mode: refund_mode,
-            payment_date: refund_date,
+            payment_date: refundTimestamp,  // ✅ Use converted timestamp
             debit: unallocatedAmount,
             credit: 0,
             notes: `Unallocated refund received ₹${unallocatedAmount} (from Refund #${refund.id})`,

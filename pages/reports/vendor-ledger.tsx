@@ -89,14 +89,17 @@ export default function VendorLedgerPage() {
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editedNote, setEditedNote] = useState<string>('');
 
-  // Set default dates to current month on mount
+  // Set default dates to current month on mount (only if no stored dates)
   useEffect(() => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    
-    setDateFrom(formatStartDateForAPI(firstDay));
-    setDateTo(formatEndDateForAPI(lastDay));
+    // ✅ Only set defaults if no stored dates exist
+    if (!dateFrom && !dateTo) {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      setDateFrom(formatStartDateForAPI(firstDay));
+      setDateTo(formatEndDateForAPI(lastDay));
+    }
   }, []);
 
   // Fetch vendors on mount
@@ -356,31 +359,33 @@ export default function VendorLedgerPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Particulars</th>
-                  <th>Voucher Type</th>
-                  <th>Voucher No</th>
-                  <th className="text-right">Debit (₹)</th>
-                  <th className="text-right">Credit (₹)</th>
-                  <th className="text-right">Balance (₹)</th>
-                  <th>Notes</th>
+                  <th className="text-center">Date</th>
+                  <th className="text-center">Particulars</th>
+                  <th className="text-center">Voucher Type</th>
+                  <th className="text-center">Voucher No</th>
+                  <th className="text-center">Debit (₹)</th>
+                  <th className="text-center">Credit (₹)</th>
+                  <th className="text-center">Balance (₹)</th>
+                  <th className="text-center">Notes</th>
                 </tr>
               </thead>
               <tbody>
                 {accountingEntries.map((entry) => (
                   <tr key={entry.id}>
-                    <td className="text-slate-300">{entry.formattedDate}</td>
-                    <td className="text-slate-300">{entry.particulars}</td>
-                    <td className="text-slate-300">{entry.voucherType}</td>
-                    <td className="font-medium text-white">{entry.voucherNo}</td>
-                    <td className="text-right text-slate-300 font-semibold">
+                    <td className="text-center text-slate-300">{entry.formattedDate}</td>
+                    <td className="text-center text-slate-300">{entry.particulars}</td>
+                    <td className="text-center text-slate-300">{entry.voucherType}</td>
+                    <td className="text-center font-medium text-white">{entry.voucherNo}</td>
+                    <td className="text-center text-slate-300 font-semibold">
                       {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
-                    <td className="text-right text-slate-300 font-semibold">
+                    <td className="text-center text-slate-300 font-semibold">
                       {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
-                    <td className="text-right font-semibold text-slate-300">
-                      ₹{entry.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    <td className={`text-center font-semibold ${
+                      entry.balance < 0 ? 'text-red-400' : 'text-green-400'
+                    }`}>
+                      ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                     <td className="text-slate-300 text-sm">
                       {editingNoteId === entry.id ? (
@@ -522,7 +527,9 @@ export default function VendorLedgerPage() {
                 </div>
                 <div className="flex justify-between gap-8 pt-2 border-t border-slate-600">
                   <span className="text-white font-medium">Closing Balance:</span>
-                  <span className="font-bold text-lg text-white">
+                  <span className={`font-bold text-lg ${
+                    closingBalance < 0 ? 'text-red-400' : 'text-green-400'
+                  }`}>
                     ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>

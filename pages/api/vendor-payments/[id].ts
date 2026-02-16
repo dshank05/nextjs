@@ -211,9 +211,32 @@ async function handleUpdatePayment(
     // Update payment in transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Calculate what needs to change using pre-fetched data
+      console.log('[PAYMENT EDIT] Calling handleVendorPaymentEdit with params:', {
+        paymentId,
+        vendorId: handlerParams.vendorId,
+        oldAmount: handlerParams.oldAmount,
+        newAmount: handlerParams.newAmount,
+        oldAllocationsCount: handlerParams.oldAllocations.length,
+        newAllocationsCount: handlerParams.newAllocations.length
+      });
+      
       const handlerResult = await require('../../../lib/transaction-handler').transactionHandler.handleVendorPaymentEdit(handlerParams);
+      
+      console.log('[PAYMENT EDIT] Handler result:', {
+        ledgerOps: handlerResult.ledgerOps?.length || 0,
+        ledgerCreates: handlerResult.ledgerCreates?.length || 0,
+        ledgerUpdates: handlerResult.ledgerUpdates?.length || 0,
+        ledgerDeletes: handlerResult.ledgerDeletes?.length || 0,
+        balanceOp: handlerResult.balanceOp ? 'yes' : 'no',
+        metadata: handlerResult.metadata
+      });
+      
+      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
+        console.log('[PAYMENT EDIT] Ledger updates to execute:', JSON.stringify(handlerResult.ledgerUpdates, null, 2));
+      }
 
       // 2. Update payment record
+      console.log('[PAYMENT EDIT] Updating payment record...');
       const updatedPayment = await tx.vendor_payments.update({
         where: { id: paymentId },
         data: {
@@ -224,6 +247,7 @@ async function handleUpdatePayment(
           notes: notes || null
         }
       });
+      console.log('[PAYMENT EDIT] Payment record updated');
 
       // 3. If payment_date changed, sync all related ledger entries
       if (existingPayment.payment_date !== payment_date) {
@@ -259,23 +283,71 @@ async function handleUpdatePayment(
 
       // 5. ⚡ OPTIMIZATION: Recalculate purchase statuses in parallel
       if (handlerResult.metadata?.purchasesToUpdate && handlerResult.metadata.purchasesToUpdate.length > 0) {
+        console.log('[PAYMENT EDIT] Recalculating purchase statuses for:', handlerResult.metadata.purchasesToUpdate);
         await Promise.all(
           handlerResult.metadata.purchasesToUpdate.map(purchaseId =>
             require('../../../lib/payment-allocation-service').recalculatePurchaseStatus(purchaseId, tx)
           )
         );
+        console.log('[PAYMENT EDIT] Purchase statuses recalculated');
       }
 
-      // 6. Create ledger entry if amount changed
-      if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+      // 6. ✅ Execute ledger operations (UPDATE existing or CREATE new)
+      // For payment edits: Only UPDATES (modify existing PAYMENT ledger entry)
+      // For other operations: May have CREATES (new ledger entries)
+      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
+        console.log('[PAYMENT EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length);
+        for (const update of handlerResult.ledgerUpdates) {
+          console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
+          
+          // Get entries before update for balance recalculation
+          const entries = await tx.vendor_ledger.findMany({
+            where: update.where,
+            select: { id: true, vendor_id: true }
+          });
+          
+          if (entries.length === 0) {
+            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
+            continue;
+          }
+          
+          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`);
+          
+          // Execute UPDATE
+          await tx.vendor_ledger.updateMany({
+            where: update.where,
+            data: update.data
+          });
+          
+          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`);
+          
+          // Recalculate balances after update
+          const firstEntry = entries[0];
+          await ledgerService.recalculateBalancesAfter(
+            firstEntry.vendor_id,
+            firstEntry.id,
+            tx
+          );
+          
+          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`);
+        }
+      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
+        // Fallback: CREATE new entries (shouldn't happen for payment edits, but kept for safety)
+        console.log('[PAYMENT EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length);
         for (const ledgerOp of handlerResult.ledgerOps) {
           await ledgerService.createEntry(ledgerOp.entry, tx);
         }
+        console.log('[PAYMENT EDIT] Ledger entries created');
+      } else {
+        console.log('[PAYMENT EDIT] No ledger operations to execute');
       }
 
       // 7. Update vendor balance
+      console.log('[PAYMENT EDIT] Updating vendor balance...');
       const amountDiff = handlerResult.metadata?.amountDiff || 0;
       const allocDiff = handlerResult.metadata?.allocDiff || 0;
+
+      console.log('[PAYMENT EDIT] Balance update:', { amountDiff, allocDiff });
 
       if (amountDiff !== 0 || allocDiff !== 0) {
         await balanceHandler.incrementBalanceInTransaction(
@@ -292,7 +364,12 @@ async function handleUpdatePayment(
             notes: `Payment edited: amount ${amountDiff !== 0 ? `₹${amountDiff > 0 ? '+' : ''}${amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${allocDiff !== 0 ? `₹${allocDiff > 0 ? '+' : ''}${allocDiff.toFixed(2)}` : 'unchanged'}`
           }
         );
+        console.log('[PAYMENT EDIT] Vendor balance updated');
+      } else {
+        console.log('[PAYMENT EDIT] No balance update needed');
       }
+
+      console.log('[PAYMENT EDIT] ✅ Transaction complete');
 
       return {
         payment: updatedPayment,
