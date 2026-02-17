@@ -93,13 +93,31 @@ export default function VendorTransactionEntry() {
   const [transactionId, setTransactionId] = useState<number>(0)
   const [isInitializing, setIsInitializing] = useState(false)
 
+  // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
+    // ✅ Check sessionStorage directly to avoid overwriting saved values
+    const storedDate = sessionStorage.getItem('vendor-transaction-date');
+    
+    // ✅ Only set defaults if no values exist in sessionStorage
+    if (!storedDate && !date) {
+      setDate(getLocalDateString())
+    }
+
     fetchVendors()
     fetchCurrentFY()
     if (isEditMode && edit && type) {
       fetchTransactionForEdit(edit as string, type as string)
     }
-  }, [edit, type, isEditMode])
+  }, [edit, type, isEditMode]);
+  
+  // ✅ Cleanup sessionStorage on component unmount
+  useEffect(() => {
+    return () => {
+      // Clear all vendor-transaction sessionStorage keys when leaving page
+      sessionStorage.removeItem('vendor-transaction-vendor');
+      sessionStorage.removeItem('vendor-transaction-date');
+    };
+  }, []);
 
   useEffect(() => {
     // Skip if initializing (during edit load)

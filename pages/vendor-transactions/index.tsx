@@ -91,8 +91,12 @@ export default function VendorTransactionsPage() {
 
   // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
-    // ✅ Only set defaults if no stored dates exist
-    if (!dateFrom && !dateTo) {
+    // ✅ Check sessionStorage directly to avoid overwriting saved values
+    const storedDateFrom = sessionStorage.getItem('vendor-transactions-dateFrom');
+    const storedDateTo = sessionStorage.getItem('vendor-transactions-dateTo');
+    
+    // ✅ Only set defaults if no values exist in sessionStorage
+    if (!storedDateFrom && !storedDateTo && !dateFrom && !dateTo) {
       const now = new Date()
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
@@ -102,7 +106,17 @@ export default function VendorTransactionsPage() {
     }
 
     fetchVendors()
-  }, [])
+  }, []);
+  
+  // ✅ Cleanup sessionStorage on component unmount
+  useEffect(() => {
+    return () => {
+      // Clear all vendor-transactions sessionStorage keys when leaving page
+      sessionStorage.removeItem('vendor-transactions-vendor');
+      sessionStorage.removeItem('vendor-transactions-dateFrom');
+      sessionStorage.removeItem('vendor-transactions-dateTo');
+    };
+  }, []);
 
   // Only fetch transactions when vendor is selected
   useEffect(() => {

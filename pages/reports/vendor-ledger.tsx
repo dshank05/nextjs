@@ -5,39 +5,8 @@ import { ExportMenu, SearchableSelect } from '../../components/common';
 import { mergeLedgerEntries, recalculateBalance} from '../../lib/ledger-merge-utils';
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useSessionStorage } from '../../lib/sessionStorage';
 
-// ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
-// Fixed hydration issue by using useEffect to sync after mount
-function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
-  const [storedValue, setStoredValue] = useState<T>(initialValue);
-  const [mounted, setMounted] = useState(false);
-
-  // Hydration fix: Read from sessionStorage only after component mounts
-  useEffect(() => {
-    setMounted(true);
-    try {
-      const item = window.sessionStorage.getItem(key);
-      if (item) {
-        setStoredValue(JSON.parse(item));
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  }, [key]);
-
-  const setValue = (value: T) => {
-    try {
-      setStoredValue(value);
-      if (typeof window !== 'undefined') {
-        window.sessionStorage.setItem(key, JSON.stringify(value));
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  return [storedValue, setValue];
-}
 
 interface LedgerEntry {
   id: number;
@@ -91,8 +60,12 @@ export default function VendorLedgerPage() {
 
   // Set default dates to current month on mount (only if no stored dates)
   useEffect(() => {
-    // ✅ Only set defaults if no stored dates exist
-    if (!dateFrom && !dateTo) {
+    // ✅ Check sessionStorage directly to avoid overwriting saved values
+    const storedDateFrom = sessionStorage.getItem('vendor-ledger-dateFrom');
+    const storedDateTo = sessionStorage.getItem('vendor-ledger-dateTo');
+    
+    // ✅ Only set defaults if no values exist in sessionStorage
+    if (!storedDateFrom && !storedDateTo && !dateFrom && !dateTo) {
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -101,18 +74,28 @@ export default function VendorLedgerPage() {
       setDateTo(formatEndDateForAPI(lastDay));
     }
   }, []);
-
+  
   // Fetch vendors on mount
   useEffect(() => {
     fetchVendors();
   }, []);
-
+  
   // Fetch data when filters change
   useEffect(() => {
     if (selectedVendor) {
       fetchData();
     }
   }, [selectedVendor, dateFrom, dateTo, pagination.page]);
+  
+  // ✅ Cleanup sessionStorage on component unmount
+  useEffect(() => {
+    return () => {
+      // Clear all vendor-ledger sessionStorage keys when leaving page
+      sessionStorage.removeItem('vendor-ledger-vendor');
+      sessionStorage.removeItem('vendor-ledger-dateFrom');
+      sessionStorage.removeItem('vendor-ledger-dateTo');
+    };
+  }, []);
 
   const fetchVendors = async () => {
     try {
@@ -383,7 +366,7 @@ export default function VendorLedgerPage() {
                       {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
                     </td>
                     <td className={`text-center font-semibold ${
-                      entry.balance < 0 ? 'text-red-400' : 'text-green-400'
+                      entry.balance > 0 ? 'text-red-400' : 'text-green-400'
                     }`}>
                       ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
@@ -515,20 +498,20 @@ export default function VendorLedgerPage() {
                 </div>
                 <div className="flex justify-between gap-8">
                   <span className="text-slate-400">Total Debit:</span>
-                  <span className="font-semibold text-green-400">
+                  <span className="font-semibold text-red-400">
                     ₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between gap-8">
                   <span className="text-slate-400">Total Credit:</span>
-                  <span className="font-semibold text-red-400">
+                  <span className="font-semibold text-green-400">
                     ₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
                 <div className="flex justify-between gap-8 pt-2 border-t border-slate-600">
                   <span className="text-white font-medium">Closing Balance:</span>
                   <span className={`font-bold text-lg ${
-                    closingBalance < 0 ? 'text-red-400' : 'text-green-400'
+                    closingBalance > 0 ? 'text-red-400' : 'text-green-400'
                   }`}>
                     ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </span>

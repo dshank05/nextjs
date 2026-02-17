@@ -95,3 +95,41 @@ export class SessionStorageService {
 
 // Export default instance for convenience
 export default SessionStorageService;
+
+// ✅ NEW: SSR-safe useSessionStorage hook
+import { useState, useEffect, useRef } from 'react';
+
+export function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
+  // ✅ SSR-safe: Always return initialValue during SSR and initial render
+  const [storedValue, setStoredValue] = useState<T>(initialValue);
+  const mountedRef = useRef(false);
+
+  // ✅ Read from sessionStorage after component mounts to avoid hydration mismatch
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const item = window.sessionStorage.getItem(key);
+        if (item) {
+          const parsedValue = JSON.parse(item);
+          setStoredValue(parsedValue);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    mountedRef.current = true;
+  }, [key]);
+
+  const setValue = (value: T) => {
+    try {
+      setStoredValue(value);
+      if (typeof window !== 'undefined') {
+        window.sessionStorage.setItem(key, JSON.stringify(value));
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
