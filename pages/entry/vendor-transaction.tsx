@@ -310,10 +310,12 @@ export default function VendorTransactionEntry() {
         const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
         setMode(payMode)
         
-        // Set date - ✅ FIX: Use getLocalDateString to avoid timezone issues
+        // Set date - ✅ FIX: Use the same pattern as vendor-transactions/index.tsx
         const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
         const dateObj = new Date(dateTimestamp * 1000)
-        setDate(getLocalDateString(dateObj))
+        const formattedDate = dateObj.toLocaleDateString('en-IN')
+        const [month, day, year] = formattedDate.split('/').map(n => n.padStart(2, '0'))
+        setDate(`${year}-${month}-${day}`)
         
         // Set notes
         setNotes(transaction.notes || '')

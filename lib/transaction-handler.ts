@@ -80,6 +80,8 @@ export class TransactionHandler {
       total_refund_allocated: number;
     };
   }): Promise<TransactionResult> {
+    // ✅ LOGGING: Purchase edit transaction details
+    console.log(`[TRANSACTION HANDLER] handlePurchaseEdit called with:`, JSON.stringify(params, null, 2));
     // Build change set
     const changes: ChangeSet = {
       oldStatus: params.oldStatus,

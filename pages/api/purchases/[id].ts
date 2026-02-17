@@ -980,6 +980,23 @@ export default async function handler(
             } : undefined
           })
 
+          // ✅ LOGGING: Purchase edit transaction details
+          console.log(`[PURCHASE EDIT] Starting edit for purchase ${purchaseId}`);
+          console.log(`[PURCHASE EDIT] Old total: ${existingPurchase.total}, New total: ${newTotal}`);
+          console.log(`[PURCHASE EDIT] Old status: ${existingPurchase.payment_status}, New status: ${finalPaymentStatus}`);
+          console.log(`[PURCHASE EDIT] Total allocated: ${totalAllocated}, Is Type A: ${isTypeA}`);
+          console.log(`[PURCHASE EDIT] Vendor ID: ${existingPurchase.vendor_id}`);
+          console.log(`[PURCHASE EDIT] Has payment ledger: ${hasPaymentLedger !== null}`);
+          console.log(`[PURCHASE EDIT] Current balance:`, vendor ? {
+            total_paid: Number(vendor.total_paid),
+            total_allocated: Number(vendor.total_allocated),
+            total_refunded: Number(vendor.total_refunded),
+            total_refund_allocated: Number(vendor.total_refund_allocated)
+          } : null);
+
+          // ✅ LOGGING: Transaction handler result
+          console.log(`[PURCHASE EDIT] Transaction handler result:`, JSON.stringify(handlerResult, null, 2));
+
           // Execute all operations (ledger, allocations, balance) in transaction
           await transactionHandler.executeInTransaction(tx, handlerResult)
 
