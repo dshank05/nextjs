@@ -76,7 +76,9 @@ export default async function handler(
       return {
         id: entry.id,
         date: entry.transaction_date,
-        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN'),
+        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN', { 
+          timeZone: 'Asia/Kolkata' 
+        }),
         particulars: entry.notes || '',  // Raw notes
         voucherType: entry.transaction_type,  // Raw transaction type
         voucherNo: entry.reference_no || '-',

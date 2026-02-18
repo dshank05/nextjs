@@ -584,53 +584,68 @@ export class TransactionHandler {
     
     // 2. Execute balance update
     if (result.balanceOp) {
-      // Determine source type and details based on balance operation context
-      let sourceType: any;
-      let sourceId: number | undefined;
-      let referenceNo: string | undefined;
-      let notes: string | undefined;
-      
-      // Check what type of operation this is based on what data is present
-      if (result.ledgerCreates.length > 0) {
-        const firstOp = result.ledgerCreates[0];
-        if (firstOp.entry.transaction_type === 'PURCHASE') {
-          sourceType = 'purchase_edit';
-          sourceId = firstOp.entry.reference_id;
-          referenceNo = `INV-${firstOp.entry.reference_no}`;
-          notes = 'Purchase edited';
-        } else if (firstOp.entry.transaction_type === 'DEBIT_NOTE') {
-          sourceType = 'return_edit';
-          sourceId = firstOp.entry.reference_id;
-          referenceNo = firstOp.entry.reference_no;
-          notes = 'Return edited';
-        } else if (firstOp.entry.transaction_type === 'PAYMENT') {
-          sourceType = 'payment_edit';
-          sourceId = firstOp.entry.transaction_id;
-          referenceNo = `PAY-${firstOp.entry.transaction_id}`;
-          notes = 'Payment edit via status change';
-        }
+    // Determine source type and details based on balance operation context
+    let sourceType: any;
+    let sourceId: number | undefined;
+    let referenceNo: string | undefined;
+    let notes: string | undefined;
+    
+    // Check what type of operation this is based on what data is present
+    if (result.ledgerCreates.length > 0) {
+      const firstOp = result.ledgerCreates[0];
+      if (firstOp.entry.transaction_type === 'PURCHASE') {
+        sourceType = 'purchase_edit';
+        sourceId = firstOp.entry.reference_id;
+        referenceNo = `INV-${firstOp.entry.reference_no}`;
+        notes = 'Purchase edited';
+      } else if (firstOp.entry.transaction_type === 'DEBIT_NOTE') {
+        sourceType = 'return_edit';
+        sourceId = firstOp.entry.reference_id;
+        referenceNo = firstOp.entry.reference_no;
+        notes = 'Return edited';
+      } else if (firstOp.entry.transaction_type === 'PAYMENT') {
+        sourceType = 'payment_edit';
+        sourceId = firstOp.entry.transaction_id;
+        referenceNo = `PAY-${firstOp.entry.transaction_id}`;
+        notes = 'Payment edit via status change';
       }
-      
-      // ✅ NEW: Use context if we couldn't determine from ledger operations
-      if (!sourceType && result.context) {
-        if (result.context.entityType === 'purchase') {
-          sourceType = 'purchase_edit';
-          sourceId = result.context.entityId;
-          referenceNo = `INV-${result.context.referenceNo}`;
-          notes = 'Purchase status changed';
-        } else if (result.context.entityType === 'return') {
-          sourceType = 'return_edit';
-          sourceId = result.context.entityId;
-          referenceNo = result.context.referenceNo || '';
-          notes = 'Return status changed';
-        }
+    }
+    // ✅ FIX: Check ledgerUpdates for payment/refund edits (no ledgerCreates)
+    else if (result.ledgerUpdates && result.ledgerUpdates.length > 0) {
+      const firstUpdate = result.ledgerUpdates[0];
+      if (firstUpdate.where.transaction_type === 'PAYMENT') {
+        sourceType = 'payment_edit';
+        sourceId = firstUpdate.where.transaction_id;
+        referenceNo = `PAY-${firstUpdate.where.transaction_id}`;
+        notes = 'Payment edited';
+      } else if (firstUpdate.where.transaction_type === 'REFUND_RECEIVED') {
+        sourceType = 'refund_edit';
+        sourceId = firstUpdate.where.transaction_id;
+        referenceNo = `REF-${firstUpdate.where.transaction_id}`;
+        notes = 'Refund edited';
       }
-      
-      // Default source if we still couldn't determine
-      if (!sourceType) {
-        sourceType = 'status_change';
-        notes = 'Balance adjusted via status change';
+    }
+    
+    // ✅ NEW: Use context if we couldn't determine from ledger operations
+    if (!sourceType && result.context) {
+      if (result.context.entityType === 'purchase') {
+        sourceType = 'purchase_edit';
+        sourceId = result.context.entityId;
+        referenceNo = `INV-${result.context.referenceNo}`;
+        notes = 'Purchase status changed';
+      } else if (result.context.entityType === 'return') {
+        sourceType = 'return_edit';
+        sourceId = result.context.entityId;
+        referenceNo = result.context.referenceNo || '';
+        notes = 'Return status changed';
       }
+    }
+    
+    // Default source if we still couldn't determine
+    if (!sourceType) {
+      sourceType = 'status_change';
+      notes = 'Balance adjusted via status change';
+    }
       
       await balanceHandler.incrementBalanceInTransaction(
         tx,

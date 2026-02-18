@@ -314,7 +314,7 @@ export default function VendorTransactionEntry() {
         const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
         const dateObj = new Date(dateTimestamp * 1000)
         const formattedDate = dateObj.toLocaleDateString('en-IN')
-        const [month, day, year] = formattedDate.split('/').map(n => n.padStart(2, '0'))
+        const [day, month, year] = formattedDate.split('/').map(n => n.padStart(2, '0'))
         setDate(`${year}-${month}-${day}`)
         
         // Set notes
