@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Undo2 } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Undo2, Trash2 } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { ConfirmationModal } from '../ConfirmationModal';
+import { useSnackbar } from '../SnackbarProvider';
 
 interface SaleItem {
   id: number;
@@ -137,6 +139,13 @@ export const SaleTable: React.FC<SaleTableProps> = ({
   const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '');
   const [uidFilter, setUidFilter] = useState(initialFilters?.uidFilter || '');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ customers: [] });
+
+  // Delete functionality
+  const { showSnackbar } = useSnackbar();
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [saleToDelete, setSaleToDelete] = useState<Sale | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Column-specific filter states
   const [billRefFilter, setBillRefFilter] = useState('');
@@ -287,6 +296,71 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       case 0: return 'Cash';
       case 1: return 'Bank';
       default: return 'N/A';
+    }
+  };
+
+  // Delete handlers
+  const handleDeleteClick = (sale: Sale) => {
+    // Check if sale has been fully returned
+    if (sale.return_status === 2) {
+      showSnackbar('error', 'Cannot delete fully returned sale. Returns must be deleted first.');
+      return;
+    }
+    setSaleToDelete(sale);
+    setDeleteModalOpen(true);
+  };
+
+  const handleCancelDelete = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setDeleteModalOpen(false);
+    setSaleToDelete(null);
+    setDeleting(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!saleToDelete) return;
+
+    setDeleting(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`/api/sales/${saleToDelete.id}`, {
+        method: 'DELETE',
+        signal: abortControllerRef.current.signal
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Sale ${saleToDelete.invoice_no} deleted successfully`);
+        setDeleteModalOpen(false);
+        setSaleToDelete(null);
+        
+        // Refresh the table by calling onApplyFilters
+        if (onApplyFilters) {
+          onApplyFilters({
+            customerFilter,
+            statusFilter,
+            dateFrom,
+            dateTo,
+            uidFilter,
+            sortBy,
+            sortOrder
+          });
+        }
+      } else {
+        const error = await response.json();
+        showSnackbar('error', error.message || 'Failed to delete sale');
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        showSnackbar('error', 'Failed to delete sale');
+        console.error('Delete error:', error);
+      }
+    } finally {
+      setDeleting(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -688,7 +762,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
       {/* Table Section */}
       {pagination && (
         <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-          <div>Showing {sales.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} sales</div>
+          <div>Showing {(sales?.length || 0) > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} sales</div>
           <div>Page {pagination.page} of {pagination.totalPages}</div>
         </div>
       )}
@@ -738,7 +812,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
             </tr>
           </thead>
           <tbody>
-            {sales.map((sale, idx) => (
+            {(sales || []).map((sale, idx) => (
               <tr key={sale.id}>
                 <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td className="font-medium text-white">
@@ -778,6 +852,14 @@ export const SaleTable: React.FC<SaleTableProps> = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDeleteClick(sale)}
+                      title={sale.return_status === 2 ? "Cannot delete fully returned sale" : "Delete Sale"}
+                      disabled={sale.return_status === 2}
+                      className={`btn-icon text-red-400 hover:text-red-500 ${sale.return_status === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     {/* RETURN BUTTONS - COMMENTED OUT */}
                     {/* {onPartialReturn && (
                       <button
@@ -806,7 +888,7 @@ export const SaleTable: React.FC<SaleTableProps> = ({
           </tbody>
         </table>
 
-        {sales.length === 0 && !loading && (
+        {(sales?.length || 0) === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No sales found with the current filters.</div>
         )}
       </div>
@@ -822,6 +904,22 @@ export const SaleTable: React.FC<SaleTableProps> = ({
           <button onClick={() => onPageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Sale"
+        message={
+          saleToDelete
+            ? `Are you sure you want to delete sale ${saleToDelete.invoice_no}? This action is irreversible and will restore stock quantities, create reversal entries in the ledger, remove all related allocations, and update customer balance. This operation cannot be undone.`
+            : ''
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        showLoading={deleting}
+      />
 
     </div>
   );

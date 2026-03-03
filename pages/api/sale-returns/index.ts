@@ -373,7 +373,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       payment_status, // 0=Unpaid/Pending Refund, 1=Paid/Refunded (optional, defaults to 0)
       payment_mode,   // 0=Cash, 1=Bank (optional, defaults to 1)
       payment_date,   // Unix timestamp (optional)
-      items // Array of { invoice_item_id, return_qty, return_reason_id, unit_price, tax_rate?, notes? }
+      items, // Array of { invoice_item_id, return_qty, return_reason_id, unit_price, tax_rate?, notes? }
+      full_return // Boolean flag for full return
     } = req.body
 
     // Determine invoice type
@@ -381,9 +382,59 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const invoiceIdValue = isInvoicex ? invoicex_id : invoice_id
 
     // Validation
-    if (!invoiceIdValue || !items || items.length === 0) {
+    if (!invoiceIdValue) {
       return res.status(400).json({
-        message: 'Invoice ID and items are required'
+        message: 'Invoice ID is required'
+      })
+    }
+
+    // If full_return flag is set, fetch all items from the invoice
+    let itemsToReturn = items
+    if (full_return && (!items || items.length === 0)) {
+      // Fetch all items from the invoice
+      const invoiceItems = isInvoicex
+        ? await prisma.invoice_itemsx.findMany({
+            where: { invoice_no: parseInt(invoiceIdValue) },
+            select: {
+              id: true,
+              product_id: true,
+              qty: true,
+              rate: true,
+              gst_percentage: true
+            }
+          })
+        : await prisma.invoiceitems.findMany({
+            where: { invoice_no: parseInt(invoiceIdValue) },
+            select: {
+              id: true,
+              product_id: true,
+              qty: true,
+              rate: true,
+              gst_percentage: true
+            }
+          })
+
+      if (!invoiceItems || invoiceItems.length === 0) {
+        return res.status(400).json({
+          message: 'No items found in the invoice'
+        })
+      }
+
+      // Convert invoice items to return items format
+      itemsToReturn = invoiceItems.map(item => ({
+        invoice_item_id: item.id,
+        return_qty: item.qty,
+        return_reason_id: 1, // Default reason (e.g., "Customer Request")
+        unit_price: item.rate,
+        tax_rate: item.gst_percentage || 0,
+        notes: 'Full order return'
+      }))
+    }
+
+    // Validation - items are required
+    if (!itemsToReturn || itemsToReturn.length === 0) {
+      return res.status(400).json({
+        message: 'Items are required for return'
       })
     }
 
@@ -436,7 +487,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Process items and calculate totals
     const processedItems = []
-    for (const item of items) {
+    for (const item of itemsToReturn) {
       const subtotal = item.return_qty * item.unit_price
       const taxAmount = isInvoicex ? 0 : ((subtotal * (item.tax_rate || 0)) / 100)
 
@@ -467,7 +518,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Use database transaction with increased timeout for return processing
     const result = await prisma.$transaction(async (tx) => {
       // Get affected invoice items based on type
-      const invoiceItemIds = items.map((item: any) => parseInt(item.invoice_item_id))
+      const invoiceItemIds = itemsToReturn.map((item: any) => parseInt(item.invoice_item_id))
       const invoiceItems = isInvoicex
         ? await tx.invoice_itemsx.findMany({
             where: { id: { in: invoiceItemIds } },

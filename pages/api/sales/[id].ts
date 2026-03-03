@@ -1,11 +1,20 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
+import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
+import { getServerSession } from 'next-auth/next'
+import { authOptions } from '../auth/[...nextauth]'
 
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  const session = await getServerSession(req, res, authOptions)
+
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
   const { id } = req.query
 
   switch (req.method) {
@@ -13,11 +22,17 @@ export default async function handler(
       return handleGet(req, res)
     case 'PUT':
       return handlePut(req, res)
+    case 'DELETE':
+      return handleDelete(req, res)
     default:
       return res.status(405).json({ message: 'Method not allowed' })
   }
 }
 
+/**
+ * GET /api/sales/[id]
+ * Get a single sale by ID
+ */
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id } = req.query
@@ -26,7 +41,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid sale ID' })
     }
 
-    // Get the sale record
     const sale = await prisma.invoice.findUnique({
       where: { id: saleId }
     })
@@ -35,7 +49,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Sale not found' })
     }
 
-    // Get the sale items for this invoice with product display_name
     const saleItems = await prisma.invoiceitems.findMany({
       where: { invoice_no: sale.id },
       include: {
@@ -47,10 +60,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Get complete customer data from customer_details table or bill_tosales table for "Other" customers
     let customerData = null
     if (sale.select_customer === 0) {
-      // "Other" customer - get data from bill_tosales table
       const billToData = await prisma.bill_tosales.findUnique({
         where: { invoice_no: sale.id }
       })
@@ -78,12 +89,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Get transport details
     const transportDetails = await prisma.transport_details.findFirst({
       where: { invoice_id: sale.id }
     })
 
-    // Get staff details if staff_id exists
     let staffData = null
     if (sale.staff_id) {
       staffData = await prisma.staff.findUnique({
@@ -92,7 +101,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Get mechanic details if mechanic_id exists
     let mechanicData = null
     if (sale.mechanic_id) {
       mechanicData = await prisma.mechanic.findUnique({
@@ -101,14 +109,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Transform to mirror POST payload structure exactly
     const transformedSale = {
-      // ===== MAIN INVOICE FIELDS (mirror POST structure) =====
       invoice_no: sale.invoice_no,
-      invoice_date: sale.invoice_date, // Unix timestamp
+      invoice_date: sale.invoice_date,
       select_customer: sale.select_customer,
-
-      // ===== CALCULATED TOTALS =====
       items_total: sale.items_total || 0,
       freight: sale.freight || 0,
       total_taxable_value: sale.total_taxable_value || 0,
@@ -117,30 +121,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       total_igst: sale.total_igst || 0,
       total_tax: sale.total_tax || 0,
       total: sale.total || 0,
-
-      // ===== INVOICE-LEVEL FIELDS =====
       bill_reference: sale.bill_reference || '',
       staff_id: sale.staff_id || null,
       staff_details: staffData?.name || '',
       mechanic_id: sale.mechanic_id || null,
       commission: sale.commission || 0,
       discount: sale.discount || 0,
-      tax: sale.notes || '', // Using notes as tax field for compatibility
+      tax: sale.notes || '',
       packing_forwarding_qty: sale.packing_forwarding_qty || 0,
       packing_forwarding_rate: sale.packing_forwarding_rate || 0,
       packing_forwarding_total: sale.packing_forwarding_total || 0,
-
-      // ===== PAYMENT FIELDS =====
       payment_status: sale.payment_status || 1,
       payment_mode: sale.payment_mode || 1,
-
-      // ===== MISC FIELDS =====
       notes: sale.notes || '',
       descriptions: sale.descriptions || '',
       fy: sale.fy,
       updated_at: sale.updated_at,
-
-      // ===== ITEM DATA (mirror POST invoiceItems structure) =====
       invoiceItems: saleItems.map(item => ({
         product_id: item.product_id,
         name_of_product: item.product?.display_name || item.name_of_product,
@@ -164,26 +160,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         invoice_date: item.invoice_date,
         fy: item.fy
       })),
-
-      // ===== CUSTOMER ID =====
       customer_id: sale.select_customer,
-
-      // ===== CUSTOMER, STAFF, MECHANIC DETAILS =====
       customer: customerData,
       staff: staffData,
       mechanic: mechanicData,
-
-      // ===== SHIPPING DETAILS =====
       shippingDetails: customerData ? {
         user_name: customerData.billing_name,
         address: customerData.billing_address,
         gstin: customerData.billing_gstin || ''
       } : null,
-
-      // ===== SHIPPING FLAG =====
-      useShippingAddress: false, // Default to false for now
-
-      // ===== TRANSPORT DETAILS =====
+      useShippingAddress: false,
       transportDetails: {
         trans_mode: transportDetails?.trans_mode || '',
         vehicle_no: transportDetails?.vehicle_no || ''
@@ -198,6 +184,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
+/**
+ * PUT /api/sales/[id]
+ * Update a sale
+ * ✅ REFACTORED: Uses customer transaction handler for complex edits
+ */
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id } = req.query
@@ -207,30 +198,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const {
-      // ===== MAIN SALE TABLE FIELDS (ALL STORED) =====
       invoice_number,
       bill_reference,
       staff_id,
       mechanic_id,
       commission,
       date,
-
-      // ===== CUSTOMER RELATIONSHIP (ONLY FK STORED) =====
       customer_id,
-
-      // ===== TRANSPORT FIELDS (ALL STORED) =====
-      transport_name,
-      vehicle_number,
       transport_cost,
-
-      // ===== ITEMS AND CALCULATIONS =====
       items,
       descriptions,
       packing_forwarding_qty,
       packing_forwarding_rate,
       packing_forwarding_total,
-
-      // ===== TAX FIELDS =====
       total_cgst,
       total_sgst,
       total_igst,
@@ -240,27 +220,28 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       payment_mode
     } = req.body
 
-    console.log('🔄 API Received PUT data for sale:', req.body);
-
-    // ===== VALIDATION =====
-    if (!invoice_number || !customer_id) {
+    // Validation
+    if (!invoice_number || customer_id === undefined || customer_id === null) {
       return res.status(400).json({
         message: 'Missing required fields: invoice_number or customer_id'
       })
     }
 
-    // ===== VALIDATE CUSTOMER EXISTS =====
-    const existingCustomer = await prisma.customer_details.findUnique({
-      where: { id: parseInt(customer_id) }
-    })
-
-    if (!existingCustomer) {
-      return res.status(400).json({
-        message: 'Invalid customer selected - customer does not exist'
+    // Validate customer exists
+    let existingCustomer = null
+    if (parseInt(customer_id) !== 0) {
+      existingCustomer = await prisma.customer_details.findUnique({
+        where: { id: parseInt(customer_id) }
       })
+
+      if (!existingCustomer) {
+        return res.status(400).json({
+          message: 'Invalid customer selected - customer does not exist'
+        })
+      }
     }
 
-    // ===== VALIDATE SALE EXISTS =====
+    // Validate sale exists
     const existingSale = await prisma.invoice.findUnique({
       where: { id: saleId }
     })
@@ -271,58 +252,116 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Get current financial year
+    // Validate payment fields
+    const validPaymentStatuses = [0, 1, 2]
+    const validPaymentModes = [0, 1]
+
+    const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
+      ? parseInt(payment_status.toString())
+      : 0
+
+    const parsedPaymentMode = payment_mode !== undefined && payment_mode !== null
+      ? parseInt(payment_mode.toString())
+      : 1
+
+    if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
+      return res.status(400).json({
+        message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Partial), or 2 (Paid)'
+      })
+    }
+
+    if (!validPaymentModes.includes(parsedPaymentMode)) {
+      return res.status(400).json({
+        message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
+      })
+    }
+
     const currentDate = new Date()
     const currentYear = currentDate.getFullYear()
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
-    // Convert date to Unix timestamp
     const invoiceDate = convertDateToTimestamp(date)
 
-    // Calculate totals if items provided
     let itemsTotal = 0
     if (items && items.length > 0) {
       itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
     }
 
-    // Start transaction
+    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
+
+    // ✅ REFACTORED: Use customer transaction handler for payment status changes
+    const oldPaymentStatus = existingSale.payment_status
+    const newPaymentStatus = parsedPaymentStatus
+
+    // Check if payment status changed
+    if (oldPaymentStatus !== newPaymentStatus && parseInt(customer_id) !== 0) {
+      // Use transaction handler for complex payment status changes
+      const operations = await customerTransactionHandler.handleSaleEdit(
+        saleId,
+        {
+          old_status: oldPaymentStatus,
+          new_status: newPaymentStatus,
+          old_total: Number(existingSale.total),
+          new_total: calculatedGrandTotal,
+          customer_id: parseInt(customer_id),
+          payment_mode: parsedPaymentMode,
+          transaction_date: Math.floor(invoiceDate),
+          fy: financialYear,
+          notes: notes || `Sale ${invoice_number} updated`
+        },
+        'sale'
+      )
+
+      await customerTransactionHandler.executeInTransaction(operations)
+    }
+
+    // Update sale record and items
     const result = await prisma.$transaction(async (tx) => {
-      // Update sale record
+      const saleUpdateData: any = {
+        bill_reference: bill_reference || '',
+        commission: commission || 0,
+        items_total: itemsTotal,
+        freight: transport_cost || 0,
+        total_taxable_value: itemsTotal,
+        total_cgst: total_cgst || 0,
+        total_sgst: total_sgst || 0,
+        total_igst: total_igst || 0,
+        total_tax: total_tax || 0,
+        total: calculatedGrandTotal,
+        notes: notes || '',
+        descriptions: descriptions || '',
+        packing_forwarding_qty: packing_forwarding_qty || 0,
+        packing_forwarding_rate: packing_forwarding_rate || 0,
+        packing_forwarding_total: packing_forwarding_total || 0,
+        invoice_date: Math.floor(invoiceDate),
+        payment_status: parsedPaymentStatus,
+        payment_mode: parsedPaymentMode,
+        fy: financialYear
+      }
+
+      if (staff_id) {
+        saleUpdateData.staff = { connect: { id: parseInt(staff_id) } }
+      } else {
+        saleUpdateData.staff = { disconnect: true }
+      }
+
+      if (mechanic_id) {
+        saleUpdateData.mechanic = { connect: { id: parseInt(mechanic_id) } }
+      } else {
+        saleUpdateData.mechanic = { disconnect: true }
+      }
+
       const sale = await tx.invoice.update({
         where: { id: saleId },
-        data: {
-          bill_reference: bill_reference || '',
-          staff_id: staff_id ? parseInt(staff_id) : null,
-          mechanic_id: mechanic_id ? parseInt(mechanic_id) : null,
-          commission: commission || 0,
-          items_total: itemsTotal,
-          freight: transport_cost || 0,
-          total_taxable_value: itemsTotal,
-          total_cgst: total_cgst || 0,
-          total_sgst: total_sgst || 0,
-          total_igst: total_igst || 0,
-          total_tax: total_tax || 0,
-          total: itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0),
-          notes: notes || '',
-          descriptions: descriptions || '',
-          packing_forwarding_qty: packing_forwarding_qty || 0,
-          packing_forwarding_rate: packing_forwarding_rate || 0,
-          packing_forwarding_total: packing_forwarding_total || 0,
-          invoice_date: Math.floor(invoiceDate / 1000), // Store as Unix timestamp
-          payment_status: payment_status || 0,
-          payment_mode: payment_mode || 1,
-          fy: financialYear
-        }
+        data: saleUpdateData
       })
 
-      // Handle item-level updates using product_id matching
+      // Handle item updates
       if (items && items.length > 0) {
-        // Get existing sale items
         const existingItems = await tx.invoiceitems.findMany({
           where: { invoice_no: sale.id }
         })
 
-        // Create maps for efficient lookup using product_id
         const existingItemsMap = new Map<number, any>()
         const newItemsMap = new Map<number, any>()
 
@@ -337,39 +376,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         items.forEach(item => {
           newItemsMap.set(parseInt(item.product_id), {
             qty: item.qty || 0,
-            category_id: item.category_id,
-            subcategory_id: item.subcategory_id,
-            company_id: item.company_id,
-            model_id: item.model_id,
-            car_model: item.car_model || '',
-            part: item.part || '',
-            rate: item.rate,
-            total: item.total,
-            gst_percentage: item.gst_percentage || 0,
-            cgst: item.cgst || 0,
-            sgst: item.sgst || 0,
-            igst: item.igst || 0,
-            tax: item.tax || 0,
+            rate: item.rate || 0,
             product_id: parseInt(item.product_id),
             item: item
           })
         })
 
-        // Process deletions: items that exist in DB but not in new list
+        // Process deletions
         for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
           if (!newItemsMap.has(productId)) {
-            // Item was removed - increase stock (return sold items)
-            if (existingData.qty > 0) {
+            const validatedExistingQty = Number(existingData.qty) || 0
+            if (validatedExistingQty > 0) {
               await tx.product.update({
                 where: { id: productId },
-                data: {
-                  stock: {
-                    increment: existingData.qty
-                  }
-                }
+                data: { stock: { increment: validatedExistingQty } }
               })
             }
-            // Delete the item
             await tx.invoiceitems.delete({
               where: { id: existingData.id }
             })
@@ -381,8 +403,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           const existingData = existingItemsMap.get(productId)
 
           if (!existingData) {
-            // New item - create it and decrease stock
-            // Fetch product details from database
             const product = await tx.product.findUnique({
               where: { id: productId },
               select: {
@@ -390,7 +410,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 hsn: true,
                 product_category_id: true,
                 product_subcategory_id: true,
-                company_id: true
+                company_id: true,
+                stock: true
               }
             })
 
@@ -398,45 +419,58 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               throw new Error(`Product with ID ${productId} not found`)
             }
 
+            if (product.stock < newData.qty) {
+              throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${newData.qty}`)
+            }
+
+            const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null
+
             await tx.invoiceitems.create({
               data: {
                 invoice_no: sale.id,
                 product_id: productId,
-                name_of_product: newData.product_name || product.product_name || '',
+                name_of_product: newData.item.product_name || product.product_name || '',
                 category_id: product.product_category_id,
                 subcategory_id: product.product_subcategory_id,
-                model_id: newData.model_id ? parseInt(newData.model_id.toString()) : null,
+                model_id: modelId,
                 company_id: product.company_id,
                 hsn: product.hsn,
-                part: newData.part || '',
+                part: newData.item.part || '',
                 qty: newData.qty,
                 rate: newData.rate,
                 subtotal: newData.qty * newData.rate,
-                gst_percentage: newData.gst_percentage || 0,
-                cgst: newData.cgst || 0,
-                sgst: newData.sgst || 0,
-                igst: newData.igst || 0,
-                tax: newData.tax || 0,
+                gst_percentage: newData.item.gst_percentage || 0,
+                cgst: newData.item.cgst || 0,
+                sgst: newData.item.sgst || 0,
+                igst: newData.item.igst || 0,
+                tax: newData.item.tax || 0,
                 fy: financialYear,
                 invoice_date: invoiceDate
               }
             })
 
-            // Decrease stock for sales
+            const validatedNewQty = Number(newData.qty) || 0
             await tx.product.update({
               where: { id: productId },
-              data: {
-                stock: {
-                  decrement: newData.qty
-                }
-              }
+              data: { stock: { decrement: validatedNewQty } }
             })
           } else {
-            // Existing item - check if quantity changed
-            const qtyDifference = newData.qty - existingData.qty
+            const validatedNewQty = Number(newData.qty) || 0
+            const validatedExistingQty = Number(existingData.qty) || 0
+            const qtyDifference = validatedNewQty - validatedExistingQty
 
-            if (Math.abs(qtyDifference) > .001) { // Allow for small floating point differences
-              // Update quantity and adjust stock
+            if (Math.abs(qtyDifference) > 0.001) {
+              if (qtyDifference > 0) {
+                const product = await tx.product.findUnique({
+                  where: { id: productId },
+                  select: { stock: true, product_name: true }
+                })
+
+                if (product && product.stock < qtyDifference) {
+                  throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested additional ${qtyDifference}`)
+                }
+              }
+
               await tx.invoiceitems.update({
                 where: { id: existingData.id },
                 data: {
@@ -446,14 +480,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
                 }
               })
 
-              // Adjust stock based on quantity difference
               await tx.product.update({
                 where: { id: productId },
-                data: {
-                  stock: {
-                    increment: -qtyDifference // Negative because sales decrease stock (opposite of purchases)
-                  }
-                }
+                data: { stock: { increment: -qtyDifference } }
               })
             }
           }
@@ -461,40 +490,62 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Update customer relationship
-      if (parseInt(customer_id) === 0) {
-        // "Other" customer - data should already be in bill_tosales from POST
-        // No need to update here as PUT doesn't receive customer details
-      } else {
-        // Existing customer - update bill_tosales with customer data
-        await tx.bill_tosales.upsert({
-          where: { invoice_no: sale.id },
-          update: {
-            billing_name: existingCustomer.billing_name,
-            contact_no: existingCustomer.contact_no || '',
-            email: existingCustomer.email || '',
-            billing_address: existingCustomer.billing_address,
-            billing_address2: existingCustomer.billing_address_2 || '',
-            billing_city: existingCustomer.billing_city || '',
-            billing_state: existingCustomer.billing_state || '',
-            billing_state_code: existingCustomer.billing_state_code || null,
-            billing_gstin: existingCustomer.billing_gstin || ''
-          },
-          create: {
-            invoice_no: sale.id,
-            billing_name: existingCustomer.billing_name,
-            contact_no: existingCustomer.contact_no || '',
-            email: existingCustomer.email || '',
-            billing_address: existingCustomer.billing_address,
-            billing_address2: existingCustomer.billing_address_2 || '',
-            billing_city: existingCustomer.billing_city || '',
-            billing_state: existingCustomer.billing_state || '',
-            billing_state_code: existingCustomer.billing_state_code || null,
-            billing_gstin: existingCustomer.billing_gstin || ''
-          }
-        })
-      }
+      await tx.bill_tosales.upsert({
+        where: { invoice_no: sale.id },
+        update: {
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
+        },
+        create: {
+          invoice_no: sale.id,
+          billing_name: req.body.customer_name || existingCustomer?.billing_name || 'Other',
+          contact_no: req.body.contact_number || existingCustomer?.contact_no || '',
+          email: req.body.email_id || existingCustomer?.email || '',
+          billing_address: req.body.address || existingCustomer?.billing_address || '',
+          billing_address2: existingCustomer?.billing_address_2 || '',
+          billing_city: req.body.city || existingCustomer?.billing_city || '',
+          billing_state: req.body.state || existingCustomer?.billing_state || '',
+          billing_state_code: req.body.state_code || existingCustomer?.billing_state_code || null,
+          billing_gstin: req.body.gst_number || existingCustomer?.billing_gstin || ''
+        }
+      })
+
+      // Update shipping details
+      await tx.shipto.upsert({
+        where: { invoice_no: sale.id },
+        update: {
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping: true
+        },
+        create: {
+          invoice_no: sale.id,
+          shipping_name: req.body.customer_name || existingCustomer?.shipping_name || existingCustomer?.billing_name || 'Other',
+          shipping_address: req.body.address || existingCustomer?.shipping_address || existingCustomer?.billing_address || '',
+          shipping_address2: existingCustomer?.shipping_address_2 || existingCustomer?.billing_address_2 || '',
+          shipping_city: req.body.city || existingCustomer?.shipping_city || existingCustomer?.billing_city || '',
+          shipping_state: req.body.state || existingCustomer?.shipping_state || existingCustomer?.billing_state || '',
+          shipping_state_code: existingCustomer?.shipping_state_code || existingCustomer?.billing_state_code || null,
+          shipping_gstin: req.body.gst_number || existingCustomer?.shipping_gstin || existingCustomer?.billing_gstin || '',
+          shipping: true
+        }
+      })
 
       return sale
+    }, {
+      timeout: 30000
     })
 
     res.status(200).json({
@@ -503,7 +554,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         id: result.id,
         invoice_no: result.invoice_no,
         total: result.total,
-        customer_name: existingCustomer.billing_name
+        customer_name: existingCustomer?.billing_name || req.body.customer_name || 'Other'
       }
     })
 
@@ -511,6 +562,87 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     console.error('Sale update error:', error)
     res.status(500).json({
       message: 'Failed to update sale',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}
+
+/**
+ * DELETE /api/sales/[id]
+ * Delete a sale
+ * ✅ NEW: Uses customer transaction handler for safe deletion
+ */
+async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
+  try {
+    const { id } = req.query
+    const saleId = parseInt(id as string)
+    if (isNaN(saleId)) {
+      return res.status(400).json({ message: 'Invalid sale ID' })
+    }
+
+    // Get sale details
+    const sale = await prisma.invoice.findUnique({
+      where: { id: saleId },
+      select: {
+        id: true,
+        invoice_no: true,
+        select_customer: true,
+        total: true,
+        payment_status: true,
+        fy: true
+      }
+    })
+
+    if (!sale) {
+      return res.status(404).json({ message: 'Sale not found' })
+    }
+
+    // ✅ Use customer transaction handler for deletion
+    if (sale.select_customer && sale.select_customer !== 0) {
+      const operations = await customerTransactionHandler.handleSaleDelete(
+        saleId,
+        {
+          customer_id: sale.select_customer,
+          total: Number(sale.total),
+          payment_status: sale.payment_status,
+          fy: sale.fy
+        },
+        'sale'
+      )
+
+      await customerTransactionHandler.executeDeleteInTransaction(operations)
+    } else {
+      // For "Other" customer, just delete the sale
+      await prisma.$transaction(async (tx) => {
+        // Restore stock
+        const items = await tx.invoiceitems.findMany({
+          where: { invoice_no: saleId }
+        })
+
+        for (const item of items) {
+          await tx.product.update({
+            where: { id: item.product_id },
+            data: { stock: { increment: Number(item.qty) || 0 } }
+          })
+        }
+
+        // Delete related records
+        await tx.invoiceitems.deleteMany({ where: { invoice_no: saleId } })
+        await tx.bill_tosales.deleteMany({ where: { invoice_no: saleId } })
+        await tx.shipto.deleteMany({ where: { invoice_no: saleId } })
+        await tx.invoice.delete({ where: { id: saleId } })
+      })
+    }
+
+    res.status(200).json({
+      message: 'Sale deleted successfully',
+      sale_id: saleId
+    })
+
+  } catch (error) {
+    console.error('Sale deletion error:', error)
+    res.status(500).json({
+      message: 'Failed to delete sale',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }

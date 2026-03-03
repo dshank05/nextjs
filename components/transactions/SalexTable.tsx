@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Undo2 } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Eye, FileText, Printer, FileMinus, Undo2, Trash2 } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ExportMenu } from '../common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { ConfirmationModal } from '../ConfirmationModal';
+import { useSnackbar } from '../SnackbarProvider';
 
 interface SalexItem {
   id: number;
@@ -142,6 +144,13 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   const [dateTo, setDateTo] = useState(initialFilters?.dateTo || '');
   const [uidFilter, setUidFilter] = useState(initialFilters?.uidFilter || '');
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({ customers: [] });
+
+  // Delete functionality
+  const { showSnackbar } = useSnackbar();
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [salexToDelete, setSalexToDelete] = useState<Salex | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Column-specific filter states
   const [billRefFilter, setBillRefFilter] = useState('');
@@ -298,6 +307,71 @@ export const SalexTable: React.FC<SalexTableProps> = ({
     }
   };
 
+  // Delete handlers
+  const handleDeleteClick = (salex: Salex) => {
+    // Check if salex has been fully returned
+    if (salex.return_status === 2) {
+      showSnackbar('error', 'Cannot delete fully returned salex. Returns must be deleted first.');
+      return;
+    }
+    setSalexToDelete(salex);
+    setDeleteModalOpen(true);
+  };
+
+  const handleCancelDelete = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setDeleteModalOpen(false);
+    setSalexToDelete(null);
+    setDeleting(false);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!salexToDelete) return;
+
+    setDeleting(true);
+    abortControllerRef.current = new AbortController();
+
+    try {
+      const response = await fetch(`/api/salex/${salexToDelete.id}`, {
+        method: 'DELETE',
+        signal: abortControllerRef.current.signal
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Salex ${salexToDelete.invoice_no} deleted successfully`);
+        setDeleteModalOpen(false);
+        setSalexToDelete(null);
+        
+        // Refresh the table by calling onApplyFilters
+        if (onApplyFilters) {
+          onApplyFilters({
+            customerFilter,
+            statusFilter,
+            dateFrom,
+            dateTo,
+            uidFilter,
+            sortBy,
+            sortOrder
+          });
+        }
+      } else {
+        const error = await response.json();
+        showSnackbar('error', error.message || 'Failed to delete salex');
+      }
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        showSnackbar('error', 'Failed to delete salex');
+        console.error('Delete error:', error);
+      }
+    } finally {
+      setDeleting(false);
+      abortControllerRef.current = null;
+    }
+  };
+
   const getPageNumbers = () => {
     const pages = [];
     const start = Math.max(1, pagination.page - 2);
@@ -307,7 +381,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   };
 
   return (
-    <div className="card">
+    <div>
       <div className="flex items-center justify-between gap-2 mb-4">
         {/* TOP SEARCH BOX - COMMENTED OUT */}
         {/* <div className="flex items-center gap-2">
@@ -689,7 +763,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
       {/* Table Section */}
       {pagination && (
         <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-          <div>Showing {salexs.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} salex</div>
+          <div>Showing {(salexs?.length || 0) > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} salex</div>
           <div>Page {pagination.page} of {pagination.totalPages}</div>
         </div>
       )}
@@ -742,7 +816,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             </tr>
           </thead>
           <tbody>
-            {salexs.map((salex, idx) => (
+            {(salexs || []).map((salex, idx) => (
               <tr key={salex.id}>
                 <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td className="font-medium text-white">
@@ -783,6 +857,14 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                         <Printer className="w-4 h-4" />
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDeleteClick(salex)}
+                      title={salex.return_status === 2 ? "Cannot delete fully returned salex" : "Delete Salex"}
+                      disabled={salex.return_status === 2}
+                      className={`btn-icon text-red-400 hover:text-red-500 ${salex.return_status === 2 ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                     {/* RETURN BUTTONS - COMMENTED OUT */}
                     {/* {onPartialReturn && (
                       <button
@@ -811,7 +893,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           </tbody>
         </table>
 
-        {salexs.length === 0 && !loading && (
+        {(salexs?.length || 0) === 0 && !loading && (
           <div className="text-center py-8 text-slate-400">No salex found with the current filters.</div>
         )}
       </div>
@@ -827,6 +909,22 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <button onClick={() => onPageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModalOpen}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Salex"
+        message={
+          salexToDelete
+            ? `Are you sure you want to delete salex ${salexToDelete.invoice_no}? This action is irreversible and will restore stock quantities, create reversal entries in the ledger, remove all related allocations, and update customer balance. This operation cannot be undone.`
+            : ''
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        showLoading={deleting}
+      />
 
     </div>
   );

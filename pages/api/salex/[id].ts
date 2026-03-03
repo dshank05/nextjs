@@ -2,11 +2,20 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { withObservability } from '../../../lib/withObservability'
+import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
+import { getServerSession } from 'next-auth/next'
+import { authOptions } from '../auth/[...nextauth]'
 
 async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
+  const session = await getServerSession(req, res, authOptions)
+
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
   const { id } = req.query
 
   if (!id || typeof id !== 'string') {
@@ -25,6 +34,10 @@ async function handler(
   }
 }
 
+/**
+ * GET /api/salex/[id]
+ * Get a single salex by ID
+ */
 async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
     const salex = await prisma.invoicex.findUnique({
@@ -35,8 +48,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    // Get related data separately
-    const [customerData, staffData, mechanicData, returnData, paymentAllocations] = await Promise.all([
+    const [customerData, staffData, mechanicData, returnData] = await Promise.all([
       salex.select_customer && salex.select_customer !== 0 ?
         prisma.customer_details.findUnique({
           where: { id: salex.select_customer },
@@ -63,23 +75,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
           total_amount: true,
           status: true
         }
-      }),
-
-      // Note: customer_payment_allocations relation doesn't exist in current Prisma client
-      // This will be available after prisma generate
-      Promise.resolve([])
+      })
     ])
 
-    if (!salex) {
-      return res.status(404).json({ message: 'Salex not found' })
-    }
-
-    // Get item count
     const itemCount = await prisma.invoice_itemsx.count({
       where: { invoice_no: salex.id }
     })
 
-    // Format date
     let formattedDate: string | null = null
     try {
       if (salex.invoice_date) {
@@ -92,8 +94,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       console.warn('Invalid date format for salex:', salex.invoice_date, error)
     }
 
-    // Calculate payment summary (will be 0 until prisma generate is fixed)
-    const totalAllocated = 0 // paymentAllocations.reduce((sum, alloc) => sum + Number(alloc.allocated_amount), 0)
+    const totalAllocated = 0
 
     const enhancedSalex = {
       id: salex.id,
@@ -139,6 +140,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
   }
 }
 
+/**
+ * PUT /api/salex/[id]
+ * Update a salex
+ * ✅ REFACTORED: Uses customer transaction handler for complex edits
+ */
 async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
     const {
@@ -163,14 +169,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       payment_mode
     } = req.body
 
-    // Validation - customer data should be in request body
+    // Validation
     if (!req.body.customer_name || !req.body.contact_number || !req.body.state) {
       return res.status(400).json({
         message: 'Customer name, contact number, and state are required'
       })
     }
 
-    // Check if salex exists
     const existingSalex = await prisma.invoicex.findUnique({
       where: { id: parseInt(salexId) }
     })
@@ -203,15 +208,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       })
     }
 
-    // Get current financial year
     const currentDate = new Date()
     const currentYear = currentDate.getFullYear()
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
-    // Convert date to Unix timestamp
     const invoiceDate = date ? convertDateToTimestamp(date) : existingSalex.invoice_date
 
-    // Calculate totals if items provided
     let itemsTotal = existingSalex.items_total
     let totalTaxable = existingSalex.total_taxable_value
 
@@ -220,9 +222,34 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       totalTaxable = itemsTotal
     }
 
-    // Start transaction
+    const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || existingSalex.packing_forwarding_total || 0) + (transport_cost || existingSalex.freight || 0) + (total_tax || existingSalex.total_tax || 0)
+
+    // ✅ REFACTORED: Use customer transaction handler for payment status changes
+    const oldPaymentStatus = existingSalex.payment_status
+    const newPaymentStatus = parsedPaymentStatus
+
+    if (oldPaymentStatus !== newPaymentStatus && existingSalex.select_customer && existingSalex.select_customer !== 0) {
+      const operations = await customerTransactionHandler.handleSaleEdit(
+        parseInt(salexId),
+        {
+          old_status: oldPaymentStatus,
+          new_status: newPaymentStatus,
+          old_total: Number(existingSalex.total),
+          new_total: calculatedGrandTotal,
+          customer_id: existingSalex.select_customer,
+          payment_mode: parsedPaymentMode,
+          transaction_date: Math.floor(invoiceDate),
+          fy: financialYear,
+          notes: notes || `Salex ${existingSalex.invoice_no} updated`
+        },
+        'salex'
+      )
+
+      await customerTransactionHandler.executeInTransaction(operations)
+    }
+
+    // Update salex record and items
     const result = await prisma.$transaction(async (tx) => {
-      // Update salex record
       const salexUpdateData: any = {
         select_customer: parseInt(customer_id),
         bill_reference: bill_reference || existingSalex.bill_reference,
@@ -234,7 +261,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
         total_sgst: total_sgst !== undefined ? total_sgst : existingSalex.total_sgst,
         total_igst: total_igst !== undefined ? total_igst : existingSalex.total_igst,
         total_tax: total_tax !== undefined ? total_tax : existingSalex.total_tax,
-        total: itemsTotal + (packing_forwarding_total || existingSalex.packing_forwarding_total || 0) + (transport_cost || existingSalex.freight || 0) + (total_tax || existingSalex.total_tax || 0),
+        total: calculatedGrandTotal,
         notes: notes !== undefined ? notes : existingSalex.notes,
         descriptions: descriptions !== undefined ? descriptions : existingSalex.descriptions,
         packing_forwarding_qty: packing_forwarding_qty !== undefined ? packing_forwarding_qty : existingSalex.packing_forwarding_qty,
@@ -245,9 +272,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
         payment_mode: parsedPaymentMode,
         fy: financialYear,
         updated_at: new Date()
-      };
+      }
 
-      // Handle staff and mechanic relations
       if (staff_id !== undefined) {
         salexUpdateData.staff_id = staff_id ? parseInt(staff_id) : null
       }
@@ -261,14 +287,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
         data: salexUpdateData
       })
 
-      // Handle item-level updates if items provided
+      // Handle item updates
       if (items && items.length > 0) {
-        // Get existing salex items for comparison
         const existingItems = await tx.invoice_itemsx.findMany({
           where: { invoice_no: salex.id }
         })
 
-        // Create maps for efficient lookup using product_id
         const existingItemsMap = new Map<number, any>()
         const newItemsMap = new Map<number, any>()
 
@@ -289,22 +313,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
           })
         })
 
-        // Process deletions: items that exist in DB but not in new list
+        // Process deletions
         for (const [productId, existingData] of Array.from(existingItemsMap.entries())) {
           if (!newItemsMap.has(productId)) {
-            // Item was removed - increase stock (return sold items)
-            const validatedExistingQty = Number(existingData.qty) || 0;
+            const validatedExistingQty = Number(existingData.qty) || 0
             if (validatedExistingQty > 0) {
               await tx.product.update({
                 where: { id: productId },
-                data: {
-                  stock: {
-                    increment: validatedExistingQty
-                  }
-                }
+                data: { stock: { increment: validatedExistingQty } }
               })
             }
-            // Delete the item
             await tx.invoice_itemsx.delete({
               where: { id: existingData.id }
             })
@@ -316,7 +334,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
           const existingData = existingItemsMap.get(productId)
 
           if (!existingData) {
-            // New item - create it and decrease stock
             const product = await tx.product.findUnique({
               where: { id: productId },
               select: {
@@ -333,12 +350,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
               throw new Error(`Product with ID ${productId} not found`)
             }
 
-            // Check stock availability for new items
             if (product.stock < newData.qty) {
               throw new Error(`Insufficient stock for product "${product.product_name}": available ${product.stock}, requested ${newData.qty}`)
             }
 
-            const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null;
+            const modelId = newData.item.model_id ? parseInt(newData.item.model_id) : null
 
             await tx.invoice_itemsx.create({
               data: {
@@ -364,24 +380,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
               }
             })
 
-            // Decrease stock for new salex sales
-            const validatedNewQty = Number(newData.qty) || 0;
+            const validatedNewQty = Number(newData.qty) || 0
             await tx.product.update({
               where: { id: productId },
-              data: {
-                stock: {
-                  decrement: validatedNewQty
-                }
-              }
+              data: { stock: { decrement: validatedNewQty } }
             })
           } else {
-            // Existing item - check if quantity changed
-            const validatedNewQty = Number(newData.qty) || 0;
-            const validatedExistingQty = Number(existingData.qty) || 0;
-            const qtyDifference = validatedNewQty - validatedExistingQty;
+            const validatedNewQty = Number(newData.qty) || 0
+            const validatedExistingQty = Number(existingData.qty) || 0
+            const qtyDifference = validatedNewQty - validatedExistingQty
 
             if (Math.abs(qtyDifference) > 0.001) {
-              // Check stock availability for increased quantity
               if (qtyDifference > 0) {
                 const product = await tx.product.findUnique({
                   where: { id: productId },
@@ -393,7 +402,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
                 }
               }
 
-              // Update quantity and adjust stock
               await tx.invoice_itemsx.update({
                 where: { id: existingData.id },
                 data: {
@@ -403,14 +411,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
                 }
               })
 
-              // Adjust stock based on quantity difference
               await tx.product.update({
                 where: { id: productId },
-                data: {
-                  stock: {
-                    increment: -qtyDifference // Negative because salex sales decrease stock
-                  }
-                }
+                data: { stock: { increment: -qtyDifference } }
               })
             }
           }
@@ -418,9 +421,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       }
 
       return salex
+    }, {
+      timeout: 30000
     })
 
-    // Update customer data in bill_tosalesx
+    // Update customer data
     await prisma.bill_tosalesx.upsert({
       where: { invoice_no: result.id },
       update: {
@@ -446,7 +451,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       }
     })
 
-    // Update shipping data in shiptox
     await prisma.shiptox.upsert({
       where: { invoice_no: result.id },
       update: {
@@ -487,18 +491,30 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
   }
 }
 
+/**
+ * DELETE /api/salex/[id]
+ * Delete a salex
+ * ✅ NEW: Uses customer transaction handler for safe deletion
+ */
 async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
-    // Check if salex exists
     const existingSalex = await prisma.invoicex.findUnique({
-      where: { id: parseInt(salexId) }
+      where: { id: parseInt(salexId) },
+      select: {
+        id: true,
+        invoice_no: true,
+        select_customer: true,
+        total: true,
+        payment_status: true,
+        fy: true
+      }
     })
 
     if (!existingSalex) {
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    // Check for dependencies separately
+    // Check for dependencies
     const returnCount = await prisma.salex_returns.count({
       where: { invoicex_id: parseInt(salexId) }
     })
@@ -509,57 +525,44 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: 
       })
     }
 
-    // Note: customer_payment_allocations check will be added after prisma generate
-    // For now, we'll allow deletion but it may fail if allocations exist
+    // ✅ Use customer transaction handler for deletion
+    if (existingSalex.select_customer && existingSalex.select_customer !== 0) {
+      const operations = await customerTransactionHandler.handleSaleDelete(
+        parseInt(salexId),
+        {
+          customer_id: existingSalex.select_customer,
+          total: Number(existingSalex.total),
+          payment_status: existingSalex.payment_status,
+          fy: existingSalex.fy
+        },
+        'salex'
+      )
 
-    // Use database transaction for salex deletion and stock restoration
-    await prisma.$transaction(async (tx) => {
-      // Get all salex items to restore stock
-      const salexItems = await tx.invoice_itemsx.findMany({
-        where: { invoice_no: parseInt(salexId) }
-      })
+      await customerTransactionHandler.executeDeleteInTransaction(operations)
+    } else {
+      // For "Other" customer, just delete the salex
+      await prisma.$transaction(async (tx) => {
+        // Restore stock
+        const items = await tx.invoice_itemsx.findMany({
+          where: { invoice_no: parseInt(salexId) }
+        })
 
-      // Restore stock for all items
-      for (const item of salexItems) {
-        const validatedQty = Number(item.qty) || 0;
-        if (validatedQty > 0) {
+        for (const item of items) {
           await tx.product.update({
             where: { id: item.product_id },
-            data: {
-              stock: {
-                increment: validatedQty
-              }
-            }
+            data: { stock: { increment: Number(item.qty) || 0 } }
           })
         }
-      }
 
-      // Delete related records
-      await tx.invoice_itemsx.deleteMany({
-        where: { invoice_no: parseInt(salexId) }
+        // Delete related records
+        await tx.invoice_itemsx.deleteMany({ where: { invoice_no: parseInt(salexId) } })
+        await tx.transport_detailsx.deleteMany({ where: { invoice_id: parseInt(salexId) } })
+        await tx.shiptox.deleteMany({ where: { invoice_no: parseInt(salexId) } })
+        await tx.bill_tosalesx.deleteMany({ where: { invoice_no: parseInt(salexId) } })
+        await tx.incexpx.deleteMany({ where: { invoice_id: parseInt(salexId) } })
+        await tx.invoicex.delete({ where: { id: parseInt(salexId) } })
       })
-
-      await tx.transport_detailsx.deleteMany({
-        where: { invoice_id: parseInt(salexId) }
-      })
-
-      await tx.shiptox.deleteMany({
-        where: { invoice_no: parseInt(salexId) }
-      })
-
-      await tx.bill_tosalesx.deleteMany({
-        where: { invoice_no: parseInt(salexId) }
-      })
-
-      await tx.incexpx.deleteMany({
-        where: { invoice_id: parseInt(salexId) }
-      })
-
-      // Delete the salex
-      await tx.invoicex.delete({
-        where: { id: parseInt(salexId) }
-      })
-    })
+    }
 
     res.status(200).json({
       success: true,

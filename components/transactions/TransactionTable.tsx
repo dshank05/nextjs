@@ -226,7 +226,7 @@ export const TransactionTable = ({
   }
 
   return (
-    <div className="card">
+    <div>
       <div className="mb-3 flex justify-between items-center text-sm text-slate-400">
         <div>Showing {transactions.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions</div>
         <div>Page {pagination.page} of {pagination.totalPages}</div>
@@ -269,9 +269,9 @@ export const TransactionTable = ({
                 {!hideTypeColumn && (
                   <td>
                     <span className={`px-2 py-1 text-xs rounded-full font-semibold ${
-                      transaction.type === 'sale' ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30' :
-                      transaction.type === 'salex' ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30' :
-                      'bg-green-600/20 text-green-300 border border-green-500/30'
+                      transaction.type === 'sale' ? 'bg-blue-600/20 text-blue-300' :
+                      transaction.type === 'salex' ? 'bg-purple-600/20 text-purple-300' :
+                      'bg-green-600/20 text-green-300'
                     }`}>
                       {transaction.type.toUpperCase()}
                     </span>
@@ -336,7 +336,7 @@ export const TransactionTable = ({
       </div>
 
       {pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+        <div className="flex items-center justify-between mt-6 pt-4">
           <button
             onClick={() => onPageChange(pagination.page - 1)}
             disabled={pagination.page === 1}

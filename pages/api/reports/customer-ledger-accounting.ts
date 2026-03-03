@@ -1,0 +1,116 @@
+import type { NextApiRequest, NextApiResponse } from 'next'
+import { prisma } from '../../../lib/db'
+import { parseDateRange } from '../../../lib/date-utils'
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ message: 'Method not allowed' })
+  }
+
+  try {
+    const {
+      customer_id,
+      dateFrom,
+      dateTo,
+      page = '1',
+      limit = '50'
+    } = req.query
+
+    if (!customer_id) {
+      return res.status(400).json({ message: 'Customer ID is required' })
+    }
+
+    const pageNum = parseInt(page as string)
+    const limitNum = parseInt(limit as string)
+    const skip = (pageNum - 1) * limitNum
+
+    // Build where clause
+    const where: any = {
+      customer_id: parseInt(customer_id as string)
+    }
+
+    // ✅ Date range filter - ONLY apply if user provides date range via UI
+    // Otherwise, show ALL entries (no date filter)
+    if (dateFrom && dateTo) {
+      const { startTimestamp, endTimestamp } = parseDateRange(
+        dateFrom as string,
+        dateTo as string
+      );
+      where.transaction_date = {
+        gte: startTimestamp,
+        lte: endTimestamp
+      };
+    }
+
+    // Fetch ledger entries
+    const [entries, total] = await Promise.all([
+      prisma.customer_ledger.findMany({
+        where,
+        orderBy: [
+          { transaction_date: 'asc' },  // Primary sort: transaction date
+          { created_at: 'asc' },        // ✅ NEW: Secondary sort by creation time (not updated_at)
+          { id: 'asc' }                 // ✅ Tertiary sort: id for absolute consistency
+        ],
+        skip,
+        take: limitNum
+      }),
+      prisma.customer_ledger.count({ where })
+    ])
+
+    // ✅ Return RAW entries (merge happens on client-side)
+    // Calculate running balance
+    let runningBalance = 0
+    entries.forEach(entry => {
+      runningBalance = runningBalance + Number(entry.debit) - Number(entry.credit)
+      entry.balance = runningBalance
+    })
+
+    // ✅ Filter out zero-value entries (cancelled transactions)
+    const nonZeroEntries = entries.filter(entry => entry.debit !== 0 || entry.credit !== 0)
+
+    // ✅ Return RAW entries - all formatting/merging happens on client-side
+    const formattedEntries = nonZeroEntries.map(entry => {
+      return {
+        id: entry.id,
+        date: entry.transaction_date,
+        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN', { 
+          timeZone: 'Asia/Kolkata' 
+        }),
+        particulars: entry.notes || '',  // Raw notes
+        voucherType: entry.transaction_type,  // Raw transaction type
+        voucherNo: entry.reference_no || '-',
+        debit: Number(entry.debit) || 0,
+        credit: Number(entry.credit) || 0,
+        balance: Number(entry.balance) || 0,
+        remarks: entry.notes || '',
+        paymentMode: entry.payment_mode,
+        transactionType: entry.transaction_type,
+        referenceType: entry.reference_type,
+        referenceId: entry.reference_id,
+        transaction_id: entry.transaction_id  // ✅ NEW: Send transaction_id for grouping logic
+      }
+    })
+
+    const totalPages = Math.ceil(total / limitNum)
+
+    res.status(200).json({
+      entries: formattedEntries,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasMore: pageNum < totalPages
+      }
+    })
+  } catch (error) {
+    console.error('Customer ledger accounting fetch error:', error)
+    res.status(500).json({
+      message: 'Failed to fetch customer ledger',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}

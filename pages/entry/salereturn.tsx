@@ -3,8 +3,9 @@ import { useRouter } from 'next/router';
 import { TransactionTable } from '../../components/transactions/TransactionTable';
 import { TransactionFilters } from '../../components/transactions/TransactionFilters';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { FileText, Download, RotateCcw, RefreshCw } from 'lucide-react';
-import { exportToPDF, exportToExcelGeneric, getTableForExport } from '../../lib/export-utils';
+import { RotateCcw, RefreshCw } from 'lucide-react';
+import { ExportMenu } from '../../components/common';
+import { getLocalDateString } from '../../lib/date-utils';
 import { useSnackbar } from '../../components/SnackbarProvider';
 
 // Define types for sales data (matching the Invoice and Invoiceitems tables)
@@ -328,92 +329,51 @@ export default function SaleReturnPage() {
     invoice_date: sale.invoice_date
   })) as any;
 
-  // Export functions
-  const handleExportPDF = async () => {
-    console.log('Exporting sales to PDF...');
-    const tableElement = getTableForExport();
-    if (tableElement && salesAsTransactions.length > 0) {
-      try {
-        await exportToPDF(tableElement, salesAsTransactions, {
-          title: 'Sales Report',
-          fileName: 'sales_report'
-        });
-        showSnackbar('success', 'PDF report exported successfully');
-      } catch (error) {
-        console.error('PDF export error:', error);
-        showSnackbar('error', 'Failed to export PDF report');
-      }
-    } else {
-      showSnackbar('warning', 'No data to export. Please ensure there are records visible.');
-    }
-  };
-
-  const handleExportExcel = () => {
-    console.log('Exporting sales to Excel...');
-    if (salesAsTransactions.length > 0) {
-      try {
-        exportToExcelGeneric(salesAsTransactions, {
-          title: 'Sales Report',
-          fileName: 'sales_report'
-        });
-        showSnackbar('success', 'Excel report exported successfully');
-      } catch (error) {
-        console.error('Excel export error:', error);
-        showSnackbar('error', 'Failed to export Excel report');
-      }
-    } else {
-      showSnackbar('warning', 'No data to export. Please ensure there are records visible.');
-    }
-  };
-
   return (
-    <div className="space-y-2">
-     
-      {/* Header with Export Buttons */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={handleExportPDF}
-            className="btn-secondary flex items-center space-x-2"
-          >
-            <FileText className="w-4 h-4" />
-            <span>Export as PDF</span>
-          </button>
-          <button
-            onClick={handleExportExcel}
-            className="btn-secondary flex items-center space-x-2"
-          >
-            <Download className="w-4 h-4" />
-            <span>Export as Excel</span>
-          </button>
-        </div>
+    <div className="card">
+      {/* Header with Export Menu */}
+      <div className="flex items-center justify-end mb-4">
+        <ExportMenu
+          data={salesAsTransactions}
+          columns={[
+            { key: 'id', label: 'ID', enabled: true },
+            { key: 'invoice_no', label: 'Invoice No', enabled: true },
+            { key: 'customer_name', label: 'Customer Name', enabled: true },
+            { key: 'item_count', label: 'Items Qty', enabled: true },
+            { key: 'total', label: 'Total', enabled: true },
+            { key: 'invoice_date', label: 'Date', enabled: true },
+            { key: 'type', label: 'Type', enabled: true },
+          ]}
+          config={{
+            title: 'Sale Returns Report',
+            fileName: `Sale_Returns_Report_${getLocalDateString()}`
+          }}
+        />
       </div>
 
       {/* Filters */}
-      <div>
-        <TransactionFilters
-          searchTerm={searchTerm}
-          setSearchTerm={setSearchTerm}
-          transactionType={transactionType}
-          setTransactionType={setTransactionType}
-          customerVendorFilter={customerFilter}
-          setCustomerVendorFilter={setCustomerFilter}
-          statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
-          dateFrom={dateFrom}
-          setDateFrom={setDateFrom}
-          dateTo={dateTo}
-          setDateTo={setDateTo}
-          amountMin={amountMin}
-          setAmountMin={setAmountMin}
-          amountMax={amountMax}
-          setAmountMax={setAmountMax}
-          limit={limit}
-          handleLimitChange={handleLimitChange}
-          clearFilters={clearFilters}
-          allowedTransactionTypes={['invoice', 'invoicex']}
-        />
-      </div>
+      <TransactionFilters
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        transactionType={transactionType}
+        setTransactionType={setTransactionType}
+        customerVendorFilter={customerFilter}
+        setCustomerVendorFilter={setCustomerFilter}
+        statusFilter={statusFilter}
+        setStatusFilter={setStatusFilter}
+        dateFrom={dateFrom}
+        setDateFrom={setDateFrom}
+        dateTo={dateTo}
+        setDateTo={setDateTo}
+        amountMin={amountMin}
+        setAmountMin={setAmountMin}
+        amountMax={amountMax}
+        setAmountMax={setAmountMax}
+        limit={limit}
+        handleLimitChange={handleLimitChange}
+        clearFilters={clearFilters}
+        allowedTransactionTypes={['invoice', 'invoicex']}
+      />
 
       {/* Sales Table with Return Actions */}
       <TransactionTable

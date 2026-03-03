@@ -366,6 +366,7 @@ model customer_details {
   balance_updated_at      DateTime? @updatedAt
   customer_payments       customer_payments[]
   customer_refunds        customer_refunds[]
+  balance_logs            customer_balance_logs[]
 }
 
 model financial_year {
@@ -1114,4 +1115,29 @@ model vendor_balance_logs {
   @@index([column_name], map: "idx_column")
   @@index([source_type, source_id], map: "idx_source")
   @@map("vendor_balance_logs")
+}
+
+// ============================================================================
+// CUSTOMER BALANCE AUDIT LOG SYSTEM
+// ============================================================================
+
+model customer_balance_logs {
+  id            Int      @id @default(autoincrement())
+  customer_id   Int
+  column_name   String   @db.VarChar(50) // 'total_paid' | 'total_allocated' | 'total_refunded' | 'total_refund_allocated'
+  change_amount Decimal  @db.Decimal(10, 2)
+  old_value     Decimal  @db.Decimal(10, 2)
+  new_value     Decimal  @db.Decimal(10, 2)
+  source_type   String   @db.VarChar(50) // 'sale_create' | 'sale_edit' | 'payment_received_create' | etc.
+  source_id     Int
+  reference_no  String?  @db.VarChar(50)
+  created_at    DateTime @default(now())
+  created_by    Int?
+  notes         String?  @db.Text
+  customer      customer_details @relation(fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([customer_id, created_at(sort: Desc)], map: "idx_customer_balance_date")
+  @@index([column_name], map: "idx_customer_balance_column")
+  @@index([source_type, source_id], map: "idx_customer_balance_source")
+  @@map("customer_balance_logs")
 }

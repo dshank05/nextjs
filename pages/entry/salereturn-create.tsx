@@ -355,11 +355,10 @@ export default function SaleReturnCreatePage() {
         throw new Error('Failed to load invoice');
       }
 
-      const data = await response.json();
-      const invoice = data.sale;
+      const invoice = await response.json(); // Response is the invoice object directly, not wrapped
 
       // Extract customer ID and auto-select customer
-      const customerId = invoice.select_customer?.toString();
+      const customerId = invoice.select_customer?.toString() || invoice.customer_id?.toString();
       if (!customerId) {
         throw new Error('Invoice has no customer');
       }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ClearableInput } from '../common';
+import { ClearableInput, SearchableSelect } from '../common';
+import { DateRangeFilter } from '../common/DateRangeFilter';
 
 // Define the types for the props this component will receive
 interface TransactionFiltersProps {
@@ -30,14 +31,15 @@ interface CustomerVendor {
   id: string;
   name?: string;
   vendor_name?: string;
+  billing_name?: string;
   gstin?: string;
   contact?: string;
   email?: string;
 }
 
-// Helper function to get display name (prioritizes name, falls back to vendor_name)
+// Helper function to get display name (prioritizes name, falls back to vendor_name or billing_name)
 const getDisplayName = (cv: CustomerVendor): string => {
-  return cv.name || cv.vendor_name || 'Unknown';
+  return cv.name || cv.vendor_name || cv.billing_name || 'Unknown';
 };
 
 export const TransactionFilters = ({
@@ -54,8 +56,6 @@ export const TransactionFilters = ({
   hideTransactionType = false,
   allowedTransactionTypes = ['sale', 'salex', 'purchase']
 }: TransactionFiltersProps) => {
-  const [customerVendorSearch, setCustomerVendorSearch] = useState('');
-  const [showCustomerVendorDropdown, setShowCustomerVendorDropdown] = useState(false);
   const [customerVendors, setCustomerVendors] = useState<CustomerVendor[]>([]);
   const [loadingCustomerVendors, setLoadingCustomerVendors] = useState(false);
 
@@ -89,28 +89,15 @@ export const TransactionFilters = ({
     }
   };
 
-  const filteredCustomerVendors = customerVendors.filter(cv =>
-    getDisplayName(cv).toLowerCase().includes(customerVendorSearch.toLowerCase())
-  );
-
-  const handleCustomerVendorSelect = (customerVendor: CustomerVendor) => {
-    // Store the ID (key) for database operations, but display name for UI
-    setCustomerVendorFilter(customerVendor.id); // Store ID for filtering
-    setCustomerVendorSearch(getDisplayName(customerVendor)); // Display name for UI
-    setShowCustomerVendorDropdown(false);
-  };
-
   const handleClear = () => {
     clearFilters();
-    setCustomerVendorSearch('');
   };
 
   return (
-    <div className="card">
-      <h3 className="text-lg font-semibold text-white mb-3">Search & Filter Transactions</h3>
-      <div className={`grid grid-cols-1 md:grid-cols-2 ${hideTransactionType ? 'lg:grid-cols-5' : 'lg:grid-cols-6'} gap-4`}>
+    <div>
+      <div className="grid grid-cols-6 gap-4 mb-4">
         {/* Search */}
-        <div>
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Search Invoice/Customer</label>
           <ClearableInput
             type="text"
@@ -122,191 +109,79 @@ export const TransactionFilters = ({
 
         {/* Transaction Type Filter - Only show if not hidden */}
         {!hideTransactionType && (
-          <div>
+          <div className="flex-1">
             <label className="block text-sm font-medium text-slate-300 mb-2">Transaction Type</label>
-            <select
-              value={transactionType}
-              onChange={(e) => setTransactionType(e.target.value)}
-              className="select w-full"
-            >
-              <option value="all">All Types</option>
-              {allowedTransactionTypes.map(type => (
-                <option key={type} value={type}>
-                  {type === 'sale' ? 'Invoice' :
-                   type === 'salex' ? 'Invoicex' :
-                   type === 'purchase' ? 'Purchase' :
-                   type.charAt(0).toUpperCase() + type.slice(1)}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={[
+                { id: 'all', name: 'All Types' },
+                ...allowedTransactionTypes.map(type => ({
+                  id: type,
+                  name: type === 'sale' ? 'Invoice' :
+                        type === 'salex' ? 'Invoicex' :
+                        type === 'purchase' ? 'Purchase' :
+                        type === 'invoice' ? 'Invoice' :
+                        type === 'invoicex' ? 'Invoicex' :
+                        type.charAt(0).toUpperCase() + type.slice(1)
+                }))
+              ]}
+              selectedValue={transactionType}
+              onSelectionChange={(value) => setTransactionType(value || 'all')}
+              placeholder="Select Type"
+            />
           </div>
         )}
 
         {/* Customer/Vendor Filter */}
-        <div className="relative">
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Customer/Vendor</label>
-          <input
-            type="text"
-            placeholder="Search customers/vendors..."
-            value={customerVendorSearch || customerVendorFilter || ''}
-            onChange={(e) => {
-              setCustomerVendorSearch(e.target.value);
-              setShowCustomerVendorDropdown(true);
-              if (e.target.value === '') {
-                setCustomerVendorFilter('');
-                setCustomerVendorSearch('');
-              }
+          <SearchableSelect
+            options={[
+              { id: '', name: 'All Customers/Vendors' },
+              ...customerVendors.map(cv => ({
+                id: cv.id,
+                name: getDisplayName(cv)
+              }))
+            ]}
+            selectedValue={customerVendorFilter}
+            onSelectionChange={(value) => setCustomerVendorFilter(value || '')}
+            placeholder="Select Customer/Vendor"
+          />
+        </div>
+
+        {/* Date Range Filter */}
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-slate-300 mb-2">Date</label>
+          <DateRangeFilter
+            startDate={dateFrom}
+            endDate={dateTo}
+            onDateChange={(start, end) => {
+              setDateFrom(start);
+              setDateTo(end);
             }}
-            onFocus={() => setShowCustomerVendorDropdown(true)}
-            onBlur={() => setTimeout(() => setShowCustomerVendorDropdown(false), 200)}
-            className="input w-full"
+            placeholder="Select date range..."
           />
-          {showCustomerVendorDropdown && (
-            <div className="absolute z-10 w-full mt-1 bg-slate-700 border border-slate-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
-              <div
-                className="px-3 py-2 hover:bg-slate-600 cursor-pointer"
-                onClick={() => {
-                  setCustomerVendorFilter(''); // Clear filter
-                  setCustomerVendorSearch('All Customers/Vendors'); // Display text
-                  setShowCustomerVendorDropdown(false);
-                }}
-              >
-                All Customers/Vendors
-              </div>
-              {filteredCustomerVendors.map((cv) => (
-                <div
-                  key={cv.id}
-                  className="px-3 py-2 hover:bg-slate-600 cursor-pointer"
-                  onClick={() => handleCustomerVendorSelect(cv)}
-                >
-                  {getDisplayName(cv)}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
-        {/* Status Filter */}
-        <div>
+        {/* Status Filter - Moved to last */}
+        <div className="flex-1">
           <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="select w-full"
-          >
-            <option value="all">All Status</option>
-            <option value="0">Paid</option>
-            <option value="1">Unpaid</option>
-          </select>
-        </div>
-
-        {/* Date From */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Date From</label>
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="input w-full"
+          <SearchableSelect
+            options={[
+              { id: 'all', name: 'All Status' },
+              { id: '0', name: 'Unpaid' },
+              { id: '1', name: 'Paid' }
+            ]}
+            selectedValue={statusFilter}
+            onSelectionChange={(value) => setStatusFilter(value || 'all')}
+            placeholder="Select Status"
           />
         </div>
 
-        {/* Date To */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Date To</label>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="input w-full"
-          />
-        </div>
-
-        {/* Amount Min */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Min Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="0"
-            value={amountMin}
-            onChange={(e) => setAmountMin(e.target.value)}
-            min="0"
-          />
-        </div>
-
-        {/* Amount Max */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Max Amount (₹)</label>
-          <ClearableInput
-            type="number"
-            placeholder="No limit"
-            value={amountMax}
-            onChange={(e) => setAmountMax(e.target.value)}
-            min="0"
-          />
-        </div>
-
-        {/* Items Per Page */}
-        <div>
-          <label className="block text-sm font-medium text-slate-300 mb-2">Items Per Page</label>
-          <select
-            value={limit}
-            onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-            className="select w-full"
-          >
-            <option value="10">10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
-        </div>
-
-        {/* Clear Filters */}
+        {/* Clear Filters Button */}
         <div className="flex items-end">
           <button onClick={handleClear} className="btn-secondary w-full">
             Clear Filters
           </button>
-        </div>
-      </div>
-
-      {/* Active Filters Summary */}
-      <div className="mt-4 pt-4 border-t border-slate-700">
-        <div className="flex flex-wrap gap-2 text-sm">
-          <span className="text-slate-400">Active Filters:</span>
-          {searchTerm && (
-            <span className="px-2 py-1 bg-blue-600/20 text-blue-300 rounded-full text-xs">
-              Search: "{searchTerm}"
-            </span>
-          )}
-          {transactionType !== 'all' && (
-            <span className="px-2 py-1 bg-green-600/20 text-green-300 rounded-full text-xs">
-              Type: {transactionType.toUpperCase()}
-            </span>
-          )}
-          {customerVendorFilter && (
-            <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded-full text-xs">
-              Customer/Vendor: {customerVendorFilter}
-            </span>
-          )}
-          {statusFilter !== 'all' && (
-            <span className="px-2 py-1 bg-orange-600/20 text-orange-300 rounded-full text-xs">
-              Status: {statusFilter}
-            </span>
-          )}
-          {(dateFrom || dateTo) && (
-            <span className="px-2 py-1 bg-yellow-600/20 text-yellow-300 rounded-full text-xs">
-              Date: {dateFrom || 'Start'} to {dateTo || 'End'}
-            </span>
-          )}
-          {(amountMin || amountMax) && (
-            <span className="px-2 py-1 bg-red-600/20 text-red-300 rounded-full text-xs">
-              Amount: ₹{amountMin || '0'} - ₹{amountMax || '∞'}
-            </span>
-          )}
-          {(!searchTerm && transactionType === 'all' && !customerVendorFilter &&
-            statusFilter === 'all' && !dateFrom && !dateTo && !amountMin && !amountMax) && (
-            <span className="text-slate-500 text-xs">None</span>
-          )}
         </div>
       </div>
     </div>

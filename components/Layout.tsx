@@ -74,8 +74,8 @@ const Layout = ({ children }: LayoutProps) => {
       subpages: [
         { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor' },
+        { name: 'CUSTOMER TRANSACTION', href: '/customer-transactions' },
         { name: 'VENDOR TRANSACTION', href: '/vendor-transactions' },
-        { name: 'CUSTOMER TRANSACTION', href: '/entry/customer-transaction' },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
         { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
         { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },
@@ -106,6 +106,7 @@ const Layout = ({ children }: LayoutProps) => {
       name: 'REPORTS',
       icon: '📊',
       subpages: [
+        { name: 'CUSTOMER LEDGER', href: '/reports/customer-ledger' },
         { name: 'VENDOR LEDGER', href: '/reports/vendor-ledger' },
         { name: 'VENDOR BALANCE LOGS', href: '/reports/vendor-balance-logs' },
         { name: 'VENDOR REPORTS', href: '/reports/vendor-reports' },
@@ -243,6 +244,17 @@ const Layout = ({ children }: LayoutProps) => {
       return 'VENDOR VIEW';
     }
 
+    // Customer Transactions routes
+    if (router.pathname === '/customer-transactions/create') {
+      return hasEditParam ? 'EDIT CUSTOMER TRANSACTION' : 'RECORD CUSTOMER TRANSACTION';
+    }
+    if (router.pathname === '/customer-transactions') {
+      return 'CUSTOMER TRANSACTIONS';
+    }
+    if (router.pathname.startsWith('/customer-transactions/view/')) {
+      return 'CUSTOMER TRANSACTION VIEW';
+    }
+
     // Vendor Transactions routes
     if (router.pathname === '/entry/vendor-transaction') {
       return hasEditParam ? 'EDIT VENDOR TRANSACTION' : 'RECORD VENDOR TRANSACTION';
@@ -252,6 +264,11 @@ const Layout = ({ children }: LayoutProps) => {
     }
     if (router.pathname.startsWith('/vendor-transactions/view/')) {
       return 'VENDOR TRANSACTION VIEW';
+    }
+
+    // Customer Ledger routes
+    if (router.pathname === '/reports/customer-ledger') {
+      return 'CUSTOMER LEDGER';
     }
 
     // Check navigation items

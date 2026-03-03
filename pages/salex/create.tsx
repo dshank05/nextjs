@@ -19,6 +19,20 @@ interface Mechanic {
   mechanic_name: string;
 }
 
+interface Customer {
+  id: string;
+  billing_name: string;
+  contact_no?: string;
+  email?: string;
+  tax_id?: string;
+  address?: string;
+  address_2?: string;
+  city?: string;
+  state?: string;
+  state_code?: number;
+  pin_code?: string;
+}
+
 interface Product {
   id: number;
   product_name: string;
@@ -141,6 +155,14 @@ export default function InvoiceCCreate() {
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Customer selection state (like vendor in purchase)
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [customerIdToSave, setCustomerIdToSave] = useState<number | null>(null);
+  const [customerStateForTax, setCustomerStateForTax] = useState<string>('');
+  const [isOtherCustomerSelected, setIsOtherCustomerSelected] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
@@ -327,8 +349,8 @@ export default function InvoiceCCreate() {
     gst_number: '',
     tax: '',
     notes: '',
-    payment_status: 1, // Default to Paid
-    payment_mode: 1, // Default to Cash
+    payment_status: 0, // Default to Unpaid (0=Unpaid, 1=Paid, 2=Partially Paid)
+    payment_mode: 0, // Default to Cash (0=Cash, 1=Bank)
     total_discount: '',
     subtotal: '',
     total_tax: '', // Always 0 for salex
@@ -363,6 +385,7 @@ export default function InvoiceCCreate() {
         await Promise.all([
           fetchStaffList(),
           fetchMechanics(),
+          fetchCustomers(),
           fetchProducts(),
           fetchFilterOptions(),
           fetchGstRates(),
@@ -408,8 +431,8 @@ export default function InvoiceCCreate() {
           gst_number: invoiceData.gst_number || '',
           tax: invoiceData.tax || '',
           notes: invoiceData.notes || '',
-          payment_status: invoiceData.status || invoiceData.payment_status || 1,
-          payment_mode: invoiceData.mode || invoiceData.payment_mode || 1,
+          payment_status: invoiceData.status !== undefined ? invoiceData.status : (invoiceData.payment_status !== undefined ? invoiceData.payment_status : 0),
+          payment_mode: invoiceData.mode !== undefined ? invoiceData.mode : (invoiceData.payment_mode !== undefined ? invoiceData.payment_mode : 0),
           total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
           subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
           total_tax: '0', // Always 0 for salex invoices
@@ -668,6 +691,18 @@ export default function InvoiceCCreate() {
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      const response = await fetch('/api/customers?dropdown=true');
+      if (response.ok) {
+        const data = await response.json();
+        setCustomers(data.customers || []);
+      }
+    } catch (error) {
+      console.error('Error fetching customers:', error);
+    }
+  };
+
   const fetchProducts = async (
     modelFilter: string = '',
     searchTerm: string = '',
@@ -844,8 +879,8 @@ export default function InvoiceCCreate() {
           gst_number: invoice.customer?.billing_gstin || '', // Get from customer object
           tax: invoice.tax || '',
           notes: invoice.notes || '',
-          payment_status: invoice.payment_status || 1, // API field is 'payment_status', not 'status'
-          payment_mode: invoice.payment_mode || 1,
+          payment_status: invoice.payment_status !== undefined ? invoice.payment_status : 0,
+          payment_mode: invoice.payment_mode !== undefined ? invoice.payment_mode : 0,
           total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
           subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
           total_tax: '0', // Always 0 for salex invoices
@@ -901,6 +936,76 @@ export default function InvoiceCCreate() {
     }
   };
 
+  const handleCustomerSelect = (customerId: string) => {
+    if (customerId === '0') {
+      // "Other" selected
+      setSelectedCustomerId('0');
+      setSelectedCustomer(null);
+      setIsOtherCustomerSelected(true);
+      setCustomerIdToSave(0);
+
+      // Clear existing tax calculations and selected products
+      setSelectedProducts([]);
+      setFormData(prev => ({
+        ...prev,
+        customer_name: '',
+        contact_number: '',
+        email_id: '',
+        gst_number: '',
+        address: '',
+        address_2: '',
+        city: '',
+        state: '',
+        state_code: undefined,
+        pin_code: '',
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+      setCustomerStateForTax('');
+      return;
+    }
+
+    setIsOtherCustomerSelected(false);
+    const customer = customers.find(c => c.id === customerId);
+    if (customer) {
+      setSelectedCustomerId(customerId);
+      setCustomerIdToSave(parseInt(customerId));
+      setSelectedCustomer(customer);
+
+      // Auto-populate customer details
+      setFormData(prev => ({
+        ...prev,
+        customer_name: customer.billing_name || '',
+        contact_number: customer.contact_no || '',
+        email_id: customer.email || '',
+        gst_number: customer.tax_id || '',
+        address: customer.address || '',
+        address_2: customer.address_2 || '',
+        city: customer.city || '',
+        state: customer.state || '',
+        state_code: customer.state_code,
+        pin_code: customer.pin_code || ''
+      }));
+
+      // Clear existing products when customer changes (tax calculations will be different)
+      setSelectedProducts([]);
+      setFormData(prev => ({
+        ...prev,
+        total_cgst: '',
+        total_sgst: '',
+        total_igst: ''
+      }));
+
+      setCustomerStateForTax(customer.state || '');
+    } else {
+      // Clear customer selection
+      setCustomerIdToSave(null);
+      setSelectedCustomer(null);
+      setCustomerStateForTax('');
+    }
+  };
+
 
   const handleEditProduct = (item: InvoiceItem) => {
     // Enable inline editing for this specific row
@@ -915,14 +1020,11 @@ export default function InvoiceCCreate() {
   const saveInlineEdit = () => {
     if (editingRowId && editingRowData) {
       // Validate the editing data
-      if (!editingRowData.qty || editingRowData.qty < 1) {
-        setErrors({ inlineEdit: 'Quantity must be at least 1' });
+      if (editingRowData.qty < 0) {
+        setErrors({ inlineEdit: 'Quantity cannot be negative' });
         return;
       }
-      if (!editingRowData.rate || editingRowData.rate <= 0) {
-        setErrors({ inlineEdit: 'Rate must be greater than 0' });
-        return;
-      }
+      // Rate validation removed - allow 0 rate
 
       // Recalculate tax and total for salex (tax is always 0)
       const subtotal = editingRowData.qty * editingRowData.rate;
@@ -989,13 +1091,16 @@ export default function InvoiceCCreate() {
     if (!formData.invoice_number.trim()) {
       newErrors.invoice_number = 'Invoice number is required';
     }
-    if (!formData.customer_name.trim()) {
+    if (!selectedCustomerId) {
+      newErrors.customer_name = 'Please select a customer';
+    }
+    if (isOtherCustomerSelected && !formData.customer_name.trim()) {
       newErrors.customer_name = 'Customer name is required';
     }
     if (!formData.state.trim()) {
       newErrors.state = 'State is required';
     }
-    if (!formData.contact_number.trim()) {
+    if (isOtherCustomerSelected && !formData.contact_number.trim()) {
       newErrors.contact_number = 'Phone number is required';
     }
     if (selectedProducts.length === 0) {
@@ -1025,7 +1130,7 @@ export default function InvoiceCCreate() {
         // Main invoice fields
         invoice_no: formData.invoice_number,
         invoice_date: formData.date,
-        select_customer: 0, // Always 0 for salex - no customer selection
+        select_customer: customerIdToSave || 0, // Customer ID or 0 for "Other"
         staff_id: formData.staff_id,
         staff_details: staffList.find(e => e.id === formData?.staff_id?.toString())?.staff_name,
 
@@ -1283,25 +1388,36 @@ export default function InvoiceCCreate() {
             <div className="mb-3 border-t border-slate-600 pt-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CUSTOMER NAME *</label>
-                  <input
-                    type="text"
-                    value={formData.customer_name}
-                    onChange={(e) => handleInputChange('customer_name', e.target.value)}
-                    className="input w-full"
-                    placeholder="Enter customer name"
+                  <label className="block text-sm font-medium text-slate-300 mb-2">SELECT CUSTOMER *</label>
+                  <SearchableSelect
+                    options={[
+                      { id: '', name: 'Select Customer' },
+                      { id: '0', name: 'Other' },
+                      ...customers.map((customer) => ({
+                        id: customer.id.toString(),
+                        name: customer.billing_name
+                      }))
+                    ]}
+                    selectedValue={selectedCustomerId}
+                    onSelectionChange={(value) => {
+                      const customerId = value || '';
+                      setSelectedCustomerId(customerId);
+                      handleCustomerSelect(customerId);
+                    }}
+                    placeholder="Select Customer"
                   />
                   {errors.customer_name && <p className="text-red-400 text-xs mt-1">{errors.customer_name}</p>}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER *</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">CONTACT NUMBER{isOtherCustomerSelected ? ' *' : ''}</label>
                   <input
                     type="text"
-                    value={formData.contact_number}
+                    value={formData.contact_number || selectedCustomer?.contact_no || ''}
                     onChange={(e) => handleInputChange('contact_number', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter contact number"
                     maxLength={10}
+                    readOnly={!isOtherCustomerSelected}
                   />
                   {errors.contact_number && <p className="text-red-400 text-xs mt-1">{errors.contact_number}</p>}
                 </div>
@@ -1309,31 +1425,47 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">EMAIL ID</label>
                   <input
                     type="email"
-                    value={formData.email_id}
+                    value={formData.email_id || selectedCustomer?.email || ''}
                     onChange={(e) => handleInputChange('email_id', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter email address"
+                    readOnly={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={formData.gst_number}
+                    value={formData.gst_number || selectedCustomer?.tax_id || ''}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter GST number"
+                    readOnly={!isOtherCustomerSelected}
                   />
                 </div>
-
+              </div>
+              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mt-4`}>
+                {isOtherCustomerSelected && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
+                    <input
+                      type="text"
+                      value={formData.customer_name}
+                      onChange={(e) => handleInputChange('customer_name', e.target.value)}
+                      className="input w-full"
+                      placeholder="Enter customer name"
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
                   <input
                     type="text"
-                    value={formData.address}
+                    value={formData.address || selectedCustomer?.address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address"
+                    readOnly={!isOtherCustomerSelected}
                   />
                 </div>
 
@@ -1341,10 +1473,11 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={formData.city}
+                    value={formData.city || selectedCustomer?.city || ''}
                     onChange={(e) => handleInputChange('city', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter city"
+                    readOnly={!isOtherCustomerSelected}
                   />
                 </div>
                 <div>
@@ -1359,9 +1492,11 @@ export default function InvoiceCCreate() {
                     ]}
                     selectedValue={formData.state || ''}
                     onSelectionChange={(value) => {
-                      handleInputChange('state', value);
+                      if (isOtherCustomerSelected) {
+                        handleInputChange('state', value);
                     }}
                     placeholder="Select State"
+                    disabled={!isOtherCustomerSelected}
                   />
                   {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
                 </div>
@@ -1370,10 +1505,11 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
                   <input
                     type="text"
-                    value={formData.pin_code}
+                    value={formData.pin_code || selectedCustomer?.pin_code || ''}
                     onChange={(e) => handleInputChange('pin_code', e.target.value)}
-                    className="input w-full"
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter pin code"
+                    readOnly={!isOtherCustomerSelected}
                   />
                 </div>
               </div>
@@ -1520,11 +1656,20 @@ export default function InvoiceCCreate() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (!selectedCustomerId) {
+                              setErrors({ customer_name: 'Please select customer first' });
+                              return;
+                            }
                             setErrors({});
                             setProductSearchTerm('');
                             setIsProductPanelOpen(true);
                           }}
-                          className="w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors bg-slate-700 border-slate-600 hover:bg-slate-600"
+                          disabled={!selectedCustomerId}
+                          className={`w-full px-3 py-2 border rounded text-xs text-white text-left transition-colors ${selectedCustomerId
+                            ? 'bg-slate-700 border-slate-600 hover:bg-slate-600'
+                            : 'bg-slate-800 border-slate-700 text-slate-500 cursor-not-allowed'
+                            }`}
+                          title={!selectedCustomerId ? 'Please select customer first' : ''}
                         >
                           {selectedRowProduct ? (
                             productRowFilters.carModels.length > 0
@@ -1959,10 +2104,8 @@ export default function InvoiceCCreate() {
                             <td className="px-3 py-2 text-center w-24">
                               <input
                                 type="number"
-                                min="1"
-                                
                                 value={editingRowData?.qty || ''}
-                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseInt(e.target.value) || 1 } : null)}
+                                onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseFloat(e.target.value) || 0 } : null)}
                                 onWheel={(e) => e.preventDefault()}
                                 onKeyDown={(e) => {
                                   if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -1975,7 +2118,6 @@ export default function InvoiceCCreate() {
                             <td className="px-3 py-2 text-center w-32">
                               <input
                                 type="number"
-                                
                                 value={editingRowData?.rate || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, rate: parseFloat(e.target.value) || 0 } : null)}
                                 onWheel={(e) => e.preventDefault()}
@@ -2294,7 +2436,7 @@ export default function InvoiceCCreate() {
                           { id: '1', name: 'Paid' }
                         ]}
                         selectedValue={formData.payment_status.toString()}
-                        onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '1')).toString())}
+                        onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '0')).toString())}
                         placeholder="Select Payment Status"
                       />
                     </div>
@@ -2306,7 +2448,7 @@ export default function InvoiceCCreate() {
                           { id: '1', name: 'Bank' }
                         ]}
                         selectedValue={formData.payment_mode.toString()}
-                        onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '1')).toString())}
+                        onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '0')).toString())}
                         placeholder="Select Payment Mode"
                       />
                     </div>
