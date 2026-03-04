@@ -103,6 +103,7 @@ interface InvoiceFormData {
   vehicle_number: string;
   commission: string;
   address: string;
+  address_2: string;
   transport_name: string;
   city: string;
   email_id: string;
@@ -373,6 +374,7 @@ export default function InvoiceCreate() {
     vehicle_number: '',
     commission: '',
     address: '',
+    address_2: '',
     transport_name: '',
     city: '',
     email_id: '',
@@ -539,6 +541,7 @@ export default function InvoiceCreate() {
           vehicle_number: transportDetails?.vehicle_no || '',
           commission: invoiceData.commission ? invoiceData.commission.toString() : '',
           address: invoiceData.address || '',
+          address_2: invoiceData.address_2 || '',
           transport_name: transportDetails?.trans_mode || '',
           city: invoiceData.city || '',
           email_id: invoiceData.email_id || '',
@@ -873,6 +876,7 @@ export default function InvoiceCreate() {
           vehicle_number: transportDetails.vehicle_no || '',
           commission: invoiceData.commission ? invoiceData.commission.toString() : '',
           address: invoiceData.address || '',
+          address_2: invoiceData.address_2 || '',
           transport_name: transportDetails?.trans_mode || '',
           city: invoiceData.city || '',
           email_id: invoiceData.email_id || '',
@@ -971,6 +975,7 @@ export default function InvoiceCreate() {
           vehicle_number: transportDetails.vehicle_no || '',
           commission: invoice.commission ? invoice.commission.toString() : '',
           address: invoice.address || '',
+          address_2: invoice.address_2 || '',
           transport_name: transportDetails.trans_mode || '',
           city: invoice.city || '',
           email_id: invoice.email_id || '',
@@ -1006,6 +1011,7 @@ export default function InvoiceCreate() {
             contact_number: data.billingDetails.contact_number || prev.contact_number,
             email_id: data.billingDetails.email_id || prev.email_id,
             address: data.billingDetails.address || prev.address,
+            address_2: data.billingDetails.address_2 || prev.address_2,
             city: data.billingDetails.city || prev.city,
             state: data.billingDetails.state || prev.state,
             gst_number: data.billingDetails.gst_number || prev.gst_number,
@@ -1430,7 +1436,13 @@ export default function InvoiceCreate() {
     });
 
     if (!isValid) {
-      alert('Form validation failed. Check console for details.');
+      // Show snackbar with validation error
+      const errorMessages = Object.values(errors);
+      const firstError = errorMessages[0] || 'Please fix the validation errors';
+      showSnackbar('error', firstError);
+      
+      // Scroll to top to show errors
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -1456,6 +1468,7 @@ export default function InvoiceCreate() {
         contact_number: formData.contact_number,
         email_id: formData.email_id,
         address: formData.address,
+        address_2: formData.address_2,
         city: formData.city,
         state: formData.state,
         gst_number: formData.gst_number,
@@ -1656,22 +1669,19 @@ export default function InvoiceCreate() {
 
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              {/* <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
-                <div className="flex flex-row-reverse mt-1">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={useShippingAddress}
-                      onChange={(e) => setUseShippingAddress(e.target.checked)}
-                      className="form-checkbox h-4 w-4 text-blue-600 bg-slate-700 border-slate-600 rounded"
-                    />
-                    <span className="text-sm text-slate-300">Use shipping address</span>
-                  </label>
-                </div>
-              </div> */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">SELECT CUSTOMER *</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
+                    <a
+                      href="/customers/create?from=sale"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
+                    >
+                      + Add New Customer
+                    </a>
+                  </div>
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Customer' },
@@ -1726,7 +1736,7 @@ export default function InvoiceCreate() {
                   />
                 </div>
               </div>
-              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mt-4`}>
+              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
                 {isOtherCustomerSelected && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
@@ -1740,17 +1750,27 @@ export default function InvoiceCreate() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
                     value={formData.address || selectedCustomer?.address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
-                    placeholder="Enter address"
+                    placeholder="Enter address line 1"
                     readOnly={!isOtherCustomerSelected}
                   />
                 </div>
-
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
+                  <input
+                    type="text"
+                    value={formData.address_2 || selectedCustomer?.address_2 || ''}
+                    onChange={(e) => handleInputChange('address_2', e.target.value)}
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
+                    placeholder="Enter address line 2"
+                    readOnly={!isOtherCustomerSelected}
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
@@ -1762,27 +1782,39 @@ export default function InvoiceCreate() {
                     readOnly={!isOtherCustomerSelected}
                   />
                 </div>
-
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE *</label>
                   <SearchableSelect
-                    options={[
-                      { id: '', name: 'Select State' },
-                      ...states.map((state) => ({
-                        id: state.id,
-                        name: state.name
-                      }))
-                    ]}
-                    selectedValue={formData.state || ''}
+                    options={states.map((state) => ({
+                      id: state.id,
+                      name: state.name
+                    }))}
+                    selectedValue={(() => {
+                      // Find the state ID that matches the current state code
+                      if (selectedCustomer?.state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.state_code);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      // Fallback to state name matching if no state code
+                      if (formData.state || selectedCustomer?.state) {
+                        const currentStateName = formData.state || selectedCustomer?.state || '';
+                        const matchingState = states.find(state => state.name === currentStateName);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      return '';
+                    })()}
                     onSelectionChange={(value) => {
                       if (isOtherCustomerSelected) {
                         if (value) {
                           // Find the state name and code from the selected ID
-                          const selectedState = states.find(s => s.id === value);
+                          const selectedState = states.find(state => state.id === value);
                           if (selectedState) {
                             handleInputChange('state', selectedState.name);
                             setFormData(prev => ({ ...prev, state_code: selectedState.code }));
                           }
+                        } else {
+                          handleInputChange('state', '');
+                          setFormData(prev => ({ ...prev, state_code: undefined }));
                         }
                       }
                     }}
@@ -1790,18 +1822,6 @@ export default function InvoiceCreate() {
                     disabled={!isOtherCustomerSelected}
                   />
                   {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
-                  <input
-                    type="text"
-                    value={formData.pin_code || selectedCustomer?.pin_code || ''}
-                    onChange={(e) => handleInputChange('pin_code', e.target.value)}
-                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
-                    placeholder="Enter pin code"
-                    readOnly={!isOtherCustomerSelected}
-                  />
                 </div>
               </div>
             </div>
@@ -2571,7 +2591,7 @@ export default function InvoiceCreate() {
                             </td>
                             {enableTax && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.tax)}
+                                {product.gst_percentage}%
                               </td>
                             )}
                             {enableDiscount && (
@@ -2609,18 +2629,9 @@ export default function InvoiceCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      {/* <tr>
-                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
-                          SUBTOTAL
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
-                          ₹{subtotal.toFixed(2)}
-                        </td>
-                      </tr> */}
                       {totalDiscount > 0 && (
                         <tr>
-                          <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
+                          <td colSpan={enableDiscount && enableTax ? 8 : enableDiscount || enableTax ? 7 : 6} className="px-4 py-3"></td>
                           <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                             TOTAL DISCOUNT
                           </td>
@@ -2629,27 +2640,10 @@ export default function InvoiceCreate() {
                           </td>
                         </tr>
                       )}
-                      {/* <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 11 : 10} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
-                          GRAND TOTAL
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
-                          ₹{grandTotal.toFixed(2)}
-                        </td>
-                      </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount && enableTax ? 11 : enableDiscount || enableTax ? 10 : 9} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount && enableTax ? 8 : enableDiscount || enableTax ? 7 : 6} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
-                          {/* Clear All Products button - COMMENTED OUT */}
-                          {/* <button
-                            type="button"
-                            onClick={() => setSelectedProducts([])}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
-                          >
-                            Clear All Products
-                          </button> */}
-                          {/* Display Subtotal instead */}
+                          {/* Display Subtotal */}
                           <div className="text-sm font-semibold text-slate-200">
                             Subtotal: ₹{subtotal.toFixed(2)}
                           </div>

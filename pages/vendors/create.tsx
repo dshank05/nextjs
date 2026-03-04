@@ -152,9 +152,9 @@ export default function CreateVendor() {
     }
 
     // ===== STATE VALIDATION =====
-    // State is mandatory for "Other" vendor, optional for named vendors
-    if (formData.vendor_name.trim().toLowerCase() === 'other' && !formData.state.trim()) {
-      newErrors.state = 'State is required for "Other" vendor';
+    // State is mandatory for all vendors
+    if (!formData.state.trim()) {
+      newErrors.state = 'State is required';
     }
 
     setErrors(newErrors);

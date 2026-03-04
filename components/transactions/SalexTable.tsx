@@ -381,7 +381,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
   };
 
   return (
-    <div>
+    <div className="card">
       <div className="flex items-center justify-between gap-2 mb-4">
         {/* TOP SEARCH BOX - COMMENTED OUT */}
         {/* <div className="flex items-center gap-2">

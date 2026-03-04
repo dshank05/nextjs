@@ -303,6 +303,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             contact_no: req.body.contact_number,          // BillToSales.contact_no
             email: req.body.email_id,                     // BillToSales.email
             billing_address: req.body.address,            // BillToSales.billing_address (required)
+            billing_address2: req.body.address_2,         // BillToSales.billing_address2
             billing_city: req.body.city,                  // BillToSales.billing_city
             billing_state: req.body.state,                // BillToSales.billing_state
             billing_gstin: req.body.gst_number            // BillToSales.billing_gstin
@@ -320,6 +321,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             shipping_address: req.body.useShippingAddress
               ? shippingDetails?.address || req.body.address
               : req.body.address,                          // shipto.shipping_address (required)
+            shipping_address2: req.body.useShippingAddress
+              ? shippingDetails?.address_2 || req.body.address_2
+              : req.body.address_2,                        // shipto.shipping_address2
             shipping_city: req.body.useShippingAddress
               ? shippingDetails?.city || req.body.city
               : req.body.city,                             // shipto.shipping_city

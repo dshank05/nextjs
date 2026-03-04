@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
@@ -102,6 +102,7 @@ interface InvoiceFormData {
   vehicle_number: string;
   commission: string;
   address: string;
+  address_2: string;
   transport_name: string;
   city: string;
   email_id: string;
@@ -341,6 +342,7 @@ export default function InvoiceCCreate() {
     vehicle_number: '',
     commission: '',
     address: '',
+    address_2: '',
     transport_name: '',
     city: '',
     email_id: '',
@@ -1115,6 +1117,13 @@ export default function InvoiceCCreate() {
     e.preventDefault();
 
     if (!validateForm()) {
+      // Show snackbar with validation error
+      const errorMessages = Object.values(errors);
+      const firstError = errorMessages[0] || 'Please fix the validation errors';
+      showSnackbar('error', firstError);
+
+      // Scroll to top to show errors
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
@@ -1139,6 +1148,7 @@ export default function InvoiceCCreate() {
         contact_number: formData.contact_number,
         email_id: formData.email_id,
         address: formData.address,
+        address_2: formData.address_2,
         city: formData.city,
         state: formData.state,
         gst_number: formData.gst_number,
@@ -1386,9 +1396,19 @@ export default function InvoiceCCreate() {
 
             {/* Customer Information */}
             <div className="mb-3 border-t border-slate-600 pt-4">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-3">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">SELECT CUSTOMER *</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-300">CUSTOMER NAME *</label>
+                    <a
+                      href="/customers/create?from=salex"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:text-blue-300 text-sm underline transition-colors"
+                    >
+                      + Add New Customer
+                    </a>
+                  </div>
                   <SearchableSelect
                     options={[
                       { id: '', name: 'Select Customer' },
@@ -1444,7 +1464,7 @@ export default function InvoiceCCreate() {
                   />
                 </div>
               </div>
-              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4 mt-4`}>
+              <div className={`grid grid-cols-1 ${isOtherCustomerSelected ? 'md:grid-cols-5' : 'md:grid-cols-4'} gap-4`}>
                 {isOtherCustomerSelected && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">MANUAL CUSTOMER NAME *</label>
@@ -1458,17 +1478,27 @@ export default function InvoiceCCreate() {
                   </div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">BILLING ADDRESS</label>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
                     value={formData.address || selectedCustomer?.address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
-                    placeholder="Enter address"
+                    placeholder="Enter address line 1"
                     readOnly={!isOtherCustomerSelected}
                   />
                 </div>
-
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
+                  <input
+                    type="text"
+                    value={formData.address_2 || selectedCustomer?.address_2 || ''}
+                    onChange={(e) => handleInputChange('address_2', e.target.value)}
+                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
+                    placeholder="Enter address line 2"
+                    readOnly={!isOtherCustomerSelected}
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
@@ -1483,34 +1513,43 @@ export default function InvoiceCCreate() {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">STATE *</label>
                   <SearchableSelect
-                    options={[
-                      { id: '', name: 'Select State' },
-                      ...states.map((state) => ({
-                        id: state.id,
-                        name: state.name
-                      }))
-                    ]}
-                    selectedValue={formData.state || ''}
+                    options={states.map((state) => ({
+                      id: state.id,
+                      name: state.name
+                    }))}
+                    selectedValue={(() => {
+                      // Find the state ID that matches the current state code
+                      if (selectedCustomer?.state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.state_code);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      // Fallback to state name matching if no state code
+                      if (formData.state || selectedCustomer?.state) {
+                        const currentStateName = formData.state || selectedCustomer?.state || '';
+                        const matchingState = states.find(state => state.name === currentStateName);
+                        return matchingState ? matchingState.id : '';
+                      }
+                      return '';
+                    })()}
                     onSelectionChange={(value) => {
                       if (isOtherCustomerSelected) {
-                        handleInputChange('state', value);
+                        if (value) {
+                          // Find the state name and code from the selected ID
+                          const selectedState = states.find(state => state.id === value);
+                          if (selectedState) {
+                            handleInputChange('state', selectedState.name);
+                            setFormData(prev => ({ ...prev, state_code: selectedState.code }));
+                          }
+                        } else {
+                          handleInputChange('state', '');
+                          setFormData(prev => ({ ...prev, state_code: undefined }));
+                        }
+                      }
                     }}
                     placeholder="Select State"
                     disabled={!isOtherCustomerSelected}
                   />
                   {errors.state && <p className="text-red-400 text-xs mt-1">{errors.state}</p>}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">PIN CODE</label>
-                  <input
-                    type="text"
-                    value={formData.pin_code || selectedCustomer?.pin_code || ''}
-                    onChange={(e) => handleInputChange('pin_code', e.target.value)}
-                    className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
-                    placeholder="Enter pin code"
-                    readOnly={!isOtherCustomerSelected}
-                  />
                 </div>
               </div>
             </div>
@@ -1560,7 +1599,7 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">COMMISSION</label>
                   <input
                     type="number"
-                    
+
                     value={formData.commission}
                     onChange={(e) => handleInputChange('commission', e.target.value)}
                     onWheel={(e) => e.preventDefault()}
@@ -1770,7 +1809,7 @@ export default function InvoiceCCreate() {
                         <input
                           type="number"
                           min="1"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -1791,7 +1830,7 @@ export default function InvoiceCCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-                          
+
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.rate}
@@ -1811,26 +1850,26 @@ export default function InvoiceCCreate() {
                       </td>
                       {enableDiscount && (
                         <td className="px-4 py-3 text-center w-20">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                          placeholder="0"
-                          value={templateRow.discount}
-                          onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              discount: e.target.value
-                            }));
-                          }}
-                          onWheel={(e) => e.preventDefault()}
-                          onKeyDown={(e) => {
-                            if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                              e.preventDefault();
-                            }
-                          }}
-                        />
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                            placeholder="0"
+                            value={templateRow.discount}
+                            onChange={(e) => {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                discount: e.target.value
+                              }));
+                            }}
+                            onWheel={(e) => e.preventDefault()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                e.preventDefault();
+                              }
+                            }}
+                          />
                         </td>
                       )}
                       <td className="px-4 py-3 text-center w-20">
@@ -2255,105 +2294,80 @@ export default function InvoiceCCreate() {
                   </tbody>
                   {selectedProducts.length > 0 && (
                     <tfoot className="bg-slate-700">
-                      {/* <tr>
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
-                          SUBTOTAL
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-slate-200">
-                          ₹{subtotal.toFixed(2)}
-                        </td>
-                      </tr> */}
-                      {/* <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 10 : 9} className="px-4 py-3"></td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-white uppercase tracking-wider">
-                          GRAND TOTAL
-                        </td>
-                        <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
-                          ₹{grandTotal.toFixed(2)}
-                        </td>
-                      </tr> */}
                       <tr className="border-t border-slate-600">
-                        <td colSpan={enableDiscount ? 9 : 8} className="px-4 py-3"></td>
+                        <td colSpan={enableDiscount ? 7 : 6} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
-                          {/* Clear All Products button - COMMENTED OUT */}
-                          {/* <button
-                            type="button"
-                            onClick={() => setSelectedProducts([])}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
-                          >
-                            Clear All Products
-                          </button> */}
-                          {/* Display Subtotal instead */}
-                          <div className="text-sm font-semibold text-slate-200">
-                            Subtotal: ₹{subtotal.toFixed(2)}
-                          </div>
-                        </td>
-                      </tr>
+                          {/* Display Subtotal */}
+                        {/* Display Subtotal instead */}
+                        <div className="text-sm font-semibold text-slate-200">
+                          Subtotal: ₹{subtotal.toFixed(2)}
+                        </div>
+                      </td>
+                    </tr>
                     </tfoot>
                   )}
-                </table>
-              </div>
-              {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
+              </table>
             </div>
+            {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
+          </div>
 
-            {/* Additional Information */}
-            <div className="mb-3 border-t border-slate-600 pt-4">
-              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
-                  <textarea
-                    value={formData.descriptions}
-                    onChange={(e) => handleInputChange('descriptions', e.target.value)}
-                    rows={3}
-                    className="input w-full"
-                    placeholder="Enter additional descriptions or comments"
+          {/* Additional Information */}
+          <div className="mb-3 border-t border-slate-600 pt-4">
+            {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
+                <textarea
+                  value={formData.descriptions}
+                  onChange={(e) => handleInputChange('descriptions', e.target.value)}
+                  rows={3}
+                  className="input w-full"
+                  placeholder="Enter additional descriptions or comments"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => handleInputChange('notes', e.target.value)}
+                  rows={3}
+                  className="input w-full"
+                  placeholder="Enter additional notes"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Summary & Payment */}
+          <div className="border-t border-slate-600 pt-4">
+            {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
+            <div className="space-y-6">
+
+              {/* Calculations */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
+                  <input
+                    type="number"
+
+                    value={subtotal.toFixed(2)}
+                    readOnly
+                    disabled
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                   />
                 </div>
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
-                  <textarea
-                    value={formData.notes}
-                    onChange={(e) => handleInputChange('notes', e.target.value)}
-                    rows={3}
-                    className="input w-full"
-                    placeholder="Enter additional notes"
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL DISCOUNT</label>
+                  <input
+                    type="number"
+
+                    value={totalDiscount.toFixed(2)}
+                    readOnly
+                    disabled
+                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Summary & Payment */}
-            <div className="border-t border-slate-600 pt-4">
-              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
-              <div className="space-y-6">
-
-                {/* Calculations */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
-                    <input
-                      type="number"
-                      
-                      value={subtotal.toFixed(2)}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL DISCOUNT</label>
-                    <input
-                      type="number"
-                      
-                      value={totalDiscount.toFixed(2)}
-                      readOnly
-                      disabled
-                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
-                    />
-                  </div>
-                  {/* <div>
+                {/* <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                     <input
                       type="number"
@@ -2364,144 +2378,144 @@ export default function InvoiceCCreate() {
                       placeholder="0"
                     />
                   </div> */}
-                </div>
+              </div>
 
-                {/* Packing & Forwarding */}
-                <div>
-                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
-                      <input
-                        type="number"
-                        
-                        value={formData.packing_forwarding_qty}
-                        onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
-                        onWheel={(e) => e.preventDefault()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                            e.preventDefault();
-                          }
-                        }}
-                        className="input w-full"
-                        placeholder="0"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
-                      <input
-                        type="number"
-                        
-                        value={formData.packing_forwarding_rate}
-                        onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
-                        onWheel={(e) => e.preventDefault()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                            e.preventDefault();
-                          }
-                        }}
-                        className="input w-full"
-                        placeholder="0"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
-                      <input
-                        type="number"
+              {/* Packing & Forwarding */}
+              <div>
+                {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
+                    <input
+                      type="number"
 
-                        value={formData.packing_forwarding_total}
-                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
-                        onWheel={(e) => e.preventDefault()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                            e.preventDefault();
-                          }
-                        }}
-                        className="input w-full"
-                        placeholder="0"
-                      />
-                    </div>
+                      value={formData.packing_forwarding_qty}
+                      onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                      onWheel={(e) => e.preventDefault()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="input w-full"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
+                    <input
+                      type="number"
+
+                      value={formData.packing_forwarding_rate}
+                      onChange={(e) => handleInputChange('packing_forwarding_rate', e.target.value)}
+                      onWheel={(e) => e.preventDefault()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="input w-full"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
+                    <input
+                      type="number"
+
+                      value={formData.packing_forwarding_total}
+                      onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                      onWheel={(e) => e.preventDefault()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                          e.preventDefault();
+                        }
+                      }}
+                      className="input w-full"
+                      placeholder="0"
+                    />
                   </div>
                 </div>
+              </div>
 
-                {/* Payment Details */}
-                <div className="border-t border-slate-600 pt-4">
-                  {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
-                      <SearchableSelect
-                        options={[
-                          { id: '0', name: 'Unpaid' },
-                          { id: '1', name: 'Paid' }
-                        ]}
-                        selectedValue={formData.payment_status.toString()}
-                        onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '0')).toString())}
-                        placeholder="Select Payment Status"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
-                      <SearchableSelect
-                        options={[
-                          { id: '0', name: 'Cash' },
-                          { id: '1', name: 'Bank' }
-                        ]}
-                        selectedValue={formData.payment_mode.toString()}
-                        onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '0')).toString())}
-                        placeholder="Select Payment Mode"
-                      />
-                    </div>
-                    {/* Grand Total */}
-                    <div className="bg-slate-700 rounded p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-300 font-medium">GRAND TOTAL</span>
-                        <div className="flex items-center space-x-2">
-                          <Calculator className="w-4 h-4 text-slate-400" />
-                          <span className="text-white font-semibold text-lg">
-                            ₹{grandTotal.toFixed(2)}
-                          </span>
-                        </div>
+              {/* Payment Details */}
+              <div className="border-t border-slate-600 pt-4">
+                {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
+                    <SearchableSelect
+                      options={[
+                        { id: '0', name: 'Unpaid' },
+                        { id: '1', name: 'Paid' }
+                      ]}
+                      selectedValue={formData.payment_status.toString()}
+                      onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '0')).toString())}
+                      placeholder="Select Payment Status"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
+                    <SearchableSelect
+                      options={[
+                        { id: '0', name: 'Cash' },
+                        { id: '1', name: 'Bank' }
+                      ]}
+                      selectedValue={formData.payment_mode.toString()}
+                      onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '0')).toString())}
+                      placeholder="Select Payment Mode"
+                    />
+                  </div>
+                  {/* Grand Total */}
+                  <div className="bg-slate-700 rounded p-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-300 font-medium">GRAND TOTAL</span>
+                      <div className="flex items-center space-x-2">
+                        <Calculator className="w-4 h-4 text-slate-400" />
+                        <span className="text-white font-semibold text-lg">
+                          ₹{grandTotal.toFixed(2)}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
-
-
               </div>
-            </div>
 
+
+            </div>
           </div>
 
-          {/* Form Actions */}
-          <div className="border-t border-slate-600 pt-6 mt-6 px-6">
-            <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => {
-                  SessionStorageService.remove('salex', editInvoiceId.toString());
-                  router.push('/salex')
-                }}
-                className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={loading}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice C' : 'Create Invoice C')}
-              </button>
-            </div>
+        </div>
+
+        {/* Form Actions */}
+        <div className="border-t border-slate-600 pt-6 mt-6 px-6">
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={() => {
+                SessionStorageService.remove('salex', editInvoiceId.toString());
+                router.push('/salex')
+              }}
+              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice C' : 'Create Invoice C')}
+            </button>
           </div>
         </div>
-      </form>
+      </div>
+    </form >
 
-      {/* Product Selection Side Panel */}
+      {/* Product Selection Side Panel */ }
       <ProductSelectionPanel
-        isOpen={isProductPanelOpen}
-        onClose={() => {
+        isOpen = { isProductPanelOpen }
+        onClose = {() => {
           setIsProductPanelOpen(false);
           // Clear filters when closing
           setSelectedPanelCarModel('');
@@ -2509,22 +2523,23 @@ export default function InvoiceCCreate() {
           setSelectedPanelSubcategory('');
           setSelectedPanelCompany('');
         }}
-        title="Select Product"
-        showCarModelFilter={true}
-        filterOptions={memoizedFilterOptions}
-        selectedCarModel={selectedPanelCarModel}
-        onCarModelSelection={setSelectedPanelCarModel}
-        selectedCategory={selectedPanelCategory}
-        onCategorySelection={setSelectedPanelCategory}
-        selectedSubcategory={selectedPanelSubcategory}
-        onSubcategorySelection={setSelectedPanelSubcategory}
-        selectedCompany={selectedPanelCompany}
-        onCompanySelection={setSelectedPanelCompany}
-        searchedProducts={products}
-        productSearchTerm={productSearchTerm}
-        onSearchTermChange={setProductSearchTerm}
-        isLoading={productsLoading}
-        onProductSelect={(product) => {
+
+        title = "Select Product"
+        showCarModelFilter = { true}
+        filterOptions = { memoizedFilterOptions }
+        selectedCarModel = { selectedPanelCarModel }
+        onCarModelSelection = { setSelectedPanelCarModel }
+        selectedCategory = { selectedPanelCategory }
+        onCategorySelection = { setSelectedPanelCategory }
+        selectedSubcategory = { selectedPanelSubcategory }
+        onSubcategorySelection = { setSelectedPanelSubcategory }
+        selectedCompany = { selectedPanelCompany }
+        onCompanySelection = { setSelectedPanelCompany }
+        searchedProducts = { products }
+        productSearchTerm = { productSearchTerm }
+        onSearchTermChange = { setProductSearchTerm }
+        isLoading = { productsLoading }
+        onProductSelect = {(product) => {
           handleProductSelection(product);
           setTemplateRow({
             qty: '1',
@@ -2547,7 +2562,7 @@ export default function InvoiceCCreate() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Create Invoice C?"
-        message={`Are you sure you want to create this Invoice C for ₹${grandTotal.toFixed(2)}? This action cannot be undone.`}
+        message={`Are you sure you want to create this Invoice C for ₹${grandTotal?.toFixed(2)}? This action cannot be undone.`}
         confirmText="Create Invoice C"
         cancelText="Cancel"
         showLoading={loading}
