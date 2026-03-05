@@ -24,13 +24,13 @@ interface Customer {
   billing_name: string;
   contact_no?: string;
   email?: string;
-  tax_id?: string;
-  address?: string;
-  address_2?: string;
-  city?: string;
-  state?: string;
-  state_code?: number;
-  pin_code?: string;
+  billing_gstin?: string;
+  billing_address?: string;
+  billing_address_2?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_state_code?: number;
+  billing_pin_code?: string;
 }
 
 interface Product {
@@ -387,12 +387,9 @@ export default function InvoiceCCreate() {
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
     if (isEditMode && editInvoiceId) {
-      console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
-
       // First try to get data from sessionStorage
       const cachedData = SessionStorageService.get('salex', editInvoiceId.toString());
       if (cachedData) {
-        console.log('🔄 Using cached invoice data from sessionStorage:', cachedData);
         // Process the cached data directly inline
         const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
 
@@ -430,6 +427,22 @@ export default function InvoiceCCreate() {
           pin_code: '',
           address_2: ''
         });
+
+        // Set customer selection based on cached data
+        // Only use new cache format with separate customer object
+        if (cachedData.customer && cachedData.customer.id && cachedData.customer.id !== '0') {
+          // Customer was selected from dropdown
+          setSelectedCustomerId(cachedData.customer.id.toString());
+          setCustomerIdToSave(parseInt(cachedData.customer.id));
+          setSelectedCustomer(cachedData.customer);
+          setIsOtherCustomerSelected(false);
+          setCustomerStateForTax(cachedData.customer.billing_state || '');
+        } else if (!cachedData.customer) {
+          // Old cache format - clear and fetch fresh
+          SessionStorageService.remove('salex', editInvoiceId.toString());
+          fetchInvoiceForEdit(editInvoiceId);
+          return;
+        }
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -544,26 +557,18 @@ export default function InvoiceCCreate() {
         return true;
       });
 
-      console.log('🔍 SALEX FILTER MATCHES:', {
-        filters: productRowFilters,
-        matchingProducts: matchingProducts.length,
-        products: matchingProducts.map(p => ({ id: p.id, name: p.product_name }))
-      });
-
-      if (matchingProducts.length === 1) {
-        console.log('🎯 AUTO-SELECTING PRODUCT:', matchingProducts[0].product_name);
+      if (matchingProducts.length === 1 && !selectedRowProduct) {
+        // Only auto-select if nothing is currently selected
         handleProductSelection(matchingProducts[0]);
       } else if (matchingProducts.length === 0) {
-        console.log('🧹 CLEARING PRODUCT SELECTION - no matches');
         setSelectedRowProduct(null);
       }
     }
-  }, [productRowFilters, products]);
+  }, [productRowFilters, products, selectedRowProduct]);
 
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
-      console.log('🔄 Converting raw invoice items to formatted items now that filters are available');
       const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
         const itemObj: InvoiceItem = {
           id: (index + 1).toString(),
@@ -610,7 +615,6 @@ export default function InvoiceCCreate() {
         return itemObj;
       });
 
-      console.log('✅ Setting converted invoice items:', convertedItems);
       setSelectedProducts(convertedItems);
 
       // Check if any items have discounts and enable discount checkbox
@@ -782,13 +786,11 @@ export default function InvoiceCCreate() {
 
   const fetchInvoiceForEdit = async (invoiceId: number) => {
     try {
-      console.log('🔍 FETCHING INVOICE FOR EDIT:', invoiceId);
       const response = await fetch(`/api/salex/${invoiceId}`);
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
         const transportDetails = data.transportDetails || {};
-        console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
         const formatDateForInput = (dateValue: number | string) => {
@@ -830,12 +832,12 @@ export default function InvoiceCCreate() {
 
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
-        console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
 
         // Store data in sessionStorage for future reuse
         if (typeof invoiceId === 'number') {
           SessionStorageService.set('salex', invoiceId.toString(), {
             invoice: invoice,
+            customer: data.customer, // Store customer object for dropdown selection
             billingDetails: data.billingDetails,
             shippingDetails: data.shippingDetails,
             transportDetails: data.transportDetails,
@@ -880,7 +882,6 @@ export default function InvoiceCCreate() {
           address_2: ''
         };
 
-        console.log('📝 SETTING API FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
 
         // Set other related entity IDs
@@ -889,6 +890,23 @@ export default function InvoiceCCreate() {
         }
         if (invoice.mechanic_id) {
           setSelectedMechanicId(invoice.mechanic_id.toString());
+        }
+
+        // Set customer selection based on customer_id value
+        if (data.customer && data.customer.id && data.customer.id !== '0') {
+          // Customer was selected from dropdown
+          setSelectedCustomerId(data.customer.id);
+          setCustomerIdToSave(parseInt(data.customer.id));
+          setSelectedCustomer(data.customer);
+          setIsOtherCustomerSelected(false);
+          setCustomerStateForTax(data.customer.billing_state || '');
+        } else {
+          // "Other" customer (manual entry)
+          setSelectedCustomerId('0');
+          setCustomerIdToSave(0);
+          setSelectedCustomer(null);
+          setIsOtherCustomerSelected(true);
+          setCustomerStateForTax(invoice.state || '');
         }
 
         // Store raw invoice items to convert later when filters are loaded
@@ -965,13 +983,13 @@ export default function InvoiceCCreate() {
         customer_name: customer.billing_name || '',
         contact_number: customer.contact_no || '',
         email_id: customer.email || '',
-        gst_number: customer.tax_id || '',
-        address: customer.address || '',
-        address_2: customer.address_2 || '',
-        city: customer.city || '',
-        state: customer.state || '',
-        state_code: customer.state_code,
-        pin_code: customer.pin_code || ''
+        gst_number: customer.billing_gstin || '',
+        address: customer.billing_address || '',
+        address_2: customer.billing_address_2 || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state || '',
+        state_code: customer.billing_state_code,
+        pin_code: customer.billing_pin_code || ''
       }));
 
       // Clear existing products when customer changes (tax calculations will be different)
@@ -983,7 +1001,7 @@ export default function InvoiceCCreate() {
         total_igst: ''
       }));
 
-      setCustomerStateForTax(customer.state || '');
+      setCustomerStateForTax(customer.billing_state || '');
     } else {
       // Clear customer selection
       setCustomerIdToSave(null);
@@ -1264,28 +1282,28 @@ export default function InvoiceCCreate() {
       });
 
       if (response.ok) {
+        const responseData = await response.json();
+        
         if (editInvoiceId) {
           SessionStorageService.remove('salex', editInvoiceId.toString());
         }
         setShowConfirmationModal(false);
 
-
         // Broadcast the creation/update event
         broadcast({
           type: isEditMode ? 'updated' : 'created',
           resource: 'salex',
-          data: { id: isEditMode ? editInvoiceId : (response as any).salex?.id || (response as any).id }
+          data: { id: isEditMode ? editInvoiceId : responseData.salex?.id || responseData.id }
         });
 
         // Navigate to salex view page for both create and update
-        const salexId = isEditMode ? editInvoiceId : (response as any).salex?.id;
+        const salexId = isEditMode ? editInvoiceId : responseData.salex?.id;
         if (salexId) {
           router.push(`/salex/view/${salexId}`);
         } else {
           // Fallback to salex list if no salex ID
           router.push('/salex');
         }
-
 
         // Show success snackbar after navigation
         showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
@@ -1405,7 +1423,7 @@ export default function InvoiceCCreate() {
                     selectedValue={selectedCustomerId}
                     onSelectionChange={(value) => {
                       const customerId = value || '';
-                      setSelectedCustomerId(customerId);
+                      setSelectedCustomerId(customerId.toString());
                       handleCustomerSelect(customerId);
                     }}
                     placeholder="Select Customer"
@@ -1440,7 +1458,7 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={formData.gst_number || selectedCustomer?.tax_id || ''}
+                    value={formData.gst_number || selectedCustomer?.billing_gstin || ''}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter GST number"
@@ -1465,7 +1483,7 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
-                    value={formData.address || selectedCustomer?.address || ''}
+                    value={formData.address || selectedCustomer?.billing_address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 1"
@@ -1476,7 +1494,7 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
                   <input
                     type="text"
-                    value={formData.address_2 || selectedCustomer?.address_2 || ''}
+                    value={formData.address_2 || selectedCustomer?.billing_address_2 || ''}
                     onChange={(e) => handleInputChange('address_2', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 2"
@@ -1487,7 +1505,7 @@ export default function InvoiceCCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={formData.city || selectedCustomer?.city || ''}
+                    value={formData.city || selectedCustomer?.billing_city || ''}
                     onChange={(e) => handleInputChange('city', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter city"
@@ -1503,13 +1521,13 @@ export default function InvoiceCCreate() {
                     }))}
                     selectedValue={(() => {
                       // Find the state ID that matches the current state code
-                      if (selectedCustomer?.state_code) {
-                        const matchingState = states.find(state => state.code === selectedCustomer.state_code);
+                      if (selectedCustomer?.billing_state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
                         return matchingState ? matchingState.id : '';
                       }
                       // Fallback to state name matching if no state code
-                      if (formData.state || selectedCustomer?.state) {
-                        const currentStateName = formData.state || selectedCustomer?.state || '';
+                      if (formData.state || selectedCustomer?.billing_state) {
+                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
                         const matchingState = states.find(state => state.name === currentStateName);
                         return matchingState ? matchingState.id : '';
                       }

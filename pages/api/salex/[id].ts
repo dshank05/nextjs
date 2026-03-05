@@ -48,7 +48,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    const [customerData, staffData, mechanicData, returnData] = await Promise.all([
+    const [customerData, staffData, mechanicData, returnData, billToData, transportDetails] = await Promise.all([
       salex.select_customer && salex.select_customer !== 0 ?
         prisma.customer_details.findUnique({
           where: { id: salex.select_customer },
@@ -75,6 +75,27 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
           total_amount: true,
           status: true
         }
+      }),
+
+      // Fetch customer data from bill_tosalesx table (manual entry)
+      prisma.bill_tosalesx.findFirst({
+        where: { invoice_no: salex.id },
+        select: {
+          billing_name: true,
+          contact_no: true,
+          email: true,
+          billing_address: true,
+          billing_address2: true,
+          billing_city: true,
+          billing_state: true,
+          billing_state_code: true,
+          billing_gstin: true
+        }
+      }),
+
+      // Fetch transport details
+      prisma.transport_detailsx.findFirst({
+        where: { invoice_id: salex.id }
       })
     ])
 
@@ -100,8 +121,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       id: salex.id,
       invoice_no: salex.invoice_no,
       customer_id: salex.select_customer,
-      customer_name: customerData?.billing_name || 'Other',
-      customer_gstin: customerData?.billing_gstin || '',
+      customer_name: billToData?.billing_name || customerData?.billing_name || 'Other',
+      customer_gstin: billToData?.billing_gstin || customerData?.billing_gstin || '',
+      // Customer details from bill_tosalesx
+      contact_number: billToData?.contact_no || '',
+      email_id: billToData?.email || '',
+      address: billToData?.billing_address || '',
+      address_2: billToData?.billing_address2 || '',
+      city: billToData?.billing_city || '',
+      state: billToData?.billing_state || '',
+      state_code: billToData?.billing_state_code || undefined,
+      gst_number: billToData?.billing_gstin || '',
+      pin_code: '', // Not stored in bill_tosalesx
+      // Transport details
+      vehicle_number: transportDetails?.vehicle_no || '',
+      transport_name: transportDetails?.trans_mode || '',
       invoice_date: salex.invoice_date,
       formattedDate: formattedDate,
       items_total: salex.items_total,
@@ -121,13 +155,32 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       mechanic_name: mechanicData?.name,
       bill_reference: salex.bill_reference,
       discount: salex.discount,
+      packing_forwarding_qty: salex.packing_forwarding_qty,
+      packing_forwarding_rate: salex.packing_forwarding_rate,
       packing_forwarding_total: salex.packing_forwarding_total,
       item_count: itemCount,
       return_count: returnData.length,
       total_allocated: totalAllocated,
       outstanding_amount: salex.total - totalAllocated,
       created_at: salex.updated_at,
-      updated_at: salex.updated_at
+      updated_at: salex.updated_at,
+      // Complete customer object for dropdown selection
+      customer: customerData ? {
+        ...customerData,
+        id: customerData.id.toString() // Convert to string for frontend
+      } : (billToData ? {
+        id: '0',
+        billing_name: billToData.billing_name,
+        billing_address: billToData.billing_address || '',
+        billing_address_2: billToData.billing_address2 || '',
+        billing_city: billToData.billing_city || '',
+        billing_state: billToData.billing_state || '',
+        billing_state_code: billToData.billing_state_code || null,
+        billing_gstin: billToData.billing_gstin || '',
+        billing_pin_code: '', // Not stored in bill_tosalesx
+        contact_no: billToData.contact_no || '',
+        email: billToData.email || ''
+      } : null)
     }
 
     res.status(200).json(enhancedSalex)

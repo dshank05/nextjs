@@ -164,9 +164,16 @@ async function handleListTransactions(
           },
           allocations: {
             include: {
-              return: {
+              sale_return: {
                 select: {
-                  credit_note_no: true
+                  id: true,
+                  invoice_id: true
+                }
+              },
+              salex_return: {
+                select: {
+                  id: true,
+                  invoicex_id: true
                 }
               }
             }
@@ -184,7 +191,9 @@ async function handleListTransactions(
         payment_mode: refund.refund_mode,
         payment_type: refund.refund_type || 'RETURN_SPECIFIC',
         notes: refund.notes,
-        invoice_numbers: refund.allocations.map(a => a.return.credit_note_no || ''),
+        invoice_numbers: refund.allocations.map(a => 
+          a.sale_return ? `SR-${a.sale_return.id}` : a.salex_return ? `SXR-${a.salex_return.id}` : ''
+        ),
         allocations_count: refund.allocations.length,
         fy: refund.fy,
         created_at: refund.created_at

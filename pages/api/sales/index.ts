@@ -240,34 +240,88 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 7. ✅ REFACTORED: Handle payment using customer balance handler
+      // 7. Handle payment if paid (create payment records like purchase does)
       if (parsedPaymentStatus === 1 && parseInt(customer_id) !== 0) {
-        const balanceOps = await customerBalanceHandler.getCreateBalanceOps(
-          tx,
-          parseInt(customer_id),
-          {
-            type: 'sale',
-            id: sale.id,
-            reference_no: sale.invoice_no.toString(),
-            amount: calculatedGrandTotal,
-            transaction_date: Math.floor(invoiceDate),
-            payment_mode: parsedPaymentMode,
-            fy: currentFy,
-            notes: notes || `Sale invoice ${sale.invoice_no}`
+        // Fetch customer balance for smart advance allocation
+        const customer = await tx.customer_details.findUnique({
+          where: { id: parseInt(customer_id) },
+          select: {
+            total_paid: true,
+            total_allocated: true,
+            total_refunded: true,
+            total_refund_allocated: true
           }
-        )
+        });
 
-        await customerBalanceHandler.incrementBalanceInTransaction(
-          tx,
-          parseInt(customer_id),
-          balanceOps,
-          {
-            type: 'sale_create',
-            id: sale.id,
-            reference_no: `SINV-${sale.invoice_no}`,
-            notes: `Sale: ₹${calculatedGrandTotal} (paid immediately)`
+        // Calculate advance balance (money customer has already paid)
+        const advanceBalance = customer 
+          ? (Number(customer.total_paid) - Number(customer.total_allocated)) + 
+            (Number(customer.total_refunded) - Number(customer.total_refund_allocated))
+          : 0;
+        
+        const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
+        const newPayment = calculatedGrandTotal - advanceUsed;
+
+        // Create payment record for advance portion if any
+        if (advanceUsed > 0) {
+          const advancePayment = await tx.customer_payments.create({
+            data: {
+              customer_id: parseInt(customer_id),
+              payment_date: Math.floor(invoiceDate),
+              payment_amount: advanceUsed,
+              payment_mode: parsedPaymentMode,
+              payment_type: 'BILL_SPECIFIC',
+              notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`,
+              fy: currentFy
+            }
+          });
+
+          await tx.customer_payment_allocations.create({
+            data: {
+              payment_id: advancePayment.id,
+              invoice_id: sale.id,
+              allocated_amount: advanceUsed,
+              allocation_date: Math.floor(invoiceDate),
+              notes: 'Allocated from existing advance balance'
+            }
+          });
+        }
+
+        // Create payment record for new payment portion if any
+        if (newPayment > 0) {
+          const payment = await tx.customer_payments.create({
+            data: {
+              customer_id: parseInt(customer_id),
+              payment_date: Math.floor(invoiceDate),
+              payment_amount: newPayment,
+              payment_mode: parsedPaymentMode,
+              payment_type: 'BILL_SPECIFIC',
+              notes: advanceUsed > 0
+                ? `New payment for sale ${sale.invoice_no}: ₹${newPayment.toFixed(2)}`
+                : `Payment for sale ${sale.invoice_no}`,
+              fy: currentFy
+            }
+          });
+
+          await tx.customer_payment_allocations.create({
+            data: {
+              payment_id: payment.id,
+              invoice_id: sale.id,
+              allocated_amount: newPayment,
+              allocation_date: Math.floor(invoiceDate),
+              notes: 'Allocated during sale creation'
+            }
+          });
+        }
+
+        // Update customer balance
+        await tx.customer_details.update({
+          where: { id: parseInt(customer_id) },
+          data: {
+            total_paid: { increment: newPayment },
+            total_allocated: { increment: calculatedGrandTotal }
           }
-        )
+        });
       }
 
       return sale

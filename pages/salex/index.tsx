@@ -165,26 +165,29 @@ export default function SalexPage() {
 
       const filtersToUse = overrideFilters || currentFilters;
 
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: searchTerm,
-        vendor: filtersToUse.customerFilter,
-        status: filtersToUse.statusFilter,
-        startDate: filtersToUse.dateFrom,
-        endDate: filtersToUse.dateTo,
-        amountMin: filtersToUse.amountMin,
-        amountMax: filtersToUse.amountMax,
-        uid: filtersToUse.uidFilter,
-        billReference: filtersToUse.billReference,
-        itemCount: filtersToUse.itemCount,
-        paymentMode: filtersToUse.paymentMode,
-        totalTax: filtersToUse.totalTax,
-        packingForwardingTotal: filtersToUse.packingForwardingTotal || '',
-        ...(filtersToUse.total && !filtersToUse.amountMin ? { amountMin: filtersToUse.total, amountMax: filtersToUse.total } : {}),
-        sortBy: filtersToUse.sortBy || 'invoice_no',
-        sortOrder: filtersToUse.sortOrder || 'asc'
-      });
+      const params = new URLSearchParams();
+      params.append('page', pagination.page.toString());
+      params.append('limit', pagination.limit.toString());
+      
+      if (searchTerm) params.append('search', searchTerm);
+      if (filtersToUse.customerFilter) params.append('vendor', filtersToUse.customerFilter);
+      if (filtersToUse.statusFilter) params.append('status', filtersToUse.statusFilter);
+      if (filtersToUse.dateFrom) params.append('startDate', filtersToUse.dateFrom);
+      if (filtersToUse.dateTo) params.append('endDate', filtersToUse.dateTo);
+      if (filtersToUse.amountMin) params.append('amountMin', filtersToUse.amountMin);
+      if (filtersToUse.amountMax) params.append('amountMax', filtersToUse.amountMax);
+      if (filtersToUse.uidFilter) params.append('uid', filtersToUse.uidFilter);
+      if (filtersToUse.billReference) params.append('billReference', filtersToUse.billReference);
+      if (filtersToUse.itemCount) params.append('itemCount', filtersToUse.itemCount);
+      if (filtersToUse.paymentMode) params.append('paymentMode', filtersToUse.paymentMode);
+      if (filtersToUse.totalTax) params.append('totalTax', filtersToUse.totalTax);
+      if (filtersToUse.packingForwardingTotal) params.append('packingForwardingTotal', filtersToUse.packingForwardingTotal);
+      if (filtersToUse.total && !filtersToUse.amountMin) {
+        params.append('amountMin', filtersToUse.total);
+        params.append('amountMax', filtersToUse.total);
+      }
+      params.append('sortBy', filtersToUse.sortBy || 'invoice_no');
+      params.append('sortOrder', filtersToUse.sortOrder || 'asc');
 
       console.log('🚀 Salex fetchSalex - API call with params:', Object.fromEntries(params));
 
@@ -197,6 +200,7 @@ export default function SalexPage() {
       }
 
       const data = await response.json();
+      console.log('📦 Salex API response:', data);
 
       const transformedSalex: Salex[] = (data.salex || []).map((salex: any) => ({
         id: salex.id,
@@ -232,6 +236,7 @@ export default function SalexPage() {
         customer_vendor_gstin: salex.customer_gstin
       }));
 
+      console.log('✅ Transformed salex:', transformedSalex);
       setSalex(transformedSalex);
       setPagination(data.pagination);
     } catch (err) {
@@ -317,7 +322,7 @@ export default function SalexPage() {
       )}
 
       <SalexTable
-        salex={salex}
+        salexs={salex}
         pagination={pagination}
         loading={loading}
         onPageChange={handlePageChange}

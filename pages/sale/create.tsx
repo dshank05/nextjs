@@ -24,13 +24,13 @@ interface Customer {
   billing_name: string;
   contact_no?: string;
   email?: string;
-  tax_id?: string;
-  address?: string;
-  address_2?: string;
-  city?: string;
-  state?: string;
-  state_code?: number;
-  pin_code?: string;
+  billing_gstin?: string;
+  billing_address?: string;
+  billing_address_2?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_state_code?: number;
+  billing_pin_code?: string;
 }
 
 interface Product {
@@ -273,18 +273,8 @@ export default function InvoiceCreate() {
       company: product.company_id || 0,
       partNo: product.part_no || ''
     }));
-
-    console.log('🔄 PRODUCT SELECTED:', {
-      product: product.product_name,
-      compatibleCarModels: compatibleModels.map(m => m.name),
-      initialFilters: {
-        category: product.product_category_id,
-        subcategory: product.product_subcategory_id,
-        carModels: [product.car_model_ids.split(",")[0]],
-        company: product.company_id
-      }
-    });
   };
+
 
   // State for product selection side panel
   const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
@@ -431,7 +421,6 @@ export default function InvoiceCreate() {
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
-      console.log('🔄 Converting raw invoice items to formatted items now that filters are available');
       const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
         const itemObj: InvoiceItem = {
           id: (index + 1).toString(),
@@ -478,7 +467,6 @@ export default function InvoiceCreate() {
         return itemObj;
       });
 
-      console.log('✅ Setting converted invoice items:', convertedItems);
       setSelectedProducts(convertedItems);
 
       // Check if any items have discounts and enable discount checkbox
@@ -499,12 +487,9 @@ export default function InvoiceCreate() {
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
     if (isEditMode && editInvoiceId) {
-      console.log('🔍 EDIT MODE DETECTED, FETCHING INVOICE:', editInvoiceId);
-
       // First try to get data from sessionStorage
       const cachedData = SessionStorageService.get('sales', editInvoiceId.toString());
       if (cachedData) {
-        console.log('🔄 Using cached invoice data from sessionStorage:', cachedData);
         // Process the cached data directly inline
         const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
 
@@ -546,7 +531,21 @@ export default function InvoiceCreate() {
           pin_code: billingDetails?.billing_pin_code || ''
         });
 
-        // Customer data is now directly populated from the invoice data (no customer selection needed)
+        // Set customer selection based on cached data
+        // Only use new cache format with separate customer object
+        if (cachedData.customer && cachedData.customer.id && cachedData.customer.id !== '0') {
+          // Customer was selected from dropdown
+          setSelectedCustomerId(cachedData.customer.id.toString());
+          setCustomerIdToSave(parseInt(cachedData.customer.id));
+          setSelectedCustomer(cachedData.customer);
+          setIsOtherCustomerSelected(false);
+          setCustomerStateForTax(cachedData.customer.billing_state || '');
+        } else if (!cachedData.customer) {
+          // Old cache format - clear and fetch fresh
+          SessionStorageService.remove('sales', editInvoiceId.toString());
+          fetchInvoiceForEdit(editInvoiceId);
+          return;
+        }
 
         // Set other IDs
         if (invoiceData.staff_id) {
@@ -638,17 +637,9 @@ export default function InvoiceCreate() {
         return true;
       });
 
-      console.log('🔍 SALE FILTER MATCHES:', {
-        filters: productRowFilters,
-        matchingProducts: matchingProducts.length,
-        products: matchingProducts.map(p => ({ id: p.id, name: p.product_name }))
-      });
-
       if (matchingProducts.length === 1 && (!selectedRowProduct || selectedRowProduct.id !== matchingProducts[0].id) && selectedProducts.length === 0) {
-        console.log('🎯 AUTO-SELECTING PRODUCT:', matchingProducts[0].product_name);
         handleProductSelection(matchingProducts[0]);
       } else if (matchingProducts.length === 0) {
-        console.log('🧹 CLEARING PRODUCT SELECTION - no matches');
         setSelectedRowProduct(null);
       }
     }
@@ -818,12 +809,9 @@ export default function InvoiceCreate() {
 
   const fetchInvoiceForEdit = async (invoiceId: number) => {
     try {
-      console.log('🔍 CHECKING SESSIONSTORAGE FOR EDIT DATA:', invoiceId);
-
       // Check sessionStorage first to avoid redundant API call in edit mode
       const cachedData = SessionStorageService.get('sales', invoiceId.toString());
       if (cachedData) {
-        console.log('✅ USING CACHED DATA FROM SESSIONSTORAGE');
         const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
 
         // Process the cached data directly inline
@@ -841,7 +829,6 @@ export default function InvoiceCreate() {
         };
 
         const invoiceNo = invoiceData.invoice_no ? invoiceData.invoice_no.toString() : '';
-        console.log('📋 SETTING CACHED INVOICE NUMBER:', invoiceNo);
 
         // Prefill form data from cached data
         const formDataToSet = {
@@ -905,13 +892,11 @@ export default function InvoiceCreate() {
         return;
       }
 
-      console.log('🔍 FETCHING INVOICE FOR EDIT FROM API:', invoiceId);
-      const response = await fetch(`/api/invoices/${invoiceId}`);
+      const response = await fetch(`/api/sales/${invoiceId}`);
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
         const transportDetails = data.transportDetails;
-        console.log('📄 RECEIVED INVOICE DATA:', invoice);
 
         // Format date
         const formatDateForInput = (dateValue: number | string) => {
@@ -929,12 +914,12 @@ export default function InvoiceCreate() {
 
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
-        console.log('📋 SETTING INVOICE NUMBER:', invoiceNo);
 
         // Store data in sessionStorage for future edit reuse
         if (typeof invoiceId === 'number') {
           SessionStorageService.set('sales', invoiceId.toString(), {
             invoice: invoice,
+            customer: data.customer, // Store customer object for dropdown selection
             billingDetails: data.billingDetails,
             shippingDetails: data.shippingDetails,
             transportDetails: data.transportDetails,
@@ -961,11 +946,12 @@ export default function InvoiceCreate() {
           email_id: invoice.email_id || '',
           discount: invoice.discount || '',
           state: invoice.state || '',
+          state_code: invoice.state_code,
           gst_number: invoice.gst_number || '',
           tax: invoice.tax || '',
           notes: invoice.notes || '',
-          payment_status: invoice.status || 1,
-          payment_mode: invoice.payment_mode || 1,
+          payment_status: invoice.status !== undefined && invoice.status !== null ? invoice.status : 1,
+          payment_mode: invoice.payment_mode !== undefined && invoice.payment_mode !== null ? invoice.payment_mode : 0,
           total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
           subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
           total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
@@ -977,10 +963,9 @@ export default function InvoiceCreate() {
           total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
           total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
           total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0',
-          pin_code: data.billingDetails?.billing_pin_code || ''
+          pin_code: invoice.pin_code || ''
         };
 
-        console.log('📝 SETTING FORM DATA:', formDataToSet);
         setFormData(formDataToSet);
 
         // Override with bill_to data if available (for inline editing of "Other" customers)
@@ -1010,6 +995,23 @@ export default function InvoiceCreate() {
         if (invoice.mechanic_id) {
           setSelectedMechanicId(invoice.mechanic_id.toString());
           setFormData(prev => ({ ...prev, mechanic_id: invoice.mechanic_id }));
+        }
+
+        // Set customer selection based on select_customer value
+        if (data.customer && data.customer.id && data.customer.id !== '0') {
+          // Customer was selected from dropdown
+          setSelectedCustomerId(data.customer.id.toString());
+          setCustomerIdToSave(parseInt(data.customer.id));
+          setSelectedCustomer(data.customer);
+          setIsOtherCustomerSelected(false);
+          setCustomerStateForTax(data.customer.billing_state || '');
+        } else {
+          // "Other" customer (manual entry)
+          setSelectedCustomerId('0');
+          setCustomerIdToSave(0);
+          setSelectedCustomer(null);
+          setIsOtherCustomerSelected(true);
+          setCustomerStateForTax(invoice.state || '');
         }
 
         // Store raw invoice items to convert later when filters are loaded
@@ -1087,13 +1089,13 @@ export default function InvoiceCreate() {
         customer_name: customer.billing_name || '',
         contact_number: customer.contact_no || '',
         email_id: customer.email || '',
-        gst_number: customer.tax_id || '',
-        address: customer.address || '',
-        address_2: customer.address_2 || '',
-        city: customer.city || '',
-        state: customer.state || '',
-        state_code: customer.state_code,
-        pin_code: customer.pin_code || ''
+        gst_number: customer.billing_gstin || '',
+        address: customer.billing_address || '',
+        address_2: customer.billing_address_2 || '',
+        city: customer.billing_city || '',
+        state: customer.billing_state || '',
+        state_code: customer.billing_state_code,
+        pin_code: customer.billing_pin_code || ''
       }));
 
       // Clear existing products when customer changes (tax calculations will be different)
@@ -1105,7 +1107,7 @@ export default function InvoiceCreate() {
         total_igst: ''
       }));
 
-      setCustomerStateForTax(customer.state || '');
+      setCustomerStateForTax(customer.billing_state || '');
     } else {
       // Clear customer selection
       setCustomerIdToSave(null);
@@ -1367,7 +1369,7 @@ export default function InvoiceCreate() {
       console.log('❌ IGST MISMATCH');
     }
 
-    // Validate payment data - convert to numbers since formData stores as strings
+    // Validate payment data - convert to numbers since formData stores as numbers
     const paymentStatusNum = parseInt(formData.payment_status.toString());
     const paymentModeNum = parseInt(formData.payment_mode.toString());
 
@@ -1375,7 +1377,7 @@ export default function InvoiceCreate() {
       newErrors.payment_status = `Payment status must be Unpaid (0), Paid (1), or Partially Paid (2), got: ${formData.payment_status}`;
       console.log('❌ INVALID PAYMENT STATUS');
     }
-    if (!formData.payment_mode || ![0, 1].includes(paymentModeNum)) {
+    if (formData.payment_mode === undefined || formData.payment_mode === null || ![0, 1].includes(paymentModeNum)) {
       newErrors.payment_mode = `Payment mode must be either Cash (0) or Bank (1), got: ${formData.payment_mode}`;
       console.log('❌ INVALID PAYMENT MODE');
     }
@@ -1478,7 +1480,7 @@ export default function InvoiceCreate() {
 
         // ===== PAYMENT FIELDS =====
         payment_status: parseInt(formData.payment_status.toString()), // Invoice.status (payment_status) as integer 0=Unpaid, 1=Paid
-        payment_mode: parseInt(formData.payment_mode.toString()),     // Invoice.payment_mode as integer 1=Cash, 2=Bank
+        payment_mode: parseInt(formData.payment_mode.toString()),     // Invoice.payment_mode as integer 0=Cash, 1=Bank
 
         // ===== MISC FIELDS =====
         notes: formData.notes,                                       // Invoice.notes
@@ -1520,7 +1522,7 @@ export default function InvoiceCreate() {
       console.log('📤 UI SENDING COMPLETE PAYLOAD:', submitData);
 
       const method = isEditMode ? 'PUT' : 'POST';
-      const url = isEditMode ? `/api/invoices/${editInvoiceId}` : '/api/invoices';
+      const url = isEditMode ? `/api/sales/${editInvoiceId}` : '/api/sales';
 
       const response = await fetch(url, {
         method,
@@ -1531,22 +1533,22 @@ export default function InvoiceCreate() {
       });
 
       if (response.ok) {
+        const responseData = await response.json();
+        
         if (editInvoiceId) {
           SessionStorageService.remove('sales', editInvoiceId.toString());
         }
         setShowConfirmationModal(false);
 
-
         // Broadcast the creation/update event
         broadcast({
           type: isEditMode ? 'updated' : 'created',
           resource: 'sales',
-          data: { id: isEditMode ? editInvoiceId : (response as any).sale?.id || (response as any).id }
+          data: { id: isEditMode ? editInvoiceId : responseData.sale?.id || responseData.id }
         });
 
-
         // Navigate to sale view page for both create and update
-        const saleId = isEditMode ? editInvoiceId : (response as any).sale?.id;
+        const saleId = isEditMode ? editInvoiceId : responseData.sale?.id;
         if (saleId) {
           router.push(`/sale/view/${saleId}`);
         } else {
@@ -1674,7 +1676,7 @@ export default function InvoiceCreate() {
                     selectedValue={selectedCustomerId}
                     onSelectionChange={(value) => {
                       const customerId = value || '';
-                      setSelectedCustomerId(customerId);
+                      setSelectedCustomerId(customerId.toString());
                       handleCustomerSelect(customerId);
                     }}
                     placeholder="Select Customer"
@@ -1708,7 +1710,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">GST NUMBER</label>
                   <input
                     type="text"
-                    value={formData.gst_number || selectedCustomer?.tax_id || ''}
+                    value={formData.gst_number || selectedCustomer?.billing_gstin || ''}
                     onChange={(e) => handleInputChange('gst_number', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter GST number"
@@ -1733,7 +1735,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 1</label>
                   <input
                     type="text"
-                    value={formData.address || selectedCustomer?.address || ''}
+                    value={formData.address || selectedCustomer?.billing_address || ''}
                     onChange={(e) => handleInputChange('address', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 1"
@@ -1744,7 +1746,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">LINE 2</label>
                   <input
                     type="text"
-                    value={formData.address_2 || selectedCustomer?.address_2 || ''}
+                    value={formData.address_2 || selectedCustomer?.billing_address_2 || ''}
                     onChange={(e) => handleInputChange('address_2', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter address line 2"
@@ -1755,7 +1757,7 @@ export default function InvoiceCreate() {
                   <label className="block text-sm font-medium text-slate-300 mb-2">CITY</label>
                   <input
                     type="text"
-                    value={formData.city || selectedCustomer?.city || ''}
+                    value={formData.city || selectedCustomer?.billing_city || ''}
                     onChange={(e) => handleInputChange('city', e.target.value)}
                     className={`input w-full ${!isOtherCustomerSelected ? 'bg-slate-700 cursor-not-allowed' : ''}`}
                     placeholder="Enter city"
@@ -1771,13 +1773,13 @@ export default function InvoiceCreate() {
                     }))}
                     selectedValue={(() => {
                       // Find the state ID that matches the current state code
-                      if (selectedCustomer?.state_code) {
-                        const matchingState = states.find(state => state.code === selectedCustomer.state_code);
+                      if (selectedCustomer?.billing_state_code) {
+                        const matchingState = states.find(state => state.code === selectedCustomer.billing_state_code);
                         return matchingState ? matchingState.id : '';
                       }
                       // Fallback to state name matching if no state code
-                      if (formData.state || selectedCustomer?.state) {
-                        const currentStateName = formData.state || selectedCustomer?.state || '';
+                      if (formData.state || selectedCustomer?.billing_state) {
+                        const currentStateName = formData.state || selectedCustomer?.billing_state || '';
                         const matchingState = states.find(state => state.name === currentStateName);
                         return matchingState ? matchingState.id : '';
                       }
