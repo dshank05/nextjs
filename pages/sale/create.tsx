@@ -307,30 +307,10 @@ export default function InvoiceCreate() {
   // State for tax toggle (Option A: Preserve Original Tax Setting)
   const [enableTax, setEnableTax] = useState(false);
 
-  // Auto-calculate total when qty, rate, gst, or discount changes
-  useEffect(() => {
-    const qty = parseFloat(templateRow.qty) || 0;
-    const rate = parseFloat(templateRow.rate) || 0;
-    const gstPercent = enableTax ? parseFloat(templateRow.gst) || 0 : 0;
-    const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+  // State to track which field was last edited (for smart calculation)
+  const [lastEditedField, setLastEditedField] = useState<'qty' | 'rate' | 'total' | null>(null);
 
-    if (qty > 0 && rate > 0) {
-      const subtotal = qty * rate;
-      const taxableAmount = subtotal - discountAmount;
-      const taxAmount = (taxableAmount * gstPercent) / 100;
-      const total = taxableAmount + taxAmount;
-
-      setTemplateRow(prev => ({
-        ...prev,
-        total: total.toFixed(2)
-      }));
-    } else {
-      setTemplateRow(prev => ({
-        ...prev,
-        total: ''
-      }));
-    }
-  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount, enableTax]);
+  // Removed auto-calculate useEffect - calculations now happen in onChange handlers
 
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -2107,16 +2087,49 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
-                          min="1"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              qty: e.target.value
-                            }));
+                            const newQty = e.target.value;
+                            setLastEditedField('qty');
+                            
+                            if (newQty === '') {
+                              setTemplateRow(prev => ({ ...prev, qty: '', total: '' }));
+                              return;
+                            }
+                            
+                            const qty = parseInt(newQty);
+                            if (isNaN(qty) || qty < 0) return;
+                            
+                            // If user already entered total manually, calculate rate from it
+                            if (lastEditedField === 'total' && templateRow.total) {
+                              const total = parseInt(templateRow.total);
+                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                              const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+                              const taxableAmount = total - discountAmount;
+                              const rate = qty > 0 ? taxableAmount / (qty * (1 + gstPercent / 100)) : 0;
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: qty.toString(),
+                                rate: rate.toFixed(2)
+                              }));
+                            } else {
+                              // Calculate total from qty × rate
+                              const rate = parseFloat(templateRow.rate) || 0;
+                              const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                              const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+                              const subtotal = qty * rate;
+                              const taxableAmount = subtotal - discountAmount;
+                              const taxAmount = (taxableAmount * gstPercent) / 100;
+                              const total = Math.round(taxableAmount + taxAmount);
+                              
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                qty: qty.toString(),
+                                total: total.toString()
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2129,15 +2142,42 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.rate}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              rate: e.target.value
-                            }));
+                            const newRate = e.target.value;
+                            setLastEditedField('rate');
+                            
+                            if (newRate === '') {
+                              setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
+                              return;
+                            }
+                            
+                            const rate = parseFloat(newRate);
+                            if (isNaN(rate) || rate < 0) return;
+                            
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                            const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+
+                            if (qty > 0) {
+                              const subtotal = qty * rate;
+                              const taxableAmount = subtotal - discountAmount;
+                              const taxAmount = (taxableAmount * gstPercent) / 100;
+                              const total = Math.round(taxableAmount + taxAmount);
+
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: newRate,
+                                total: total.toString()
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: newRate
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2197,37 +2237,42 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
-                            setTemplateRow(prev => {
-                              const updated = { ...prev, total: newTotal };
+                            setLastEditedField('total');
+                            
+                            if (newTotal === '') {
+                              setTemplateRow(prev => ({ ...prev, total: '', rate: '' }));
+                              return;
+                            }
+                            
+                            const enteredTotal = parseInt(newTotal);
+                            if (isNaN(enteredTotal) || enteredTotal < 0) return;
+                            
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
+                            const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
 
-                              // If total is entered and qty > 0, recalculate rate
-                              const qty = parseFloat(prev.qty) || 0;
-                              const gstPercent = parseFloat(prev.gst) || 0;
-                              const discountPercent = enableDiscount ? parseFloat(prev.discount) || 0 : 0;
-                              const enteredTotal = parseFloat(newTotal) || 0;
-
-                              if (qty > 0 && enteredTotal > 0) {
-                                // Reverse calculation: rate = (total - tax) / qty
-                                // But we need to account for GST and discount
-                                // First, assume the entered total includes GST
-                                // So: total = (qty * rate * (1 - discount/100)) * (1 + gst/100)
-                                // Therefore: rate = total / (qty * (1 - discount/100) * (1 + gst/100))
-
-                                const discountFactor = 1 - (discountPercent / 100);
-                                const gstFactor = 1 + (gstPercent / 100);
-                                const rate = enteredTotal / (qty * discountFactor * gstFactor);
-
-                                updated.rate = rate.toFixed(2);
-                              }
-
-                              return updated;
-                            });
+                            if (qty > 0) {
+                              // Calculate rate from total considering tax and discount - allow decimals
+                              // total = (qty * rate - discount) * (1 + gst/100)
+                              // rate = (total / (1 + gst/100) + discount) / qty
+                              const totalBeforeTax = enteredTotal / (1 + gstPercent / 100);
+                              const rate = (totalBeforeTax + discountAmount) / qty;
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: enteredTotal.toString(),
+                                rate: rate.toFixed(2)
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: enteredTotal.toString()
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2780,7 +2825,7 @@ export default function InvoiceCreate() {
                 {/* Packing & Forwarding */}
                 <div>
                   {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                       <input
@@ -2792,7 +2837,8 @@ export default function InvoiceCreate() {
                         placeholder="0"
                       />
                     </div>
-                    <div>
+                    {/* RATE FIELD HIDDEN - Auto-calculated */}
+                    {/* <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                       <input
                         type="number"
@@ -2802,7 +2848,7 @@ export default function InvoiceCreate() {
                         className="input w-full"
                         placeholder="0"
                       />
-                    </div>
+                    </div> */}
                     <div>
                       <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                       <input

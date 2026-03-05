@@ -283,28 +283,10 @@ export default function InvoiceCCreate() {
   // State for discount toggle
   const [enableDiscount, setEnableDiscount] = useState(false);
 
-  // Auto-calculate total when qty, rate, gst, or discount changes
-  useEffect(() => {
-    const qty = parseFloat(templateRow.qty) || 0;
-    const rate = parseFloat(templateRow.rate) || 0;
-    const gstPercent = parseFloat(templateRow.gst) || 0; // Always 0 for salex but kept for consistency
-    const discountAmount = enableDiscount ? parseFloat(templateRow.discount) || 0 : 0;
+  // State to track which field was last edited (for smart calculation)
+  const [lastEditedField, setLastEditedField] = useState<'qty' | 'rate' | 'total' | null>(null);
 
-    if (qty > 0 && rate > 0) {
-      const subtotal = qty * rate;
-      const total = subtotal - discountAmount; // No tax added for salex
-
-      setTemplateRow(prev => ({
-        ...prev,
-        total: total.toFixed(2)
-      }));
-    } else {
-      setTemplateRow(prev => ({
-        ...prev,
-        total: ''
-      }));
-    }
-  }, [templateRow.qty, templateRow.rate, templateRow.gst, templateRow.discount, enableDiscount]);
+  // Removed auto-calculate useEffect - calculations now happen in onChange handlers
 
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
@@ -445,7 +427,8 @@ export default function InvoiceCCreate() {
           packing_forwarding_total: invoiceData.packing_forwarding_total ? invoiceData.packing_forwarding_total.toString() : '0',
           tax_rate: '0', // Always 0 for salex
           basic_value: invoiceData.basic_value || '0',
-          pin_code: ''
+          pin_code: '',
+          address_2: ''
         });
 
         // Set other IDs
@@ -893,7 +876,8 @@ export default function InvoiceCCreate() {
           packing_forwarding_total: invoice.packing_forwarding_total ? invoice.packing_forwarding_total.toString() : '0',
           tax_rate: '0', // Always 0 for salex
           basic_value: invoice.basic_value || '0',
-          pin_code: ''
+          pin_code: '',
+          address_2: ''
         };
 
         console.log('📝 SETTING API FORM DATA:', formDataToSet);
@@ -1808,16 +1792,60 @@ export default function InvoiceCCreate() {
                       <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
-                          min="1"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              qty: e.target.value
-                            }));
+                            const newQty = e.target.value;
+                            setLastEditedField('qty');
+                            
+                            if (newQty === '') {
+                              setTemplateRow(prev => ({ ...prev, qty: '', total: '' }));
+                              return;
+                            }
+                            
+                            const enteredQty = parseInt(newQty);
+                            if (isNaN(enteredQty) || enteredQty < 0) return;
+                            
+                            // If user already entered total manually, calculate rate from it
+                            if (lastEditedField === 'total' && templateRow.total) {
+                              const total = parseInt(templateRow.total);
+                              const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+                              
+                              if (enteredQty > 0) {
+                                const rate = (total + discountAmount) / enteredQty;
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  qty: enteredQty.toString(),
+                                  rate: rate.toFixed(2)
+                                }));
+                              } else {
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  qty: enteredQty.toString()
+                                }));
+                              }
+                            } else {
+                              // Normal flow: calculate total from qty and rate
+                              const rate = parseFloat(templateRow.rate) || 0;
+                              const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+                              
+                              if (rate > 0) {
+                                const subtotal = enteredQty * rate;
+                                const total = Math.round(subtotal - discountAmount);
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  qty: enteredQty.toString(),
+                                  total: total.toString()
+                                }));
+                              } else {
+                                setTemplateRow(prev => ({
+                                  ...prev,
+                                  qty: enteredQty.toString(),
+                                  total: ''
+                                }));
+                              }
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -1830,15 +1858,39 @@ export default function InvoiceCCreate() {
                       <td className="px-4 py-3 text-center w-32">
                         <input
                           type="number"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.rate}
                           onChange={(e) => {
-                            setTemplateRow(prev => ({
-                              ...prev,
-                              rate: e.target.value
-                            }));
+                            const newRate = e.target.value;
+                            setLastEditedField('rate');
+                            
+                            if (newRate === '') {
+                              setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
+                              return;
+                            }
+                            
+                            const enteredRate = parseFloat(newRate);
+                            if (isNaN(enteredRate) || enteredRate < 0) return;
+                            
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
+                            
+                            if (qty > 0) {
+                              const subtotal = qty * enteredRate;
+                              const total = Math.round(subtotal - discountAmount);
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: enteredRate.toFixed(2),
+                                total: total.toString()
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                rate: enteredRate.toFixed(2),
+                                total: ''
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -1875,35 +1927,40 @@ export default function InvoiceCCreate() {
                       <td className="px-4 py-3 text-center w-20">
                         <input
                           type="number"
-
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="0"
                           value={templateRow.total}
                           onChange={(e) => {
                             const newTotal = e.target.value;
-                            setTemplateRow(prev => {
-                              const updated = { ...prev, total: newTotal };
+                            setLastEditedField('total');
+                            
+                            if (newTotal === '') {
+                              setTemplateRow(prev => ({ ...prev, total: '', rate: '' }));
+                              return;
+                            }
+                            
+                            const enteredTotal = parseInt(newTotal);
+                            if (isNaN(enteredTotal) || enteredTotal < 0) return;
+                            
+                            const qty = parseInt(templateRow.qty) || 0;
+                            const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
 
-                              // If total is entered and qty > 0, recalculate rate
-                              const qty = parseFloat(prev.qty) || 0;
-                              const discountPercent = enableDiscount ? parseFloat(prev.discount) || 0 : 0;
-                              const enteredTotal = parseFloat(newTotal) || 0;
-
-                              if (qty > 0 && enteredTotal > 0) {
-                                // Reverse calculation for salex: total = (rate * qty) - discount
-                                // So: rate = (total + discount) / qty
-                                // Where discount = (rate * qty * discountPercent) / 100
-                                // This creates a quadratic equation, so we need to solve iteratively
-
-                                // For simplicity, assume discount is applied to the final total
-                                // So: rate = total / qty * (1 + discountPercent/100)
-                                const rate = enteredTotal / qty / (1 - discountPercent / 100);
-
-                                updated.rate = rate.toFixed(2);
-                              }
-
-                              return updated;
-                            });
+                            if (qty > 0) {
+                              // Calculate rate from total considering discount - allow decimals
+                              // total = (qty * rate) - discount
+                              // rate = (total + discount) / qty
+                              const rate = (enteredTotal + discountAmount) / qty;
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: enteredTotal.toString(),
+                                rate: rate.toFixed(2)
+                              }));
+                            } else {
+                              setTemplateRow(prev => ({
+                                ...prev,
+                                total: enteredTotal.toString()
+                              }));
+                            }
                           }}
                           onWheel={(e) => e.preventDefault()}
                           onKeyDown={(e) => {
@@ -2383,7 +2440,7 @@ export default function InvoiceCCreate() {
               {/* Packing & Forwarding */}
               <div>
                 {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                     <input
@@ -2401,7 +2458,8 @@ export default function InvoiceCCreate() {
                       placeholder="0"
                     />
                   </div>
-                  <div>
+                  {/* RATE FIELD HIDDEN - Auto-calculated */}
+                  {/* <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                     <input
                       type="number"
@@ -2417,7 +2475,7 @@ export default function InvoiceCCreate() {
                       className="input w-full"
                       placeholder="0"
                     />
-                  </div>
+                  </div> */}
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
                     <input
