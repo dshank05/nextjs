@@ -166,6 +166,7 @@ export default function InvoiceCreate() {
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
+  const [editDataLoading, setEditDataLoading] = useState(false);
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -401,10 +402,14 @@ export default function InvoiceCreate() {
 
   // Fetch last invoice number only in create mode
   useEffect(() => {
+    // Wait for router to be ready
+    if (!router.isReady) return;
+    
+    // Only fetch if definitely in create mode (no edit param in URL)
     if (!isEditMode && !router.query.edit) {
       fetchLastInvoiceNumber();
     }
-  }, [isEditMode, router.query.edit]);
+  }, [isEditMode, router.query.edit, router.isReady]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -486,93 +491,16 @@ export default function InvoiceCreate() {
 
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
+    // Wait for router to be ready
+    if (!router.isReady) return;
+    
     if (isEditMode && editInvoiceId) {
-      // First try to get data from sessionStorage
-      const cachedData = SessionStorageService.get('sales', editInvoiceId.toString());
-      if (cachedData) {
-        // Process the cached data directly inline
-        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
-
-
-        setFormData({
-          invoice_number: invoiceData.invoice_no?.toString() || '',
-          bill_reference: invoiceData.bill_reference || '',
-          staff_id: invoiceData.staff_id || null,
-          date: new Date(invoiceData.invoice_date * 1000).toISOString().split('T')[0],
-          customer_name: invoiceData.customer_name || '',
-          contact_number: invoiceData.contact_number || '',
-          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
-          mechanic_id: invoiceData.mechanic_id || null,
-          vehicle_number: transportDetails?.vehicle_no || '',
-          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
-          address: invoiceData.address || '',
-          address_2: invoiceData.address_2 || '',
-          transport_name: transportDetails?.trans_mode || '',
-          city: invoiceData.city || '',
-          email_id: invoiceData.email_id || '',
-          discount: invoiceData.discount || '',
-          state: invoiceData.state || '',
-          gst_number: invoiceData.gst_number || '',
-          tax: invoiceData.tax || '',
-          notes: invoiceData.notes || '',
-          payment_status: invoiceData.status !== undefined ? invoiceData.status : 0,
-          payment_mode: invoiceData.payment_mode !== undefined ? invoiceData.payment_mode : 0,
-          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
-          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
-          total_tax: invoiceData.total_tax ? invoiceData.total_tax.toString() : '',
-          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
-          descriptions: invoiceData.descriptions || '',
-          packing_forwarding_qty: invoiceData.packing_forwarding_qty || '0',
-          packing_forwarding_rate: invoiceData.packing_forwarding_rate || '0',
-          packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
-          total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
-          total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
-          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0',
-          pin_code: billingDetails?.billing_pin_code || ''
-        });
-
-        // Set customer selection based on cached data
-        // Only use new cache format with separate customer object
-        if (cachedData.customer && cachedData.customer.id && cachedData.customer.id !== '0') {
-          // Customer was selected from dropdown
-          setSelectedCustomerId(cachedData.customer.id.toString());
-          setCustomerIdToSave(parseInt(cachedData.customer.id));
-          setSelectedCustomer(cachedData.customer);
-          setIsOtherCustomerSelected(false);
-          setCustomerStateForTax(cachedData.customer.billing_state || '');
-        } else if (!cachedData.customer) {
-          // Old cache format - clear and fetch fresh
-          SessionStorageService.remove('sales', editInvoiceId.toString());
-          fetchInvoiceForEdit(editInvoiceId);
-          return;
-        }
-
-        // Set other IDs
-        if (invoiceData.staff_id) {
-          setSelectedStaffId(invoiceData.staff_id.toString());
-        }
-        if (invoiceData.mechanic_id) {
-          setSelectedMechanicId(invoiceData.mechanic_id.toString());
-        }
-
-        // Set raw items to convert later
-        if (invoiceItems && invoiceItems.length > 0) {
-          setRawInvoiceItems(invoiceItems);
-        }
-
-        // Set loading to false
-        setInvoiceNumberLoading(false);
-
-        // Remove the cached data after using it
-        // SessionStorageService.remove('sales', editInvoiceId.toString());
-        return;
-      }
-
-      // Fallback to API call if no cached data
+      console.log('🔄 Loading edit data for invoice ID:', editInvoiceId);
+      setEditDataLoading(true);
       fetchInvoiceForEdit(editInvoiceId);
     }
 
-  }, [isEditMode, editInvoiceId]);
+  }, [isEditMode, editInvoiceId, router.isReady]);
 
   // Customer selection function removed - no longer needed since we removed customer dropdown
 
@@ -809,94 +737,15 @@ export default function InvoiceCreate() {
 
   const fetchInvoiceForEdit = async (invoiceId: number) => {
     try {
-      // Check sessionStorage first to avoid redundant API call in edit mode
-      const cachedData = SessionStorageService.get('sales', invoiceId.toString());
-      if (cachedData) {
-        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
-
-        // Process the cached data directly inline
-        const formatDateForInput = (dateValue: number | string) => {
-          if (typeof dateValue === 'string') {
-            if (/^\d+$/.test(dateValue)) {
-              const timestamp = parseInt(dateValue);
-              if (timestamp > 1000000000) {
-                return new Date(timestamp * 1000).toISOString().split('T')[0];
-              }
-            }
-            return new Date(dateValue).toISOString().split('T')[0];
-          }
-          return new Date(dateValue * 1000).toISOString().split('T')[0];
-        };
-
-        const invoiceNo = invoiceData.invoice_no ? invoiceData.invoice_no.toString() : '';
-
-        // Prefill form data from cached data
-        const formDataToSet = {
-          invoice_number: invoiceNo,
-          bill_reference: invoiceData.bill_reference || '',
-          staff_id: invoiceData.staff_id || null,
-          date: formatDateForInput(invoiceData.invoice_date),
-          customer_name: invoiceData.customer_name || '',
-          contact_number: invoiceData.contact_number || '',
-          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
-          mechanic_id: invoiceData.mechanic_id || null,
-          vehicle_number: transportDetails.vehicle_no || '',
-          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
-          address: invoiceData.address || '',
-          address_2: invoiceData.address_2 || '',
-          transport_name: transportDetails?.trans_mode || '',
-          city: invoiceData.city || '',
-          email_id: invoiceData.email_id || '',
-          discount: invoiceData.discount || '',
-          state: invoiceData.state || '',
-          gst_number: invoiceData.gst_number || '',
-          tax: invoiceData.tax || '',
-          notes: invoiceData.notes || '',
-          payment_status: invoiceData.status !== undefined ? invoiceData.status : 0,
-          payment_mode: invoiceData.payment_mode !== undefined ? invoiceData.payment_mode : 0,
-          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
-          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
-          total_tax: invoiceData.total_tax ? invoiceData.total_tax.toString() : '',
-          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
-          descriptions: invoiceData.descriptions || '',
-          packing_forwarding_qty: invoiceData.packing_forwarding_qty || '0',
-          packing_forwarding_rate: invoiceData.packing_forwarding_rate || '0',
-          packing_forwarding_total: invoiceData.packing_forwarding_total || '0',
-          total_cgst: invoiceData.total_cgst ? invoiceData.total_cgst.toString() : '0',
-          total_sgst: invoiceData.total_sgst ? invoiceData.total_sgst.toString() : '0',
-          total_igst: invoiceData.total_igst ? invoiceData.total_igst.toString() : '0',
-          pin_code: billingDetails?.billing_pin_code || ''
-        };
-
-        setFormData(formDataToSet);
-
-        // Direct population of customer data from invoice (no customer selection needed)
-
-        // Set other IDs
-        if (invoiceData.staff_id) {
-          setSelectedStaffId(invoiceData.staff_id.toString());
-        }
-        if (invoiceData.mechanic_id) {
-          setSelectedMechanicId(invoiceData.mechanic_id.toString());
-        }
-
-        // Set raw items to convert later
-        if (invoiceItems && invoiceItems.length > 0) {
-          console.log('Storing cached raw invoice items for conversion:', invoiceItems);
-          setRawInvoiceItems(invoiceItems);
-        }
-
-        // Set loading to false
-        setInvoiceNumberLoading(false);
-
-        return;
-      }
-
+      console.log('📡 Fetching invoice from API:', invoiceId);
+      
       const response = await fetch(`/api/sales/${invoiceId}`);
       if (response.ok) {
         const data = await response.json();
         const invoice = data.invoice || data;
-        const transportDetails = data.transportDetails;
+        const transportDetails = data.transportDetails || {};
+
+        console.log('✅ Received invoice data:', invoice);
 
         // Format date
         const formatDateForInput = (dateValue: number | string) => {
@@ -914,18 +763,6 @@ export default function InvoiceCreate() {
 
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
-
-        // Store data in sessionStorage for future edit reuse
-        if (typeof invoiceId === 'number') {
-          SessionStorageService.set('sales', invoiceId.toString(), {
-            invoice: invoice,
-            customer: data.customer, // Store customer object for dropdown selection
-            billingDetails: data.billingDetails,
-            shippingDetails: data.shippingDetails,
-            transportDetails: data.transportDetails,
-            invoiceItems: data.invoiceItems
-          });
-        }
 
         // Prefill form data with all available fields
         const formDataToSet = {
@@ -950,16 +787,16 @@ export default function InvoiceCreate() {
           gst_number: invoice.gst_number || '',
           tax: invoice.tax || '',
           notes: invoice.notes || '',
-          payment_status: invoice.status !== undefined && invoice.status !== null ? invoice.status : 1,
+          payment_status: invoice.payment_status !== undefined && invoice.payment_status !== null ? invoice.payment_status : 1,
           payment_mode: invoice.payment_mode !== undefined && invoice.payment_mode !== null ? invoice.payment_mode : 0,
           total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
           subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
           total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
           grand_total: invoice.total ? invoice.total.toString() : '',
           descriptions: invoice.descriptions || '',
-          packing_forwarding_qty: invoice.packing_forwarding_qty || '0',
-          packing_forwarding_rate: invoice.packing_forwarding_rate || '0',
-          packing_forwarding_total: invoice.packing_forwarding_total || '0',
+          packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
+          packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
+          packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
           total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
           total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
           total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0',
@@ -997,33 +834,37 @@ export default function InvoiceCreate() {
           setFormData(prev => ({ ...prev, mechanic_id: invoice.mechanic_id }));
         }
 
-        // Set customer selection based on select_customer value
-        if (data.customer && data.customer.id && data.customer.id !== '0') {
-          // Customer was selected from dropdown
-          setSelectedCustomerId(data.customer.id.toString());
-          setCustomerIdToSave(parseInt(data.customer.id));
-          setSelectedCustomer(data.customer);
-          setIsOtherCustomerSelected(false);
-          setCustomerStateForTax(data.customer.billing_state || '');
+        // Store raw invoice items to convert later when filters are loaded
+        if (data.invoiceItems && data.invoiceItems.length > 0) {
+          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
+          setRawInvoiceItems(data.invoiceItems);
+        }
+
+        // Set customer selection based on select_customer value - DO THIS LAST
+        // so it doesn't clear the form data we just set
+        if (data.customer && data.customer.id && data.customer.id !== '0' && data.customer.id !== 0) {
+          // Customer was selected from dropdown - trigger handleCustomerSelect to auto-populate all fields
+          console.log('📋 Setting customer from dropdown:', data.customer.id, data.customer.billing_name);
+          
+          // Use setTimeout to ensure this runs after form data is set
+          setTimeout(() => {
+            handleCustomerSelect(data.customer.id.toString());
+          }, 0);
         } else {
           // "Other" customer (manual entry)
+          console.log('📋 Setting "Other" customer - manual entry');
           setSelectedCustomerId('0');
           setCustomerIdToSave(0);
           setSelectedCustomer(null);
           setIsOtherCustomerSelected(true);
           setCustomerStateForTax(invoice.state || '');
         }
-
-        // Store raw invoice items to convert later when filters are loaded
-        if (data.invoiceItems && data.invoiceItems.length > 0) {
-          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
-          setRawInvoiceItems(data.invoiceItems);
-        }
       }
     } catch (error) {
       console.error('Error fetching invoice for edit:', error);
     } finally {
       setInvoiceNumberLoading(false);
+      setEditDataLoading(false);
     }
   };
 
@@ -1580,6 +1421,19 @@ export default function InvoiceCreate() {
 
   return (
     <div className="space-y-3">
+      {/* Edit Data Loading Spinner */}
+      {editDataLoading && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+            <Loader className="w-8 h-8 animate-spin text-blue-400" />
+            <div className="text-center">
+              <p className="text-slate-200 font-medium">Loading Sale Data</p>
+              <p className="text-slate-400 text-sm">Please wait while we fetch the sale details...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-3">
         {/* Single Mega Card with All Sections */}
         <div className="card">
@@ -2089,6 +1943,7 @@ export default function InvoiceCreate() {
                       <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
+                          step="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -2528,6 +2383,7 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center w-24">
                               <input
                                 type="number"
+                                step="1"
                                 value={editingRowData?.qty || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseFloat(e.target.value) || 0 } : null)}
                                 className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
@@ -2832,7 +2688,7 @@ export default function InvoiceCreate() {
                       <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                       <input
                         type="number"
-
+                        step="1"
                         value={formData.packing_forwarding_qty}
                         onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                         className="input w-full"
@@ -2865,6 +2721,7 @@ export default function InvoiceCreate() {
                           }
                         }}
                         className="input w-full"
+                        step={1}
                         placeholder="0"
                       />
                     </div>

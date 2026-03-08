@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
+import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
 
 async function handler(
   req: NextApiRequest,
@@ -410,7 +411,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Start transaction
+    // Start transaction - ALL operations inside
     const result = await prisma.$transaction(async (tx) => {
       // Get current return items based on type
       const currentReturnItems = isInvoicex
@@ -542,7 +543,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         if (existingReturn.invoice_id) {
           const invoiceRecord = await tx.invoicex.findUnique({
             where: { id: existingReturn.invoice_id },
-            select: { invoice_no: true }
+            select: { invoice_no: true, select_customer: true }
           })
 
           if (invoiceRecord) {
@@ -581,6 +582,90 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               where: { id: existingReturn.invoice_id },
               data: { return_status: returnStatus }
             })
+
+            // ✅ USE TRANSACTION HANDLER FOR LEDGER/ALLOCATION/BALANCE OPERATIONS
+            const oldPaymentStatus = existingReturn.payment_status
+            const newPaymentStatus = payment_status !== undefined ? parseInt(payment_status) : existingReturn.payment_status
+            const oldTotal = (existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)
+            const newTotal = totalAmount + totalTax
+
+            // Calculate final return date
+            const finalReturnDate = return_date
+              ? convertDateToTimestamp(return_date)
+              : updatedReturn.return_date
+
+            const dateChanged = return_date && finalReturnDate !== existingReturn.return_date
+
+            // Update CREDIT_NOTE date if changed
+            if (dateChanged && invoiceRecord.select_customer && invoiceRecord.select_customer !== 0) {
+              await tx.customer_ledger.updateMany({
+                where: {
+                  customer_id: invoiceRecord.select_customer,
+                  reference_type: 'salex_return',
+                  reference_id: returnId,
+                  transaction_type: 'CREDIT_NOTE'
+                },
+                data: {
+                  transaction_date: finalReturnDate
+                }
+              })
+            }
+
+            // Get existing allocations
+            const existingAllocations = await tx.customer_refund_allocations.findMany({
+              where: { 
+                salex_return_id: returnId 
+              },
+              select: { allocated_amount: true }
+            })
+
+            const totalAllocated = existingAllocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+
+            // Fetch customer balance
+            const customer = invoiceRecord.select_customer && invoiceRecord.select_customer !== 0
+              ? await tx.customer_details.findUnique({
+                  where: { id: invoiceRecord.select_customer },
+                  select: {
+                    total_paid: true,
+                    total_allocated: true,
+                    total_refunded: true,
+                    total_refund_allocated: true
+                  }
+                })
+              : null
+
+            // Call handler if customer exists
+            if (invoiceRecord.select_customer && invoiceRecord.select_customer !== 0) {
+              const handlerResult = await customerTransactionHandler.handleReturnEdit({
+                type: 'salex',
+                oldStatus: oldPaymentStatus,
+                newStatus: newPaymentStatus,
+                oldTotal: oldTotal,
+                newTotal: newTotal,
+                customerId: invoiceRecord.select_customer,
+                returnId: returnId,
+                creditNoteNo: `SXR-${String(returnId).padStart(3, '0')}`,
+                paymentMode: payment_mode !== undefined ? parseInt(payment_mode) : updatedReturn.payment_mode,
+                paymentDate: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+                returnDate: finalReturnDate,
+                fy: existingReturn.fy,
+                totalAllocated: totalAllocated,
+                totalAmount: totalAmount,
+                totalTax: totalTax,
+                tx: tx,
+                currentBalance: customer ? {
+                  total_paid: Number(customer.total_paid),
+                  total_allocated: Number(customer.total_allocated),
+                  total_refunded: Number(customer.total_refunded),
+                  total_refund_allocated: Number(customer.total_refund_allocated)
+                } : undefined
+              })
+
+              await customerTransactionHandler.executeInTransaction(tx, handlerResult)
+            }
           }
         }
 
@@ -618,7 +703,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         if (existingReturn.invoice_id) {
           const invoiceRecord = await tx.invoice.findUnique({
             where: { id: existingReturn.invoice_id },
-            select: { invoice_no: true }
+            select: { invoice_no: true, select_customer: true }
           })
 
           if (invoiceRecord) {
@@ -657,13 +742,97 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
               where: { id: existingReturn.invoice_id },
               data: { return_status: returnStatus }
             })
+
+            // ✅ USE TRANSACTION HANDLER FOR LEDGER/ALLOCATION/BALANCE OPERATIONS
+            const oldPaymentStatus = existingReturn.payment_status
+            const newPaymentStatus = payment_status !== undefined ? parseInt(payment_status) : existingReturn.payment_status
+            const oldTotal = (existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)
+            const newTotal = totalAmount + totalTax
+
+            // Calculate final return date
+            const finalReturnDate = return_date
+              ? convertDateToTimestamp(return_date)
+              : updatedReturn.return_date
+
+            const dateChanged = return_date && finalReturnDate !== existingReturn.return_date
+
+            // Update CREDIT_NOTE date if changed
+            if (dateChanged && invoiceRecord.select_customer && invoiceRecord.select_customer !== 0) {
+              await tx.customer_ledger.updateMany({
+                where: {
+                  customer_id: invoiceRecord.select_customer,
+                  reference_type: 'sale_return',
+                  reference_id: returnId,
+                  transaction_type: 'CREDIT_NOTE'
+                },
+                data: {
+                  transaction_date: finalReturnDate
+                }
+              })
+            }
+
+            // Get existing allocations
+            const existingAllocations = await tx.customer_refund_allocations.findMany({
+              where: { 
+                sale_return_id: returnId 
+              },
+              select: { allocated_amount: true }
+            })
+
+            const totalAllocated = existingAllocations.reduce(
+              (sum, alloc) => sum + Number(alloc.allocated_amount),
+              0
+            )
+
+            // Fetch customer balance
+            const customer = invoiceRecord.select_customer && invoiceRecord.select_customer !== 0
+              ? await tx.customer_details.findUnique({
+                  where: { id: invoiceRecord.select_customer },
+                  select: {
+                    total_paid: true,
+                    total_allocated: true,
+                    total_refunded: true,
+                    total_refund_allocated: true
+                  }
+                })
+              : null
+
+            // Call handler if customer exists
+            if (invoiceRecord.select_customer && invoiceRecord.select_customer !== 0) {
+              const handlerResult = await customerTransactionHandler.handleReturnEdit({
+                type: 'sale',
+                oldStatus: oldPaymentStatus,
+                newStatus: newPaymentStatus,
+                oldTotal: oldTotal,
+                newTotal: newTotal,
+                customerId: invoiceRecord.select_customer,
+                returnId: returnId,
+                creditNoteNo: `SR-${String(returnId).padStart(3, '0')}`,
+                paymentMode: payment_mode !== undefined ? parseInt(payment_mode) : updatedReturn.payment_mode,
+                paymentDate: payment_date ? parseInt(payment_date) : Math.floor(Date.now() / 1000),
+                returnDate: finalReturnDate,
+                fy: existingReturn.fy,
+                totalAllocated: totalAllocated,
+                totalAmount: totalAmount,
+                totalTax: totalTax,
+                tx: tx,
+                currentBalance: customer ? {
+                  total_paid: Number(customer.total_paid),
+                  total_allocated: Number(customer.total_allocated),
+                  total_refunded: Number(customer.total_refunded),
+                  total_refund_allocated: Number(customer.total_refund_allocated)
+                } : undefined
+              })
+
+              await customerTransactionHandler.executeInTransaction(tx, handlerResult)
+            }
           }
         }
 
         return updatedReturn
       }
     }, {
-      timeout: 10000 // 10 second timeout for the transaction
+      timeout: 45000 // 45 seconds timeout for complex return edit processing
     })
 
     const returnPrefix = isInvoicex ? 'SXR' : 'SR'
@@ -702,72 +871,137 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'Invalid return ID format' })
     }
 
-    // Try to find and delete from sale_returns first
+    // Try to find in sale_returns first
     const saleReturn = await prisma.sale_returns.findUnique({
       where: { id: returnId },
-      select: { id: true }
+      select: { 
+        id: true,
+        invoice_id: true,
+        payment_status: true,
+        fy: true,
+        total_amount: true,
+        total_tax: true
+      }
     })
 
     if (saleReturn) {
-      // Delete from sale_returns
-      await prisma.$transaction(async (tx) => {
-        const returnItems = await tx.sale_return_items.findMany({
-          where: { sale_return_id: returnId },
-          select: { invoice_item_id: true, return_qty: true }
+      // Get invoice details for customer_id
+      const invoice = await prisma.invoice.findUnique({
+        where: { id: saleReturn.invoice_id },
+        select: { select_customer: true }
+      })
+
+      // ✅ Use customer transaction handler for deletion
+      if (invoice?.select_customer && invoice.select_customer !== 0) {
+        const operations = await customerTransactionHandler.handleReturnDelete({
+          type: 'sale',
+          returnId: returnId,
+          customerId: invoice.select_customer,
+          creditNoteNo: `SR-${String(returnId).padStart(3, '0')}`,
+          paymentStatus: saleReturn.payment_status,
+          fy: saleReturn.fy,
+          totalAmount: saleReturn.total_amount,
+          totalTax: saleReturn.total_tax
         })
 
-        for (const returnItem of returnItems) {
-          const invoiceItem = await tx.invoiceitems.findUnique({
-            where: { id: returnItem.invoice_item_id },
-            select: { product_id: true }
+        await prisma.$transaction(async (tx) => {
+          await customerTransactionHandler.executeDeleteInTransaction(tx, operations)
+        }, {
+          timeout: 45000
+        })
+      } else {
+        // For "Other" customer, just delete manually
+        await prisma.$transaction(async (tx) => {
+          const returnItems = await tx.sale_return_items.findMany({
+            where: { sale_return_id: returnId },
+            select: { invoice_item_id: true, return_qty: true }
           })
 
-          if (invoiceItem?.product_id) {
-            await tx.product.update({
-              where: { id: invoiceItem.product_id },
-              data: { stock: { decrement: returnItem.return_qty } }
+          for (const returnItem of returnItems) {
+            const invoiceItem = await tx.invoiceitems.findUnique({
+              where: { id: returnItem.invoice_item_id },
+              select: { product_id: true }
             })
-          }
-        }
 
-        await tx.sale_return_items.deleteMany({ where: { sale_return_id: returnId } })
-        await tx.sale_returns.delete({ where: { id: returnId } })
-      })
+            if (invoiceItem?.product_id) {
+              await tx.product.update({
+                where: { id: invoiceItem.product_id },
+                data: { stock: { decrement: returnItem.return_qty } }
+              })
+            }
+          }
+
+          await tx.sale_return_items.deleteMany({ where: { sale_return_id: returnId } })
+          await tx.sale_returns.delete({ where: { id: returnId } })
+        })
+      }
     } else {
       // Try salex_returns
       const salexReturn = await prisma.salex_returns.findUnique({
         where: { id: returnId },
-        select: { id: true }
+        select: { 
+          id: true,
+          invoicex_id: true,
+          payment_status: true,
+          fy: true,
+          total_amount: true
+        }
       })
 
       if (!salexReturn) {
         return res.status(404).json({ message: 'Return not found' })
       }
 
-      // Delete from salex_returns
-      await prisma.$transaction(async (tx) => {
-        const returnItems = await tx.salex_return_items.findMany({
-          where: { salex_return_id: returnId },
-          select: { invoice_itemx_id: true, return_qty: true }
+      // Get invoice details for customer_id
+      const invoice = await prisma.invoicex.findUnique({
+        where: { id: salexReturn.invoicex_id },
+        select: { select_customer: true }
+      })
+
+      // ✅ Use customer transaction handler for deletion
+      if (invoice?.select_customer && invoice.select_customer !== 0) {
+        const operations = await customerTransactionHandler.handleReturnDelete({
+          type: 'salex',
+          returnId: returnId,
+          customerId: invoice.select_customer,
+          creditNoteNo: `SXR-${String(returnId).padStart(3, '0')}`,
+          paymentStatus: salexReturn.payment_status,
+          fy: salexReturn.fy,
+          totalAmount: salexReturn.total_amount,
+          totalTax: 0
         })
 
-        for (const returnItem of returnItems) {
-          const invoiceItem = await tx.invoice_itemsx.findUnique({
-            where: { id: returnItem.invoice_itemx_id },
-            select: { product_id: true }
+        await prisma.$transaction(async (tx) => {
+          await customerTransactionHandler.executeDeleteInTransaction(tx, operations)
+        }, {
+          timeout: 45000
+        })
+      } else {
+        // For "Other" customer, just delete manually
+        await prisma.$transaction(async (tx) => {
+          const returnItems = await tx.salex_return_items.findMany({
+            where: { salex_return_id: returnId },
+            select: { invoice_itemx_id: true, return_qty: true }
           })
 
-          if (invoiceItem?.product_id) {
-            await tx.product.update({
-              where: { id: invoiceItem.product_id },
-              data: { stock: { decrement: returnItem.return_qty } }
+          for (const returnItem of returnItems) {
+            const invoiceItem = await tx.invoice_itemsx.findUnique({
+              where: { id: returnItem.invoice_itemx_id },
+              select: { product_id: true }
             })
-          }
-        }
 
-        await tx.salex_return_items.deleteMany({ where: { salex_return_id: returnId } })
-        await tx.salex_returns.delete({ where: { id: returnId } })
-      })
+            if (invoiceItem?.product_id) {
+              await tx.product.update({
+                where: { id: invoiceItem.product_id },
+                data: { stock: { decrement: returnItem.return_qty } }
+              })
+            }
+          }
+
+          await tx.salex_return_items.deleteMany({ where: { salex_return_id: returnId } })
+          await tx.salex_returns.delete({ where: { id: returnId } })
+        })
+      }
     }
 
     res.status(200).json({

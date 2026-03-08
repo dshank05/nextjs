@@ -4,6 +4,7 @@ import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp, parseDateRange } from '../../../lib/date-utils'
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler'
+import { customerLedgerService } from '../../../lib/customer-ledger-service'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../auth/[...nextauth]'
 
@@ -241,7 +242,28 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       }
 
-      // 8. Handle payment if paid (create payment records like purchase does)
+      // 8. Create SALEX ledger entry (debit - customer owes money)
+      if (parseInt(select_customer) !== 0) {
+        const totalAmount = parseFloat(total);
+        await customerLedgerService.createEntry({
+          customer_id: parseInt(select_customer),
+          transaction_date: invoiceDateTimestamp,
+          transaction_type: 'SALE',
+          reference_type: 'salex',
+          reference_id: invoice.id,
+          reference_no: invoice.invoice_no.toString(),
+          debit: totalAmount,
+          credit: 0,
+          payment_mode: null,
+          payment_status: parsedPaymentStatus,
+          payment_date: null,
+          notes: `Salex INV-${invoice.invoice_no}`,
+          fy: currentFy,
+          transaction_id: null
+        }, tx);
+      }
+
+      // 9. Handle payment if paid (create payment records like purchase does)
       if (parsedPaymentStatus === 1 && parseInt(select_customer) !== 0) {
         // Fetch customer balance for smart advance allocation
         const customer = await tx.customer_details.findUnique({
@@ -291,6 +313,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
 
         // Create payment record for new payment portion if any
+        let newPaymentId: number | undefined;
         if (newPayment > 0) {
           const payment = await tx.customer_payments.create({
             data: {
@@ -306,6 +329,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             }
           });
 
+          newPaymentId = payment.id;
+
           await tx.customer_payment_allocations.create({
             data: {
               payment_id: payment.id,
@@ -315,6 +340,26 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
               notes: 'Allocated during salex creation'
             }
           });
+        }
+
+        // Create PAYMENT_RECEIVED ledger entry (credit - reduces customer debt)
+        if (newPayment > 0 && newPaymentId) {
+          await customerLedgerService.createEntry({
+            customer_id: parseInt(select_customer),
+            transaction_date: invoiceDateTimestamp,
+            transaction_type: 'PAYMENT_RECEIVED',
+            reference_type: 'salex',
+            reference_id: invoice.id,
+            reference_no: invoice.invoice_no.toString(),
+            debit: 0,
+            credit: newPayment,
+            payment_mode: parsedPaymentMode,
+            payment_status: 1,
+            payment_date: invoiceDateTimestamp,
+            notes: `Payment ₹${newPayment} for salex INV-${invoice.invoice_no} via Payment #${newPaymentId}`,
+            fy: currentFy,
+            transaction_id: newPaymentId
+          }, tx);
         }
 
         // Update customer balance
@@ -364,6 +409,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       endDate = '',
       fy = '',
       status = '',
+      customer = '',
+      amountMin = '',
+      amountMax = '',
       uid = '',
       billRef = '',
       items = '',
@@ -426,6 +474,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     if (pf && pf !== '') {
       where.packing_forwarding_total = { gte: parseFloat(pf as string) }
+    }
+
+    if (customer && customer !== '') {
+      where.select_customer = parseInt(customer as string)
+    }
+
+    if (amountMin && amountMin !== '') {
+      where.total = { ...where.total, gte: parseFloat(amountMin as string) }
+    }
+
+    if (amountMax && amountMax !== '') {
+      where.total = { ...where.total, lte: parseFloat(amountMax as string) }
     }
 
     const itemsFilter = items && items !== '' ? parseInt(items as string) : null

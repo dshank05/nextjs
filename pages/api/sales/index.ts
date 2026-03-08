@@ -4,6 +4,7 @@ import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp, parseDateRange } from '../../../lib/date-utils'
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler'
+import { customerLedgerService } from '../../../lib/customer-ledger-service'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../auth/[...nextauth]'
 
@@ -41,10 +42,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       staff_id,
       mechanic_id,
       commission,
-      date,
-      customer_id,
+      date: dateFromBody,
+      invoice_date,
+      select_customer,
       transport_cost,
-      items,
+      items: itemsFromBody,
+      invoiceItems,
       descriptions,
       packing_forwarding_qty,
       packing_forwarding_rate,
@@ -55,21 +58,28 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       notes,
       total_tax,
       payment_status,
-      payment_mode
+      payment_mode,
+      updated_at,
+      fy
     } = req.body
 
+    // Accept both 'items' and 'invoiceItems' for compatibility
+    const items = itemsFromBody || invoiceItems
+    // Accept both 'date' and 'invoice_date' for compatibility
+    const date = dateFromBody || invoice_date
+
     // Validation
-    if (customer_id === undefined || customer_id === null || !items || items.length === 0) {
+    if (select_customer === undefined || select_customer === null || !items || items.length === 0) {
       return res.status(400).json({
-        message: 'Missing required fields: customer_id, or items'
+        message: 'Missing required fields: select_customer, or items'
       })
     }
 
     // Validate customer exists (if not "Other")
     let existingCustomer = null
-    if (parseInt(customer_id) !== 0) {
+    if (parseInt(select_customer) !== 0) {
       existingCustomer = await prisma.customer_details.findUnique({
-        where: { id: parseInt(customer_id) }
+        where: { id: parseInt(select_customer) }
       })
 
       if (!existingCustomer) {
@@ -112,6 +122,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // 1. Create sale record
       const saleData: any = {
         invoice_no: nextInvoiceNo,
+        select_customer: parseInt(select_customer),
         bill_reference: bill_reference || '',
         commission: commission || 0,
         items_total: itemsTotal,
@@ -130,7 +141,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         invoice_date: Math.floor(invoiceDate),
         payment_status: parsedPaymentStatus,
         payment_mode: parsedPaymentMode,
-        fy: currentFy
+        fy: fy || currentFy,
+        updated_at: updated_at || new Date().toISOString()
       }
 
       if (staff_id) {
@@ -240,11 +252,31 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // 7. Handle payment if paid (create payment records like purchase does)
-      if (parsedPaymentStatus === 1 && parseInt(customer_id) !== 0) {
+      // 7. Create SALE ledger entry (debit - customer owes money)
+      if (parseInt(select_customer) !== 0) {
+        await customerLedgerService.createEntry({
+          customer_id: parseInt(select_customer),
+          transaction_date: Math.floor(invoiceDate),
+          transaction_type: 'SALE',
+          reference_type: 'sale',
+          reference_id: sale.id,
+          reference_no: sale.invoice_no.toString(),
+          debit: calculatedGrandTotal,
+          credit: 0,
+          payment_mode: null,
+          payment_status: parsedPaymentStatus,
+          payment_date: null,
+          notes: `Sale INV-${sale.invoice_no}`,
+          fy: currentFy,
+          transaction_id: null
+        }, tx);
+      }
+
+      // 8. Handle payment if paid (create payment records like purchase does)
+      if (parsedPaymentStatus === 1 && parseInt(select_customer) !== 0) {
         // Fetch customer balance for smart advance allocation
         const customer = await tx.customer_details.findUnique({
-          where: { id: parseInt(customer_id) },
+          where: { id: parseInt(select_customer) },
           select: {
             total_paid: true,
             total_allocated: true,
@@ -266,7 +298,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         if (advanceUsed > 0) {
           const advancePayment = await tx.customer_payments.create({
             data: {
-              customer_id: parseInt(customer_id),
+              customer_id: parseInt(select_customer),
               payment_date: Math.floor(invoiceDate),
               payment_amount: advanceUsed,
               payment_mode: parsedPaymentMode,
@@ -288,10 +320,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
 
         // Create payment record for new payment portion if any
+        let newPaymentId: number | undefined;
         if (newPayment > 0) {
           const payment = await tx.customer_payments.create({
             data: {
-              customer_id: parseInt(customer_id),
+              customer_id: parseInt(select_customer),
               payment_date: Math.floor(invoiceDate),
               payment_amount: newPayment,
               payment_mode: parsedPaymentMode,
@@ -302,6 +335,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
               fy: currentFy
             }
           });
+
+          newPaymentId = payment.id;
 
           await tx.customer_payment_allocations.create({
             data: {
@@ -314,9 +349,29 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           });
         }
 
+        // Create PAYMENT_RECEIVED ledger entry (credit - reduces customer debt)
+        if (newPayment > 0 && newPaymentId) {
+          await customerLedgerService.createEntry({
+            customer_id: parseInt(select_customer),
+            transaction_date: Math.floor(invoiceDate),
+            transaction_type: 'PAYMENT_RECEIVED',
+            reference_type: 'sale',
+            reference_id: sale.id,
+            reference_no: sale.invoice_no.toString(),
+            debit: 0,
+            credit: newPayment,
+            payment_mode: parsedPaymentMode,
+            payment_status: 1,
+            payment_date: Math.floor(invoiceDate),
+            notes: `Payment ₹${newPayment} for sale INV-${sale.invoice_no} via Payment #${newPaymentId}`,
+            fy: currentFy,
+            transaction_id: newPaymentId
+          }, tx);
+        }
+
         // Update customer balance
         await tx.customer_details.update({
-          where: { id: parseInt(customer_id) },
+          where: { id: parseInt(select_customer) },
           data: {
             total_paid: { increment: newPayment },
             total_allocated: { increment: calculatedGrandTotal }
@@ -362,6 +417,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       endDate = '',
       fy = '',
       status = '',
+      customer = '',
+      amountMin = '',
+      amountMax = '',
       uid = '',
       billRef = '',
       items = '',
@@ -428,6 +486,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     if (pf && pf !== '') {
       where.packing_forwarding_total = { gte: parseFloat(pf as string) }
+    }
+
+    if (customer && customer !== '') {
+      where.select_customer = parseInt(customer as string)
+    }
+
+    if (amountMin && amountMin !== '') {
+      where.total = { ...where.total, gte: parseFloat(amountMin as string) }
+    }
+
+    if (amountMax && amountMax !== '') {
+      where.total = { ...where.total, lte: parseFloat(amountMax as string) }
     }
 
     const itemsFilter = items && items !== '' ? parseInt(items as string) : null

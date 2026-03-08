@@ -109,10 +109,63 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // Get payment allocation history
+    const paymentAllocations = await prisma.customer_payment_allocations.findMany({
+      where: { invoice_id: saleId },
+      include: {
+        payment: {
+          select: {
+            id: true,
+            payment_date: true,
+            payment_amount: true,
+            payment_mode: true,
+            payment_type: true,
+            notes: true,
+            created_at: true
+          }
+        }
+      },
+      orderBy: {
+        allocation_date: 'desc'
+      }
+    })
+
+    // Calculate payment summary
+    const totalPaid = paymentAllocations.reduce(
+      (sum, alloc) => sum + Number(alloc.allocated_amount),
+      0
+    )
+    const remainingAmount = sale.total - totalPaid
+
+    // Format payment history
+    const paymentHistory = paymentAllocations.map(alloc => ({
+      allocation_id: alloc.id,
+      payment_id: alloc.payment_id,
+      allocated_amount: Number(alloc.allocated_amount),
+      allocation_date: alloc.allocation_date,
+      allocation_notes: alloc.notes,
+      payment_date: alloc.payment.payment_date,
+      payment_amount: Number(alloc.payment.payment_amount),
+      payment_mode: alloc.payment.payment_mode,
+      payment_mode_text: alloc.payment.payment_mode === 0 ? 'Cash' : 'Bank',
+      payment_type: alloc.payment.payment_type,
+      payment_notes: alloc.payment.notes,
+      created_at: alloc.payment.created_at
+    }))
+
     const transformedSale = {
       invoice_no: sale.invoice_no,
       invoice_date: sale.invoice_date,
       select_customer: sale.select_customer,
+      customer_name: sale.customer_name || '',
+      contact_number: sale.contact_number || '',
+      email_id: sale.email_id || '',
+      address: sale.address || '',
+      address_2: sale.address_2 || '',
+      city: sale.city || '',
+      state: sale.state || '',
+      pin_code: sale.pin_code || '',
+      gst_number: sale.gst_number || '',
       items_total: sale.items_total || 0,
       freight: sale.freight || 0,
       total_taxable_value: sale.total_taxable_value || 0,
@@ -128,11 +181,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       commission: sale.commission || 0,
       discount: sale.discount || 0,
       tax: sale.notes || '',
-      packing_forwarding_qty: sale.packing_forwarding_qty || 0,
-      packing_forwarding_rate: sale.packing_forwarding_rate || 0,
-      packing_forwarding_total: sale.packing_forwarding_total || 0,
-      payment_status: sale.payment_status || 1,
-      payment_mode: sale.payment_mode || 1,
+      packing_forwarding_qty: sale.packing_forwarding_qty !== null && sale.packing_forwarding_qty !== undefined ? sale.packing_forwarding_qty : 0,
+      packing_forwarding_rate: sale.packing_forwarding_rate !== null && sale.packing_forwarding_rate !== undefined ? sale.packing_forwarding_rate : 0,
+      packing_forwarding_total: sale.packing_forwarding_total !== null && sale.packing_forwarding_total !== undefined ? sale.packing_forwarding_total : 0,
+      payment_status: sale.payment_status !== null && sale.payment_status !== undefined ? sale.payment_status : 1,
+      payment_mode: sale.payment_mode !== null && sale.payment_mode !== undefined ? sale.payment_mode : 1,
       notes: sale.notes || '',
       descriptions: sale.descriptions || '',
       fy: sale.fy,
@@ -162,6 +215,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })),
       customer_id: sale.select_customer,
       customer: customerData,
+      billingDetails: sale.select_customer === 0 ? {
+        customer_name: sale.customer_name || '',
+        contact_number: sale.contact_number || '',
+        email_id: sale.email_id || '',
+        address: sale.address || '',
+        address_2: sale.address_2 || '',
+        city: sale.city || '',
+        state: sale.state || '',
+        gst_number: sale.gst_number || '',
+        billing_pin_code: sale.pin_code || ''
+      } : null,
       staff: staffData,
       mechanic: mechanicData,
       shippingDetails: customerData ? {
@@ -173,7 +237,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       transportDetails: {
         trans_mode: transportDetails?.trans_mode || '',
         vehicle_no: transportDetails?.vehicle_no || ''
-      }
+      },
+      // Payment allocation summary and history
+      payment_summary: {
+        total_bill: sale.total,
+        total_paid: totalPaid,
+        remaining_amount: remainingAmount,
+        payment_count: paymentAllocations.length,
+        is_fully_paid: totalPaid >= sale.total,
+        is_partially_paid: totalPaid > 0 && totalPaid < sale.total
+      },
+      payment_history: paymentHistory
     }
 
     res.status(200).json(transformedSale)
@@ -198,15 +272,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const {
+      invoice_no,
       invoice_number,
+      invoice_date,
+      date,
       bill_reference,
       staff_id,
       mechanic_id,
       commission,
-      date,
-      customer_id,
+      select_customer,
       transport_cost,
       items,
+      invoiceItems,
       descriptions,
       packing_forwarding_qty,
       packing_forwarding_rate,
@@ -217,21 +294,31 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       notes,
       total_tax,
       payment_status,
-      payment_mode
+      payment_mode,
+      transportDetails
     } = req.body
 
+    // Use invoice_no if provided, otherwise fall back to invoice_number
+    const invoiceNumber = invoice_no || invoice_number
+    
+    // Use invoice_date if provided, otherwise fall back to date
+    const dateValue = invoice_date || date
+    
+    // Use invoiceItems if provided, otherwise fall back to items
+    const itemsArray = invoiceItems || items
+
     // Validation
-    if (!invoice_number || customer_id === undefined || customer_id === null) {
+    if (!invoiceNumber || select_customer === undefined || select_customer === null) {
       return res.status(400).json({
-        message: 'Missing required fields: invoice_number or customer_id'
+        message: 'Missing required fields: invoice_no or select_customer'
       })
     }
 
     // Validate customer exists
     let existingCustomer = null
-    if (parseInt(customer_id) !== 0) {
+    if (parseInt(select_customer) !== 0) {
       existingCustomer = await prisma.customer_details.findUnique({
-        where: { id: parseInt(customer_id) }
+        where: { id: parseInt(select_customer) }
       })
 
       if (!existingCustomer) {
@@ -280,43 +367,45 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const currentYear = currentDate.getFullYear()
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
-    const invoiceDate = convertDateToTimestamp(date)
+    const invoiceDate = convertDateToTimestamp(dateValue)
 
     let itemsTotal = 0
-    if (items && items.length > 0) {
-      itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
+    if (itemsArray && itemsArray.length > 0) {
+      itemsTotal = itemsArray.reduce((sum, item) => sum + (item.qty * item.rate), 0)
     }
 
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || 0) + (transport_cost || 0) + (total_tax || 0)
 
-    // ✅ REFACTORED: Use customer transaction handler for payment status changes
-    const oldPaymentStatus = existingSale.payment_status
-    const newPaymentStatus = parsedPaymentStatus
-
-    // Check if payment status changed
-    if (oldPaymentStatus !== newPaymentStatus && parseInt(customer_id) !== 0) {
-      // Use transaction handler for complex payment status changes
-      const operations = await customerTransactionHandler.handleSaleEdit(
-        saleId,
-        {
-          old_status: oldPaymentStatus,
-          new_status: newPaymentStatus,
-          old_total: Number(existingSale.total),
-          new_total: calculatedGrandTotal,
-          customer_id: parseInt(customer_id),
-          payment_mode: parsedPaymentMode,
-          transaction_date: Math.floor(invoiceDate),
-          fy: financialYear,
-          notes: notes || `Sale ${invoice_number} updated`
-        },
-        'sale'
-      )
-
-      await customerTransactionHandler.executeInTransaction(operations)
-    }
-
-    // Update sale record and items
+    // Start transaction - ALL operations inside
     const result = await prisma.$transaction(async (tx) => {
+      // ✅ REFACTORED: Use customer transaction handler for payment status changes INSIDE transaction
+      const oldPaymentStatus = existingSale.payment_status
+      const newPaymentStatus = parsedPaymentStatus
+
+      // Check if payment status changed
+      if (oldPaymentStatus !== newPaymentStatus && parseInt(select_customer) !== 0) {
+        // Use transaction handler for complex payment status changes
+        const operations = await customerTransactionHandler.handleSaleEdit(
+          saleId,
+          {
+            old_status: oldPaymentStatus,
+            new_status: newPaymentStatus,
+            old_total: Number(existingSale.total),
+            new_total: calculatedGrandTotal,
+            customer_id: parseInt(select_customer),
+            payment_mode: parsedPaymentMode,
+            transaction_date: Math.floor(invoiceDate),
+            fy: financialYear,
+            notes: notes || `Sale ${invoiceNumber} updated`
+          },
+          'sale'
+        )
+
+        // Execute handler operations inside same transaction
+        await customerTransactionHandler.executeInTransaction(tx, operations)
+      }
+
+      // Update sale record
       const saleUpdateData: any = {
         bill_reference: bill_reference || '',
         commission: commission || 0,
@@ -357,7 +446,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // Handle item updates
-      if (items && items.length > 0) {
+      if (itemsArray && itemsArray.length > 0) {
         const existingItems = await tx.invoiceitems.findMany({
           where: { invoice_no: sale.id }
         })
@@ -373,7 +462,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           })
         })
 
-        items.forEach(item => {
+        itemsArray.forEach(item => {
           newItemsMap.set(parseInt(item.product_id), {
             qty: item.qty || 0,
             rate: item.rate || 0,
@@ -543,6 +632,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
+      // Update transport details if provided
+      if (transportDetails) {
+        await tx.transport_details.upsert({
+          where: { invoice_id: sale.id },
+          update: {
+            trans_mode: transportDetails.trans_mode || '',
+            vehicle_no: transportDetails.vehicle_no || ''
+          },
+          create: {
+            invoice_id: sale.id,
+            trans_mode: transportDetails.trans_mode || '',
+            vehicle_no: transportDetails.vehicle_no || ''
+          }
+        })
+      }
+
       return sale
     }, {
       timeout: 30000
@@ -610,7 +715,9 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         'sale'
       )
 
-      await customerTransactionHandler.executeDeleteInTransaction(operations)
+      await prisma.$transaction(async (tx) => {
+        await customerTransactionHandler.executeDeleteInTransaction(tx, operations)
+      })
     } else {
       // For "Other" customer, just delete the sale
       await prisma.$transaction(async (tx) => {

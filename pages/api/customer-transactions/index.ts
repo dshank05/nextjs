@@ -110,6 +110,11 @@ async function handleListTransactions(
                 select: {
                   invoice_no: true
                 }
+              },
+              invoicex: {
+                select: {
+                  invoice_no: true
+                }
               }
             }
           }
@@ -126,7 +131,14 @@ async function handleListTransactions(
         payment_mode: payment.payment_mode,
         payment_type: payment.payment_type || 'BILL_SPECIFIC',
         notes: payment.notes,
-        invoice_numbers: payment.allocations.map(a => `INV-${a.invoice.invoice_no}`),
+        invoice_numbers: payment.allocations.map(a => {
+          if (a.invoice) {
+            return `INV-${a.invoice.invoice_no}`;
+          } else if (a.invoicex) {
+            return `INVX-${a.invoicex.invoice_no}`;
+          }
+          return 'N/A';
+        }),
         allocations_count: payment.allocations.length,
         fy: payment.fy,
         created_at: payment.created_at

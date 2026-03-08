@@ -113,6 +113,12 @@ interface SalexTableProps {
     amountMin: string;
     amountMax: string;
     uidFilter: string;
+    billReference?: string;
+    itemCount?: string;
+    paymentMode?: string;
+    total?: string;
+    totalTax?: string;
+    packingForwardingTotal?: string;
   };
 }
 
@@ -154,6 +160,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
 
   // Column-specific filter states
   const [billRefFilter, setBillRefFilter] = useState('');
+  const [itemsFilter, setItemsFilter] = useState('');
+  const [totalFilter, setTotalFilter] = useState('');
   const [taxAmountFilter, setTaxAmountFilter] = useState('');
   const [notesFilter, setNotesFilter] = useState('');
   const [pfFilter, setPfFilter] = useState('');
@@ -183,6 +191,12 @@ export const SalexTable: React.FC<SalexTableProps> = ({
       setDateFrom(initialFilters.dateFrom || '');
       setDateTo(initialFilters.dateTo || '');
       setUidFilter(initialFilters.uidFilter || '');
+      setBillRefFilter(initialFilters.billReference || '');
+      setItemsFilter(initialFilters.itemCount || '');
+      setTotalFilter(initialFilters.total || '');
+      setTaxAmountFilter(initialFilters.totalTax || '');
+      setPfFilter(initialFilters.packingForwardingTotal || '');
+      setPaymentModeFilter(initialFilters.paymentMode || '');
     }
   }, [initialFilters]);
 
@@ -222,6 +236,43 @@ export const SalexTable: React.FC<SalexTableProps> = ({
     }
   };
 
+  // Helper function to apply all filters
+  const applyAllFilters = (overrides: Partial<{
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    uidFilter: string;
+    billReference: string;
+    items: string;
+    total: string;
+    totalTax: string;
+    notes: string;
+    packingForwardingTotal: string;
+    paymentMode: string;
+    sortBy: string;
+    sortOrder: string;
+  }> = {}) => {
+    if (onApplyFilters) {
+      onApplyFilters({
+        customerFilter: overrides.customerFilter ?? customerFilter,
+        statusFilter: overrides.statusFilter ?? statusFilter,
+        dateFrom: overrides.dateFrom ?? dateFrom,
+        dateTo: overrides.dateTo ?? dateTo,
+        uidFilter: overrides.uidFilter ?? uidFilter,
+        billRef: overrides.billReference ?? billRefFilter,
+        items: overrides.items ?? itemsFilter,
+        total: overrides.total ?? totalFilter,
+        taxAmount: overrides.totalTax ?? taxAmountFilter,
+        notes: overrides.notes ?? notesFilter,
+        pf: overrides.packingForwardingTotal ?? pfFilter,
+        paymentMode: overrides.paymentMode ?? paymentModeFilter,
+        sortBy: overrides.sortBy ?? sortBy,
+        sortOrder: overrides.sortOrder ?? sortOrder
+      });
+    }
+  };
+
   const clearFilters = () => {
     onSearchChange('');
     setCustomerFilter('');
@@ -231,6 +282,8 @@ export const SalexTable: React.FC<SalexTableProps> = ({
     setDateTo('');
     setUidFilter('');
     setBillRefFilter('');
+    setItemsFilter('');
+    setTotalFilter('');
     setTaxAmountFilter('');
     setNotesFilter('');
     setPfFilter('');
@@ -434,18 +487,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             onChange={(e) => {
               const newValue = e.target.value;
               setUidFilter(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyAllFilters({ uidFilter: newValue });
             }}
             min="1"
           />
@@ -457,20 +499,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <ClearableInput
             type="text"
             placeholder="Enter bill reference"
-            value={''}
+            value={billRefFilter}
             onChange={(e) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = e.target.value;
+              setBillRefFilter(newValue);
+              applyAllFilters({ billReference: newValue });
             }}
           />
         </div>
@@ -490,18 +523,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             onSelectionChange={(value) => {
               const newValue = value || '';
               setCustomerFilter(newValue);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter: newValue,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyAllFilters({ customerFilter: newValue });
             }}
             placeholder="Select customer..."
           />
@@ -513,20 +535,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <ClearableInput
             type="number"
             placeholder="Enter item count"
-            value={''}
+            value={itemsFilter}
             onChange={(e) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = e.target.value;
+              setItemsFilter(newValue);
+              applyAllFilters({ items: newValue });
             }}
             min="0"
           />
@@ -538,20 +551,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <ClearableInput
             type="number"
             placeholder="Enter total amount"
-            value={''}
+            value={totalFilter}
             onChange={(e) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = e.target.value;
+              setTotalFilter(newValue);
+              applyAllFilters({ total: newValue });
             }}
             min="0"
             step="0.01"
@@ -590,20 +594,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <ClearableInput
             type="text"
             placeholder="Enter notes"
-            value={''}
+            value={notesFilter}
             onChange={(e) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = e.target.value;
+              setNotesFilter(newValue);
+              applyAllFilters({ notes: newValue });
             }}
           />
         </div>
@@ -614,20 +609,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
           <ClearableInput
             type="number"
             placeholder="Enter P/F amount"
-            value={''}
+            value={pfFilter}
             onChange={(e) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = e.target.value;
+              setPfFilter(newValue);
+              applyAllFilters({ packingForwardingTotal: newValue });
             }}
             min="0"
             step="0.01"
@@ -643,18 +629,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
             onDateChange={(start, end) => {
               setDateFrom(start);
               setDateTo(end);
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom: start,
-                  dateTo: end,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyAllFilters({ dateFrom: start, dateTo: end });
             }}
             placeholder="Select date range..."
           />
@@ -669,20 +644,11 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               { id: '0', name: 'Cash' },
               { id: '1', name: 'Bank' }
             ]}
-            selectedValue={''}
+            selectedValue={paymentModeFilter}
             onSelectionChange={(value) => {
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              const newValue = value || '';
+              setPaymentModeFilter(newValue);
+              applyAllFilters({ paymentMode: newValue });
             }}
             placeholder="Select payment mode..."
           />
@@ -711,15 +677,7 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                 } else if (newValue === 'all') {
                   apiStatusValue = '';
                 }
-                onApplyFilters({
-                  customerFilter,
-                  statusFilter: apiStatusValue,
-                  dateFrom,
-                  dateTo,
-                  uidFilter,
-                  sortBy,
-                  sortOrder
-                });
+                applyAllFilters({ statusFilter: apiStatusValue });
               }
             }}
             placeholder="Select status..."
@@ -736,22 +694,26 @@ export const SalexTable: React.FC<SalexTableProps> = ({
               setDateTo('');
               setUidFilter('');
               setBillRefFilter('');
+              setItemsFilter('');
+              setTotalFilter('');
               setTaxAmountFilter('');
               setNotesFilter('');
               setPfFilter('');
               setPaymentModeFilter('');
-              // Apply cleared filters
-              if (onApplyFilters) {
-                onApplyFilters({
-                  customerFilter: '',
-                  statusFilter: 'all',
-                  dateFrom: '',
-                  dateTo: '',
-                  uidFilter: '',
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyAllFilters({
+                customerFilter: '',
+                statusFilter: 'all',
+                dateFrom: '',
+                dateTo: '',
+                uidFilter: '',
+                billReference: '',
+                items: '',
+                total: '',
+                totalTax: '',
+                notes: '',
+                packingForwardingTotal: '',
+                paymentMode: ''
+              });
             }}
             className="btn-secondary px-4 py-2"
           >

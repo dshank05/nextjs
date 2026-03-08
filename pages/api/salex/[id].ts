@@ -48,7 +48,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       return res.status(404).json({ message: 'Salex not found' })
     }
 
-    const [customerData, staffData, mechanicData, returnData, billToData, transportDetails] = await Promise.all([
+    const [customerData, staffData, mechanicData, returnData, billToData, transportDetails, salexItems] = await Promise.all([
       salex.select_customer && salex.select_customer !== 0 ?
         prisma.customer_details.findUnique({
           where: { id: salex.select_customer },
@@ -96,6 +96,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       // Fetch transport details
       prisma.transport_detailsx.findFirst({
         where: { invoice_id: salex.id }
+      }),
+
+      // Fetch salex items
+      prisma.invoice_itemsx.findMany({
+        where: { invoice_no: salex.id },
+        include: {
+          product: {
+            select: {
+              display_name: true
+            }
+          }
+        }
       })
     ])
 
@@ -117,13 +129,56 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
 
     const totalAllocated = 0
 
+    // Get payment allocation history
+    const paymentAllocations = await prisma.customer_payment_allocations.findMany({
+      where: { invoicex_id: parseInt(salexId) },
+      include: {
+        payment: {
+          select: {
+            id: true,
+            payment_date: true,
+            payment_amount: true,
+            payment_mode: true,
+            payment_type: true,
+            notes: true,
+            created_at: true
+          }
+        }
+      },
+      orderBy: {
+        allocation_date: 'desc'
+      }
+    })
+
+    // Calculate payment summary
+    const totalPaid = paymentAllocations.reduce(
+      (sum, alloc) => sum + Number(alloc.allocated_amount),
+      0
+    )
+    const remainingAmount = salex.total - totalPaid
+
+    // Format payment history
+    const paymentHistory = paymentAllocations.map(alloc => ({
+      allocation_id: alloc.id,
+      payment_id: alloc.payment_id,
+      allocated_amount: Number(alloc.allocated_amount),
+      allocation_date: alloc.allocation_date,
+      allocation_notes: alloc.notes,
+      payment_date: alloc.payment.payment_date,
+      payment_amount: Number(alloc.payment.payment_amount),
+      payment_mode: alloc.payment.payment_mode,
+      payment_mode_text: alloc.payment.payment_mode === 0 ? 'Cash' : 'Bank',
+      payment_type: alloc.payment.payment_type,
+      payment_notes: alloc.payment.notes,
+      created_at: alloc.payment.created_at
+    }))
+
     const enhancedSalex = {
       id: salex.id,
       invoice_no: salex.invoice_no,
+      select_customer: salex.select_customer,
       customer_id: salex.select_customer,
-      customer_name: billToData?.billing_name || customerData?.billing_name || 'Other',
-      customer_gstin: billToData?.billing_gstin || customerData?.billing_gstin || '',
-      // Customer details from bill_tosalesx
+      customer_name: billToData?.billing_name || customerData?.billing_name || '',
       contact_number: billToData?.contact_no || '',
       email_id: billToData?.email || '',
       address: billToData?.billing_address || '',
@@ -131,43 +186,77 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       city: billToData?.billing_city || '',
       state: billToData?.billing_state || '',
       state_code: billToData?.billing_state_code || undefined,
-      gst_number: billToData?.billing_gstin || '',
       pin_code: '', // Not stored in bill_tosalesx
+      gst_number: billToData?.billing_gstin || '',
+      customer_gstin: billToData?.billing_gstin || customerData?.billing_gstin || '',
       // Transport details
       vehicle_number: transportDetails?.vehicle_no || '',
       transport_name: transportDetails?.trans_mode || '',
       invoice_date: salex.invoice_date,
+      date: salex.invoice_date,
       formattedDate: formattedDate,
       items_total: salex.items_total,
       freight: salex.freight,
       total_taxable_value: salex.total_taxable_value,
       total_tax: salex.total_tax,
+      subtotal: salex.items_total,
       total: salex.total,
       notes: salex.notes,
       descriptions: salex.descriptions,
-      payment_status: salex.payment_status,
-      payment_mode: salex.payment_mode,
+      payment_status: salex.payment_status !== null && salex.payment_status !== undefined ? salex.payment_status : 0,
+      payment_mode: salex.payment_mode !== null && salex.payment_mode !== undefined ? salex.payment_mode : 0,
       return_status: salex.return_status,
       fy: salex.fy,
       staff_id: salex.staff_id,
       staff_name: staffData?.name,
+      staff_details: staffData?.name || '',
       mechanic_id: salex.mechanic_id,
       mechanic_name: mechanicData?.name,
       bill_reference: salex.bill_reference,
       discount: salex.discount,
-      packing_forwarding_qty: salex.packing_forwarding_qty,
-      packing_forwarding_rate: salex.packing_forwarding_rate,
-      packing_forwarding_total: salex.packing_forwarding_total,
+      commission: salex.commission || 0,
+      packing_forwarding_qty: salex.packing_forwarding_qty !== null && salex.packing_forwarding_qty !== undefined ? salex.packing_forwarding_qty : 0,
+      packing_forwarding_rate: salex.packing_forwarding_rate !== null && salex.packing_forwarding_rate !== undefined ? salex.packing_forwarding_rate : 0,
+      packing_forwarding_total: salex.packing_forwarding_total !== null && salex.packing_forwarding_total !== undefined ? salex.packing_forwarding_total : 0,
       item_count: itemCount,
       return_count: returnData.length,
       total_allocated: totalAllocated,
       outstanding_amount: salex.total - totalAllocated,
       created_at: salex.updated_at,
       updated_at: salex.updated_at,
+      // Items array
+      items: salexItems.map(item => ({
+        id: item.id,
+        product_id: item.product_id,
+        product_name: item.product?.display_name || item.name_of_product,
+        display_name: item.product?.display_name || item.name_of_product,
+        qty: item.qty,
+        rate: item.rate,
+        subtotal: item.subtotal,
+        total: item.subtotal,
+        gst_percentage: 0, // Salex is tax-free
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        tax: 0,
+        discount: item.discount || 0,
+        discountrate: item.discountrate || 0,
+        hsn: item.hsn || '',
+        part: item.part,
+        category_id: item.category_id,
+        subcategory_id: item.subcategory_id,
+        model_id: item.model_id,
+        company_id: item.company_id,
+        car_model: item.car_model || '',
+        invoice_date: item.invoice_date,
+        fy: item.fy
+      })),
       // Complete customer object for dropdown selection
       customer: customerData ? {
         ...customerData,
-        id: customerData.id.toString() // Convert to string for frontend
+        id: customerData.id.toString(), // Convert to string for frontend
+        billing_name: customerData.billing_name,
+        billing_gstin: customerData.billing_gstin
       } : (billToData ? {
         id: '0',
         billing_name: billToData.billing_name,
@@ -180,7 +269,34 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
         billing_pin_code: '', // Not stored in bill_tosalesx
         contact_no: billToData.contact_no || '',
         email: billToData.email || ''
-      } : null)
+      } : null),
+      billingDetails: salex.select_customer === 0 ? {
+        customer_name: billToData?.billing_name || '',
+        contact_number: billToData?.contact_no || '',
+        email_id: billToData?.email || '',
+        address: billToData?.billing_address || '',
+        address_2: billToData?.billing_address2 || '',
+        city: billToData?.billing_city || '',
+        state: billToData?.billing_state || '',
+        gst_number: billToData?.billing_gstin || '',
+        billing_pin_code: ''
+      } : null,
+      staff: staffData,
+      mechanic: mechanicData,
+      transportDetails: {
+        trans_mode: transportDetails?.trans_mode || '',
+        vehicle_no: transportDetails?.vehicle_no || ''
+      },
+      // Payment allocation summary and history
+      payment_summary: {
+        total_bill: salex.total,
+        total_paid: totalPaid,
+        remaining_amount: remainingAmount,
+        payment_count: paymentAllocations.length,
+        is_fully_paid: totalPaid >= salex.total,
+        is_partially_paid: totalPaid > 0 && totalPaid < salex.total
+      },
+      payment_history: paymentHistory
     }
 
     res.status(200).json(enhancedSalex)
@@ -201,14 +317,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
 async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: string) {
   try {
     const {
+      invoice_no,
+      invoice_number,
+      invoice_date,
+      date,
       bill_reference,
       staff_id,
       mechanic_id,
       commission,
-      date,
+      select_customer,
       customer_id,
       transport_cost,
       items,
+      invoiceItems,
       descriptions,
       packing_forwarding_qty,
       packing_forwarding_rate,
@@ -219,8 +340,21 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       notes,
       total_tax,
       payment_status,
-      payment_mode
+      payment_mode,
+      transportDetails
     } = req.body
+
+    // Use invoice_no if provided, otherwise fall back to invoice_number
+    const invoiceNumber = invoice_no || invoice_number
+    
+    // Use invoice_date if provided, otherwise fall back to date
+    const dateValue = invoice_date || date
+    
+    // Use invoiceItems if provided, otherwise fall back to items
+    const itemsArray = invoiceItems || items
+    
+    // Use select_customer if provided, otherwise fall back to customer_id
+    const customerIdToUse = select_customer !== undefined ? select_customer : customer_id
 
     // Validation
     if (!req.body.customer_name || !req.body.contact_number || !req.body.state) {
@@ -265,46 +399,48 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
     const currentYear = currentDate.getFullYear()
     const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
 
-    const invoiceDate = date ? convertDateToTimestamp(date) : existingSalex.invoice_date
+    const invoiceDate = dateValue ? convertDateToTimestamp(dateValue) : existingSalex.invoice_date
 
     let itemsTotal = existingSalex.items_total
     let totalTaxable = existingSalex.total_taxable_value
 
-    if (items && items.length > 0) {
-      itemsTotal = items.reduce((sum, item) => sum + (item.qty * item.rate), 0)
+    if (itemsArray && itemsArray.length > 0) {
+      itemsTotal = itemsArray.reduce((sum, item) => sum + (item.qty * item.rate), 0)
       totalTaxable = itemsTotal
     }
 
     const calculatedGrandTotal = itemsTotal + (packing_forwarding_total || existingSalex.packing_forwarding_total || 0) + (transport_cost || existingSalex.freight || 0) + (total_tax || existingSalex.total_tax || 0)
 
-    // ✅ REFACTORED: Use customer transaction handler for payment status changes
-    const oldPaymentStatus = existingSalex.payment_status
-    const newPaymentStatus = parsedPaymentStatus
-
-    if (oldPaymentStatus !== newPaymentStatus && existingSalex.select_customer && existingSalex.select_customer !== 0) {
-      const operations = await customerTransactionHandler.handleSaleEdit(
-        parseInt(salexId),
-        {
-          old_status: oldPaymentStatus,
-          new_status: newPaymentStatus,
-          old_total: Number(existingSalex.total),
-          new_total: calculatedGrandTotal,
-          customer_id: existingSalex.select_customer,
-          payment_mode: parsedPaymentMode,
-          transaction_date: Math.floor(invoiceDate),
-          fy: financialYear,
-          notes: notes || `Salex ${existingSalex.invoice_no} updated`
-        },
-        'salex'
-      )
-
-      await customerTransactionHandler.executeInTransaction(operations)
-    }
-
-    // Update salex record and items
+    // Update salex record and items - ALL operations inside transaction
     const result = await prisma.$transaction(async (tx) => {
+      // ✅ REFACTORED: Use customer transaction handler for payment status changes INSIDE transaction
+      const oldPaymentStatus = existingSalex.payment_status
+      const newPaymentStatus = parsedPaymentStatus
+
+      if (oldPaymentStatus !== newPaymentStatus && existingSalex.select_customer && existingSalex.select_customer !== 0) {
+        const operations = await customerTransactionHandler.handleSaleEdit(
+          parseInt(salexId),
+          {
+            old_status: oldPaymentStatus,
+            new_status: newPaymentStatus,
+            old_total: Number(existingSalex.total),
+            new_total: calculatedGrandTotal,
+            customer_id: existingSalex.select_customer,
+            payment_mode: parsedPaymentMode,
+            transaction_date: Math.floor(invoiceDate),
+            fy: financialYear,
+            notes: notes || `Salex ${existingSalex.invoice_no} updated`
+          },
+          'salex'
+        )
+
+        // Execute handler operations inside same transaction
+        await customerTransactionHandler.executeInTransaction(tx, operations)
+      }
+
+      // Update salex record
       const salexUpdateData: any = {
-        select_customer: parseInt(customer_id),
+        select_customer: parseInt(customerIdToUse),
         bill_reference: bill_reference || existingSalex.bill_reference,
         commission: commission !== undefined ? commission : existingSalex.commission,
         items_total: itemsTotal,
@@ -320,11 +456,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
         packing_forwarding_qty: packing_forwarding_qty !== undefined ? packing_forwarding_qty : existingSalex.packing_forwarding_qty,
         packing_forwarding_rate: packing_forwarding_rate !== undefined ? packing_forwarding_rate : existingSalex.packing_forwarding_rate,
         packing_forwarding_total: packing_forwarding_total !== undefined ? packing_forwarding_total : existingSalex.packing_forwarding_total,
-        invoice_date: invoiceDate,
+        invoice_date: Math.floor(invoiceDate),
         payment_status: parsedPaymentStatus,
         payment_mode: parsedPaymentMode,
         fy: financialYear,
-        updated_at: new Date()
+        updated_at: new Date().toISOString()
       }
 
       if (staff_id !== undefined) {
@@ -341,7 +477,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       })
 
       // Handle item updates
-      if (items && items.length > 0) {
+      if (itemsArray && itemsArray.length > 0) {
         const existingItems = await tx.invoice_itemsx.findMany({
           where: { invoice_no: salex.id }
         })
@@ -357,7 +493,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
           })
         })
 
-        items.forEach(item => {
+        itemsArray.forEach(item => {
           newItemsMap.set(parseInt(item.product_id), {
             qty: item.qty || 0,
             rate: item.rate || 0,
@@ -529,6 +665,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       }
     })
 
+    // Update transport details if provided
+    if (transportDetails) {
+      await prisma.transport_detailsx.upsert({
+        where: { invoice_id: result.id },
+        update: {
+          trans_mode: transportDetails.trans_mode || '',
+          vehicle_no: transportDetails.vehicle_no || ''
+        },
+        create: {
+          invoice_id: result.id,
+          trans_mode: transportDetails.trans_mode || '',
+          vehicle_no: transportDetails.vehicle_no || ''
+        }
+      })
+    }
+
     res.status(200).json({
       message: 'Salex updated successfully',
       salex: {
@@ -595,7 +747,9 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: 
         'salex'
       )
 
-      await customerTransactionHandler.executeDeleteInTransaction(operations)
+      await prisma.$transaction(async (tx) => {
+        await customerTransactionHandler.executeDeleteInTransaction(tx, operations)
+      })
     } else {
       // For "Other" customer, just delete the salex
       await prisma.$transaction(async (tx) => {

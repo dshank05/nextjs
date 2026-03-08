@@ -170,18 +170,18 @@ export default function SalexPage() {
       params.append('limit', pagination.limit.toString());
       
       if (searchTerm) params.append('search', searchTerm);
-      if (filtersToUse.customerFilter) params.append('vendor', filtersToUse.customerFilter);
+      if (filtersToUse.customerFilter) params.append('customer', filtersToUse.customerFilter);
       if (filtersToUse.statusFilter) params.append('status', filtersToUse.statusFilter);
       if (filtersToUse.dateFrom) params.append('startDate', filtersToUse.dateFrom);
       if (filtersToUse.dateTo) params.append('endDate', filtersToUse.dateTo);
       if (filtersToUse.amountMin) params.append('amountMin', filtersToUse.amountMin);
       if (filtersToUse.amountMax) params.append('amountMax', filtersToUse.amountMax);
       if (filtersToUse.uidFilter) params.append('uid', filtersToUse.uidFilter);
-      if (filtersToUse.billReference) params.append('billReference', filtersToUse.billReference);
-      if (filtersToUse.itemCount) params.append('itemCount', filtersToUse.itemCount);
+      if (filtersToUse.billReference) params.append('billRef', filtersToUse.billReference);
+      if (filtersToUse.itemCount) params.append('items', filtersToUse.itemCount);
       if (filtersToUse.paymentMode) params.append('paymentMode', filtersToUse.paymentMode);
-      if (filtersToUse.totalTax) params.append('totalTax', filtersToUse.totalTax);
-      if (filtersToUse.packingForwardingTotal) params.append('packingForwardingTotal', filtersToUse.packingForwardingTotal);
+      if (filtersToUse.totalTax) params.append('taxAmount', filtersToUse.totalTax);
+      if (filtersToUse.packingForwardingTotal) params.append('pf', filtersToUse.packingForwardingTotal);
       if (filtersToUse.total && !filtersToUse.amountMin) {
         params.append('amountMin', filtersToUse.total);
         params.append('amountMax', filtersToUse.total);

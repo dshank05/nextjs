@@ -168,6 +168,7 @@ export default function InvoiceCCreate() {
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
+  const [editDataLoading, setEditDataLoading] = useState(false);
 
 
   // Raw invoice data for re-conversion when filters load
@@ -386,97 +387,27 @@ export default function InvoiceCCreate() {
 
   // Fetch invoice data when edit mode is detected
   useEffect(() => {
+    // Wait for router to be ready
+    if (!router.isReady) return;
+    
     if (isEditMode && editInvoiceId) {
-      // First try to get data from sessionStorage
-      const cachedData = SessionStorageService.get('salex', editInvoiceId.toString());
-      if (cachedData) {
-        // Process the cached data directly inline
-        const { invoice: invoiceData, billingDetails, shippingDetails, transportDetails, invoiceItems } = cachedData;
-
-        setFormData({
-          invoice_number: invoiceData.invoice_no?.toString() || invoiceData.invoice_number || '',
-          bill_reference: invoiceData.bill_reference || '',
-          staff_id: invoiceData.staff_id || null,
-          date: new Date((invoiceData.invoice_date || invoiceData.date) * 1000).toISOString().split('T')[0],
-          customer_name: invoiceData.customer_name || '',
-          contact_number: invoiceData.contact_number || '',
-          mechanic_name: invoiceData.mechanic?.mechanic_name || '',
-          vehicle_number: transportDetails?.vehicle_no || '',
-          commission: invoiceData.commission ? invoiceData.commission.toString() : '',
-          address: invoiceData.address || '',
-          transport_name: transportDetails?.trans_mode || '',
-          city: invoiceData.city || '',
-          email_id: invoiceData.email_id || '',
-          discount: invoiceData.discount ? invoiceData.discount.toString() : '0',
-          state: invoiceData.state || '',
-          gst_number: invoiceData.gst_number || '',
-          tax: invoiceData.tax || '',
-          notes: invoiceData.notes || '',
-          payment_status: invoiceData.status !== undefined ? invoiceData.status : (invoiceData.payment_status !== undefined ? invoiceData.payment_status : 0),
-          payment_mode: invoiceData.mode !== undefined ? invoiceData.mode : (invoiceData.payment_mode !== undefined ? invoiceData.payment_mode : 0),
-          total_discount: invoiceData.total_discount ? invoiceData.total_discount.toString() : '',
-          subtotal: invoiceData.subtotal ? invoiceData.subtotal.toString() : '',
-          total_tax: '0', // Always 0 for salex invoices
-          grand_total: invoiceData.total ? invoiceData.total.toString() : '',
-          descriptions: invoiceData.descriptions || '',
-          packing_forwarding_qty: invoiceData.packing_forwarding_qty ? invoiceData.packing_forwarding_qty.toString() : '0',
-          packing_forwarding_rate: invoiceData.packing_forwarding_rate ? invoiceData.packing_forwarding_rate.toString() : '0',
-          packing_forwarding_total: invoiceData.packing_forwarding_total ? invoiceData.packing_forwarding_total.toString() : '0',
-          tax_rate: '0', // Always 0 for salex
-          basic_value: invoiceData.basic_value || '0',
-          pin_code: '',
-          address_2: ''
-        });
-
-        // Set customer selection based on cached data
-        // Only use new cache format with separate customer object
-        if (cachedData.customer && cachedData.customer.id && cachedData.customer.id !== '0') {
-          // Customer was selected from dropdown
-          setSelectedCustomerId(cachedData.customer.id.toString());
-          setCustomerIdToSave(parseInt(cachedData.customer.id));
-          setSelectedCustomer(cachedData.customer);
-          setIsOtherCustomerSelected(false);
-          setCustomerStateForTax(cachedData.customer.billing_state || '');
-        } else if (!cachedData.customer) {
-          // Old cache format - clear and fetch fresh
-          SessionStorageService.remove('salex', editInvoiceId.toString());
-          fetchInvoiceForEdit(editInvoiceId);
-          return;
-        }
-
-        // Set other IDs
-        if (invoiceData.staff_id) {
-          setSelectedStaffId(invoiceData.staff_id.toString());
-        }
-        if (invoiceData.mechanic_id) {
-          setSelectedMechanicId(invoiceData.mechanic_id.toString());
-        }
-
-        // Set raw items to convert later
-        if (invoiceItems && invoiceItems.length > 0) {
-          setRawInvoiceItems(invoiceItems);
-        }
-
-        // Set loading to false
-        setInvoiceNumberLoading(false);
-
-        // Remove the cached data after using it
-        // SessionStorageService.remove('salex', editInvoiceId.toString());
-        return;
-      }
-
-      // Fallback to API call if no cached data
+      console.log('🔄 Loading edit data for invoicex ID:', editInvoiceId);
+      setEditDataLoading(true);
       fetchInvoiceForEdit(editInvoiceId);
     }
 
-  }, [isEditMode, editInvoiceId]);
+  }, [isEditMode, editInvoiceId, router.isReady]);
 
   // Fetch last invoice number only in create mode
   useEffect(() => {
+    // Wait for router to be ready
+    if (!router.isReady) return;
+    
+    // Only fetch if definitely in create mode (no edit param in URL)
     if (!isEditMode && !router.query.edit) {
       fetchLastInvoiceNumber();
     }
-  }, [isEditMode, router.query.edit]);
+  }, [isEditMode, router.query.edit, router.isReady]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -833,53 +764,42 @@ export default function InvoiceCCreate() {
         // Ensure invoice number is a string
         const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
 
-        // Store data in sessionStorage for future reuse
-        if (typeof invoiceId === 'number') {
-          SessionStorageService.set('salex', invoiceId.toString(), {
-            invoice: invoice,
-            customer: data.customer, // Store customer object for dropdown selection
-            billingDetails: data.billingDetails,
-            shippingDetails: data.shippingDetails,
-            transportDetails: data.transportDetails,
-            invoiceItems: data.invoiceItems
-          });
-        }
-
         // Prefill form data with all available fields for salex
         const formDataToSet = {
           invoice_number: invoiceNo,
           bill_reference: invoice.bill_reference || '',
           staff_id: invoice.staff_id || null,
-          date: formatDateForInput(invoice.date), // API field is 'date', not 'invoice_date'
-          customer_name: invoice.customer?.billing_name || '', // From customer object, not invoice.customer_name
-          contact_number: invoice.customer?.contact_no || '', // From customer object, not invoice.contact_number
+          date: formatDateForInput(invoice.date || invoice.invoice_date), // API field can be 'date' or 'invoice_date'
+          customer_name: invoice.customer_name || '', // Now directly from API response
+          contact_number: invoice.contact_number || '', // Now directly from API response
           mechanic_name: invoice.mechanic?.name || '', // API mechanic field is 'name', not 'mechanic_name'
           mechanic_id: invoice.mechanic_id || null,
-          vehicle_number: transportDetails.vehicle_no || '',
+          vehicle_number: invoice.vehicle_number || transportDetails.vehicle_no || '',
           commission: invoice.commission ? invoice.commission.toString() : '',
-          address: invoice.customer?.billing_address || '', // Get from customer object
-          transport_name: transportDetails.trans_mode || '',
-          city: invoice.customer?.billing_city || '', // Get from customer object
-          email_id: invoice.customer?.email || '', // Get from customer object
+          address: invoice.address || '', // Now directly from API response
+          address_2: invoice.address_2 || '', // Now directly from API response
+          transport_name: invoice.transport_name || transportDetails.trans_mode || '',
+          city: invoice.city || '', // Now directly from API response
+          email_id: invoice.email_id || '', // Now directly from API response
           discount: invoice.discount ? invoice.discount.toString() : '0',
-          state: invoice.customer?.billing_state || '', // Get from customer object
-          gst_number: invoice.customer?.billing_gstin || '', // Get from customer object
+          state: invoice.state || '', // Now directly from API response
+          gst_number: invoice.gst_number || '', // Now directly from API response
           tax: invoice.tax || '',
           notes: invoice.notes || '',
-          payment_status: invoice.payment_status !== undefined ? invoice.payment_status : 0,
-          payment_mode: invoice.payment_mode !== undefined ? invoice.payment_mode : 0,
+          payment_status: invoice.payment_status !== null && invoice.payment_status !== undefined ? invoice.payment_status : 0,
+          payment_mode: invoice.payment_mode !== null && invoice.payment_mode !== undefined ? invoice.payment_mode : 0,
           total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
           subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
           total_tax: '0', // Always 0 for salex invoices
           grand_total: invoice.total ? invoice.total.toString() : '',
           descriptions: invoice.descriptions || '',
-          packing_forwarding_qty: invoice.packing_forwarding_qty ? invoice.packing_forwarding_qty.toString() : '0',
-          packing_forwarding_rate: invoice.packing_forwarding_rate ? invoice.packing_forwarding_rate.toString() : '0',
-          packing_forwarding_total: invoice.packing_forwarding_total ? invoice.packing_forwarding_total.toString() : '0',
+          packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
+          packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
+          packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
           tax_rate: '0', // Always 0 for salex
           basic_value: invoice.basic_value || '0',
-          pin_code: '',
-          address_2: ''
+          pin_code: invoice.pin_code || '',
+          state_code: invoice.state_code
         };
 
         setFormData(formDataToSet);
@@ -892,33 +812,37 @@ export default function InvoiceCCreate() {
           setSelectedMechanicId(invoice.mechanic_id.toString());
         }
 
-        // Set customer selection based on customer_id value
-        if (data.customer && data.customer.id && data.customer.id !== '0') {
-          // Customer was selected from dropdown
-          setSelectedCustomerId(data.customer.id);
-          setCustomerIdToSave(parseInt(data.customer.id));
-          setSelectedCustomer(data.customer);
-          setIsOtherCustomerSelected(false);
-          setCustomerStateForTax(data.customer.billing_state || '');
+        // Store raw invoice items to convert later when filters are loaded
+        if (data.items && data.items.length > 0) {
+          console.log('Storing raw invoice items for conversion:', data.items);
+          setRawInvoiceItems(data.items);
+        }
+
+        // Set customer selection based on customer_id value - DO THIS LAST
+        // so it doesn't clear the form data we just set
+        if (data.customer && data.customer.id && data.customer.id !== '0' && data.customer.id !== 0) {
+          // Customer was selected from dropdown - trigger handleCustomerSelect to auto-populate all fields
+          console.log('📋 Setting customer from dropdown:', data.customer.id, data.customer.billing_name);
+          
+          // Use setTimeout to ensure this runs after form data is set
+          setTimeout(() => {
+            handleCustomerSelect(data.customer.id.toString());
+          }, 0);
         } else {
           // "Other" customer (manual entry)
+          console.log('📋 Setting "Other" customer - manual entry');
           setSelectedCustomerId('0');
           setCustomerIdToSave(0);
           setSelectedCustomer(null);
           setIsOtherCustomerSelected(true);
           setCustomerStateForTax(invoice.state || '');
         }
-
-        // Store raw invoice items to convert later when filters are loaded
-        if (data.invoiceItems && data.invoiceItems.length > 0) {
-          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
-          setRawInvoiceItems(data.invoiceItems);
-        }
       }
     } catch (error) {
       console.error('Error fetching invoice for edit:', error);
     } finally {
       setInvoiceNumberLoading(false);
+      setEditDataLoading(false);
     }
   };
 
@@ -993,13 +917,16 @@ export default function InvoiceCCreate() {
       }));
 
       // Clear existing products when customer changes (tax calculations will be different)
-      setSelectedProducts([]);
-      setFormData(prev => ({
-        ...prev,
-        total_cgst: '',
-        total_sgst: '',
-        total_igst: ''
-      }));
+      // BUT NOT in edit mode - items are being loaded from API
+      if (!isEditMode) {
+        setSelectedProducts([]);
+        setFormData(prev => ({
+          ...prev,
+          total_cgst: '',
+          total_sgst: '',
+          total_igst: ''
+        }));
+      }
 
       setCustomerStateForTax(customer.billing_state || '');
     } else {
@@ -1327,6 +1254,19 @@ export default function InvoiceCCreate() {
 
   return (
     <div className="space-y-3">
+      {/* Edit Data Loading Spinner */}
+      {editDataLoading && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+            <Loader className="w-8 h-8 animate-spin text-blue-400" />
+            <div className="text-center">
+              <p className="text-slate-200 font-medium">Loading Salex Data</p>
+              <p className="text-slate-400 text-sm">Please wait while we fetch the salex details...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Single Mega Card with All Sections */}
         <div className="card">
@@ -1810,6 +1750,7 @@ export default function InvoiceCCreate() {
                       <td className="px-4 py-3 text-center w-24">
                         <input
                           type="number"
+                          step="1"
                           className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
                           placeholder="1"
                           value={templateRow.qty}
@@ -2218,6 +2159,7 @@ export default function InvoiceCCreate() {
                             <td className="px-3 py-2 text-center w-24">
                               <input
                                 type="number"
+                                step="1"
                                 value={editingRowData?.qty || ''}
                                 onChange={(e) => setEditingRowData(prev => prev ? { ...prev, qty: parseFloat(e.target.value) || 0 } : null)}
                                 onWheel={(e) => e.preventDefault()}
@@ -2463,7 +2405,7 @@ export default function InvoiceCCreate() {
                     <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
                     <input
                       type="number"
-
+                      step="1"
                       value={formData.packing_forwarding_qty}
                       onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
                       onWheel={(e) => e.preventDefault()}

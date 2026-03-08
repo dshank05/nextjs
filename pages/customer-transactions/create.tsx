@@ -705,6 +705,19 @@ export default function CustomerTransactionEntry() {
 
   return (
     <div className="space-y-6">
+      {/* Edit Data Loading Spinner */}
+      {isInitializing && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+            <div className="text-center">
+              <p className="text-slate-200 font-medium">Loading Transaction Data</p>
+              <p className="text-slate-400 text-sm">Please wait while we fetch the transaction details...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="p-6">
           {error && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/router';
-import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target } from 'lucide-react';
+import { ChevronDown, ChevronRight, Search, Calendar, Package, FileText, Target, Loader } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput } from '../../components/common/ClearableInput';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
@@ -778,6 +778,19 @@ export default function SaleReturnCreatePage() {
 
   return (
     <div className="space-y-6">
+      {/* Edit Data Loading Spinner */}
+      {isLoadingEditData && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
+            <Loader className="w-8 h-8 animate-spin text-blue-400" />
+            <div className="text-center">
+              <p className="text-slate-200 font-medium">Loading Return Data</p>
+              <p className="text-slate-400 text-sm">Please wait while we fetch the return details...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Single Mega Card with Everything */}
       <div className="card">
         <div className="p-6">

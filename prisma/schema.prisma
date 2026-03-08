@@ -903,6 +903,7 @@ model customer_ledger {
   balance          Float
   notes            String?  @db.Text
   fy               Int
+  transaction_id   Int?     // Stores payment_id or refund_id for tracking
   created_at       DateTime @default(now())
   updated_at       DateTime @updatedAt
 
@@ -910,6 +911,7 @@ model customer_ledger {
   @@index([transaction_type], map: "idx_customer_ledger_type")
   @@index([fy], map: "idx_customer_ledger_fy")
   @@index([reference_type, reference_id], map: "idx_customer_ledger_reference")
+  @@index([transaction_id, transaction_type], map: "idx_customer_ledger_transaction")
   @@map("customer_ledger")
 }
 
