@@ -2,12 +2,6 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
-import {
-  recordReceiptReversalTransaction,
-  recordSaleAdjustmentTransaction,
-  recordReceiptAdjustmentTransaction,
-  recordRefundPaidTransaction
-} from '../../../lib/customer-ledger-service'
 import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
@@ -241,123 +235,152 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Convert adjustment date to Unix timestamp
     const adjustmentDateTimestamp = adjustment_date ? convertDateToTimestamp(adjustment_date) : Math.floor(Date.now() / 1000)
 
-    // Generate adjustment reference number
-    const adjustmentId = Date.now() // Simple ID generation
-    const adjustmentNo = `ADJ-${String(adjustmentId).slice(-6)}`
-
-    // Process different adjustment types
-    switch (adjustment_type) {
-      case 'SALE_ADJUSTMENT':
-        if (!reference_id) {
-          return res.status(400).json({
-            message: 'Invoice ID is required for sale adjustments'
-          })
-        }
-
-        // Validate invoice exists and belongs to customer
-        const invoice = await prisma.invoice.findUnique({
-          where: { id: parseInt(reference_id) },
-          select: { id: true, invoice_no: true, select_customer: true }
-        })
-
-        if (!invoice) {
-          return res.status(400).json({
-            message: `Invoice ${reference_id} not found`
-          })
-        }
-
-        if (invoice.select_customer !== parseInt(customer_id)) {
-          return res.status(400).json({
-            message: `Invoice ${reference_id} does not belong to selected customer`
-          })
-        }
-
-        await recordSaleAdjustmentTransaction(
-          parseInt(customer_id),
-          invoice.id,
-          invoice.invoice_no.toString(),
-          parseFloat(adjustment_amount),
-          adjustmentDateTimestamp,
-          financialYear,
-          notes
-        )
-        break
-
-      case 'RECEIPT_ADJUSTMENT':
-        if (!reference_id) {
-          return res.status(400).json({
-            message: 'Original receipt ID is required for receipt adjustments'
-          })
-        }
-
-        await recordReceiptAdjustmentTransaction(
-          parseInt(customer_id),
-          parseInt(reference_id),
-          adjustmentId,
-          adjustmentNo,
-          parseFloat(adjustment_amount),
-          adjustmentDateTimestamp,
-          financialYear,
-          notes
-        )
-        break
-
-      case 'RECEIPT_REVERSAL':
-        if (!reference_id) {
-          return res.status(400).json({
-            message: 'Original receipt ID is required for receipt reversals'
-          })
-        }
-
-        await recordReceiptReversalTransaction(
-          parseInt(customer_id),
-          parseInt(reference_id),
-          adjustmentId,
-          adjustmentNo,
-          Math.abs(parseFloat(adjustment_amount)), // Always positive for reversals
-          adjustmentDateTimestamp,
-          financialYear,
-          notes
-        )
-        break
-
-      case 'REFUND_PAID':
-        if (!payment_mode) {
-          return res.status(400).json({
-            message: 'Payment mode is required for refunds'
-          })
-        }
-
-        await recordRefundPaidTransaction(
-          parseInt(customer_id),
-          adjustmentId,
-          adjustmentNo,
-          Math.abs(parseFloat(adjustment_amount)), // Always positive for refunds
-          adjustmentDateTimestamp,
-          parseInt(payment_mode),
-          financialYear,
-          notes
-        )
-        break
-
-      default:
-        return res.status(400).json({
-          message: 'Invalid adjustment type. Must be SALE_ADJUSTMENT, RECEIPT_ADJUSTMENT, RECEIPT_REVERSAL, or REFUND_PAID'
-        })
+    // Validate adjustment type
+    const validAdjustmentTypes = ['SALE_ADJUSTMENT', 'RECEIPT_ADJUSTMENT', 'RECEIPT_REVERSAL', 'REFUND_PAID']
+    if (!validAdjustmentTypes.includes(adjustment_type)) {
+      return res.status(400).json({
+        message: 'Invalid adjustment type. Must be SALE_ADJUSTMENT, RECEIPT_ADJUSTMENT, RECEIPT_REVERSAL, or REFUND_PAID'
+      })
     }
+
+    // Validate reference_id for types that require it
+    if (['SALE_ADJUSTMENT', 'RECEIPT_ADJUSTMENT', 'RECEIPT_REVERSAL'].includes(adjustment_type) && !reference_id) {
+      return res.status(400).json({
+        message: `Reference ID is required for ${adjustment_type}`
+      })
+    }
+
+    // For SALE_ADJUSTMENT, validate invoice exists and belongs to customer
+    if (adjustment_type === 'SALE_ADJUSTMENT') {
+      const invoice = await prisma.invoice.findUnique({
+        where: { id: parseInt(reference_id) },
+        select: { id: true, invoice_no: true, select_customer: true }
+      })
+
+      if (!invoice) {
+        return res.status(400).json({
+          message: `Invoice ${reference_id} not found`
+        })
+      }
+
+      if (invoice.select_customer !== parseInt(customer_id)) {
+        return res.status(400).json({
+          message: `Invoice ${reference_id} does not belong to selected customer`
+        })
+      }
+    }
+
+    // For REFUND_PAID, validate payment_mode
+    if (adjustment_type === 'REFUND_PAID' && payment_mode === undefined) {
+      return res.status(400).json({
+        message: 'Payment mode is required for refunds'
+      })
+    }
+
+    // ✅ Use database transaction for adjustment creation
+    const result = await prisma.$transaction(async (tx) => {
+      // Determine debit/credit based on adjustment type and amount
+      let debit = 0
+      let credit = 0
+      let balanceUpdate: any = {}
+      let referenceType = 'adjustment'
+      let referenceNo = ''
+
+      const parsedAmount = Math.abs(parseFloat(adjustment_amount))
+
+      switch (adjustment_type) {
+        case 'SALE_ADJUSTMENT':
+          // Sale adjustment increases customer balance (they owe more)
+          debit = parsedAmount
+          credit = 0
+          balanceUpdate = { total_allocated: parsedAmount }
+          referenceType = 'invoice'
+          referenceNo = reference_id ? `INV-${reference_id}` : 'ADJ'
+          break
+
+        case 'RECEIPT_ADJUSTMENT':
+          // Receipt adjustment (correction) - can increase or decrease
+          if (adjustment_amount > 0) {
+            // Increase payment received
+            debit = 0
+            credit = parsedAmount
+            balanceUpdate = { total_paid: parsedAmount, total_allocated: parsedAmount }
+          } else {
+            // Decrease payment received
+            debit = parsedAmount
+            credit = 0
+            balanceUpdate = { total_paid: -parsedAmount, total_allocated: -parsedAmount }
+          }
+          referenceType = 'payment'
+          referenceNo = reference_id ? `PAY-${reference_id}` : 'ADJ'
+          break
+
+        case 'RECEIPT_REVERSAL':
+          // Receipt reversal - reverse a payment (increase balance owed)
+          debit = parsedAmount
+          credit = 0
+          balanceUpdate = { total_paid: -parsedAmount, total_allocated: -parsedAmount }
+          referenceType = 'payment'
+          referenceNo = reference_id ? `PAY-${reference_id}` : 'REV'
+          break
+
+        case 'REFUND_PAID':
+          // Refund paid - decrease balance (customer owes less)
+          debit = parsedAmount
+          credit = 0
+          balanceUpdate = { total_refunded: parsedAmount }
+          referenceType = 'refund'
+          referenceNo = 'REF-ADJ'
+          break
+      }
+
+      // Create ledger entry inside transaction
+      const ledgerEntry = await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
+        customer_id: parseInt(customer_id),
+        transaction_date: adjustmentDateTimestamp,
+        transaction_type: adjustment_type,
+        reference_type: referenceType,
+        reference_id: reference_id ? parseInt(reference_id) : null,
+        reference_no: referenceNo,
+        debit: debit,
+        credit: credit,
+        payment_mode: payment_mode !== undefined ? parseInt(payment_mode) : null,
+        payment_status: null,
+        payment_date: adjustment_type === 'REFUND_PAID' ? adjustmentDateTimestamp : null,
+        notes: notes || `${adjustment_type} adjustment`,
+        fy: financialYear
+      }, tx)
+
+      // Update customer balance using handler (with logging) inside transaction
+      await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(
+        tx,
+        parseInt(customer_id),
+        balanceUpdate,
+        {
+          type: 'adjustment_create',
+          id: ledgerEntry.id,
+          reference_no: referenceNo,
+          notes: notes || `${adjustment_type}: ₹${parsedAmount}`
+        }
+      )
+
+      return ledgerEntry
+    }, {
+      timeout: 30000
+    })
 
     res.status(201).json({
       success: true,
       message: 'Customer adjustment recorded successfully',
       data: {
         adjustment: {
-          id: adjustmentId,
-          adjustment_no: adjustmentNo,
+          id: result.id,
           adjustment_type: adjustment_type,
           customer_name: customer.billing_name,
           amount: Math.abs(parseFloat(adjustment_amount)),
-          adjustment_type_desc: adjustment_amount > 0 ? 'increase' : 'decrease',
-          notes: notes
+          debit: result.debit,
+          credit: result.credit,
+          notes: result.notes
         }
       }
     })

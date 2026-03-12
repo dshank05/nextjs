@@ -129,6 +129,16 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }) : null
 
+    // If customer not found but invoice has customer ID, return error
+    if (invoice.select_customer && invoice.select_customer !== 0 && !customer) {
+      return res.status(404).json({ message: 'Customer not found for this return' })
+    }
+
+    // If customer not found but invoice has customer ID, return error
+    if (invoice.select_customer && invoice.select_customer !== 0 && !customer) {
+      return res.status(404).json({ message: 'Customer not found for this return' })
+    }
+
     // Get return items based on type
     const returnItems = isInvoicex
       ? await prisma.salex_return_items.findMany({
@@ -330,13 +340,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         fy: returnRecord.fy,
         invoice_type: isInvoicex ? 'invoicex' : 'invoice'
       },
-      customer: {
-        id: customer?.id || 0,
-        customer_name: customer?.billing_name || 'Unknown Customer',
-        state: customer?.billing_state || '',
-        state_code: customer?.billing_state_code || 0,
-        gstin: customer?.billing_gstin || '',
-        address: customer?.billing_address || ''
+      customer: customer ? {
+        id: customer.id,
+        customer_name: customer.billing_name,
+        billing_name: customer.billing_name,
+        state: customer.billing_state || '',
+        state_code: customer.billing_state_code || 0,
+        gstin: customer.billing_gstin || '',
+        address: customer.billing_address || ''
+      } : {
+        id: 0,
+        customer_name: 'Other',
+        billing_name: 'Other',
+        state: '',
+        state_code: 0,
+        gstin: '',
+        address: ''
       },
       bills: bills,
       summary: {
@@ -384,7 +403,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             payment_status: true,
             invoicex_id: true,
             fy: true,
-            total_amount: true
+            total_amount: true,
+            return_date: true
           }
         }).then(r => r ? { ...r, invoice_id: r.invoicex_id, total_tax: 0 } : null)
       : await prisma.sale_returns.findUnique({
@@ -394,7 +414,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             invoice_id: true,
             fy: true,
             total_amount: true,
-            total_tax: true
+            total_tax: true,
+            return_date: true
           }
         })
 
@@ -897,7 +918,6 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
           type: 'sale',
           returnId: returnId,
           customerId: invoice.select_customer,
-          creditNoteNo: `SR-${String(returnId).padStart(3, '0')}`,
           paymentStatus: saleReturn.payment_status,
           fy: saleReturn.fy,
           totalAmount: saleReturn.total_amount,

@@ -6,6 +6,22 @@ import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
+import { useVendors } from '../../hooks/useVendors'
+import {
+  useVendorTransaction,
+  useOutstandingBills,
+  useOutstandingReturns,
+  useCurrentFY,
+  useCreateVendorTransaction,
+  useUpdateVendorTransaction
+} from '../../hooks/useVendorTransactions'
+import type { 
+  OutstandingBill, 
+  OutstandingReturn, 
+  OperationType, 
+  PaymentType 
+} from '../../types/vendor-transactions'
+import type { Vendor } from '../../types/vendors'
 
 // ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
 function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
@@ -37,44 +53,19 @@ function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => v
   return [storedValue, setValue];
 }
 
-interface OutstandingBill {
-  purchase_id: number
-  invoice_no: number
-  invoice_date: number
-  total_bill: number
-  total_paid: number
-  outstanding_amount: number
-  payment_status: number
-  allocated?: number
-  isInCurrentPayment?: boolean  // Track if bill is part of current payment being edited
-}
-
-interface OutstandingReturn {
-  return_id: number
-  return_no: string
-  return_date: number
-  total_return: number
-  total_refunded: number
-  outstanding_refund: number
-  payment_status: number
-  allocated?: number
-  isInCurrentPayment?: boolean  // Track if return is part of current refund being edited
-}
-
-interface Vendor {
-  id: number
-  vendor_name: string
-}
-
-type OperationType = 'EXPENSE' | 'INCOME' | ''
-type PaymentType = 'BILL_SPECIFIC' | 'MIXED' | 'DIRECT'
-
 export default function VendorTransactionEntry() {
   const router = useRouter()
   const { edit, type } = router.query
   const { showSnackbar } = useSnackbar()
-  const [loading, setLoading] = useState(false)
-  const [vendors, setVendors] = useState<Vendor[]>([])
+  
+  // Query hooks
+  const { data: vendors = [], isLoading: loadingVendors } = useVendors()
+  const { data: currentFY = 2024 } = useCurrentFY()
+  
+  // Mutation hooks
+  const createTransaction = useCreateVendorTransaction()
+  const updateTransaction = useUpdateVendorTransaction()
+  
   const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-transaction-vendor', '')
   const [operationType, setOperationType] = useState<OperationType>('')
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for EXPENSE
@@ -84,7 +75,6 @@ export default function VendorTransactionEntry() {
   const [mode, setMode] = useState<number>(1)
   const [amount, setAmount] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
-  const [currentFY, setCurrentFY] = useState<number>(2024)
   const [error, setError] = useState<string>('')
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
   
@@ -92,6 +82,20 @@ export default function VendorTransactionEntry() {
   const isEditMode = !!edit
   const [transactionId, setTransactionId] = useState<number>(0)
   const [isInitializing, setIsInitializing] = useState(false)
+  
+  // Fetch outstanding bills/returns based on vendor and operation type
+  const vendorId = parseInt(selectedVendor) || undefined
+  const shouldFetchBills = vendorId && operationType === 'EXPENSE' && !isInitializing
+  const shouldFetchReturns = vendorId && operationType === 'INCOME' && !isInitializing
+  
+  const billsQuery = useOutstandingBills(shouldFetchBills ? vendorId : undefined)
+  const returnsQuery = useOutstandingReturns(shouldFetchReturns ? vendorId : undefined)
+  
+  // Fetch transaction for edit mode
+  const { data: editTransactionData } = useVendorTransaction(
+    isEditMode ? (edit as string) : undefined,
+    isEditMode ? (type as 'expense' | 'income') : undefined
+  )
 
   // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
@@ -102,13 +106,7 @@ export default function VendorTransactionEntry() {
     if (!storedDate && !date) {
       setDate(getLocalDateString())
     }
-
-    fetchVendors()
-    fetchCurrentFY()
-    if (isEditMode && edit && type) {
-      fetchTransactionForEdit(edit as string, type as string)
-    }
-  }, [edit, type, isEditMode]);
+  }, []);
   
   // ✅ Cleanup sessionStorage on component unmount
   useEffect(() => {
@@ -126,7 +124,7 @@ export default function VendorTransactionEntry() {
     const vendorId = parseInt(selectedVendor)
     if (vendorId > 0 && operationType) {
       if (operationType === 'EXPENSE') {
-        fetchOutstandingBills(vendorId)
+        // Bills will be fetched by query hook
         setOutstandingReturns([])
       } else if (operationType === 'INCOME') {
         // ✅ Auto-set DIRECT for INCOME
@@ -138,262 +136,120 @@ export default function VendorTransactionEntry() {
       setOutstandingBills([])
       setOutstandingReturns([])
     }
-  }, [selectedVendor, operationType])
-
-  const fetchVendors = async () => {
-    try {
-      const res = await fetch('/api/vendors')
-      const data = await res.json()
-      setVendors(data.vendors || [])
-    } catch (error) {
-      console.error('Error fetching vendors:', error)
+  }, [selectedVendor, operationType, isInitializing])
+  
+  // Update outstanding bills from query
+  useEffect(() => {
+    if (billsQuery.data && !isInitializing) {
+      setOutstandingBills(billsQuery.data)
     }
-  }
-
-  const fetchCurrentFY = async () => {
-    try {
-      const res = await fetch('/api/financial-years')
-      const data = await res.json()
-      if (data.currentFyId) {
-        setCurrentFY(data.currentFyId)
-      }
-    } catch (error) {
-      console.error('Error fetching FY:', error)
+  }, [billsQuery.data, isInitializing])
+  
+  // Update outstanding returns from query
+  useEffect(() => {
+    if (returnsQuery.data && !isInitializing) {
+      setOutstandingReturns(returnsQuery.data)
     }
-  }
-
-  const fetchOutstandingBills = async (vendorId: number, skipStateUpdate = false) => {
-    if (!skipStateUpdate) {
-      setLoading(true)
+  }, [returnsQuery.data, isInitializing])
+  
+  // Load edit transaction data
+  useEffect(() => {
+    if (!isEditMode || !editTransactionData || !edit || !type) return
+    
+    setIsInitializing(true)
+    const transaction = editTransactionData
+    const isExpense = type === 'expense'
+    
+    // Set transaction ID
+    setTransactionId(parseInt(edit as string))
+    
+    // Set vendor
+    setSelectedVendor(transaction.vendor.id.toString())
+    
+    // Set operation type
+    setOperationType(isExpense ? 'EXPENSE' : 'INCOME')
+    
+    // Set payment type
+    const pType = isExpense ? transaction.payment_type : transaction.refund_type
+    setPaymentType(pType as PaymentType)
+    
+    // Set amount
+    const amt = isExpense ? transaction.payment_amount : transaction.refund_amount
+    setAmount(amt?.toString() || '')
+    
+    // Set mode
+    const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
+    setMode(payMode || 1)
+    
+    // Set date
+    const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
+    if (dateTimestamp) {
+      const dateObj = new Date(dateTimestamp * 1000)
+      const formattedDate = dateObj.toLocaleDateString('en-IN')
+      const [day, month, year] = formattedDate.split('/').map(n => n.padStart(2, '0'))
+      setDate(`${year}-${month}-${day}`)
     }
-    try {
-      const res = await fetch(`/api/purchases?vendor=${vendorId}&limit=1000&sortOrder=asc`)
-      const data = await res.json()
+    
+    // Set notes
+    setNotes(transaction.notes || '')
+    
+    // Load allocated bills/returns
+    if (isExpense && transaction.allocations && transaction.allocations.length > 0) {
+      const allocatedBills: OutstandingBill[] = transaction.allocations.map((alloc: any) => ({
+        purchase_id: alloc.purchase_id,
+        invoice_no: alloc.invoice_no,
+        invoice_date: alloc.invoice_date,
+        total_bill: alloc.purchase_total,
+        total_paid: alloc.allocated_amount,
+        outstanding_amount: Math.max(0, alloc.purchase_total - alloc.allocated_amount),
+        payment_status: alloc.payment_status,
+        allocated: alloc.allocated_amount,
+        isInCurrentPayment: true
+      }))
       
-      if (data.purchases) {
-        const bills: OutstandingBill[] = data.purchases
-          .filter((p: any) => {
-            // In create mode, only show bills with outstanding amounts
-            // In edit mode with skipStateUpdate, return ALL bills (will be filtered later)
-            if (isEditMode && skipStateUpdate) {
-              return true
-            }
-            if (isEditMode) {
-              return true
-            }
-            return p.remaining_amount > 0
-          })
-          .map((p: any) => ({
-            purchase_id: p.id,
-            invoice_no: p.invoice_no,
-            invoice_date: p.invoice_date,
-            total_bill: p.total,
-            total_paid: p.total_paid || 0,
-            outstanding_amount: p.remaining_amount,
-            payment_status: p.payment_status,
-            allocated: 0,
-            isInCurrentPayment: false
-          }))
-        
-        if (!skipStateUpdate) {
-          setOutstandingBills(bills)
-        }
-        return bills
+      // Merge with fresh bills from query
+      if (billsQuery.data) {
+        const allocatedIds = new Set(allocatedBills.map(b => b.purchase_id))
+        const otherBills = billsQuery.data.filter(b => !allocatedIds.has(b.purchase_id))
+        const billsToShow = [...allocatedBills, ...otherBills].filter(bill =>
+          bill.isInCurrentPayment || bill.outstanding_amount > 0
+        )
+        setOutstandingBills(billsToShow)
+      } else {
+        setOutstandingBills(allocatedBills)
       }
-      return []
-    } catch (error) {
-      console.error('Error fetching outstanding bills:', error)
-      setError('Failed to load outstanding bills')
-      return []
-    } finally {
-      if (!skipStateUpdate) {
-        setLoading(false)
+    } else if (!isExpense && transaction.allocations && transaction.allocations.length > 0) {
+      const allocatedReturns: OutstandingReturn[] = transaction.allocations.map((alloc: any) => ({
+        return_id: alloc.return_id,
+        return_no: alloc.return_no || `PR-${alloc.return_id}`,
+        return_date: alloc.allocation_date,
+        total_return: alloc.return_total || 0,
+        total_refunded: alloc.allocated_amount,
+        outstanding_refund: Math.max(0, (alloc.return_total || 0) - alloc.allocated_amount),
+        payment_status: alloc.payment_status || 0,
+        allocated: alloc.allocated_amount,
+        isInCurrentPayment: true
+      }))
+      
+      // Merge with fresh returns from query
+      if (returnsQuery.data) {
+        const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
+        const otherReturns = returnsQuery.data.filter(r => !allocatedIds.has(r.return_id))
+        const returnsToShow = [...allocatedReturns, ...otherReturns].filter(ret =>
+          ret.isInCurrentPayment || ret.outstanding_refund > 0
+        )
+        setOutstandingReturns(returnsToShow)
+      } else {
+        setOutstandingReturns(allocatedReturns)
       }
     }
-  }
-
-  const fetchOutstandingReturns = async (vendorId: number, skipStateUpdate = false) => {
-    if (!skipStateUpdate) {
-      setLoading(true)
-    }
-    try {
-      const res = await fetch(`/api/purchase-returns?vendor=${vendorId}&limit=1000&sortOrder=asc`)
-      const data = await res.json()
-      
-      if (data.returns) {
-        const returns: OutstandingReturn[] = data.returns
-          .filter((r: any) => {
-            // In edit mode with skipStateUpdate, return ALL returns (will be filtered later)
-            if (isEditMode && skipStateUpdate) {
-              return true
-            }
-            return r.remaining_refund > 0
-          })
-          .map((r: any) => ({
-            return_id: r.id,
-            return_no: r.return_no,
-            return_date: r.return_date,
-            total_return: r.refund_amount,
-            total_refunded: r.total_refunded || 0,
-            outstanding_refund: r.remaining_refund,
-            payment_status: r.payment_status,
-            allocated: 0,
-            isInCurrentPayment: false
-          }))
-        
-        if (!skipStateUpdate) {
-          setOutstandingReturns(returns)
-        }
-        return returns
-      }
-      return []
-    } catch (error) {
-      console.error('Error fetching outstanding returns:', error)
-      setError('Failed to load outstanding returns')
-      return []
-    } finally {
-      if (!skipStateUpdate) {
-        setLoading(false)
-      }
-    }
-  }
-
-  const fetchTransactionForEdit = async (id: string, transactionType: string) => {
-    setIsInitializing(true)  // Prevent useEffect from refetching
-    setLoading(true)
-    try {
-      const isExpense = transactionType === 'expense'
-      const module = isExpense ? 'vendor-payments' : 'vendor-refunds'
-      
-      // Check sessionStorage first (optimization to avoid API call)
-      const cachedData = SessionStorageService.get(module, id)
-      let transaction = cachedData
-      
-      // If no cached data, fetch from API
-      if (!cachedData) {
-        const endpoint = isExpense 
-          ? `/api/vendor-payments/${id}`
-          : `/api/vendor-refunds/${id}`
-        
-        const response = await fetch(endpoint)
-        const data = await response.json()
-        
-        if (data.success && data.data) {
-          transaction = data.data
-        } else {
-          setError('Failed to load transaction for editing')
-          setLoading(false)
-          return
-        }
-      }
-      
-      if (transaction) {
-        
-        // Set transaction ID
-        setTransactionId(parseInt(id))
-        
-        // Set vendor
-        setSelectedVendor(transaction.vendor.id.toString())
-        
-        // Set operation type
-        setOperationType(isExpense ? 'EXPENSE' : 'INCOME')
-        
-        // Set payment type
-        const pType = isExpense ? transaction.payment_type : transaction.refund_type
-        setPaymentType(pType as PaymentType)
-        
-        // Set amount
-        const amt = isExpense ? transaction.payment_amount : transaction.refund_amount
-        setAmount(amt.toString())
-        
-        // Set mode
-        const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
-        setMode(payMode)
-        
-        // Set date - ✅ FIX: Use the same pattern as vendor-transactions/index.tsx
-        const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
-        const dateObj = new Date(dateTimestamp * 1000)
-        const formattedDate = dateObj.toLocaleDateString('en-IN')
-        const [day, month, year] = formattedDate.split('/').map(n => n.padStart(2, '0'))
-        setDate(`${year}-${month}-${day}`)
-        
-        // Set notes
-        setNotes(transaction.notes || '')
-        
-        // Set FY
-        setCurrentFY(transaction.fy)
-        
-        // ✅ FIX: Load allocated bills/returns for edit mode with proper merging
-        if (isExpense && transaction.allocations && transaction.allocations.length > 0) {
-          // Build list of allocated bills with their data
-          const allocatedBills: OutstandingBill[] = transaction.allocations.map((alloc: any) => ({
-            purchase_id: alloc.purchase_id,
-            invoice_no: alloc.invoice_no,
-            invoice_date: alloc.invoice_date,
-            total_bill: alloc.purchase_total,
-            total_paid: alloc.allocated_amount,
-            // ✅ FIX 1: Cap outstanding at 0 to prevent showing negative amounts
-            outstanding_amount: Math.max(0, alloc.purchase_total - alloc.allocated_amount),
-            payment_status: alloc.payment_status,
-            allocated: alloc.allocated_amount,
-            isInCurrentPayment: true  // Mark as part of current payment
-          }))
-          
-          // Fetch fresh bills WITHOUT overwriting state
-          const freshBills = await fetchOutstandingBills(transaction.vendor.id, true)
-          
-          // Merge: Keep allocated bills, add fresh bills not in allocations
-          const allocatedIds = new Set(allocatedBills.map(b => b.purchase_id))
-          const otherBills = freshBills.filter(b => !allocatedIds.has(b.purchase_id))
-          
-          // ✅ FIX 3: Filter to only show bills that are either:
-          // 1. In current payment, OR
-          // 2. Have outstanding amount > 0
-          const billsToShow = [...allocatedBills, ...otherBills].filter(bill =>
-            bill.isInCurrentPayment || bill.outstanding_amount > 0
-          )
-          
-          setOutstandingBills(billsToShow)
-        } else if (!isExpense && transaction.allocations && transaction.allocations.length > 0) {
-          // Build list of allocated returns with their data
-          const allocatedReturns: OutstandingReturn[] = transaction.allocations.map((alloc: any) => ({
-            return_id: alloc.return_id,
-            return_no: alloc.return_no || `PR-${alloc.return_id}`,
-            return_date: alloc.allocation_date,
-            total_return: alloc.return_total || 0,
-            total_refunded: alloc.allocated_amount,
-            outstanding_refund: Math.max(0, (alloc.return_total || 0) - alloc.allocated_amount),
-            payment_status: alloc.payment_status || 0,
-            allocated: alloc.allocated_amount,
-            isInCurrentPayment: true  // Mark as part of current refund
-          }))
-          
-          // Fetch fresh returns WITHOUT overwriting state
-          const freshReturns = await fetchOutstandingReturns(transaction.vendor.id, true)
-          
-          // Merge: Keep allocated returns, add fresh returns not in allocations
-          const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
-          const otherReturns = freshReturns.filter(r => !allocatedIds.has(r.return_id))
-          
-          // Filter to only show returns with outstanding > 0 or in current payment
-          const returnsToShow = [...allocatedReturns, ...otherReturns].filter(ret =>
-            ret.isInCurrentPayment || ret.outstanding_refund > 0
-          )
-          
-          setOutstandingReturns(returnsToShow)
-        }
-        
-        // Clean up sessionStorage after use
-        SessionStorageService.remove(module, id)
-      }
-    } catch (error) {
-      console.error('Error fetching transaction for edit:', error)
-      setError('Failed to load transaction for editing')
-    } finally {
-      setLoading(false)
-      setIsInitializing(false)  // Allow useEffect to run normally after edit load completes
-    }
-  }
+    
+    // Clean up sessionStorage after use
+    const module = isExpense ? 'vendor-payments' : 'vendor-refunds'
+    SessionStorageService.remove(module, edit as string)
+    
+    setIsInitializing(false)
+  }, [isEditMode, editTransactionData, edit, type, billsQuery.data, returnsQuery.data])
 
   const handleBillAllocationChange = (purchaseId: number, value: string) => {
     const allocAmount = parseFloat(value) || 0
@@ -482,7 +338,7 @@ export default function VendorTransactionEntry() {
   }
 
   const isRecordDisabled = (): boolean => {
-    if (loading) return true
+    if (createTransaction.isPending || updateTransaction.isPending) return true
     if (!selectedVendor) return true
     if (!operationType) return true
     if (!amount || parseFloat(amount) <= 0) return true
@@ -603,98 +459,78 @@ export default function VendorTransactionEntry() {
     setShowConfirmationModal(true)
   }
 
-  const confirmRecordTransaction = async () => {
-    setLoading(true)
-    try {
-      const amountNum = parseFloat(amount)
-      const timestamp = convertDateToTimestamp(date)
-      
-      let endpoint = ''
-      let payload: any = {}
-      const method = isEditMode ? 'PUT' : 'POST'
-      
-      if (operationType === 'EXPENSE') {
-        endpoint = isEditMode ? `/api/vendor-payments/${transactionId}` : '/api/vendor-payments'
-        const allocations = paymentType === 'DIRECT' ? [] : outstandingBills
+  const confirmRecordTransaction = () => {
+    const amountNum = parseFloat(amount)
+    const timestamp = convertDateToTimestamp(date)
+    
+    const isExpense = operationType === 'EXPENSE'
+    const allocations = paymentType === 'DIRECT' ? [] : isExpense
+      ? outstandingBills
           .filter(bill => bill.allocated && bill.allocated > 0)
           .map(bill => ({
             purchase_id: bill.purchase_id,
             allocated_amount: bill.allocated,
             notes: `Payment for Invoice ${bill.invoice_no}`
           }))
-        
-        payload = {
-          vendor_id: selectedVendor,
-          payment_amount: amountNum,
-          payment_mode: mode,
-          payment_date: timestamp,
-          payment_type: paymentType,
-          notes,
-          allocations,
-          fy: currentFY
-        }
-      } else {
-        endpoint = isEditMode ? `/api/vendor-refunds/${transactionId}` : '/api/vendor-refunds'
-        const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
+      : outstandingReturns
           .filter(ret => ret.allocated && ret.allocated > 0)
           .map(ret => ({
             return_id: ret.return_id,
             allocated_amount: ret.allocated,
             notes: `Refund for ${ret.return_no}`
           }))
-        
-        payload = {
-          vendor_id: selectedVendor,
-          refund_amount: amountNum,
-          refund_mode: mode,
-          refund_date: timestamp,
-          refund_type: paymentType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC',
-          notes,
-          allocations,
-          fy: currentFY
+    
+    const payload: any = {
+      vendor_id: selectedVendor,
+      notes,
+      allocations,
+      fy: currentFY
+    }
+    
+    if (isExpense) {
+      payload.payment_amount = amountNum
+      payload.payment_mode = mode
+      payload.payment_date = timestamp
+      payload.payment_type = paymentType
+    } else {
+      payload.refund_amount = amountNum
+      payload.refund_mode = mode
+      payload.refund_date = timestamp
+      payload.refund_type = paymentType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC'
+    }
+    
+    if (isEditMode) {
+      updateTransaction.mutate(
+        { id: transactionId, payload, isExpense },
+        {
+          onSuccess: () => {
+            const transactionType = isExpense ? 'Payment' : 'Refund'
+            showSnackbar('success', `${transactionType} updated successfully!`)
+            router.push(`/vendor-transactions/view/${transactionId}?type=${isExpense ? 'expense' : 'income'}`)
+            setShowConfirmationModal(false)
+          },
+          onError: (error: Error) => {
+            setError(error.message || 'Failed to update transaction')
+            setShowConfirmationModal(false)
+          }
         }
-      }
-      
-      const res = await fetch(endpoint, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      )
+    } else {
+      createTransaction.mutate(payload, {
+        onSuccess: (data) => {
+          const transactionType = isExpense ? 'Payment' : 'Refund'
+          showSnackbar('success', `${transactionType} recorded successfully!`)
+          const createdId = data.data?.payment?.id || data.data?.refund?.id
+          if (createdId) {
+            router.push(`/vendor-transactions/view/${createdId}?type=${isExpense ? 'expense' : 'income'}`)
+          }
+          setShowConfirmationModal(false)
+        },
+        onError: (error: Error) => {
+          setError(error.message || 'Failed to record transaction')
+          setShowConfirmationModal(false)
+        }
       })
-      
-      const data = await res.json()
-      
-      if (res.ok && data.success) {
-        const transactionType = operationType === 'EXPENSE' ? 'Payment' : 'Refund'
-        const action = isEditMode ? 'updated' : 'recorded'
-        showSnackbar('success', `${transactionType} ${action} successfully!`)
-        
-        // Extract transaction ID from response
-        const createdId = isEditMode ? transactionId : (data.data?.payment?.id || data.data?.refund?.id)
-        
-        // Redirect to transaction detail view after creation/edit
-        if (createdId) {
-          router.push(`/vendor-transactions/view/${createdId}?type=${operationType === 'EXPENSE' ? 'expense' : 'income'}`)
-        } else {
-          // Fallback: Reset form if ID not found (shouldn't happen)
-          setSelectedVendor('')
-          setOperationType('')
-          setOutstandingBills([])
-          setOutstandingReturns([])
-          setAmount('')
-          setMode(1)
-          setDate(getLocalDateString())
-          setNotes('')
-          setError('')
-        }
-      } else {
-        setError(data.error || 'Failed to record transaction')
-      }
-    } catch (error) {
-      console.error('Error submitting transaction:', error)
-      setError('Failed to record transaction')
-    } finally {
-      setLoading(false)
-      setShowConfirmationModal(false)
     }
   }
 
@@ -907,21 +743,21 @@ export default function VendorTransactionEntry() {
                       <button
                         onClick={handleAutoAllocate}
                         className="btn-primary text-sm"
-                        disabled={!amount || loading}
+                        disabled={!amount || billsQuery.isLoading || returnsQuery.isLoading}
                       >
                         Auto Allocate
                       </button>
                       <button
                         onClick={handleClearAllocations}
                         className="btn-secondary text-sm"
-                        disabled={loading}
+                        disabled={billsQuery.isLoading || returnsQuery.isLoading}
                       >
                         Clear All
                       </button>
                     </div>
                   </div>
 
-                  {loading ? (
+                  {billsQuery.isLoading || returnsQuery.isLoading ? (
                     <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                       <Loader2 className="w-8 h-8 animate-spin mb-3" />
                       <p>Loading outstanding {operationType === 'EXPENSE' ? 'bills' : 'returns'}...</p>
@@ -1041,7 +877,7 @@ export default function VendorTransactionEntry() {
             <button
               onClick={() => router.back()}
               className="btn-secondary"
-              disabled={loading}
+              disabled={createTransaction.isPending || updateTransaction.isPending}
             >
               Cancel
             </button>
@@ -1050,7 +886,9 @@ export default function VendorTransactionEntry() {
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-600"
               disabled={isRecordDisabled()}
             >
-              {loading ? (isEditMode ? 'Updating...' : 'Recording...') : (isEditMode ? 'Update Transaction' : 'Record Transaction')}
+              {createTransaction.isPending || updateTransaction.isPending 
+                ? (isEditMode ? 'Updating...' : 'Recording...') 
+                : (isEditMode ? 'Update Transaction' : 'Record Transaction')}
             </button>
           </div>
         </div>
@@ -1077,7 +915,7 @@ export default function VendorTransactionEntry() {
         }
         confirmText={isEditMode ? "Update Transaction" : "Record Transaction"}
         cancelText="Cancel"
-        showLoading={loading}
+        showLoading={createTransaction.isPending || updateTransaction.isPending}
         loadingText="Recording Transaction..."
         onConfirm={confirmRecordTransaction}
         onCancel={() => setShowConfirmationModal(false)}

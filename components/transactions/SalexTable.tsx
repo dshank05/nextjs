@@ -105,6 +105,8 @@ interface SalexTableProps {
   onPrintDetails?: (salex: Salex) => void;
   onPartialReturn?: (salex: Salex) => void;
   onFullReturn?: (salex: Salex) => void;
+  sortBy?: 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'total_tax' | 'packing_forwarding_total' | 'payment_mode' | 'notes';
+  sortOrder?: 'asc' | 'desc';
   initialFilters?: {
     customerFilter: string;
     statusFilter: string;

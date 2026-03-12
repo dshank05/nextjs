@@ -1,71 +1,35 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import useStorageState from 'use-storage-state';
+import { useQueryClient } from '@tanstack/react-query';
 import { SalexTable } from '../../components/transactions/SalexTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useSalex } from '../../hooks/useSalex';
+import type { Salex } from '../../types/sales';
+import { useDebounce } from '../../hooks/useDebounce';
 
-interface Salex {
-  id: number;
-  invoice_no: number;
-  select_customer?: number;
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  items_total: number;
-  freight?: number;
-  total_taxable_value: number;
-  taxrate?: number;
-  total_cgst?: number;
-  total_sgst?: number;
-  total_igst?: number;
-  total_tax?: number;
-  total: number;
-  notes?: string;
-  invoice_date: number | string;
-  status?: number;
-  payment_status?: number;
-  payment_mode?: number;
-  fy: number;
-  transport?: string;
-  item_count?: number;
-  formattedDate?: string;
-  bill_reference?: string;
-  return_status?: number;
-  packing_forwarding_total?: number;
-  type?: 'salex';
-  customer_vendor_name?: string;
-  customer_vendor_address?: string;
-  customer_vendor_gstin?: string;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
+type SalexFilterState = {
+  customerFilter: string;
+  statusFilter: string;
+  dateFrom: string;
+  dateTo: string;
+  amountMin: string;
+  amountMax: string;
+  uidFilter: string;
+  billReference: string;
+  itemCount: string;
+  paymentMode: string;
+  total: string;
+  totalTax: string;
+  packingForwardingTotal: string;
+  sortBy: string;
+  sortOrder: string;
+};
 
 export default function SalexPage() {
   const { showSnackbar } = useSnackbar();
-
-  type SalexFilterState = {
-    customerFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    billReference: string;
-    itemCount: string;
-    paymentMode: string;
-    total: string;
-    totalTax: string;
-    packingForwardingTotal: string;
-    sortBy: string;
-    sortOrder: string;
-  };
+  const queryClient = useQueryClient();
 
   const [currentFilters, setCurrentFilters] = useStorageState<SalexFilterState>('salex-page-filters', {
     defaultValue: {
@@ -88,61 +52,31 @@ export default function SalexPage() {
     storage: "session"
   });
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [salex, setSalex] = useState<Salex[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 50,
-    total: 0,
-    totalPages: 0
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  const debouncedFetchSalex = useCallback((filtersToUse?: typeof currentFilters) => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
+  const queryFilters = useMemo(() => ({
+    page,
+    limit,
+    search: debouncedSearchTerm,
+    ...currentFilters
+  }), [page, limit, debouncedSearchTerm, currentFilters]);
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    abortControllerRef.current = new AbortController();
-
-    debounceTimeoutRef.current = setTimeout(() => {
-      fetchSalex(abortControllerRef.current?.signal, filtersToUse);
-    }, 300);
-  }, [currentFilters]);
-
-  useEffect(() => {
-    debouncedFetchSalex();
-  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchSalex]);
+  const { data, isLoading, error, refetch } = useSalex(queryFilters);
 
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'salex' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Salex ${msg.type} in another tab, refreshing data...`);
-        debouncedFetchSalex();
+        queryClient.invalidateQueries({ queryKey: ['salex'] });
       }
     });
 
     return unsubscribe;
-  }, [debouncedFetchSalex]);
-
-  useEffect(() => {
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     return () => {
@@ -152,114 +86,15 @@ export default function SalexPage() {
     };
   }, []);
 
-  const fetchSalex = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
-    try {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      abortControllerRef.current = new AbortController();
-
-      setLoading(true);
-      setError(null);
-
-      const filtersToUse = overrideFilters || currentFilters;
-
-      const params = new URLSearchParams();
-      params.append('page', pagination.page.toString());
-      params.append('limit', pagination.limit.toString());
-      
-      if (searchTerm) params.append('search', searchTerm);
-      if (filtersToUse.customerFilter) params.append('customer', filtersToUse.customerFilter);
-      if (filtersToUse.statusFilter) params.append('status', filtersToUse.statusFilter);
-      if (filtersToUse.dateFrom) params.append('startDate', filtersToUse.dateFrom);
-      if (filtersToUse.dateTo) params.append('endDate', filtersToUse.dateTo);
-      if (filtersToUse.amountMin) params.append('amountMin', filtersToUse.amountMin);
-      if (filtersToUse.amountMax) params.append('amountMax', filtersToUse.amountMax);
-      if (filtersToUse.uidFilter) params.append('uid', filtersToUse.uidFilter);
-      if (filtersToUse.billReference) params.append('billRef', filtersToUse.billReference);
-      if (filtersToUse.itemCount) params.append('items', filtersToUse.itemCount);
-      if (filtersToUse.paymentMode) params.append('paymentMode', filtersToUse.paymentMode);
-      if (filtersToUse.totalTax) params.append('taxAmount', filtersToUse.totalTax);
-      if (filtersToUse.packingForwardingTotal) params.append('pf', filtersToUse.packingForwardingTotal);
-      if (filtersToUse.total && !filtersToUse.amountMin) {
-        params.append('amountMin', filtersToUse.total);
-        params.append('amountMax', filtersToUse.total);
-      }
-      params.append('sortBy', filtersToUse.sortBy || 'invoice_no');
-      params.append('sortOrder', filtersToUse.sortOrder || 'asc');
-
-      console.log('🚀 Salex fetchSalex - API call with params:', Object.fromEntries(params));
-
-      const response = await fetch(`/api/salex?${params}`, {
-        signal: abortControllerRef.current.signal
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch salex');
-      }
-
-      const data = await response.json();
-      console.log('📦 Salex API response:', data);
-
-      const transformedSalex: Salex[] = (data.salex || []).map((salex: any) => ({
-        id: salex.id,
-        invoice_no: salex.invoice_no,
-        select_customer: salex.select_customer,
-        customer_name: salex.customer_name,
-        customer_address: salex.customer_address,
-        customer_gstin: salex.customer_gstin,
-        items_total: salex.items_total,
-        freight: salex.freight,
-        total_taxable_value: salex.total_taxable_value,
-        taxrate: salex.taxrate,
-        total_cgst: salex.total_cgst,
-        total_sgst: salex.total_sgst,
-        total_igst: salex.total_igst,
-        total_tax: salex.total_tax,
-        packing_forwarding_total: salex.packing_forwarding_total,
-        total: salex.total,
-        notes: salex.notes,
-        invoice_date: salex.invoice_date,
-        status: salex.status,
-        payment_status: salex.payment_status,
-        payment_mode: salex.payment_mode,
-        fy: salex.fy,
-        transport: salex.transport,
-        item_count: salex.item_count,
-        formattedDate: salex.formattedDate,
-        bill_reference: salex.bill_reference,
-        return_status: salex.return_status,
-        type: 'salex',
-        customer_vendor_name: salex.customer_name,
-        customer_vendor_address: salex.customer_address,
-        customer_vendor_gstin: salex.customer_gstin
-      }));
-
-      console.log('✅ Transformed salex:', transformedSalex);
-      setSalex(transformedSalex);
-      setPagination(data.pagination);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('Salex fetch request was cancelled');
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      console.error('Failed to fetch salex:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
+    if (data && newPage > 0 && newPage <= data.pagination.totalPages) {
+      setPage(newPage);
     }
   };
 
   const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+    setLimit(newLimit);
+    setPage(1);
   };
 
   const handlePrintSalex = (transaction: Salex) => {
@@ -267,36 +102,58 @@ export default function SalexPage() {
     alert(`Print functionality for salex ${transaction.invoice_no} will be implemented`);
   };
 
+  const handlePartialReturn = (salex: Salex) => {
+    console.log('Process partial return for salex:', salex);
+    sessionStorage.setItem('returnInvoice', JSON.stringify({
+      id: salex.id,
+      invoice_no: salex.invoice_no,
+      customer_name: salex.customer_name,
+      total: salex.total,
+      invoice_date: salex.invoice_date,
+      type: 'invoicex'
+    }));
+    window.location.href = `/entry/salereturn-create?invoicex=${salex.id}`;
+  };
+
+  const handleFullReturn = async (salex: Salex) => {
+    if (!confirm(`Are you sure you want to process a full return for salex invoice #${salex.invoice_no}?\n\nThis will return all items in the order.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/sale-returns/customer-return', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: salex.select_customer,
+          invoicex_id: salex.id,
+          return_type: 'full',
+          return_date: new Date().toISOString().split('T')[0],
+          return_notes: 'Full order return processed from salex index',
+          payment_status: 0,
+          payment_mode: 1
+        })
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Successfully processed full return for salex invoice #${salex.invoice_no}`);
+        queryClient.invalidateQueries({ queryKey: ['salex'] });
+      } else {
+        const errorData = await response.json();
+        showSnackbar('error', `Failed to process return: ${errorData.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error processing return:', error);
+      showSnackbar('error', 'Network error occurred while processing return');
+    }
+  };
+
   const handleApplyFilters = (filters: SalexFilterState) => {
     console.log('📥 Salex index handleApplyFilters received:', filters);
-
-    const isSortOperation = (
-      filters.customerFilter === currentFilters.customerFilter &&
-      filters.statusFilter === currentFilters.statusFilter &&
-      filters.dateFrom === currentFilters.dateFrom &&
-      filters.dateTo === currentFilters.dateTo &&
-      filters.amountMin === currentFilters.amountMin &&
-      filters.amountMax === currentFilters.amountMax &&
-      filters.uidFilter === currentFilters.uidFilter &&
-      filters.billReference === currentFilters.billReference &&
-      filters.itemCount === currentFilters.itemCount &&
-      filters.paymentMode === currentFilters.paymentMode &&
-      filters.total === currentFilters.total &&
-      filters.totalTax === currentFilters.totalTax &&
-      filters.packingForwardingTotal === currentFilters.packingForwardingTotal &&
-      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
-    );
-
     setCurrentFilters(filters);
-    setPagination(prev => ({ ...prev, page: 1 }));
-
-    if (isSortOperation) {
-      console.log('🎯 Sort operation detected - fetching immediately');
-      fetchSalex(undefined, filters);
-    } else {
-      console.log('🔄 Filter operation detected - using debounced fetch');
-      debouncedFetchSalex(filters);
-    }
+    setPage(1);
   };
 
   return (
@@ -308,32 +165,34 @@ export default function SalexPage() {
               <span className="text-red-400 text-lg">⚠️</span>
               <div>
                 <div className="text-red-400 font-medium">Error loading salex</div>
-                <div className="text-red-300 text-sm">{error}</div>
+                <div className="text-red-300 text-sm">{error.message}</div>
               </div>
             </div>
             <button
-              onClick={() => setError(null)}
+              onClick={() => refetch()}
               className="btn-secondary text-red-400 text-sm py-1 px-3"
             >
-              ×
+              Retry
             </button>
           </div>
         </div>
       )}
 
       <SalexTable
-        salexs={salex}
-        pagination={pagination}
-        loading={loading}
+        salexs={data?.salexs || []}
+        pagination={data?.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 }}
+        loading={isLoading}
         onPageChange={handlePageChange}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        itemsPerPage={pagination.limit}
+        itemsPerPage={limit}
         onItemsPerPageChange={handleLimitChange}
         onExport={() => {}}
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}}
         onPrintDetails={handlePrintSalex}
+        onPartialReturn={handlePartialReturn}
+        onFullReturn={handleFullReturn}
         sortBy={currentFilters.sortBy as 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         initialFilters={{

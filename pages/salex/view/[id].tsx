@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Eye, DollarSign } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common/ExportMenu';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
 import QuickPaymentModal from '../../../components/QuickPaymentModal';
+import { useSalexItem } from '../../../hooks/useSalex';
 
 interface InvoiceItem {
   id: number;
@@ -102,44 +104,26 @@ interface Invoice {
 export default function InvoiceCView() {
   const router = useRouter();
   const { id } = router.query;
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
   const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchInvoice();
-    }
-  }, [id]);
+  // Use React Query hook
+  const { data: invoice, isLoading: loading, refetch } = useSalexItem(id as string);
+
+  const invoiceItems = invoice?.items || [];
 
   // Listen for broadcast messages to refresh data when salex are updated in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'salex' && msg.type === 'updated' && msg.data?.id === parseInt(id as string)) {
         console.log(`🔄 Salex ${msg.data.id} updated in another tab, refreshing data...`);
-        fetchInvoice();
+        queryClient.invalidateQueries({ queryKey: ['salex-item', id] });
       }
     });
 
     return unsubscribe;
-  }, [id]);
-
-  const fetchInvoice = async () => {
-    try {
-      const response = await fetch(`/api/salex/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setInvoice(data);
-        setInvoiceItems(data.items || []);
-      }
-    } catch (error) {
-      console.error('Error fetching invoice:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [id, queryClient]);
 
   const handleEditInvoice = () => {
     if (invoice) {
@@ -518,7 +502,7 @@ export default function InvoiceCView() {
             isOpen={showQuickPaymentModal}
             onClose={() => setShowQuickPaymentModal(false)}
             onSuccess={() => {
-              fetchInvoice();
+              refetch();
               setShowQuickPaymentModal(false);
             }}
             purchaseId={invoice.id}

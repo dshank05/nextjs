@@ -1,31 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2, Building2, FileText, Package, ClipboardList, Eye, DollarSign } from 'lucide-react';
+import { Edit } from 'lucide-react';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
-import RefundHistoryModal from '../../../components/RefundHistoryModal';
-import QuickRefundModal from '../../../components/QuickRefundModal';
-import { ExportMenu } from '../../../components/common/ExportMenu';
-import { getLocalDateString } from '../../../lib/date-utils';
-
-interface SaleReturn {
-  id: number;
-  return_no: string;
-  return_date: string;
-  customer_id: number;
-  customer_name: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  total_amount: number;
-  total_tax: number;
-  status: number;
-  fy: number;
-  notes?: string;
-  formattedDate?: string;
-  statusText?: string;
-  invoice_type?: string;
-}
+import { useSaleReturn } from '../../../hooks/useSales';
 
 interface ReturnItem {
   id: number;
@@ -49,112 +28,57 @@ export default function SaleReturnDetailPage() {
   const { id } = router.query;
   const { showSnackbar } = useSnackbar();
 
-  const [returnData, setReturnData] = useState<SaleReturn | null>(null);
-  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
-  const [fullApiData, setFullApiData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showRefundHistoryModal, setShowRefundHistoryModal] = useState(false);
-  const [showQuickRefundModal, setShowQuickRefundModal] = useState(false);
+  // Query hook
+  const { data: apiData, isLoading, error } = useSaleReturn(id as string);
 
-  useEffect(() => {
-    if (id) {
-      fetchReturnDetails(id as string);
-    }
-  }, [id]);
+  // Transform data
+  const returnData = apiData?.data?.return ? {
+    id: apiData.data.return.id,
+    return_no: apiData.data.return.return_no,
+    return_date: apiData.data.return.return_date,
+    customer_id: apiData.data.customer.id,
+    customer_name: apiData.data.customer.customer_name || apiData.data.customer.billing_name || 'Other',
+    customer_address: apiData.data.customer.address || '',
+    customer_gstin: apiData.data.customer.gstin || '',
+    total_amount: apiData.data.return.total_amount,
+    total_tax: apiData.data.return.total_tax || 0,
+    status: apiData.data.return.payment_status || 0,
+    fy: apiData.data.return.fy,
+    notes: apiData.data.return.notes,
+    formattedDate: apiData.data.return.return_date ? new Date(apiData.data.return.return_date).toLocaleDateString('en-IN') : '',
+    statusText: apiData.data.return.payment_status === 1 ? 'Complete' : 'Incomplete',
+    invoice_type: apiData.data.return.invoice_type
+  } : null;
 
-  const fetchReturnDetails = async (returnId: string) => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/sale-returns/${returnId}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch return details: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // Store full API response for session storage
-      setFullApiData(data.data);
-
-      const returnInfo = data.data.return;
-      const customerInfo = data.data.customer;
-      const billsInfo = data.data.bills;
-
-      // Convert status number to text
-      const statusText = returnInfo.payment_status === 1 ? 'Complete' : 'Incomplete'
-
-      const returnData: SaleReturn = {
-        id: returnInfo.id,
-        return_no: returnInfo.return_no,
-        return_date: returnInfo.return_date,
-        customer_id: customerInfo.id,
-        customer_name: customerInfo.customer_name,
-        customer_address: customerInfo.address || '',
-        customer_gstin: customerInfo.gstin || '',
-        total_amount: returnInfo.total_amount,
-        total_tax: returnInfo.total_tax || 0,
-        status: returnInfo.payment_status || 0,
-        fy: returnInfo.fy,
-        notes: returnInfo.notes,
-        formattedDate: returnInfo.return_date ? new Date(returnInfo.return_date).toLocaleDateString('en-IN') : '',
-        statusText: statusText,
-        invoice_type: returnInfo.invoice_type
-      };
-
-      // Transform return items from bills
-      const allReturnItems: ReturnItem[] = [];
-      billsInfo.forEach((bill: any) => {
-        bill.items.forEach((item: any, index: number) => {
-          allReturnItems.push({
-            id: item.id || (bill.id + index),
-            product_name: item.product_name || item.display_name,
-            part_number: item.part_number,
-            return_qty: item.return_qty,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate || 0,
-            tax_amount: item.tax_amount || 0,
-            subtotal: item.return_qty * item.unit_price,
-            total: (item.return_qty * item.unit_price) + (item.tax_amount || 0),
-            return_reason: item.return_reason || 'Unknown Reason',
-            notes: item.notes || '',
-            bill_reference: bill.invoice_no,
-            bill_date: bill.invoice_date,
-            invoice_no: bill.invoice_no
-          });
-        });
-      });
-
-      // Filter to show only actually returned items
-      const actuallyReturnedItems = allReturnItems.filter(item => {
-        return item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason');
-      });
-
-      setReturnData(returnData);
-      setReturnItems(actuallyReturnedItems);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load return details');
-      console.error('Error fetching return details:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Transform return items
+  const returnItems: ReturnItem[] = apiData?.data?.bills ? apiData.data.bills.flatMap((bill: any) =>
+    bill.items.map((item: any, index: number) => ({
+      id: item.id || (bill.id + index),
+      product_name: item.product_name || item.display_name,
+      part_number: item.part_number,
+      return_qty: item.return_qty,
+      unit_price: item.unit_price,
+      tax_rate: item.tax_rate || 0,
+      tax_amount: item.tax_amount || 0,
+      subtotal: item.return_qty * item.unit_price,
+      total: (item.return_qty * item.unit_price) + (item.tax_amount || 0),
+      return_reason: item.return_reason || 'Unknown Reason',
+      notes: item.notes || '',
+      bill_reference: bill.invoice_no,
+      bill_date: bill.invoice_date,
+      invoice_no: bill.invoice_no
+    }))
+  ).filter((item: ReturnItem) => item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason')) : [];
 
   const handleEditReturn = () => {
-    if (fullApiData && id) {
+    if (apiData?.data && id) {
       // Cache the full return data to session storage
-      SessionStorageService.set('sale-returns', id.toString(), fullApiData);
+      SessionStorageService.set('sale-returns', id.toString(), apiData.data);
       router.push(`/entry/salereturn-create?id=${id}`);
     }
   };
 
-  const handleDeleteReturn = () => {
-    if (returnData) {
-      // TODO: Implement delete functionality
-      showSnackbar('info', 'Delete functionality will be implemented');
-    }
-  };
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="card">
@@ -183,7 +107,7 @@ export default function SaleReturnDetailPage() {
             <div className="text-center py-8">
               <div className="text-red-400 text-lg mb-2">⚠️</div>
               <div className="text-red-400 font-medium">Error loading return details</div>
-              <div className="text-slate-400 text-sm mt-2">{error || 'Return not found'}</div>
+              <div className="text-slate-400 text-sm mt-2">{error?.message || 'Return not found'}</div>
               <Link
                 href="/entry/salereturn"
                 className="btn-secondary mt-4 inline-block"

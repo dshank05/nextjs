@@ -155,7 +155,16 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, adjustmen
   try {
     // Find existing adjustment
     const existingAdjustment = await prisma.customer_ledger.findUnique({
-      where: { id: parseInt(adjustmentId) }
+      where: { id: parseInt(adjustmentId) },
+      select: {
+        id: true,
+        customer_id: true,
+        transaction_type: true,
+        debit: true,
+        credit: true,
+        reference_no: true,
+        notes: true
+      }
     })
 
     if (!existingAdjustment) {
@@ -168,18 +177,72 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, adjustmen
       return res.status(400).json({ message: 'Not a deletable adjustment transaction type' })
     }
 
-    // Delete the adjustment (this will affect balance calculations)
-    await prisma.customer_ledger.delete({
-      where: { id: parseInt(adjustmentId) }
-    })
+    // ✅ Use database transaction for adjustment deletion
+    await prisma.$transaction(async (tx) => {
+      // Delete the ledger entry inside transaction
+      await tx.customer_ledger.delete({
+        where: { id: parseInt(adjustmentId) }
+      })
 
-    // Note: Deleting adjustments will affect balance calculations
-    // Consider recalculating balances after deletion in production
+      // Reverse the balance update based on the original adjustment
+      let balanceReversal: any = {}
+
+      switch (existingAdjustment.transaction_type) {
+        case 'SALE_ADJUSTMENT':
+          // Reverse sale adjustment (decrease balance)
+          balanceReversal = { total_allocated: -Number(existingAdjustment.debit) }
+          break
+
+        case 'RECEIPT_ADJUSTMENT':
+          // Reverse receipt adjustment
+          if (existingAdjustment.credit > 0) {
+            // Was an increase, now decrease
+            balanceReversal = { 
+              total_paid: -Number(existingAdjustment.credit), 
+              total_allocated: -Number(existingAdjustment.credit) 
+            }
+          } else {
+            // Was a decrease, now increase
+            balanceReversal = { 
+              total_paid: Number(existingAdjustment.debit), 
+              total_allocated: Number(existingAdjustment.debit) 
+            }
+          }
+          break
+
+        case 'RECEIPT_REVERSAL':
+          // Reverse receipt reversal (restore the payment)
+          balanceReversal = { 
+            total_paid: Number(existingAdjustment.debit), 
+            total_allocated: Number(existingAdjustment.debit) 
+          }
+          break
+
+        case 'REFUND_PAID':
+          // Reverse refund paid (decrease refunded amount)
+          balanceReversal = { total_refunded: -Number(existingAdjustment.debit) }
+          break
+      }
+
+      // Update customer balance using handler (with logging) inside transaction
+      await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(
+        tx,
+        existingAdjustment.customer_id,
+        balanceReversal,
+        {
+          type: 'adjustment_delete',
+          id: parseInt(adjustmentId),
+          reference_no: existingAdjustment.reference_no || 'ADJ',
+          notes: `Reversed: ${existingAdjustment.notes || existingAdjustment.transaction_type}`
+        }
+      )
+    }, {
+      timeout: 30000
+    })
 
     res.status(200).json({
       success: true,
-      message: 'Customer adjustment deleted successfully',
-      warning: 'Balance calculations may need to be recalculated'
+      message: 'Customer adjustment deleted successfully'
     })
 
   } catch (error) {

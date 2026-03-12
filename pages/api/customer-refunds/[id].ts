@@ -62,7 +62,6 @@ async function handleGetRefund(
             sale_return: {
               select: {
                 id: true,
-                credit_note_no: true,
                 return_date: true,
                 total_amount: true,
                 refund_amount: true,
@@ -72,7 +71,6 @@ async function handleGetRefund(
             salex_return: {
               select: {
                 id: true,
-                credit_note_no: true,
                 return_date: true,
                 total_amount: true,
                 refund_amount: true,
@@ -121,7 +119,6 @@ async function handleGetRefund(
           allocation_id: alloc.id,
           return_id: alloc.sale_return_id || alloc.salex_return_id,
           return_type: alloc.sale_return_id ? 'sale' : 'salex',
-          credit_note_no: returnData?.credit_note_no || '',
           return_date: returnData?.return_date || 0,
           allocated_amount: Number(alloc.allocated_amount),
           return_total: Number(returnData?.refund_amount || returnData?.total_amount || 0),
@@ -343,7 +340,7 @@ async function handleUpdateRefund(
             total_refund_allocated: allocDiff
           },
           {
-            type: 'refund_edit',
+            type: 'refund_issued_edit',
             id: refundId,
             reference_no: `REF-${refundId}`,
             notes: `Refund edited: amount ${amountDiff !== 0 ? `₹${amountDiff > 0 ? '+' : ''}${amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${allocDiff !== 0 ? `₹${allocDiff > 0 ? '+' : ''}${allocDiff.toFixed(2)}` : 'unchanged'}`

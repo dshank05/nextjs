@@ -410,25 +410,42 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
+      // Create customer ledger entry for refund (inside transaction)
+      await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
+        customer_id: parseInt(customer_id),
+        transaction_date: refundDateTimestamp,
+        transaction_type: 'REFUND_PAID',
+        reference_type: 'refund',
+        reference_id: refund.id,
+        reference_no: `REF-${String(refund.id).padStart(3, '0')}`,
+        debit: parseFloat(refund_amount),
+        credit: 0,
+        payment_mode: parseInt(refund_mode) || 1,
+        payment_status: 1,
+        payment_date: refundDateTimestamp,
+        notes: notes || `Customer refund payment`,
+        fy: financialYear,
+        transaction_id: refund.id
+      }, tx);
+
+      // Update customer balance using handler (with logging)
+      await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(
+        tx,
+        parseInt(customer_id),
+        {
+          total_refunded: parseFloat(refund_amount),
+          total_refund_allocated: totalAllocated
+        },
+        {
+          type: 'refund_issued_create',
+          id: refund.id,
+          reference_no: `REF-${String(refund.id).padStart(3, '0')}`,
+          notes: notes || `Customer refund payment`
+        }
+      );
+
       return refund
     })
-
-    // Create customer ledger entry for refund (outside transaction)
-    try {
-      await recordRefundPaidTransaction(
-        parseInt(customer_id),
-        result.id,
-        `REF-${String(result.id).padStart(3, '0')}`,
-        parseFloat(refund_amount),
-        refundDateTimestamp,
-        parseInt(refund_mode) || 1,
-        financialYear,
-        notes || `Customer refund payment`
-      )
-    } catch (ledgerError) {
-      console.error('Failed to create customer ledger entry:', ledgerError)
-      // Don't fail the refund if ledger entry fails
-    }
 
     res.status(201).json({
       success: true,

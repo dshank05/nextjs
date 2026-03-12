@@ -121,7 +121,6 @@ export default async function handler(
       },
       select: {
         id: true,
-        credit_note_no: true,
         return_date: true,
         refund_amount: true,
         payment_status: true,
@@ -154,7 +153,6 @@ export default async function handler(
       },
       select: {
         id: true,
-        credit_note_no: true,
         return_date: true,
         refund_amount: true,
         payment_status: true,
@@ -281,7 +279,7 @@ export default async function handler(
         date: returnItem.return_date,
         formattedDate: new Date(returnItem.return_date * 1000).toLocaleDateString('en-IN'),
         transactionType: 'Return',
-        reference: returnItem.credit_note_no || `CR-${returnItem.id}`,
+        reference: `CR-${returnItem.id}`,
         billAmount: Number(returnItem.refund_amount),
         paymentAmount: null,
         outstanding: Number(returnItem.refund_amount) - totalAllocated,

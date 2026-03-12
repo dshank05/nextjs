@@ -684,70 +684,52 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       }
 
+      // ✅ ONLY CREATE LEDGER ENTRIES WHEN COMPLETE (payment_status === 1)
+      if (paymentStatusValue === 1 && invoice.select_customer && invoice.select_customer !== 0) {
+        const creditNoteNo = isInvoicex ? `SXR-${String(returnRecord.id).padStart(3, '0')}` : `SR-${String(returnRecord.id).padStart(3, '0')}`
+        
+        // Get latest balance for ledger entry
+        const { customerLedgerService } = await import('../../../lib/customer-ledger-service')
+        const latestBalance = await customerLedgerService.getLatestBalance(invoice.select_customer, tx)
+        const newBalance = latestBalance + 0 - refundAmount // debit - credit
+        
+        // Create ledger entry for credit note INSIDE transaction
+        await tx.customer_ledger.create({
+          data: {
+            customer_id: invoice.select_customer,
+            transaction_date: returnDateTimestamp,
+            transaction_type: 'CREDIT_NOTE',
+            reference_type: isInvoicex ? 'salex_return' : 'sale_return',
+            reference_id: returnRecord.id,
+            reference_no: creditNoteNo,
+            debit: 0,
+            credit: refundAmount,
+            balance: newBalance,
+            payment_mode: paymentModeValue,
+            payment_status: 1,
+            payment_date: returnDateTimestamp,
+            notes: return_notes || `Return for ${isInvoicex ? 'salex' : 'sale'} invoice ${invoice.invoice_no}`,
+            fy: financialYear
+          }
+        })
+
+        // ✅ Update customer balance fields for complete returns WITH LOGGING
+        const { customerBalanceHandler } = await import('../../../lib/customer-balance-handler')
+        await customerBalanceHandler.incrementBalanceInTransaction(tx, invoice.select_customer, {
+          total_refunded: refundAmount,
+          total_refund_allocated: refundAmount
+        }, {
+          type: 'return_create',
+          id: returnRecord.id,
+          reference_no: creditNoteNo,
+          notes: `Return complete: ₹${refundAmount}`
+        })
+      }
+
       return returnRecord
     }, {
       timeout: 15000 // 15 seconds timeout for complex return processing
     })
-
-    // Create customer ledger entry for credit note (outside transaction)
-    try {
-      if (isInvoicex) {
-        const { recordSalexReturnTransaction, recordRefundPaidTransaction } = await import('../../../lib/customer-ledger-service')
-        
-        await recordSalexReturnTransaction(
-          invoice.select_customer,
-          result.id,
-          `SXR-${String(result.id).padStart(3, '0')}`,
-          refundAmount,
-          returnDateTimestamp,
-          financialYear,
-          return_notes || `Return for salex invoice ${invoice.invoice_no}`
-        )
-
-        // If refunded immediately, create refund ledger entry
-        if (paymentStatusValue === 1) {
-          await recordRefundPaidTransaction(
-            invoice.select_customer,
-            result.id,
-            `REF-${String(result.id).padStart(3, '0')}`,
-            refundAmount,
-            returnDateTimestamp,
-            paymentModeValue,
-            financialYear,
-            `Refund for salex return SXR-${result.id}`
-          )
-        }
-      } else {
-        const { recordReturnTransaction, recordRefundPaidTransaction } = await import('../../../lib/customer-ledger-service')
-        
-        await recordReturnTransaction(
-          invoice.select_customer,
-          result.id,
-          `SR-${String(result.id).padStart(3, '0')}`,
-          refundAmount,
-          returnDateTimestamp,
-          financialYear,
-          return_notes || `Return for invoice ${invoice.invoice_no}`
-        )
-
-        // If refunded immediately, create refund ledger entry
-        if (paymentStatusValue === 1) {
-          await recordRefundPaidTransaction(
-            invoice.select_customer,
-            result.id,
-            `REF-${String(result.id).padStart(3, '0')}`,
-            refundAmount,
-            returnDateTimestamp,
-            paymentModeValue,
-            financialYear,
-            `Refund for return SR-${result.id}`
-          )
-        }
-      }
-    } catch (ledgerError) {
-      console.error('Failed to create customer ledger entry:', ledgerError)
-      // Don't fail the return if ledger entry fails
-    }
 
     const returnPrefix = isInvoicex ? 'SXR' : 'SR'
     res.status(201).json({

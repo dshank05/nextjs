@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Eye, DollarSign } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
 import QuickPaymentModal from '../../../components/QuickPaymentModal';
 import { getLocalDateString } from '../../../lib/date-utils';
+import { usePurchase } from '../../../hooks/usePurchases';
 
 interface PurchaseItem {
   id?: number; // Optional since API creates new IDs
@@ -149,46 +151,35 @@ interface Purchase {
 export default function PurchaseView() {
   const router = useRouter();
   const { id } = router.query;
-  const [purchase, setPurchase] = useState<Purchase | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
   const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false);
   const [enableTax, setEnableTax] = useState(false);
 
+  // Use React Query hook
+  const { data: rawData, isLoading: loading, refetch } = usePurchase(id as string);
+
+  // Transform data
+  const purchase = rawData?.purchase || rawData || null;
+
+  // Set tax display flag based on whether purchase has taxes
   useEffect(() => {
-    if (id) {
-      fetchPurchase();
+    if (purchase) {
+      setEnableTax((purchase.total_tax || 0) > 0);
     }
-  }, [id]);
+  }, [purchase]);
 
   // Listen for broadcast messages to refresh data when this purchase is updated in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'purchases' && msg.type === 'updated' && msg.id && msg.id.toString() === id?.toString()) {
         console.log(`🔄 Purchase ${msg.id} updated in another tab, refreshing view page...`);
-        fetchPurchase();
+        queryClient.invalidateQueries({ queryKey: ['purchase', id] });
       }
     });
 
     return unsubscribe;
-  }, [id]);
-
-  const fetchPurchase = async () => {
-    try {
-      const response = await fetch(`/api/purchases/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        const purchaseData = data.purchase || data;
-        setPurchase(purchaseData);
-        // Set tax display flag based on whether purchase has taxes
-        setEnableTax((purchaseData.total_tax || 0) > 0);
-      }
-    } catch (error) {
-      console.error('Error fetching purchase:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [id, queryClient]);
 
   const handleEditPurchase = () => {
     if (purchase) {
@@ -802,7 +793,7 @@ export default function PurchaseView() {
             isOpen={showQuickPaymentModal}
             onClose={() => setShowQuickPaymentModal(false)}
             onSuccess={() => {
-              fetchPurchase();
+              refetch();
               setShowQuickPaymentModal(false);
             }}
             purchaseId={purchase.id}

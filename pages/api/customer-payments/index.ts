@@ -399,25 +399,42 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
+      // Create customer ledger entry for receipt (inside transaction)
+      await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
+        customer_id: parseInt(customer_id),
+        transaction_date: paymentDateTimestamp,
+        transaction_type: 'PAYMENT_RECEIVED',
+        reference_type: 'payment',
+        reference_id: payment.id,
+        reference_no: `PAY-${String(payment.id).padStart(3, '0')}`,
+        debit: 0,
+        credit: parseFloat(payment_amount),
+        payment_mode: parseInt(payment_mode) || 1,
+        payment_status: 1,
+        payment_date: paymentDateTimestamp,
+        notes: notes || `Customer payment receipt`,
+        fy: financialYear,
+        transaction_id: payment.id
+      }, tx);
+
+      // Update customer balance using handler (with logging)
+      await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(
+        tx,
+        parseInt(customer_id),
+        {
+          total_paid: parseFloat(payment_amount),
+          total_allocated: totalAllocated
+        },
+        {
+          type: 'payment_received_create',
+          id: payment.id,
+          reference_no: `PAY-${String(payment.id).padStart(3, '0')}`,
+          notes: notes || `Customer payment receipt`
+        }
+      );
+
       return payment
     })
-
-    // Create customer ledger entry for receipt (outside transaction)
-    try {
-      await recordReceiptTransaction(
-        parseInt(customer_id),
-        result.id,
-        `PAY-${String(result.id).padStart(3, '0')}`,
-        parseFloat(payment_amount),
-        paymentDateTimestamp,
-        parseInt(payment_mode) || 1,
-        financialYear,
-        notes || `Customer payment receipt`
-      )
-    } catch (ledgerError) {
-      console.error('Failed to create customer ledger entry:', ledgerError)
-      // Don't fail the payment if ledger entry fails
-    }
 
     res.status(201).json({
       success: true,

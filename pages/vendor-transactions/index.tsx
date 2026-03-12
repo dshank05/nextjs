@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { Eye, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
@@ -8,6 +7,9 @@ import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
+import { useVendors } from '../../hooks/useVendors'
+import { useVendorTransactions, useDeleteVendorTransaction } from '../../hooks/useVendorTransactions'
+import type { TransactionType, SortField, SortOrder } from '../../types/vendor-transactions'
 
 // ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
 function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
@@ -39,33 +41,9 @@ function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => v
   return [storedValue, setValue];
 }
 
-interface Transaction {
-  id: number
-  transaction_type: 'EXPENSE' | 'INCOME'
-  vendor_id: number
-  vendor_name: string
-  date: number
-  amount: number
-  payment_mode: number
-  payment_type: string
-  notes: string | null
-  invoice_numbers: string[]
-  allocations_count: number
-  fy: number
-}
-
-type TransactionType = 'all' | 'expense' | 'income'
-type SortField = 'id' | 'vendor_name' | 'amount' | 'date' | 'type'
-type SortOrder = 'asc' | 'desc'
-
 export default function VendorTransactionsPage() {
-  const router = useRouter()
   const { showSnackbar } = useSnackbar()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [total, setTotal] = useState(0)
   const limit = 50
 
   // UI state - show transactions only after vendor selection
@@ -74,10 +52,9 @@ export default function VendorTransactionsPage() {
   // Delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteTransaction, setDeleteTransaction] = useState<{ id: number; type: string } | null>(null)
-  const [deleting, setDeleting] = useState(false)
 
   // Filters
-  const [vendors, setVendors] = useState<any[]>([])
+  const { data: vendors = [], isLoading: loadingVendors } = useVendors()
   const [selectedVendor, setSelectedVendor] = useSessionStorage<string>('vendor-transactions-vendor', '')
   const [dateFrom, setDateFrom] = useSessionStorage<string>('vendor-transactions-dateFrom', '')
   const [dateTo, setDateTo] = useSessionStorage<string>('vendor-transactions-dateTo', '')
@@ -88,6 +65,33 @@ export default function VendorTransactionsPage() {
   // Sorting - ✅ FIX: Changed to ascending order to show oldest transactions first
   const [sortBy, setSortBy] = useState<SortField>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  // Query hooks
+  const { data: transactionsData, isLoading: loadingTransactions } = useVendorTransactions({
+    page,
+    limit,
+    vendor_id: selectedVendor,
+    dateFrom,
+    dateTo,
+    payment_mode: paymentMode,
+    payment_type: paymentType,
+    type: transactionType,
+    sortBy,
+    sortOrder
+  })
+
+  const transactions = transactionsData?.transactions || []
+  const pagination = transactionsData?.pagination || {
+    page: 1,
+    limit: 50,
+    total: 0,
+    totalPages: 1,
+    hasNext: false,
+    hasPrev: false
+  }
+
+  // Mutation hooks
+  const deleteTransactionMutation = useDeleteVendorTransaction()
 
   // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
@@ -104,8 +108,6 @@ export default function VendorTransactionsPage() {
       setDateFrom(formatStartDateForAPI(firstDay))
       setDateTo(formatEndDateForAPI(lastDay))
     }
-
-    fetchVendors()
   }, []);
   
   // ✅ Cleanup sessionStorage on component unmount
@@ -118,56 +120,12 @@ export default function VendorTransactionsPage() {
     };
   }, []);
 
-  // Only fetch transactions when vendor is selected
+  // Show transactions when vendor is selected
   useEffect(() => {
     if (selectedVendor) {
       setShowTransactions(true)
-      fetchTransactions()
     }
-  }, [page, selectedVendor, dateFrom, dateTo, paymentMode, paymentType, transactionType, sortBy, sortOrder])
-
-  const fetchVendors = async () => {
-    try {
-      const res = await fetch('/api/vendors')
-      const data = await res.json()
-      setVendors(data.vendors || [])
-    } catch (error) {
-      console.error('Error fetching vendors:', error)
-    }
-  }
-
-  const fetchTransactions = async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        sortBy,
-        sortOrder,
-        type: transactionType
-      })
-
-      if (selectedVendor) params.append('vendor_id', selectedVendor)
-      if (dateFrom) params.append('dateFrom', dateFrom)
-      if (dateTo) params.append('dateTo', dateTo)
-      if (paymentMode) params.append('payment_mode', paymentMode)
-      if (paymentType) params.append('payment_type', paymentType)
-
-      const response = await fetch(`/api/vendor-transactions?${params}`)
-      const data = await response.json()
-
-      if (data.success) {
-        setTransactions(data.data || [])
-        setTotalPages(data.pagination?.totalPages || 1)
-        setTotal(data.pagination?.total || 0)
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-      setTransactions([])
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [selectedVendor])
 
   const handleClearFilters = () => {
     // Clear vendor selection and hide transactions
@@ -185,7 +143,6 @@ export default function VendorTransactionsPage() {
     setPaymentType('')
     setTransactionType('all')
     setPage(1)
-    setTransactions([])
   }
 
   const handleSort = (field: SortField) => {
@@ -255,7 +212,7 @@ export default function VendorTransactionsPage() {
   const getPageNumbers = () => {
     const pages = []
     const start = Math.max(1, page - 2)
-    const end = Math.min(totalPages, page + 2)
+    const end = Math.min(pagination.totalPages, page + 2)
     for (let i = start; i <= end; i++) pages.push(i)
     return pages
   }
@@ -265,35 +222,22 @@ export default function VendorTransactionsPage() {
     setShowDeleteModal(true)
   }
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = () => {
     if (!deleteTransaction) return
 
-    setDeleting(true)
-    try {
-      const endpoint = deleteTransaction.type === 'expense'
-        ? `/api/vendor-payments/${deleteTransaction.id}`
-        : `/api/vendor-refunds/${deleteTransaction.id}`
-
-      const response = await fetch(endpoint, {
-        method: 'DELETE'
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        showSnackbar('success', 'Transaction deleted successfully', 3000)
-        fetchTransactions() // Refresh list
-        setShowDeleteModal(false)
-        setDeleteTransaction(null)
-      } else {
-        showSnackbar('error', data.error || 'Failed to delete transaction', 5000)
+    deleteTransactionMutation.mutate(
+      { id: deleteTransaction.id, type: deleteTransaction.type as 'expense' | 'income' },
+      {
+        onSuccess: () => {
+          showSnackbar('success', 'Transaction deleted successfully', 3000)
+          setShowDeleteModal(false)
+          setDeleteTransaction(null)
+        },
+        onError: (error: Error) => {
+          showSnackbar('error', error.message || 'Failed to delete transaction', 5000)
+        }
       }
-    } catch (error) {
-      console.error('Error deleting transaction:', error)
-      showSnackbar('error', 'Failed to delete transaction', 5000)
-    } finally {
-      setDeleting(false)
-    }
+    )
   }
 
   // Prepare export data
@@ -485,13 +429,13 @@ export default function VendorTransactionsPage() {
             <>
               {/* Summary */}
               <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-                <div>Showing {transactions.length > 0 ? ((page - 1) * limit) + 1 : 0} to {Math.min(page * limit, total)} of {total} transactions</div>
-                <div>Page {page} of {totalPages}</div>
+                <div>Showing {transactions.length > 0 ? ((page - 1) * limit) + 1 : 0} to {Math.min(page * limit, pagination.total)} of {pagination.total} transactions</div>
+                <div>Page {page} of {pagination.totalPages}</div>
               </div>
 
               {/* Table Section */}
               <div className="overflow-x-auto relative">
-                {loading && (
+                {loadingTransactions && (
                   <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-10 rounded-lg">
                     <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
                   </div>
@@ -588,7 +532,7 @@ export default function VendorTransactionsPage() {
                   </tbody>
                 </table>
 
-                {transactions.length === 0 && !loading && (
+                {transactions.length === 0 && !loadingTransactions && (
                   <div className="text-center py-8 text-slate-400">
                     No transactions found with the current filters.
                   </div>
@@ -596,7 +540,7 @@ export default function VendorTransactionsPage() {
               </div>
 
               {/* Pagination */}
-              {totalPages > 1 && (
+              {pagination.totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
                   <button
                     onClick={() => setPage(page - 1)}
@@ -621,18 +565,18 @@ export default function VendorTransactionsPage() {
                         {p}
                       </button>
                     ))}
-                    {page < totalPages - 2 && (
+                    {page < pagination.totalPages - 2 && (
                       <>
                         <span className="text-slate-400">...</span>
-                        <button onClick={() => setPage(totalPages)} className="px-3 py-1 rounded hover:bg-slate-700 text-slate-300">
-                          {totalPages}
+                        <button onClick={() => setPage(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700 text-slate-300">
+                          {pagination.totalPages}
                         </button>
                       </>
                     )}
                   </div>
                   <button
                     onClick={() => setPage(page + 1)}
-                    disabled={page === totalPages}
+                    disabled={page === pagination.totalPages}
                     className="btn-secondary disabled:opacity-50"
                   >
                     Next
@@ -656,7 +600,7 @@ export default function VendorTransactionsPage() {
         message={`This action is irreversible. The transaction will be permanently deleted and all allocations will be removed. Payment/refund statuses for affected bills/returns will be recalculated.`}
         confirmText="Delete Transaction"
         cancelText="Cancel"
-        showLoading={deleting}
+        showLoading={deleteTransactionMutation.isPending}
         loadingText="Deleting..."
       />
     </div>

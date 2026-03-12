@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Eye, DollarSign } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common/ExportMenu';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
 import QuickPaymentModal from '../../../components/QuickPaymentModal';
 import { getLocalDateString } from '../../../lib/date-utils';
+import { useSale } from '../../../hooks/useSales';
 
 interface InvoiceItem {
   product_id: number;
@@ -117,59 +119,36 @@ interface Invoice {
 export default function InvoiceView() {
   const router = useRouter();
   const { id } = router.query;
-  const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showPaymentHistoryModal, setShowPaymentHistoryModal] = useState(false);
   const [showQuickPaymentModal, setShowQuickPaymentModal] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchInvoice();
-    }
-  }, [id]);
+  // Use React Query hook
+  const { data: rawData, isLoading: loading, refetch } = useSale(id as string);
+
+  // Transform data
+  const invoice = rawData ? {
+    ...rawData,
+    vehicle_number: rawData.transportDetails?.vehicle_no || '',
+    transport_name: rawData.transportDetails?.trans_mode || '',
+    item_count: rawData.invoiceItems?.length || 0,
+    items: rawData.invoiceItems || [],
+    formattedDate: new Date(rawData.invoice_date * 1000).toLocaleDateString('en-IN')
+  } : null;
+
+  const invoiceItems = invoice?.invoiceItems || [];
 
   // Listen for broadcast messages to refresh data when sales are updated in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'sales' && msg.type === 'updated' && msg.data?.id === parseInt(id as string)) {
         console.log(`🔄 Sale ${msg.data.id} updated in another tab, refreshing data...`);
-        fetchInvoice();
+        queryClient.invalidateQueries({ queryKey: ['sale', id] });
       }
     });
 
     return unsubscribe;
-  }, [id]);
-
-  const fetchInvoice = async () => {
-    try {
-      const response = await fetch(`/api/sales/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-
-        // Create derived transport properties
-        const vehicle_number = data.transportDetails?.vehicle_no || '';
-        const transport_name = data.transportDetails?.trans_mode || '';
-
-        // Create enhanced invoice object - customer, staff, mechanic data now comes directly from API
-        const enhancedInvoice = {
-          ...data,
-          vehicle_number,
-          transport_name,
-          item_count: data.invoiceItems?.length || 0,
-          items: data.invoiceItems || [], // Alias for compatibility
-          formattedDate: new Date(data.invoice_date * 1000).toLocaleDateString('en-IN')
-        };
-
-        setInvoice(enhancedInvoice);
-        setInvoiceItems(data.invoiceItems || []);
-      }
-    } catch (error) {
-      console.error('Error fetching invoice:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [id, queryClient]);
 
   const handleEditInvoice = () => {
     if (invoice) {
@@ -589,7 +568,7 @@ export default function InvoiceView() {
             isOpen={showQuickPaymentModal}
             onClose={() => setShowQuickPaymentModal(false)}
             onSuccess={() => {
-              fetchInvoice();
+              refetch();
               setShowQuickPaymentModal(false);
             }}
             purchaseId={invoice.invoice_no}

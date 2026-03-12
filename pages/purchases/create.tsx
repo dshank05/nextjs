@@ -10,158 +10,53 @@ import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
 import { useBarcodeScanner } from '../../hooks/useBarcodeScanner';
 import { getLocalDateString } from '../../lib/date-utils';
-
-
-interface Vendor {
-  id: string;
-  vendor_name: string;
-  contact_no?: string;
-  email?: string;
-  address?: string;
-  address_2?: string;
-  city?: string;
-  state?: string;
-  state_code?: number;
-  tax_id?: string;
-}
-
-interface Product {
-  company_id?: number;
-  id: number;
-  product_name: string;
-  display_name?: string;
-  hsn?: string;
-  product_category?: string;
-  product_subcategory?: string;
-  product_category_id?: number;
-  product_subcategory_id?: number;
-  car_model_ids?: string;
-  company?: string;
-  pic?: string;
-  part_no?: string;
-  min_stock?: number;
-  stock?: number;
-  rate?: number;
-  notes?: string;
-  category_name?: string;
-  subcategory_name?: string;
-  gst_rate?: number;
-  selling_price?: number; // SP from MRP - discount + margin
-  gst_rate_percentage?: number; // Actual GST percentage
-  latest_purchase_rate?: number; // Latest purchase rate from database
-  opening_rate?: number; // Opening rate from database
-}
-
-interface PurchaseItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string; // Add display_name field
-  car_model: string;
-  category: string;
-  sub_category: string;
-  company: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number; // GST percentage (e.g., 18)
-  tax: number; // Total tax amount
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total: number;
-  // Return status fields
-  original_qty?: number;
-  returned_qty?: number;
-  available_qty?: number;
-  is_fully_returned?: boolean;
-  return_history?: Array<{
-    return_id: string;
-    return_no: string;
-    qty: number;
-    date: number;
-    unit_price: number;
-    tax_amount: number;
-    cgst: number;
-    sgst: number;
-    igst: number;
-    reason_id: number;
-    notes: string;
-  }>;
-}
-
-interface PurchaseReturnStatus {
-  has_returns: boolean;
-  fully_returned_items: number;
-  total_items: number;
-  is_fully_returned: boolean;
-  status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
-}
-
-interface Staff {
-  id: number;
-  name: string;
-  phone: string;
-  email?: string;
-  status: string;
-}
-
-interface PurchaseFormData {
-  invoice_number: string;
-  bill_reference: string;
-  bill_reference_date: string;
-  staff_id?: number | null;
-  date: string;
-  vendor_name: string;
-  contact_number: string;
-  email_id: string;
-  address: string;
-  address_2: string;
-  city: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  pin_code: string;
-  transport_name: string;
-  vehicle_number: string;
-  transport_cost: string;
-  // ===== LEGACY FIELDS - UNUSED (FOR REMOVAL) =====
-  bill: string;         // @deprecated - legacy field, unclear purpose
-  tax: string;          // @deprecated - legacy field, unclear purpose
-  tax_rate: string;     // @deprecated - legacy field, unclear purpose
-  basic_value: string;  // @deprecated - legacy field, unclear purpose
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  total_cgst: string;
-  total_sgst: string;
-  total_igst: string;
-  notes: string;
-  total_tax: string;
-  payment_status: number;
-  payment_mode: number;
-  // grand_total: string; // @deprecated - calculated field, removed from payload
-}
-
-interface FilterOptions {
-  categories: any[];
-  subcategories: any[];
-  companies: any[];
-  models: any[];
-}
+import { useCreatePurchase, useUpdatePurchase, usePurchase, useLastInvoiceNumber } from '../../hooks/usePurchases';
+import { useVendors } from '../../hooks/useVendors';
+import { useStaff } from '../../hooks/useStaff';
+import { useProducts, useFilterOptions } from '../../hooks/useProducts';
+import { useStates } from '../../hooks/useStates';
+import type { PurchaseItem, PurchaseReturnStatus, PurchaseFormData } from '../../types/purchases';
+import type { Vendor } from '../../types/vendors';
+import type { Product, FilterOptions } from '../../types/products';
+import type { Staff } from '../../types/staff';
 
 export default function PurchaseCreate() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [staff, setStaff] = useState<Staff[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+  
+  // Mutation hooks
+  const createPurchase = useCreatePurchase();
+  const updatePurchase = useUpdatePurchase();
+  
+  // Edit mode state - must be set before using query hooks
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
+  const [isRouterReady, setIsRouterReady] = useState(false);
+  
+  // Query hooks - fetch data automatically
+  const { data: vendors = [], isLoading: vendorsLoading, refetch: refetchVendors } = useVendors();
+  const { data: staff = [], isLoading: staffLoading } = useStaff();
+  const { data: filterOptions = { categories: [], subcategories: [], companies: [], models: [] }, isLoading: filterOptionsLoading } = useFilterOptions();
+  const { data: states = [], isLoading: statesLoading } = useStates();
+  const { data: lastInvoiceNumber, isLoading: invoiceNumberLoading } = useLastInvoiceNumber(!isEditMode);
+  const { data: editPurchaseData, isLoading: editDataLoading } = usePurchase(isEditMode ? editPurchaseId : undefined);
+  
+  // Product fetching with filters
+  const [productFilters, setProductFilters] = useState({
+    modelFilter: '',
+    search: '',
+    categoryFilter: '',
+    subcategoryFilter: '',
+    companyFilter: '',
+    fetchAll: true
+  });
+  const { data: productsData, isLoading: productsLoading } = useProducts(productFilters);
+  const products = productsData?.products || [];
+  
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<PurchaseItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
   const [vendorIdToSave, setVendorIdToSave] = useState<number | null>(null);
   const [vendorStateForTax, setVendorStateForTax] = useState<string>(''); // Separate state for tax calculations
@@ -169,13 +64,8 @@ export default function PurchaseCreate() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isOtherVendorSelected, setIsOtherVendorSelected] = useState(false);
 
-  // Edit mode state
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
   const [isInitialDataLoaded, setIsInitialDataLoaded] = useState(false);
   const [purchaseReturnStatus, setPurchaseReturnStatus] = useState<PurchaseReturnStatus | null>(null);
-  const [isRouterReady, setIsRouterReady] = useState(false);
-  const [editDataLoading, setEditDataLoading] = useState(false);
 
   // State for product selection row filters
   const [productRowFilters, setProductRowFilters] = useState({
@@ -206,7 +96,6 @@ export default function PurchaseCreate() {
   const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -238,16 +127,6 @@ export default function PurchaseCreate() {
   // State for delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseItem | null>(null);
-
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    categories: [],
-    subcategories: [],
-    companies: [],
-    models: []
-  });
-
-  // State for states data
-  const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
   
   // Store original data for change detection in edit mode
   const [originalData, setOriginalData] = useState<any>(null);
@@ -300,7 +179,7 @@ export default function PurchaseCreate() {
     }
   }, [router.isReady]);
 
-  // Check for edit mode and fetch data - wait for router to be ready
+  // Check for edit mode - wait for router to be ready
   useEffect(() => {
     if (!router.isReady) return;
 
@@ -308,7 +187,6 @@ export default function PurchaseCreate() {
     if (edit && typeof edit === 'string') {
       setIsEditMode(true);
       setEditPurchaseId(parseInt(edit));
-      setInvoiceNumberLoading(false); // Not generating new invoice in edit mode
 
       // First try to get data from sessionStorage
       const cachedData = SessionStorageService.get('purchases', edit);
@@ -317,27 +195,36 @@ export default function PurchaseCreate() {
         populateFormWithPurchaseData(cachedData);
         // Remove the cached data after using it
         SessionStorageService.remove('purchases', edit);
-      } else {
-        // No cached data - show loader and make API call
-        console.log('📡 No cached data found, fetching from API...');
-        setEditDataLoading(true);
-        fetchPurchaseForEdit(parseInt(edit));
       }
+      // If no cached data, the usePurchase query hook will fetch it automatically
     }
   }, [router.isReady, router.query]);
+
+  // Populate form when edit purchase data is loaded from query hook
+  useEffect(() => {
+    if (isEditMode && editPurchaseData && !isInitialDataLoaded) {
+      console.log('📡 Using purchase data from query hook:', editPurchaseData);
+      populateFormWithPurchaseData(editPurchaseData);
+    }
+  }, [editPurchaseData, isEditMode, isInitialDataLoaded]);
+
+  // Set invoice number from query hook in create mode
+  useEffect(() => {
+    if (!isEditMode && lastInvoiceNumber) {
+      setFormData(prev => ({ ...prev, invoice_number: lastInvoiceNumber.toString() }));
+    }
+  }, [lastInvoiceNumber, isEditMode]);
+
+  // Set default date in create mode
+  useEffect(() => {
+    if (!isEditMode) {
+      setFormData(prev => ({ ...prev, date: getLocalDateString() }));
+    }
+  }, [isEditMode]);
 
   // Synchronous edit mode detection to prevent race condition - wait for router to be ready
   const editParam = router.query.edit;
   const isEditModeDetected = router.isReady && editParam && typeof editParam === 'string';
-
-  // Set edit mode immediately if detected synchronously
-  useEffect(() => {
-    if (router.isReady && isEditModeDetected && !isEditMode && typeof editParam === 'string') {
-      setIsEditMode(true);
-      setEditPurchaseId(parseInt(editParam));
-      setInvoiceNumberLoading(false);
-    }
-  }, [router.isReady, isEditModeDetected, isEditMode, editParam]);
 
   // Set selected vendor when vendors are loaded in edit mode
   useEffect(() => {
@@ -350,32 +237,17 @@ export default function PurchaseCreate() {
     }
   }, [vendors, isEditMode, selectedVendorId]);
 
-  // Fetch vendors, staff, and products on mount
-  useEffect(() => {
-    fetchVendors();
-    fetchStaff();
-    fetchProducts();
-    fetchFilterOptions();
-    fetchStates();
-    // Only fetch last invoice number in create mode, not edit mode
-    if (!isEditMode) {
-      fetchLastInvoiceNumber();
-      // ✅ Set default date to today in create mode
-      setFormData(prev => ({ ...prev, date: getLocalDateString() }));
-    }
-  }, [isEditMode]);
-
   // Broadcast listener for vendor creation
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((message) => {
       if (message.type === 'created' && message.resource === 'vendors') {
         console.log('📡 Received broadcast: New vendor created, refetching vendors...');
-        fetchVendors();
+        refetchVendors();
       }
     });
 
     return unsubscribe;
-  }, []);
+  }, [refetchVendors]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -506,9 +378,16 @@ export default function PurchaseCreate() {
     });
   };
 
-  // Handle product search and filtering via API calls
+  // Handle product search and filtering via query hook
   useEffect(() => {
-    fetchProducts(selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany);
+    setProductFilters({
+      modelFilter: selectedPanelCarModel,
+      search: productSearchTerm,
+      categoryFilter: selectedPanelCategory,
+      subcategoryFilter: selectedPanelSubcategory,
+      companyFilter: selectedPanelCompany,
+      fetchAll: true
+    });
   }, [productSearchTerm, selectedPanelCarModel, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany]);
 
   // Auto-product selection based on filters (category + car model + company)
@@ -689,125 +568,6 @@ export default function PurchaseCreate() {
   //   }
   // }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
-  const fetchVendors = async () => {
-    try {
-      const response = await fetch('/api/vendors?dropdown=true');
-      if (response.ok) {
-        const data = await response.json();
-        setVendors(data.vendors || []);
-      } else {
-        showSnackbar('error', 'Failed to load vendors. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching vendors:', error);
-      showSnackbar('error', 'Failed to load vendors. Please try again.');
-    }
-  };
-
-  const fetchProducts = async (
-    modelFilter: string = '',
-    searchTerm: string = '',
-    categoryFilter: string = '',
-    subcategoryFilter: string = '',
-    companyFilter: string = ''
-  ) => {
-    setProductsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      // Always fetch all products for side panel (no pagination limit)
-      params.append('fetchAll', 'true');
-      if (modelFilter) params.append('modelFilter', modelFilter);
-      if (searchTerm) params.append('search', searchTerm);
-      if (categoryFilter) params.append('categoryFilter', categoryFilter);
-      if (subcategoryFilter) params.append('subcategoryFilter', subcategoryFilter);
-      if (companyFilter) params.append('companyFilter', companyFilter);
-      const url = `/api/products?${params.toString()}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setProducts(data.products || []);
-      } else {
-        showSnackbar('error', 'Failed to load products. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      showSnackbar('error', 'Failed to load products. Please try again.');
-    } finally {
-      setProductsLoading(false);
-    }
-  };
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) {
-        setFilterOptions(await response.json());
-      } else {
-        showSnackbar('error', 'Failed to load filter options. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching filter options:', error);
-      showSnackbar('error', 'Failed to load filter options. Please try again.');
-    }
-  };
-
-  const fetchStaff = async () => {
-    try {
-      const response = await fetch('/api/staff');
-      if (response.ok) {
-        const data = await response.json();
-        setStaff(data.staff || []);
-      } else {
-        showSnackbar('error', 'Failed to load staff. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching staff:', error);
-      showSnackbar('error', 'Failed to load staff. Please try again.');
-    }
-  };
-
-  const fetchStates = async () => {
-    try {
-      const response = await fetch('/api/states');
-      if (response.ok) {
-        const data = await response.json();
-        // Transform states data to match SearchableSelect format
-        const formattedStates = data.states.map((state: any) => ({
-          id: state.id.toString(),
-          name: state.state_name || state.name,
-          code: state.code
-        }));
-        setStates(formattedStates);
-      } else {
-        showSnackbar('error', 'Failed to load states. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching states:', error);
-      showSnackbar('error', 'Failed to load states. Please try again.');
-    }
-  };
-
-  const fetchLastInvoiceNumber = async () => {
-    // Double safeguard: never run in edit mode
-    if (isEditMode || isEditModeDetected) return;
-
-    try {
-      const response = await fetch('/api/purchases/last-invoice');
-      if (response.ok) {
-        const data = await response.json();
-        const lastInvoiceNum = data.lastInvoiceNumber || 0;
-        const nextInvoiceNum = lastInvoiceNum + 1;
-        setFormData(prev => ({ ...prev, invoice_number: nextInvoiceNum.toString() }));
-      } else {
-        showSnackbar('error', 'Failed to generate invoice number. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching last invoice number:', error);
-      showSnackbar('error', 'Failed to generate invoice number. Please try again.');
-    } finally {
-      setInvoiceNumberLoading(false);
-    }
-  };
-
   // Extract form population logic to reusable function for cached data
   const populateFormWithPurchaseData = (cachedData: any) => {
     const purchase = cachedData.purchase || cachedData;
@@ -962,168 +722,6 @@ export default function PurchaseCreate() {
       items: convertedItems,
       vendor_id: purchase.vendor_id
     });
-  };
-
-  const fetchPurchaseForEdit = async (purchaseId: number) => {
-    try {
-      const response = await fetch(`/api/purchases/${purchaseId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const purchase = data.purchase || data;
-
-        // Convert Unix timestamp to date string if needed
-        const formatDateForInput = (dateValue: number | string) => {
-          if (typeof dateValue === 'string') {
-            if (/^\d+$/.test(dateValue)) {
-              const timestamp = parseInt(dateValue);
-              if (timestamp > 1000000000) {
-                return new Date(timestamp * 1000).toISOString().split('T')[0];
-              }
-            }
-            return new Date(dateValue).toISOString().split('T')[0];
-          }
-          return new Date(dateValue * 1000).toISOString().split('T')[0];
-        };
-
-        // Prefill form data
-        setFormData({
-          invoice_number: purchase.invoice_number || purchase.invoice_no?.toString() || '',
-          bill_reference: purchase.bill_reference || '',
-          bill_reference_date: purchase.bill_reference_date ? new Date(purchase.bill_reference_date).toISOString().split('T')[0] : '',
-          staff_id: purchase.staff_id || null,
-          date: formatDateForInput(purchase.date || purchase.invoice_date),
-          vendor_name: purchase.vendor?.vendor_name || purchase.bill_reference,
-          contact_number: purchase.vendor?.contact_no || '',
-          email_id: purchase.vendor?.email || '',
-          address: purchase.vendor?.address || '',
-          address_2: purchase.vendor?.address_2 || '',
-          city: purchase.vendor?.city || '',
-          state: purchase.vendor?.state || '',
-          gst_number: purchase.vendor?.tax_id || '',
-          pin_code: '',
-          transport_name: purchase.transport_name || purchase.transport || '',
-          vehicle_number: purchase.vehicle_number || '',
-          transport_cost: purchase.transport_cost?.toString() || purchase.freight?.toString() || '0',
-          bill: '',
-          tax: purchase.total_tax?.toString() || '0',
-          descriptions: purchase.descriptions || '',
-          packing_forwarding_qty: purchase.packing_forwarding_qty?.toString() || '0',
-          packing_forwarding_rate: purchase.packing_forwarding_rate?.toString() || '0',
-          packing_forwarding_total: purchase.packing_forwarding_total?.toString() || '0',
-          tax_rate: purchase.taxrate?.toString() || '0',
-          basic_value: purchase.total_taxable_value?.toString() || '0',
-          total_cgst: purchase.total_cgst?.toString() || '0',
-          total_sgst: purchase.total_sgst?.toString() || '0',
-          total_igst: purchase.total_igst?.toString() || '0',
-          notes: purchase.notes || '',
-          total_tax: purchase.total_tax?.toString() || '0',
-          payment_status: purchase.payment_status || purchase.status || 0,
-          payment_mode: purchase.payment_mode !== undefined ? purchase.payment_mode : 0, // Default to Cash (0)
-        });
-
-        // Set vendor data - only set IDs, selectedVendor will be set by useEffect when vendors load
-        if (purchase.vendor_id) {
-          setSelectedVendorId(purchase.vendor_id.toString());
-          setVendorIdToSave(purchase.vendor_id);
-        }
-
-        // Convert purchase items to local format - preserve existing calculations
-        // Wait for filter options to be loaded before converting items
-        const convertItemsWithNames = async (rawItems: any[]) => {
-          // Ensure filter options are loaded
-          if (filterOptions.categories.length === 0) {
-
-            // Return items with fallback names (will show as N/A if IDs don't match)
-            return rawItems.map((item: any, index: number) => {
-              const qty = item.qty || 1;
-              const rate = item.rate || 0;
-              const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
-              const total = item.total || item.subtotal || (qty * rate + tax);
-              const cgst = item.cgst || 0;
-              const sgst = item.sgst || 0;
-              const igst = item.igst || 0;
-
-              return {
-                id: (index + 1).toString(),
-                product_id: item.product_id || item.category_id || 1,
-                product_name: item.product_name || item.name_of_product || '',
-                car_model: item.car_model || '',
-                category: item.category || '',
-                sub_category: item.sub_category || '',
-                company: item.company || '',
-                part_number: item.part_number || item.part || '',
-                qty: qty,
-                rate: rate,
-                gst_percentage: item.gst_percentage || item.gst_rate || 0,
-                tax: tax,
-                cgst: cgst,
-                sgst: sgst,
-                igst: igst,
-                total: total
-              };
-            });
-          }
-
-          return rawItems.map((item: any, index: number) => {
-            const qty = item.qty || 1;
-            const rate = item.rate || 0;
-
-            // Use existing tax breakdown from database if available, otherwise calculate
-            const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
-            const total = item.total || item.subtotal || (qty * rate + tax);
-
-            // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
-            const cgst = item.cgst || 0;
-            const sgst = item.sgst || 0;
-            const igst = item.igst || 0;
-
-            // Map IDs to names using filter options - add debug logging
-            const categoryOption = filterOptions.categories?.find(cat => cat.id === item.category_id);
-            const subcategoryOption = filterOptions.subcategories?.find(sub => sub.id === item.subcategory_id);
-            const companyOption = filterOptions.companies?.find(comp => comp.id === item.company_id && item.company_id !== 0);
-
-
-
-            return {
-              id: (index + 1).toString(),
-              product_id: item.product_id || item.category_id || 1,
-              product_name: item.product_name || item.name_of_product || '',
-              car_model: item.car_model || '', // Keep as string - mapping to IDs would need complex logic
-              category: item.category_id?.toString() || item.category || '', // Store category_id as string for dropdown
-              sub_category: (item.subcategory_id && item.subcategory_id !== 0) ? item.subcategory_id.toString() : null, // Store subcategory_id as string for dropdown, but treat 0 as null
-              company: item.company_id?.toString() || item.company || '', // Store company_id as string for dropdown
-              part_number: item.part_number || item.part || '',
-              qty: qty,
-              rate: rate,
-              gst_percentage: item.gst_percentage || item.gst_rate || 0, // Preserve existing GST percentage
-              tax: tax,
-              cgst: cgst,
-              sgst: sgst,
-              igst: igst,
-              total: total
-            };
-          });
-        };
-
-        if (purchase.items && purchase.items.length > 0) {
-          // Use converted items with proper names
-          const convertedItems: PurchaseItem[] = await convertItemsWithNames(purchase.items);
-
-          setSelectedProducts(convertedItems);
-        }
-
-        // Mark initial data loading as complete
-        setIsInitialDataLoaded(true);
-      } else {
-        showSnackbar('error', 'Failed to load purchase data. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching purchase for edit:', error);
-      showSnackbar('error', 'Failed to load purchase data. Please try again.');
-    } finally {
-      setInvoiceNumberLoading(false);
-      setEditDataLoading(false); // Stop the edit data loading regardless of success/error
-    }
   };
 
   const handleInputChange = (field: keyof PurchaseFormData, value: string) => {
@@ -1423,10 +1021,9 @@ export default function PurchaseCreate() {
   };
 
   const handleConfirmSubmit = async () => {
-    // Basic validation for purchase submission
+    // Basic validation
     const validationErrors: string[] = [];
 
-    // Check for minimum requirements
     if (selectedProducts.length === 0) {
       validationErrors.push('At least one product must be added');
     }
@@ -1440,176 +1037,150 @@ export default function PurchaseCreate() {
     }
 
     if (validationErrors.length > 0) {
-      setErrors({
-        products: validationErrors.join('\n')
-      });
+      setErrors({ products: validationErrors.join('\n') });
       return;
     }
 
-    // Clear any previous errors
     setErrors({});
 
-    // For edit mode, also warn about potential stock changes
     if (isEditMode && selectedProducts.length > 0) {
       showSnackbar('info', 'Note: Editing purchase items may affect inventory stock levels');
     }
 
-    setLoading(true);
-    // console.log("FormData DATA",formData)
-    try {
-      // ===== PAYLOAD CONSTRUCTION =====
-      // For PUT requests, exclude invoice_number since API identifies by ID, not invoice number
-      // For POST requests, include invoice_number as it's required for creation
-      const baseSubmitData = {
-        bill_reference: formData.bill_reference,
-        bill_reference_date: formData.bill_reference_date,
-        staff_id: formData.staff_id,
-        date: formData.date,
-        vendor_id: vendorIdToSave,
-        // ===== VENDOR DETAILS - ALWAYS INCLUDE FOR bill_to TABLE =====
-        vendor_name: formData.vendor_name,
-        contact_number: formData.contact_number,
-        email_id: formData.email_id,
-        address: formData.address,
-        address_2: formData.address_2,
-        city: formData.city,
-        state: formData.state,
-        state_code: formData.state_code,
-        gst_number: formData.gst_number,
-        pin_code: formData.pin_code || '',
-        transport_name: formData.transport_name,
-        vehicle_number: formData.vehicle_number,
-        transport_cost: parseFloat(formData.transport_cost) || 0,
-        items: selectedProducts.map(item => {
-          // Parse the stored IDs directly (they're already strings containing the IDs)
-          const categoryId = item.category ? parseInt(item.category) : null;
-          const subcategoryId = item.sub_category ? parseInt(item.sub_category) : null;
-          const companyId = item.company ? parseInt(item.company) : null;
+    // Prepare payload
+    const baseSubmitData = {
+      bill_reference: formData.bill_reference,
+      bill_reference_date: formData.bill_reference_date,
+      staff_id: formData.staff_id,
+      date: formData.date,
+      vendor_id: vendorIdToSave,
+      vendor_name: formData.vendor_name,
+      contact_number: formData.contact_number,
+      email_id: formData.email_id,
+      address: formData.address,
+      address_2: formData.address_2,
+      city: formData.city,
+      state: formData.state,
+      state_code: formData.state_code,
+      gst_number: formData.gst_number,
+      pin_code: formData.pin_code || '',
+      transport_name: formData.transport_name,
+      vehicle_number: formData.vehicle_number,
+      transport_cost: parseFloat(formData.transport_cost) || 0,
+      items: selectedProducts.map(item => {
+        const categoryId = item.category ? parseInt(item.category) : null;
+        const subcategoryId = item.sub_category ? parseInt(item.sub_category) : null;
+        const companyId = item.company ? parseInt(item.company) : null;
 
-          // Convert selected car model IDs to names for display
-          const carModelNames = productRowFilters.carModels
-            .map(id => {
-              const model = filterOptions.models.find(m => m.id.toString() === id);
-              return model ? model.name : '';
-            })
-            .filter(name => name)
-            .join(', ');
+        const carModelNames = productRowFilters.carModels
+          .map(id => {
+            const model = filterOptions.models.find(m => m.id.toString() === id);
+            return model ? model.name : '';
+          })
+          .filter(name => name)
+          .join(', ');
 
-          // Get model_id from the first selected car model, or look up from car_model string
-          let modelId = null;
-          if (productRowFilters.carModels.length > 0) {
-            modelId = parseInt(productRowFilters.carModels[0]);
-          } else if (item.car_model && item.car_model.trim()) {
-            // Look up model_id from car_model string using filterOptions
-            const carModelRecord = filterOptions.models.find(
-              model => model.name.trim() === item.car_model.trim()
-            );
-            if (carModelRecord) {
-              modelId = carModelRecord.id;
+        let modelId = null;
+        if (productRowFilters.carModels.length > 0) {
+          modelId = parseInt(productRowFilters.carModels[0]);
+        } else if (item.car_model && item.car_model.trim()) {
+          const carModelRecord = filterOptions.models.find(
+            model => model.name.trim() === item.car_model.trim()
+          );
+          if (carModelRecord) {
+            modelId = carModelRecord.id;
+          }
+        }
+
+        return {
+          product_id: item.product_id,
+          product_name: item.product_name,
+          category_id: categoryId,
+          subcategory_id: subcategoryId,
+          company_id: companyId,
+          model_id: modelId,
+          car_model: carModelNames || item.car_model || '',
+          part: item.part_number,
+          qty: item.qty.toString(),
+          rate: item.rate.toString(),
+          gst_percentage: (item.gst_percentage || 0).toString(),
+          cgst: (item.cgst || 0).toString(),
+          sgst: (item.sgst || 0).toString(),
+          igst: (item.igst || 0).toString(),
+          tax: (item.tax || 0).toString(),
+          total: item.total.toString(),
+        };
+      }),
+      descriptions: formData.descriptions,
+      packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,
+      packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0,
+      packing_forwarding_total: parseFloat(formData.packing_forwarding_total) || 0,
+      total_cgst: parseFloat(formData.total_cgst) || 0,
+      total_sgst: parseFloat(formData.total_sgst) || 0,
+      total_igst: parseFloat(formData.total_igst) || 0,
+      notes: formData.notes,
+      total_tax: totalTax.toString(),
+      payment_status: formData.payment_status || 0,
+      payment_mode: formData.payment_mode || 0,
+    };
+
+    const submitData = isEditMode
+      ? baseSubmitData
+      : { ...baseSubmitData, invoice_number: formData.invoice_number };
+
+    setShowConfirmationModal(false);
+
+    // Use mutation hooks
+    if (isEditMode) {
+      updatePurchase.mutate(
+        { id: editPurchaseId!, payload: submitData },
+        {
+          onSuccess: (responseData) => {
+            if (editPurchaseId) {
+              SessionStorageService.remove('purchases', editPurchaseId.toString());
             }
+
+            broadcast({
+              type: 'updated',
+              resource: 'purchases',
+              data: { id: editPurchaseId }
+            });
+
+            router.push(`/purchases/view/${editPurchaseId}`);
+            showSnackbar('success', 'Purchase updated successfully!');
+          },
+          onError: (error: any) => {
+            showSnackbar('error', error.message || 'Failed to update purchase');
+          }
+        }
+      );
+    } else {
+      createPurchase.mutate(submitData, {
+        onSuccess: (responseData) => {
+          const purchaseId = responseData.purchase?.id || responseData.id;
+
+          broadcast({
+            type: 'created',
+            resource: 'purchases',
+            data: { id: purchaseId }
+          });
+
+          if (purchaseId && !isNaN(purchaseId)) {
+            router.push(`/purchases/view/${purchaseId}`);
+          } else {
+            console.error('Invalid purchase ID received:', purchaseId);
+            showSnackbar('error', 'Purchase created but navigation failed. Redirecting to purchases list.');
+            router.push('/purchases');
           }
 
-          return {
-            product_id: item.product_id,
-            product_name: item.product_name,
-            category_id: categoryId,
-            subcategory_id: subcategoryId,
-            company_id: companyId,
-            model_id: modelId,
-            car_model: carModelNames || item.car_model || '',
-            part: item.part_number,
-            qty: item.qty.toString(),
-            rate: item.rate.toString(),
-            gst_percentage: (item.gst_percentage || 0).toString(),
-            cgst: (item.cgst || 0).toString(),
-            sgst: (item.sgst || 0).toString(),
-            igst: (item.igst || 0).toString(),
-            tax: (item.tax || 0).toString(),
-            total: item.total.toString(),
-          };
-        }),
-        descriptions: formData.descriptions,
-        packing_forwarding_qty: parseFloat(formData.packing_forwarding_qty) || 0,
-        packing_forwarding_rate: parseFloat(formData.packing_forwarding_rate) || 0,
-        packing_forwarding_total: parseFloat(formData.packing_forwarding_total) || 0,
-        total_cgst: parseFloat(formData.total_cgst) || 0,
-        total_sgst: parseFloat(formData.total_sgst) || 0,
-        total_igst: parseFloat(formData.total_igst) || 0,
-        notes: formData.notes,
-        total_tax: totalTax.toString(),
-        payment_status: formData.payment_status || 0,
-        payment_mode: formData.payment_mode || 0,
-      };
-      // console.log("SUBMIT DATA",baseSubmitData)
-      // Add invoice_number only for POST (creation), exclude from PUT (update)
-      const submitData = isEditMode
-        ? baseSubmitData  // PUT: No invoice_number needed
-        : { ...baseSubmitData, invoice_number: formData.invoice_number }; // POST: Include invoice_number
-
-      const method = isEditMode ? 'PUT' : 'POST';
-      const url = isEditMode ? `/api/purchases/${editPurchaseId}` : '/api/purchases';
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
+          showSnackbar('success', 'Purchase created successfully!');
         },
-        body: JSON.stringify(submitData),
+        onError: (error: any) => {
+          showSnackbar('error', error.message || 'Failed to create purchase');
+        }
       });
-
-      // Always close modal after API call completes
-      setShowConfirmationModal(false);
-
-      if (response.ok) {
-        const responseData = await response.json();
-
-        // Clean up sessionStorage on successful update
-        if (isEditMode && editPurchaseId) {
-          SessionStorageService.remove('purchases', editPurchaseId.toString());
-        }
-
-        // Extract purchase ID from response
-        const purchaseId = isEditMode ? editPurchaseId : responseData.purchase?.id || responseData.id;
-
-        console.log('Purchase creation response:', responseData);
-        console.log('responseData.purchase:', responseData.purchase);
-        console.log('responseData.purchase?.id:', responseData.purchase?.id);
-        console.log('responseData.id:', responseData.id);
-        console.log('Extracted purchaseId:', purchaseId);
-        console.log('isNaN(purchaseId):', isNaN(purchaseId));
-
-        // Broadcast the creation/update event
-        broadcast({
-          type: isEditMode ? 'updated' : 'created',
-          resource: 'purchases',
-          data: { id: purchaseId }
-        });
-
-        // Navigate to purchase view page for both create and update
-        if (purchaseId && !isNaN(purchaseId)) {
-          router.push(`/purchases/view/${purchaseId}`);
-        } else {
-          console.error('Invalid purchase ID received:', purchaseId);
-          showSnackbar('error', 'Purchase created but navigation failed. Redirecting to purchases list.');
-          router.push('/purchases');
-        }
-
-        // Show success snackbar after navigation
-        showSnackbar('success', `Purchase ${isEditMode ? 'updated' : 'created'} successfully!`);
-      } else {
-        const error = await response.json();
-        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} purchase`);
-      }
-    } catch (error) {
-      // Always close modal on network error
-      setShowConfirmationModal(false);
-      showSnackbar('error', 'Network error occurred. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
-
-
 
   const handleCancelSubmit = () => {
     setShowConfirmationModal(false);
@@ -3365,11 +2936,11 @@ export default function PurchaseCreate() {
               </button>
               <button
                 type="submit"
-                disabled={loading || (isEditMode && !hasChanges)}
+                disabled={createPurchase.isPending || updatePurchase.isPending || (isEditMode && !hasChanges)}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={isEditMode && !hasChanges ? "No changes to save" : ""}
               >
-                {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Purchase' : 'Create Purchase')}
+                {(createPurchase.isPending || updatePurchase.isPending) ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Purchase' : 'Create Purchase')}
               </button>
             </div>
           </div>

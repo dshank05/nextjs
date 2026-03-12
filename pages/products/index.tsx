@@ -1,31 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import useStorageState from 'use-storage-state';
 import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
-
-interface Product {
-  id: number;
-  product_name: string;
-  stock?: number;
-  min_stock?: number;
-  rate?: number;
-  part_no?: string;
-  categoryName?: string;
-  companyName?: string;
-  subcategoryNames?: string;
-  latestPurchaseRate?: number;
-  lastPurchaseDate?: string;
-  carModelsDisplay?: string;
-  subcategoryName?: string;
-  pic?: string; // Product image URL
-  barcode?: string; // Barcode image URL
-}
-
-interface ProductResponse {
-  products: Product[];
-  pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean; };
-}
+import { useProducts } from '../../hooks/useProducts';
+import { useDebounce } from '../../hooks/useDebounce';
+import type { ProductFilters } from '../../types/products';
 
 export default function Products() {
   // Define filter type
@@ -44,7 +24,7 @@ export default function Products() {
     sortOrder: string;
   };
 
-  // Create persistent filter state using use-storage-state (sessionStorage - clears on tab close)
+  // Create persistent filter state
   const [currentFilters, setCurrentFilters] = useStorageState<FilterState>('products-page-filters', {
     defaultValue: {
       categoryFilter: '',
@@ -63,147 +43,51 @@ export default function Products() {
     storage: "session"
   });
 
-  const [products, setProducts] = useState<Product[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Refs for debouncing and abort controllers
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const paginationRef = useRef(pagination);
+  // Debounce search
+  const debouncedSearch = useDebounce(searchTerm, 300);
 
-  // Keep pagination ref in sync
-  useEffect(() => {
-    paginationRef.current = pagination;
-  }, [pagination]);
+  // Build query filters
+  const queryFilters: ProductFilters = useMemo(() => ({
+    page,
+    limit,
+    search: debouncedSearch,
+    categoryFilter: currentFilters.categoryFilter,
+    subcategoryFilter: currentFilters.subcategoryFilter,
+    modelFilter: currentFilters.modelFilter,
+    companyFilter: currentFilters.companyFilter,
+    quantityFilter: currentFilters.quantityFilter,
+    stockFilter: currentFilters.stockFilter,
+    startDate: currentFilters.startDate,
+    endDate: currentFilters.endDate,
+    uidFilter: currentFilters.uidFilter,
+    partNoFilter: currentFilters.partNoFilter,
+    sortBy: currentFilters.sortBy,
+    sortOrder: currentFilters.sortOrder as 'asc' | 'desc'
+  }), [page, limit, debouncedSearch, currentFilters]);
 
-  const fetchProducts = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Query hook
+  const { data, isLoading, error, refetch } = useProducts(queryFilters);
 
-      // Use pagination ref to avoid stale closures
-      const paginationToUse = paginationRef.current;
+  const products = data?.products || [];
+  const pagination = data?.pagination || { page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false };
 
-      console.log("fetched effect pagination", paginationToUse);
-
-      const params = new URLSearchParams({
-        page: paginationToUse.page.toString(),
-        limit: paginationToUse.limit.toString(),
-        search: searchTerm,
-        // Add filter parameters
-        category: currentFilters.categoryFilter,
-        subcategory: currentFilters.subcategoryFilter,
-        model: currentFilters.modelFilter.join(','),
-        company_id: currentFilters.companyFilter,
-        quantity: currentFilters.quantityFilter,
-        lowStock: currentFilters.stockFilter === 'low' ? 'true' : 'false',
-        startDate: currentFilters.startDate,
-        endDate: currentFilters.endDate,
-        uid: currentFilters.uidFilter,
-        part_no: currentFilters.partNoFilter,
-        // Add sort parameters
-        sortBy: currentFilters.sortBy || 'categoryName',
-        sortOrder: currentFilters.sortOrder || 'asc'
-      });
-
-      const response = await fetch(`/api/products/optimized?${params}`, {
-        signal // Pass abort signal to fetch
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch products');
-      }
-
-      const data: ProductResponse = await response.json();
-
-      // Transform API data to match our interface
-      const transformedProducts: Product[] = (data.products || []).map((product: any) => ({
-        id: product.id,
-        product_name: product.product_name,
-        stock: product.stock,
-        min_stock: product.min_stock,
-        rate: product.rate,
-        part_no: product.part_no,
-        categoryName: product.categoryName,
-        companyName: product.companyName,
-        subcategoryNames: product.subcategoryNames,
-        latestPurchaseRate: product.latestPurchaseRate,
-        lastPurchaseDate: product.lastPurchaseDate,
-        carModelsDisplay: product.carModelsDisplay,
-        subcategoryName: product.subcategoryName,
-        pic: product.pic, // ✅ Added for Media column
-        barcode: product.barcode // ✅ Added for Media column
-      }));
-
-      setProducts(transformedProducts);
-      setPagination(data.pagination);
-    } catch (err) {
-      // Don't set error if request was aborted
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('Request was cancelled');
-        return;
-      }
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      console.error('Failed to fetch products:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [searchTerm, currentFilters]);
-
-  // Debounced fetch function with abort controller
-  const debouncedFetchProducts = useCallback(() => {
-    // Clear previous timeout
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-
-    // Cancel previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    // Create new abort controller
-    abortControllerRef.current = new AbortController();
-
-    // Set new timeout for debounced execution
-    debounceTimeoutRef.current = setTimeout(() => {
-      fetchProducts(abortControllerRef.current?.signal);
-    }, 300); // 300ms debounce delay
-  }, [fetchProducts]); // Only depend on fetchProducts, not currentFilters
-
-  // Fetch products when pagination, search, or filters change
-  useEffect(() => {
-    debouncedFetchProducts();
-  }, [pagination.page, pagination.limit, searchTerm, currentFilters]);
-
-  // Listen for broadcast messages to refresh data when products are created/updated/deleted in other tabs
+  // Listen for broadcast messages
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'products' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Product ${msg.type} in another tab, refreshing data...`);
-        fetchProducts();
+        refetch();
       }
     });
 
     return unsubscribe;
-  }, [fetchProducts]);
+  }, [refetch]);
 
-  // Cleanup timeouts and abort controllers on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
-  // ✅ Clear sessionStorage when component unmounts (user navigates away)
+  // Clear sessionStorage on unmount
   useEffect(() => {
     return () => {
       if (typeof window !== 'undefined') {
@@ -214,22 +98,19 @@ export default function Products() {
 
   const handlePageChange = (newPage: number) => {
     if (newPage > 0 && newPage <= pagination.totalPages) {
-      console.log("new page", newPage)
-      setPagination(prev => ({ ...prev, page: newPage }));
+      setPage(newPage);
     }
   };
 
   const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+    setLimit(newLimit);
+    setPage(1);
   };
-
-
 
   // Handle filter application
   const handleApplyFilters = (filters: FilterState) => {
     setCurrentFilters(filters);
-    // Reset to first page when applying filters
-    setPagination(prev => ({ ...prev, page: 1 }));
+    setPage(1);
   };
 
   return (
@@ -241,15 +122,9 @@ export default function Products() {
               <span className="text-red-400 text-lg">⚠️</span>
               <div>
                 <div className="text-red-400 font-medium">Error loading products</div>
-                <div className="text-red-300 text-sm">{error}</div>
+                <div className="text-red-300 text-sm">{error.message}</div>
               </div>
             </div>
-            <button
-              onClick={() => setError(null)}
-              className="btn-secondary text-red-400 text-sm py-1 px-3"
-            >
-              ×
-            </button>
           </div>
         </div>
       )}
@@ -257,13 +132,13 @@ export default function Products() {
       <ProductTable
         products={products}
         pagination={pagination}
-        loading={loading}
+        loading={isLoading}
         onPageChange={handlePageChange}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
         itemsPerPage={pagination.limit}
         onItemsPerPageChange={handleLimitChange}
-        onExport={() => { }} // Export handled internally by ProductTable
+        onExport={() => { }}
         onApplyFilters={handleApplyFilters}
         initialFilters={{
           categoryFilter: currentFilters.categoryFilter,

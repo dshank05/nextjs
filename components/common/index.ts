@@ -7,3 +7,4 @@ export { ExportMenu } from './ExportMenu';
 export { FileUpload } from './FileUpload';
 export { ImageCarousel } from './ImageCarousel';
 export { ImagePreviewModal } from './ImagePreviewModal';
+export { DateRangeFilter } from './DateRangeFilter';

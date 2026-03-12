@@ -157,15 +157,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       invoice_no: sale.invoice_no,
       invoice_date: sale.invoice_date,
       select_customer: sale.select_customer,
-      customer_name: sale.customer_name || '',
-      contact_number: sale.contact_number || '',
-      email_id: sale.email_id || '',
-      address: sale.address || '',
-      address_2: sale.address_2 || '',
-      city: sale.city || '',
-      state: sale.state || '',
-      pin_code: sale.pin_code || '',
-      gst_number: sale.gst_number || '',
+      customer_name: customerData?.billing_name || '',
+      contact_number: customerData?.contact_no || '',
+      email_id: customerData?.email || '',
+      address: customerData?.billing_address || '',
+      address_2: '',
+      city: '',
+      state: '',
+      pin_code: '',
+      gst_number: customerData?.billing_gstin || '',
       items_total: sale.items_total || 0,
       freight: sale.freight || 0,
       total_taxable_value: sale.total_taxable_value || 0,
@@ -216,15 +216,15 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       customer_id: sale.select_customer,
       customer: customerData,
       billingDetails: sale.select_customer === 0 ? {
-        customer_name: sale.customer_name || '',
-        contact_number: sale.contact_number || '',
-        email_id: sale.email_id || '',
-        address: sale.address || '',
-        address_2: sale.address_2 || '',
-        city: sale.city || '',
-        state: sale.state || '',
-        gst_number: sale.gst_number || '',
-        billing_pin_code: sale.pin_code || ''
+        customer_name: customerData?.billing_name || '',
+        contact_number: customerData?.contact_no || '',
+        email_id: customerData?.email || '',
+        address: customerData?.billing_address || '',
+        address_2: '',
+        city: '',
+        state: '',
+        gst_number: customerData?.billing_gstin || '',
+        billing_pin_code: ''
       } : null,
       staff: staffData,
       mechanic: mechanicData,
@@ -378,28 +378,25 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     // Start transaction - ALL operations inside
     const result = await prisma.$transaction(async (tx) => {
-      // ✅ REFACTORED: Use customer transaction handler for payment status changes INSIDE transaction
+      // ✅ Use customer transaction handler for ALL edits (not just payment status changes)
       const oldPaymentStatus = existingSale.payment_status
       const newPaymentStatus = parsedPaymentStatus
 
-      // Check if payment status changed
-      if (oldPaymentStatus !== newPaymentStatus && parseInt(select_customer) !== 0) {
-        // Use transaction handler for complex payment status changes
-        const operations = await customerTransactionHandler.handleSaleEdit(
-          saleId,
-          {
-            old_status: oldPaymentStatus,
-            new_status: newPaymentStatus,
-            old_total: Number(existingSale.total),
-            new_total: calculatedGrandTotal,
-            customer_id: parseInt(select_customer),
-            payment_mode: parsedPaymentMode,
-            transaction_date: Math.floor(invoiceDate),
-            fy: financialYear,
-            notes: notes || `Sale ${invoiceNumber} updated`
-          },
-          'sale'
-        )
+      // Always use transaction handler for ledger/balance operations (like purchase does)
+      if (parseInt(select_customer) !== 0) {
+        const operations = await customerTransactionHandler.handleSaleEdit({
+          type: 'sale',
+          oldStatus: oldPaymentStatus,
+          newStatus: newPaymentStatus,
+          oldTotal: Number(existingSale.total),
+          newTotal: calculatedGrandTotal,
+          customerId: parseInt(select_customer),
+          invoiceId: saleId,
+          invoiceNo: invoiceNumber.toString(),
+          paymentMode: parsedPaymentMode,
+          paymentDate: Math.floor(invoiceDate),
+          fy: financialYear
+        })
 
         // Execute handler operations inside same transaction
         await customerTransactionHandler.executeInTransaction(tx, operations)
@@ -694,6 +691,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         select_customer: true,
         total: true,
         payment_status: true,
+        return_status: true,
         fy: true
       }
     })
@@ -704,16 +702,14 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
 
     // ✅ Use customer transaction handler for deletion
     if (sale.select_customer && sale.select_customer !== 0) {
-      const operations = await customerTransactionHandler.handleSaleDelete(
-        saleId,
-        {
-          customer_id: sale.select_customer,
-          total: Number(sale.total),
-          payment_status: sale.payment_status,
-          fy: sale.fy
-        },
-        'sale'
-      )
+      const operations = await customerTransactionHandler.handleSaleDelete({
+        type: 'sale',
+        invoiceId: saleId,
+        customerId: sale.select_customer,
+        invoiceNo: sale.invoice_no,
+        paymentStatus: sale.payment_status,
+        returnStatus: sale.return_status || 0
+      })
 
       await prisma.$transaction(async (tx) => {
         await customerTransactionHandler.executeDeleteInTransaction(tx, operations)

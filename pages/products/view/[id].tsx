@@ -6,98 +6,46 @@ import { ConfirmationModal } from '../../../components/ConfirmationModal';
 import { ImageCarousel } from '../../../components/common/ImageCarousel';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
-import { formatBarcode } from '../../../lib/barcode-scanner';
 import { subscribeBroadcast } from '../../../lib/broadcast';
-
-interface Product {
-  id: number;
-  product_name: string;
-  stock?: number;
-  min_stock?: number;
-  rate?: number;
-  part_no?: string;
-  barcode?: string;
-  pic?: string;
-  categoryName?: string;
-  companyName?: string;
-  subcategoryName?: string;
-  carModelsDisplay?: string;
-  latestPurchaseRate?: number;
-  hsn?: string;
-  gst_rate?: string;
-  warehouse?: string;
-  rack_number?: string;
-  descriptions?: string;
-  notes?: string;
-  mrp?: string;
-  discount?: string;
-  sale_price?: string;
-  margin?: string;
-  opening_rate?: number;
-  is_active?: boolean;
-}
-
-interface TransactionRow {
-  sn: number;
-  invoice_number?: string;
-  voucher_number?: string;
-  vendor?: string;
-  customer?: string;
-  qty: number;
-  rate: number;
-  amount: number;
-  date: string;
-}
+import { useProduct } from '../../../hooks/useProducts';
+import type { ProductTransactionRow } from '../../../types/products';
 
 export default function ProductView() {
   const { showSnackbar } = useSnackbar();
   const router = useRouter();
   const { id } = router.query;
-  const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // Query hook
+  const { data: product, isLoading, refetch } = useProduct(id as string);
+  
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Transaction data state
-  const [purchases, setPurchases] = useState<TransactionRow[]>([]);
-  const [sales, setSales] = useState<TransactionRow[]>([]);
-  const [salex, setSalex] = useState<TransactionRow[]>([]);
-  const [saleReturns, setSaleReturns] = useState<TransactionRow[]>([]);
-  const [purchaseReturns, setPurchaseReturns] = useState<TransactionRow[]>([]);
+  const [purchases, setPurchases] = useState<ProductTransactionRow[]>([]);
+  const [sales, setSales] = useState<ProductTransactionRow[]>([]);
+  const [salex, setSalex] = useState<ProductTransactionRow[]>([]);
+  const [saleReturns, setSaleReturns] = useState<ProductTransactionRow[]>([]);
+  const [purchaseReturns, setPurchaseReturns] = useState<ProductTransactionRow[]>([]);
 
   useEffect(() => {
     if (id) {
-      fetchProduct();
       fetchTransactionData();
     }
   }, [id]);
 
-  // Listen for broadcast messages to refresh data when this product is updated in other tabs
+  // Listen for broadcast messages
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'products' && msg.type === 'updated' && msg.id && msg.id.toString() === id?.toString()) {
         console.log(`🔄 Product ${msg.id} updated in another tab, refreshing view page...`);
-        fetchProduct();
+        refetch();
         fetchTransactionData();
       }
     });
 
     return unsubscribe;
-  }, [id]);
-
-  const fetchProduct = async () => {
-    try {
-      const response = await fetch(`/api/products/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setProduct(data);
-      }
-    } catch (error) {
-      console.error('Error fetching product:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [id, refetch]);
 
   const fetchTransactionData = async () => {
     if (!id) return;
@@ -159,10 +107,9 @@ export default function ProductView() {
       });
 
       if (response.ok) {
-        setProduct(prev => prev ? { ...prev, is_active: newStatus } : null);
         showSnackbar('success', `Product ${action}d successfully!`);
         setShowConfirmModal(false);
-        // Navigate back to product index page after successful deactivation
+        refetch();
         router.push('/products');
       } else {
         const errorData = await response.json();
@@ -182,7 +129,7 @@ export default function ProductView() {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="card h-96 flex items-center justify-center">
         <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div>

@@ -1,48 +1,24 @@
-import { useState, useEffect } from 'react'
-
-interface Product {
-  id: number
-  product_name: string
-  product_category?: string
-  company?: string
-  stock?: number
-  min_stock?: number
-  rate?: number
-  part_no?: string
-}
+import { useState } from 'react';
+import { useProducts } from '../../hooks/useProducts';
+import type { Product } from '../../types/products';
 
 export default function LowStock() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
+  // Query hook with low stock filter
+  const { data, isLoading, refetch } = useProducts({
+    stockFilter: 'low',
+    fetchAll: true
+  });
 
-  useEffect(() => {
-    fetchLowStockProducts()
-  }, [])
+  const products = (data?.products || []).filter((p: Product) => 
+    (p.stock || 0) < (p.min_stock || 0)
+  );
 
-  const fetchLowStockProducts = async () => {
-    try {
-      const response = await fetch('/api/products?lowStock=true&limit=1000')
-      if (response.ok) {
-        const data = await response.json()
-        // Filter for low stock products on frontend for now
-        const lowStockProducts = (data.products || []).filter((p: Product) => 
-          (p.stock || 0) < (p.min_stock || 0)
-        )
-        setProducts(lowStockProducts)
-      }
-    } catch (error) {
-      console.error('Error fetching low stock products:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-red-500"></div>
       </div>
-    )
+    );
   }
 
   return (
@@ -51,7 +27,7 @@ export default function LowStock() {
         <h1 className="text-2xl font-bold text-white">Low Stock Alert</h1>
         <div className="flex space-x-2">
           <button 
-            onClick={fetchLowStockProducts}
+            onClick={() => refetch()}
             className="btn-secondary"
           >
             Refresh

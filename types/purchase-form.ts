@@ -1,0 +1,56 @@
+import { z } from 'zod';
+
+export const purchaseItemSchema = z.object({
+  id: z.string(),
+  product_id: z.number(),
+  product_name: z.string(),
+  display_name: z.string().optional(),
+  car_model: z.string(),
+  category: z.string(),
+  sub_category: z.string(),
+  company: z.string(),
+  part_number: z.string(),
+  qty: z.number().min(1, 'Quantity must be at least 1'),
+  rate: z.number().min(0, 'Rate must be positive'),
+  gst_percentage: z.number().min(0).max(100),
+  tax: z.number(),
+  cgst: z.number(),
+  sgst: z.number(),
+  igst: z.number(),
+  total: z.number(),
+});
+
+export const purchaseFormSchema = z.object({
+  invoice_number: z.string().min(1, 'Invoice number is required'),
+  bill_reference: z.string().optional(),
+  bill_reference_date: z.string().optional(),
+  staff_id: z.number().nullable().optional(),
+  date: z.string().min(1, 'Date is required'),
+  vendor_name: z.string().min(1, 'Vendor name is required'),
+  contact_number: z.string().optional(),
+  email_id: z.string().email().optional().or(z.literal('')),
+  address: z.string().optional(),
+  address_2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  state_code: z.number().optional(),
+  gst_number: z.string().optional(),
+  pin_code: z.string().optional(),
+  transport_name: z.string().optional(),
+  vehicle_number: z.string().optional(),
+  transport_cost: z.string().optional(),
+  descriptions: z.string().optional(),
+  packing_forwarding_qty: z.string().optional(),
+  packing_forwarding_rate: z.string().optional(),
+  packing_forwarding_total: z.string().optional(),
+  total_cgst: z.string().optional(),
+  total_sgst: z.string().optional(),
+  total_igst: z.string().optional(),
+  notes: z.string().optional(),
+  total_tax: z.string().optional(),
+  payment_status: z.number().optional(),
+  payment_mode: z.number().optional(),
+});
+
+export type PurchaseFormData = z.infer<typeof purchaseFormSchema>;
+export type PurchaseItem = z.infer<typeof purchaseItemSchema>;

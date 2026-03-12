@@ -1,91 +1,19 @@
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
-import Link from 'next/link'
 import { Edit } from 'lucide-react'
 import SessionStorageService from '../../../lib/sessionStorage'
-
-interface TransactionData {
-  id: number
-  vendor: {
-    id: number
-    name: string
-    contact: string | null
-    email: string | null
-  }
-  payment_date?: number
-  refund_date?: number
-  payment_amount?: number
-  refund_amount?: number
-  payment_mode?: number
-  refund_mode?: number
-  payment_mode_text?: string
-  refund_mode_text?: string
-  payment_type?: string
-  refund_type?: string
-  notes: string | null
-  fy: number
-  allocations: Array<{
-    allocation_id: number
-    purchase_id?: number
-    return_id?: number
-    invoice_no?: number
-    debit_note_no?: string
-    invoice_date?: number
-    return_date?: number
-    bill_reference?: string
-    allocated_amount: number
-    purchase_total?: number
-    return_total?: number
-    payment_status?: number
-    payment_status_text?: string
-  }>
-  summary: {
-    payment_amount?: number
-    refund_amount?: number
-    total_allocated: number
-    allocation_count: number
-    difference: number
-  }
-}
+import { useVendorTransaction } from '../../../hooks/useVendorTransactions'
 
 export default function ViewVendorTransactionPage() {
   const router = useRouter()
   const { id, type } = router.query
-  const [transaction, setTransaction] = useState<TransactionData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string>('')
 
   const isExpense = type === 'expense'
 
-  useEffect(() => {
-    if (id && type) {
-      fetchTransaction()
-    }
-  }, [id, type])
-
-  const fetchTransaction = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const endpoint = isExpense
-        ? `/api/vendor-payments/${id}`
-        : `/api/vendor-refunds/${id}`
-
-      const response = await fetch(endpoint)
-      const data = await response.json()
-
-      if (data.success) {
-        setTransaction(data.data)
-      } else {
-        setError(data.error || 'Failed to fetch transaction')
-      }
-    } catch (error) {
-      console.error('Error fetching transaction:', error)
-      setError('Failed to fetch transaction details')
-    } finally {
-      setLoading(false)
-    }
-  }
+  // Query hook
+  const { data: transaction, isLoading, error: queryError } = useVendorTransaction(
+    id as string,
+    type as 'expense' | 'income'
+  )
 
   const formatDate = (dateValue: number | string) => {
     if (typeof dateValue === 'string') {
@@ -145,7 +73,7 @@ export default function ViewVendorTransactionPage() {
     router.push(`/entry/vendor-transaction?edit=${id}&type=${type}`)
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="card h-96 flex items-center justify-center">
         <div className="animate-spin rounded-full h-24 w-24 border-b-2 border-green-500"></div>
@@ -153,17 +81,18 @@ export default function ViewVendorTransactionPage() {
     )
   }
 
-  if (error || !transaction) {
+  if (queryError || !transaction) {
     return (
       <div className="card">
-        <p className="text-center text-slate-400">{error || 'Transaction not found'}</p>
+        <p className="text-center text-slate-400">
+          {queryError instanceof Error ? queryError.message : 'Transaction not found'}
+        </p>
       </div>
     )
   }
 
   const amount = isExpense ? transaction.payment_amount : transaction.refund_amount
   const date = isExpense ? transaction.payment_date : transaction.refund_date
-  const mode = isExpense ? transaction.payment_mode : transaction.refund_mode
   const modeText = isExpense ? transaction.payment_mode_text : transaction.refund_mode_text
   const transactionType = isExpense ? transaction.payment_type : transaction.refund_type
 

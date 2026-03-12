@@ -362,14 +362,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }, tx);
         }
 
-        // Update customer balance
-        await tx.customer_details.update({
-          where: { id: parseInt(select_customer) },
-          data: {
-            total_paid: { increment: newPayment },
-            total_allocated: { increment: totalAmount }
+        // Update customer balance using handler (with logging)
+        await customerBalanceHandler.incrementBalanceInTransaction(
+          tx,
+          parseInt(select_customer),
+          {
+            total_paid: newPayment,
+            total_allocated: totalAmount
+          },
+          {
+            type: 'salex_create',
+            id: invoice.id,
+            reference_no: invoice.invoice_no.toString(),
+            notes: `Salex ${invoice.invoice_no} created`
           }
-        });
+        );
       }
 
       return invoice

@@ -981,6 +981,10 @@ export class CustomerTransactionHandler {
     returnId: number;
     customerId: number;
     paymentStatus: number;
+    fy?: number;
+    totalAmount?: number;
+    totalTax?: number;
+    creditNoteNo?: string;
   }): Promise<DeleteResult> {
     const operations: DeleteOperation[] = [];
     

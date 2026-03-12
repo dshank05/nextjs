@@ -8,12 +8,13 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { getLocalDateString } from '../../lib/date-utils';
+import { useSaleReturn, useCreateSaleReturn, useUpdateSaleReturn } from '../../hooks/useSales';
 
 interface Customer {
   id: string;
   billing_name: string;
-  state?: string;
-  state_code?: number;
+  billing_state?: string;
+  billing_state_code?: number;
 }
 
 interface SaleBill {
@@ -71,6 +72,10 @@ export default function SaleReturnCreatePage() {
   const { customer: customerIdParam, invoice: invoiceIdParam, id: returnIdParam } = router.query;
   const { showSnackbar } = useSnackbar();
 
+  // Mutation hooks
+  const createReturn = useCreateSaleReturn();
+  const updateReturn = useUpdateSaleReturn();
+
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoadingEditData, setIsLoadingEditData] = useState(false);
   const [isInvoiceMode, setIsInvoiceMode] = useState(false);
@@ -90,7 +95,6 @@ export default function SaleReturnCreatePage() {
   const [bills, setBills] = useState<SaleBill[]>([]);
   const [returnReasons, setReturnReasons] = useState<ReturnReasons[]>([]);
   const [loading, setLoading] = useState(false);
-  const [processingReturn, setProcessingReturn] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
@@ -155,20 +159,27 @@ export default function SaleReturnCreatePage() {
 
   // Load data on mount and handle invoice mode
   useEffect(() => {
-    loadReturnReasons();
-    loadCustomers();
+    const initializePage = async () => {
+      // Load return reasons and customers first
+      await Promise.all([
+        loadReturnReasons(),
+        loadCustomers()
+      ]);
 
-    // Check if we're in edit mode
-    if (returnIdParam) {
-      setIsEditMode(true);
-      loadReturnForEdit(returnIdParam as string);
-    }
-    // Check if we're in invoice mode
-    else if (invoiceIdParam) {
-      setIsInvoiceMode(true);
-      setTargetInvoiceId(invoiceIdParam as string);
-      loadInvoiceForReturn(invoiceIdParam as string);
-    }
+      // Then check if we're in edit mode or invoice mode
+      if (returnIdParam) {
+        setIsEditMode(true);
+        await loadReturnForEdit(returnIdParam as string);
+      }
+      // Check if we're in invoice mode
+      else if (invoiceIdParam) {
+        setIsInvoiceMode(true);
+        setTargetInvoiceId(invoiceIdParam as string);
+        await loadInvoiceForReturn(invoiceIdParam as string);
+      }
+    };
+
+    initializePage();
   }, [returnIdParam, invoiceIdParam]);
 
 
@@ -325,8 +336,10 @@ export default function SaleReturnCreatePage() {
       // Load initial 3 months of data
       await loadCustomerBills(customerId, 1, '', fromDate, toDate, false);
 
-      // Reset flag after loading completes
-      isInitializingCustomer.current = false;
+      // Reset flag after a small delay to ensure useEffect doesn't trigger
+      setTimeout(() => {
+        isInitializingCustomer.current = false;
+      }, 100);
     }
   };
 
@@ -459,12 +472,27 @@ export default function SaleReturnCreatePage() {
 
         // Set customer
         const customerData = returnData.customer;
-        setCustomer({
-          id: customerData.id.toString(),
-          billing_name: customerData.billing_name,
-          state: customerData.state,
-          state_code: customerData.state_code
-        });
+        
+        // Check if customer exists in the customers list
+        const existingCustomer = customers.find(c => c.id === customerData.id.toString());
+        
+        if (existingCustomer) {
+          setCustomer(existingCustomer);
+        } else if (customerData.id && customerData.id !== 0) {
+          // Customer not in list but has valid ID, create customer object
+          setCustomer({
+            id: customerData.id.toString(),
+            billing_name: customerData.customer_name || customerData.billing_name || 'Unknown Customer',
+            billing_state: customerData.billing_state,
+            billing_state_code: customerData.billing_state_code
+          });
+        } else {
+          // Invalid or "Other" customer
+          console.error('Invalid customer data:', customerData);
+          showSnackbar('error', 'Customer not found. Please select a valid customer.');
+          setIsLoadingEditData(false);
+          return;
+        }
 
         // Set bills and items
         // In edit mode, set available_qty to the original_qty (from original sale)
@@ -490,7 +518,7 @@ export default function SaleReturnCreatePage() {
               const taxAmount = (subtotal * item.tax_rate) / 100;
 
               // Determine CGST/SGST vs IGST based on customer state
-              const customerState = customer?.state || '';
+              const customerState = customer?.billing_state || '';
               const isIntraState = customerState === 'Uttar Pradesh';
               let cgst = 0, sgst = 0, igst = 0;
               if (isIntraState) {
@@ -563,7 +591,7 @@ export default function SaleReturnCreatePage() {
       const taxAmount = (subtotal * item.tax_rate) / 100;
 
       // Determine CGST/SGST vs IGST
-      const customerState = customer?.state || '';
+      const customerState = customer?.billing_state || '';
       const isIntraState = customerState === 'Uttar Pradesh';
 
       let cgst = 0, sgst = 0, igst = 0;
@@ -603,7 +631,7 @@ export default function SaleReturnCreatePage() {
     const taxAmount = (subtotal * item.tax_rate) / 100;
 
     // Determine CGST/SGST vs IGST
-    const customerState = customer?.state || '';
+    const customerState = customer?.billing_state || '';
     const isIntraState = customerState === 'Uttar Pradesh';
 
     let cgst = 0, sgst = 0, igst = 0;
@@ -697,61 +725,62 @@ export default function SaleReturnCreatePage() {
   };
 
   const confirmProcessReturn = async () => {
-    setProcessingReturn(true);
-    try {
-      const returnData = {
-        return_date: returnDate,
-        return_notes: returnNotes,
-        payment_status: paymentStatus,
-        payment_mode: paymentMode,
-        payment_date: paymentDate || undefined,  // Send as YYYY-MM-DD string, backend handles conversion
-        items: Array.from(selectedItems.values()).map(item => ({
-          sale_item_id: item.sale_item_id, // Use sale_item_id not item.id
-          return_qty: item.return_qty,
-          return_reason_id: item.return_reason_id,
-          unit_price: item.unit_price,
-          tax_rate: item.tax_rate,
-          notes: item.return_notes || ''
-        }))
+    const returnData = {
+      return_date: returnDate,
+      return_notes: returnNotes,
+      payment_status: paymentStatus,
+      payment_mode: paymentMode,
+      payment_date: paymentDate || undefined,
+      items: Array.from(selectedItems.values()).map(item => ({
+        sale_item_id: item.sale_item_id,
+        return_qty: item.return_qty,
+        return_reason_id: item.return_reason_id,
+        unit_price: item.unit_price,
+        tax_rate: item.tax_rate,
+        notes: item.return_notes || ''
+      }))
+    };
+
+    if (isEditMode && returnIdParam) {
+      // Edit mode - update existing return
+      updateReturn.mutate(
+        { id: returnIdParam as string, data: returnData },
+        {
+          onSuccess: () => {
+            showSnackbar('success', `Return updated successfully! Return #${returnIdParam}`);
+            router.push('/entry/salereturn');
+          },
+          onError: (error: Error) => {
+            showSnackbar('error', error.message || 'Failed to update return');
+          },
+          onSettled: () => {
+            setShowConfirmationModal(false);
+          }
+        }
+      );
+    } else {
+      // Create mode - create new return
+      const createData = {
+        customer_id: customer?.id,
+        return_type: 'custom',
+        ...returnData
       };
-
-      let response;
-      if (isEditMode && returnIdParam) {
-        // Edit mode - update existing return
-        response = await fetch(`/api/sale-returns/${returnIdParam}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(returnData)
-        });
-      } else {
-        // Create mode - create new return
-        const createData = {
-          customer_id: customer?.id,
-          ...returnData
-        };
-        response = await fetch('/api/sale-returns/customer-return', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(createData)
-        });
-      }
-
-      if (response.ok) {
-        const result = await response.json();
-        const action = isEditMode ? 'updated' : 'created';
-        const returnId = isEditMode ? returnIdParam : result.data.return.id;
-        showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
-        router.push('/entry/salereturn');
-      } else {
-        const error = await response.json();
-        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);
-      }
-    } catch (error) {
-      console.error('Error processing return:', error);
-      showSnackbar('error', 'Network error occurred');
-    } finally {
-      setProcessingReturn(false);
-      setShowConfirmationModal(false);
+      
+      createReturn.mutate(createData, {
+        onSuccess: (result) => {
+          const returnIds = [];
+          if (result.data.sale_return) returnIds.push(`SR-${result.data.sale_return.id}`);
+          if (result.data.salex_return) returnIds.push(`SRX-${result.data.salex_return.id}`);
+          showSnackbar('success', `Return(s) created successfully! ${returnIds.join(', ')}`);
+          router.push('/entry/salereturn');
+        },
+        onError: (error: Error) => {
+          showSnackbar('error', error.message || 'Failed to create return');
+        },
+        onSettled: () => {
+          setShowConfirmationModal(false);
+        }
+      });
     }
   };
 
@@ -812,7 +841,7 @@ export default function SaleReturnCreatePage() {
                 <SearchableSelect
                   options={customers.map(c => ({
                     id: c.id,
-                    name: `${c.billing_name} (${c.state || 'N/A'})`
+                    name: c.billing_state ? `${c.billing_name} (${c.billing_state})` : c.billing_name
                   }))}
                   selectedValue={customer?.id || null}
                   onSelectionChange={handleCustomerSelect}
@@ -1250,7 +1279,7 @@ export default function SaleReturnCreatePage() {
         message={`Process return for ${selectedItems.size} items totaling ₹${returnSummary.totalAmount.toFixed(2)}?`}
         confirmText="Process Return"
         cancelText="Cancel"
-        showLoading={processingReturn}
+        showLoading={createReturn.isPending || updateReturn.isPending}
         loadingText="Processing Return..."
         onConfirm={confirmProcessReturn}
         onCancel={() => setShowConfirmationModal(false)}

@@ -1,71 +1,35 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import useStorageState from 'use-storage-state';
+import { useQueryClient } from '@tanstack/react-query';
 import { SaleTable } from '../../components/transactions/SaleTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useSales } from '../../hooks/useSales';
+import type { Sale } from '../../types/sales';
+import { useDebounce } from '../../hooks/useDebounce';
 
-interface Sale {
-  id: number;
-  invoice_no: number;
-  select_customer?: number;
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  items_total: number;
-  freight?: number;
-  total_taxable_value: number;
-  taxrate?: number;
-  total_cgst?: number;
-  total_sgst?: number;
-  total_igst?: number;
-  total_tax?: number;
-  total: number;
-  notes?: string;
-  invoice_date: number | string;
-  status?: number;
-  payment_status?: number;
-  payment_mode?: number;
-  fy: number;
-  transport?: string;
-  item_count?: number;
-  formattedDate?: string;
-  bill_reference?: string;
-  return_status?: number;
-  packing_forwarding_total?: number;
-  type?: 'sale';
-  customer_vendor_name?: string;
-  customer_vendor_address?: string;
-  customer_vendor_gstin?: string;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
+type SaleFilterState = {
+  customerFilter: string;
+  statusFilter: string;
+  dateFrom: string;
+  dateTo: string;
+  amountMin: string;
+  amountMax: string;
+  uidFilter: string;
+  billReference: string;
+  itemCount: string;
+  paymentMode: string;
+  total: string;
+  totalTax: string;
+  packingForwardingTotal: string;
+  sortBy: string;
+  sortOrder: string;
+};
 
 export default function SalesPage() {
   const { showSnackbar } = useSnackbar();
-
-  type SaleFilterState = {
-    customerFilter: string;
-    statusFilter: string;
-    dateFrom: string;
-    dateTo: string;
-    amountMin: string;
-    amountMax: string;
-    uidFilter: string;
-    billReference: string;
-    itemCount: string;
-    paymentMode: string;
-    total: string;
-    totalTax: string;
-    packingForwardingTotal: string;
-    sortBy: string;
-    sortOrder: string;
-  };
+  const queryClient = useQueryClient();
 
   const [currentFilters, setCurrentFilters] = useStorageState<SaleFilterState>('sales-page-filters', {
     defaultValue: {
@@ -88,62 +52,37 @@ export default function SalesPage() {
     storage: "session"
   });
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 50,
-    total: 0,
-    totalPages: 0
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Debounce search term to avoid excessive API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  const debouncedFetchSales = useCallback((filtersToUse?: typeof currentFilters) => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
+  // Build query filters
+  const queryFilters = useMemo(() => ({
+    page,
+    limit,
+    search: debouncedSearchTerm,
+    ...currentFilters
+  }), [page, limit, debouncedSearchTerm, currentFilters]);
 
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+  // Fetch sales using React Query
+  const { data, isLoading, error, refetch } = useSales(queryFilters);
 
-    abortControllerRef.current = new AbortController();
-
-    debounceTimeoutRef.current = setTimeout(() => {
-      fetchSales(abortControllerRef.current?.signal, filtersToUse);
-    }, 300);
-  }, [currentFilters]);
-
-  useEffect(() => {
-    debouncedFetchSales();
-  }, [pagination.page, pagination.limit, searchTerm, debouncedFetchSales]);
-
+  // Handle broadcast messages for cross-tab updates
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'sales' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
         console.log(`🔄 Sale ${msg.type} in another tab, refreshing data...`);
-        debouncedFetchSales();
+        queryClient.invalidateQueries({ queryKey: ['sales'] });
       }
     });
 
     return unsubscribe;
-  }, [debouncedFetchSales]);
+  }, [queryClient]);
 
-  useEffect(() => {
-    return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
-      }
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, []);
-
+  // Cleanup session storage on unmount
   useEffect(() => {
     return () => {
       if (typeof window !== 'undefined') {
@@ -152,112 +91,15 @@ export default function SalesPage() {
     };
   }, []);
 
-  const fetchSales = async (signal?: AbortSignal, overrideFilters?: typeof currentFilters) => {
-    try {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-
-      abortControllerRef.current = new AbortController();
-
-      setLoading(true);
-      setError(null);
-
-      const filtersToUse = overrideFilters || currentFilters;
-
-      const params = new URLSearchParams();
-      params.append('page', pagination.page.toString());
-      params.append('limit', pagination.limit.toString());
-      
-      if (searchTerm) params.append('search', searchTerm);
-      if (filtersToUse.customerFilter) params.append('customer', filtersToUse.customerFilter);
-      if (filtersToUse.statusFilter) params.append('status', filtersToUse.statusFilter);
-      if (filtersToUse.dateFrom) params.append('startDate', filtersToUse.dateFrom);
-      if (filtersToUse.dateTo) params.append('endDate', filtersToUse.dateTo);
-      if (filtersToUse.amountMin) params.append('amountMin', filtersToUse.amountMin);
-      if (filtersToUse.amountMax) params.append('amountMax', filtersToUse.amountMax);
-      if (filtersToUse.uidFilter) params.append('uid', filtersToUse.uidFilter);
-      if (filtersToUse.billReference) params.append('billRef', filtersToUse.billReference);
-      if (filtersToUse.itemCount) params.append('items', filtersToUse.itemCount);
-      if (filtersToUse.paymentMode) params.append('paymentMode', filtersToUse.paymentMode);
-      if (filtersToUse.totalTax) params.append('taxAmount', filtersToUse.totalTax);
-      if (filtersToUse.packingForwardingTotal) params.append('pf', filtersToUse.packingForwardingTotal);
-      if (filtersToUse.total && !filtersToUse.amountMin) {
-        params.append('amountMin', filtersToUse.total);
-        params.append('amountMax', filtersToUse.total);
-      }
-      params.append('sortBy', filtersToUse.sortBy || 'invoice_no');
-      params.append('sortOrder', filtersToUse.sortOrder || 'asc');
-
-      console.log('🚀 Sales fetchSales - API call with params:', Object.fromEntries(params));
-
-      const response = await fetch(`/api/sales?${params}`, {
-        signal: abortControllerRef.current.signal
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch sales');
-      }
-
-      const data = await response.json();
-
-      const transformedSales: Sale[] = (data.sales || []).map((sale: any) => ({
-        id: sale.id,
-        invoice_no: sale.invoice_no,
-        select_customer: sale.select_customer,
-        customer_name: sale.customer_name,
-        customer_address: sale.customer_address,
-        customer_gstin: sale.customer_gstin,
-        items_total: sale.items_total,
-        freight: sale.freight,
-        total_taxable_value: sale.total_taxable_value,
-        taxrate: sale.taxrate,
-        total_cgst: sale.total_cgst,
-        total_sgst: sale.total_sgst,
-        total_igst: sale.total_igst,
-        total_tax: sale.total_tax,
-        packing_forwarding_total: sale.packing_forwarding_total,
-        total: sale.total,
-        notes: sale.notes,
-        invoice_date: sale.invoice_date,
-        status: sale.status,
-        payment_status: sale.payment_status,
-        payment_mode: sale.payment_mode,
-        fy: sale.fy,
-        transport: sale.transport,
-        item_count: sale.item_count,
-        formattedDate: sale.formattedDate,
-        bill_reference: sale.bill_reference,
-        return_status: sale.return_status,
-        type: 'sale',
-        customer_vendor_name: sale.customer_name,
-        customer_vendor_address: sale.customer_address,
-        customer_vendor_gstin: sale.customer_gstin
-      }));
-
-      setSales(transformedSales);
-      setPagination(data.pagination);
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        console.log('Sale fetch request was cancelled');
-        return;
-      }
-
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      console.error('Failed to fetch sales:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
+    if (data && newPage > 0 && newPage <= data.pagination.totalPages) {
+      setPage(newPage);
     }
   };
 
   const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
+    setLimit(newLimit);
+    setPage(1);
   };
 
   const handlePrintSale = (transaction: Sale) => {
@@ -265,36 +107,59 @@ export default function SalesPage() {
     alert(`Print functionality for sale ${transaction.invoice_no} will be implemented`);
   };
 
+  const handlePartialReturn = (sale: Sale) => {
+    console.log('Process partial return for sale:', sale);
+    sessionStorage.setItem('returnInvoice', JSON.stringify({
+      id: sale.id,
+      invoice_no: sale.invoice_no,
+      customer_name: sale.customer_name,
+      total: sale.total,
+      invoice_date: sale.invoice_date,
+      type: 'invoice'
+    }));
+    window.location.href = `/entry/salereturn-create?invoice=${sale.id}`;
+  };
+
+  const handleFullReturn = async (sale: Sale) => {
+    if (!confirm(`Are you sure you want to process a full return for invoice #${sale.invoice_no}?\n\nThis will return all items in the order.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/sale-returns/customer-return', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: sale.select_customer,
+          invoice_id: sale.id,
+          return_type: 'full',
+          return_date: new Date().toISOString().split('T')[0],
+          return_notes: 'Full order return processed from sale index',
+          payment_status: 0,
+          payment_mode: 1
+        })
+      });
+
+      if (response.ok) {
+        showSnackbar('success', `Successfully processed full return for invoice #${sale.invoice_no}`);
+        // Invalidate and refetch
+        queryClient.invalidateQueries({ queryKey: ['sales'] });
+      } else {
+        const errorData = await response.json();
+        showSnackbar('error', `Failed to process return: ${errorData.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error processing return:', error);
+      showSnackbar('error', 'Network error occurred while processing return');
+    }
+  };
+
   const handleApplyFilters = (filters: SaleFilterState) => {
     console.log('📥 Sales index handleApplyFilters received:', filters);
-
-    const isSortOperation = (
-      filters.customerFilter === currentFilters.customerFilter &&
-      filters.statusFilter === currentFilters.statusFilter &&
-      filters.dateFrom === currentFilters.dateFrom &&
-      filters.dateTo === currentFilters.dateTo &&
-      filters.amountMin === currentFilters.amountMin &&
-      filters.amountMax === currentFilters.amountMax &&
-      filters.uidFilter === currentFilters.uidFilter &&
-      filters.billReference === currentFilters.billReference &&
-      filters.itemCount === currentFilters.itemCount &&
-      filters.paymentMode === currentFilters.paymentMode &&
-      filters.total === currentFilters.total &&
-      filters.totalTax === currentFilters.totalTax &&
-      filters.packingForwardingTotal === currentFilters.packingForwardingTotal &&
-      (filters.sortBy !== currentFilters.sortBy || filters.sortOrder !== currentFilters.sortOrder)
-    );
-
     setCurrentFilters(filters);
-    setPagination(prev => ({ ...prev, page: 1 }));
-
-    if (isSortOperation) {
-      console.log('🎯 Sort operation detected - fetching immediately');
-      fetchSales(undefined, filters);
-    } else {
-      console.log('🔄 Filter operation detected - using debounced fetch');
-      debouncedFetchSales(filters);
-    }
+    setPage(1); // Reset to first page when filters change
   };
 
   return (
@@ -306,32 +171,34 @@ export default function SalesPage() {
               <span className="text-red-400 text-lg">⚠️</span>
               <div>
                 <div className="text-red-400 font-medium">Error loading sales</div>
-                <div className="text-red-300 text-sm">{error}</div>
+                <div className="text-red-300 text-sm">{error.message}</div>
               </div>
             </div>
             <button
-              onClick={() => setError(null)}
+              onClick={() => refetch()}
               className="btn-secondary text-red-400 text-sm py-1 px-3"
             >
-              ×
+              Retry
             </button>
           </div>
         </div>
       )}
 
       <SaleTable
-        sales={sales}
-        pagination={pagination}
-        loading={loading}
+        sales={data?.sales || []}
+        pagination={data?.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 }}
+        loading={isLoading}
         onPageChange={handlePageChange}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        itemsPerPage={pagination.limit}
+        itemsPerPage={limit}
         onItemsPerPageChange={handleLimitChange}
         onExport={() => {}}
         onApplyFilters={handleApplyFilters}
         onViewDetails={() => {}}
         onPrintDetails={handlePrintSale}
+        onPartialReturn={handlePartialReturn}
+        onFullReturn={handleFullReturn}
         sortBy={currentFilters.sortBy as 'invoice_no' | 'customer_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
         sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
         initialFilters={{

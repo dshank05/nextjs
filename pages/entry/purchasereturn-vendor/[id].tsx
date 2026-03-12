@@ -1,156 +1,98 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Trash2, Building2, FileText, Package, ClipboardList, Eye, DollarSign } from 'lucide-react';
+import { Edit } from 'lucide-react';
 import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import RefundHistoryModal from '../../../components/RefundHistoryModal';
 import QuickRefundModal from '../../../components/QuickRefundModal';
 import { ExportMenu } from '../../../components/common/ExportMenu';
 import { getLocalDateString } from '../../../lib/date-utils';
-
-interface PurchaseReturn {
-  id: number;
-  return_no: string;
-  return_date: string;
-  vendor_id: number;
-  vendor_name: string;
-  vendor_address?: string;
-  vendor_gstin?: string;
-  total_amount: number;
-  total_tax: number;
-  status: number;
-  fy: number;
-  notes?: string;
-  formattedDate?: string;
-  statusText?: string;
-}
-
-interface ReturnItem {
-  id: number;
-  product_name: string;
-  part_number?: string;
-  return_qty: number;
-  unit_price: number;
-  tax_rate: number;
-  tax_amount: number;
-  subtotal: number;
-  total: number;
-  return_reason: string;
-  notes?: string;
-  bill_reference?: string;
-  bill_date?: string;
-  invoice_no?: string;
-}
+import { usePurchaseReturn } from '../../../hooks/usePurchases';
+import type { PurchaseReturn, ReturnItem } from '../../../types/purchases';
 
 export default function PurchaseReturnDetailPage() {
   const router = useRouter();
   const { id } = router.query;
   const { showSnackbar } = useSnackbar();
 
-  const [returnData, setReturnData] = useState<PurchaseReturn | null>(null);
-  const [returnItems, setReturnItems] = useState<ReturnItem[]>([]);
-  const [fullApiData, setFullApiData] = useState<any>(null); // Store full API response for session storage
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showRefundHistoryModal, setShowRefundHistoryModal] = useState(false);
   const [showQuickRefundModal, setShowQuickRefundModal] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchReturnDetails(id as string);
-    }
-  }, [id]);
+  // Fetch purchase return using query hook
+  const { data: apiData, isLoading, error } = usePurchaseReturn(id as string);
 
-  const fetchReturnDetails = async (returnId: string) => {
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/purchase-returns/${returnId}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch return details: ${response.status}`);
-      }
+  // Transform and memoize return data
+  const returnData = useMemo((): PurchaseReturn | null => {
+    if (!apiData?.data) return null;
 
-      const data = await response.json();
+    const returnInfo = apiData.data.return;
+    const vendorInfo = apiData.data.vendor;
+    const billsInfo = apiData.data.bills;
 
-      // Store full API response for session storage
-      setFullApiData(data.data);
+    const statusText = returnInfo.payment_status === 1 ? 'Complete' : 'Incomplete';
 
-      const returnInfo = data.data.return;
-      const vendorInfo = data.data.vendor;
-      const billsInfo = data.data.bills;
+    return {
+      id: returnInfo.id,
+      return_no: returnInfo.return_no,
+      return_date: returnInfo.return_date,
+      vendor_id: vendorInfo.id,
+      vendor_name: vendorInfo.vendor_name,
+      vendor_address: vendorInfo.address || '',
+      vendor_gstin: vendorInfo.gstin || '',
+      total_amount: returnInfo.total_amount,
+      total_tax: returnInfo.total_tax,
+      refund_amount: returnInfo.refund_amount || 0,
+      status: returnInfo.payment_status || 0,
+      payment_status: returnInfo.payment_status || 0,
+      payment_mode: returnInfo.payment_mode || 0,
+      fy: returnInfo.fy,
+      notes: returnInfo.notes,
+      item_count: billsInfo.reduce((sum: number, bill: any) => sum + (bill.items?.length || 0), 0),
+      formattedDate: returnInfo.return_date ? new Date(returnInfo.return_date).toLocaleDateString('en-IN') : '',
+      statusText: statusText
+    };
+  }, [apiData]);
 
-      // Transform API data to match our interface
-      // Convert status number to text
-      const statusText = returnInfo.payment_status === 1 ? 'Complete' : 'Incomplete'
+  // Transform and memoize return items
+  const returnItems = useMemo((): ReturnItem[] => {
+    if (!apiData?.data?.bills) return [];
 
-      const returnData: PurchaseReturn = {
-        id: returnInfo.id,
-        return_no: returnInfo.return_no,
-        return_date: returnInfo.return_date,
-        vendor_id: vendorInfo.id,
-        vendor_name: vendorInfo.vendor_name,
-        vendor_address: vendorInfo.address || '',
-        vendor_gstin: vendorInfo.gstin || '',
-        total_amount: returnInfo.total_amount,
-        total_tax: returnInfo.total_tax,
-        status: returnInfo.payment_status || 0, // Use payment_status (0=Incomplete, 1=Complete)
-        fy: returnInfo.fy,
-        notes: returnInfo.notes,
-        formattedDate: returnInfo.return_date ? new Date(returnInfo.return_date).toLocaleDateString('en-IN') : '',
-        statusText: statusText
-      };
+    const billsInfo = apiData.data.bills;
+    const allReturnItems: ReturnItem[] = [];
 
-      // Transform return items from bills
-      const allReturnItems: ReturnItem[] = [];
-      billsInfo.forEach((bill: any) => {
-        bill.items.forEach((item: any, index: number) => {
-          allReturnItems.push({
-            id: item.id || (bill.id + index), // Fallback ID if not provided
-            product_name: item.product_name,
-            part_number: item.part_number,
-            return_qty: item.return_qty,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate,
-            tax_amount: item.tax_amount,
-            subtotal: item.return_qty * item.unit_price,
-            total: item.total,
-            return_reason: item.return_reason || 'Unknown Reason',
-            notes: item.notes || '',
-            bill_reference: bill.invoice_no,
-            bill_date: bill.invoice_date,
-            invoice_no: bill.invoice_no
-          });
+    billsInfo.forEach((bill: any) => {
+      bill.items.forEach((item: any, index: number) => {
+        allReturnItems.push({
+          id: item.id || (bill.id + index),
+          product_name: item.product_name,
+          part_number: item.part_number,
+          return_qty: item.return_qty,
+          unit_price: item.unit_price,
+          tax_rate: item.tax_rate,
+          tax_amount: item.tax_amount,
+          subtotal: item.return_qty * item.unit_price,
+          total: item.total,
+          return_reason: item.return_reason || 'Unknown Reason',
+          notes: item.notes || '',
+          bill_reference: bill.invoice_no,
+          bill_date: bill.invoice_date,
+          invoice_no: bill.invoice_no
         });
       });
+    });
 
-      // ✅ Filter to show only actually returned items
-      // Hide items with return_qty=0 AND no valid reason (Unknown Reason)
-      const actuallyReturnedItems = allReturnItems.filter(item => {
-        return item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason');
-      });
-
-      setReturnData(returnData);
-      setReturnItems(actuallyReturnedItems);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load return details');
-      console.error('Error fetching return details:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Filter to show only actually returned items
+    return allReturnItems.filter(item => {
+      return item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason');
+    });
+  }, [apiData]);
 
   const handleEditReturn = () => {
-    if (fullApiData && id) {
+    if (apiData?.data && id) {
       // Cache the full return data to session storage like purchase edit
-      SessionStorageService.set('purchase-returns', id.toString(), fullApiData);
+      SessionStorageService.set('purchase-returns', id.toString(), apiData.data);
       router.push(`/entry/purchasereturn-vendor-create?id=${id}`);
-    }
-  };
-
-  const handleDeleteReturn = () => {
-    if (returnData) {
-      // TODO: Implement delete functionality
-      showSnackbar('info', 'Delete functionality will be implemented');
     }
   };
 
@@ -163,7 +105,7 @@ export default function PurchaseReturnDetailPage() {
       const { preparePurchaseReturnDataForExport } = await import('../../../lib/export-layouts/purchase-return-view-layout');
 
       // Prepare data and get dynamic layout
-      const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, fullApiData);
+      const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, apiData?.data);
 
       await exportToExcelWithLayout(
         preparedData,
@@ -190,7 +132,7 @@ export default function PurchaseReturnDetailPage() {
         const { preparePurchaseReturnDataForExport } = await import('../../../lib/export-layouts/purchase-return-view-layout');
 
         // Prepare data and get dynamic layout
-        const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, fullApiData);
+        const { data: preparedData, layout: dynamicLayout } = preparePurchaseReturnDataForExport(returnData, returnItems, apiData?.data);
 
         await exportToPDFWithLayout(
           preparedData,
@@ -222,7 +164,7 @@ export default function PurchaseReturnDetailPage() {
     }
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="space-y-6">
         <div className="card">
@@ -251,7 +193,7 @@ export default function PurchaseReturnDetailPage() {
             <div className="text-center py-8">
               <div className="text-red-400 text-lg mb-2">⚠️</div>
               <div className="text-red-400 font-medium">Error loading return details</div>
-              <div className="text-slate-400 text-sm mt-2">{error || 'Return not found'}</div>
+              <div className="text-slate-400 text-sm mt-2">{error instanceof Error ? error.message : 'Return not found'}</div>
               <Link
                 href="/entry/purchasereturn-vendor"
                 className="btn-secondary mt-4 inline-block"
@@ -357,7 +299,7 @@ export default function PurchaseReturnDetailPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Packing & Forwarding:</span>
-                  <span className="text-white font-medium">₹{((fullApiData as any)?.return?.packing_forwarding_amount || 0)}</span>
+                  <span className="text-white font-medium">₹{(apiData?.data?.return?.packing_forwarding_amount || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">CGST:</span>
@@ -510,25 +452,25 @@ export default function PurchaseReturnDetailPage() {
       </div>
 
       {/* Modals */}
-      {(fullApiData as any)?.refund_summary && (
+      {apiData?.data?.refund_summary && (
         <>
           <RefundHistoryModal
             isOpen={showRefundHistoryModal}
             onClose={() => setShowRefundHistoryModal(false)}
-            summary={(fullApiData as any).refund_summary}
-            history={(fullApiData as any).refund_history || []}
+            summary={apiData.data.refund_summary}
+            history={apiData.data.refund_history || []}
           />
           <QuickRefundModal
             isOpen={showQuickRefundModal}
             onClose={() => setShowQuickRefundModal(false)}
             onSuccess={() => {
-              fetchReturnDetails(id as string);
+              // Refetch will happen automatically via query invalidation
               setShowQuickRefundModal(false);
             }}
             returnId={returnData?.id || 0}
             vendorId={returnData?.vendor_id || 0}
             vendorName={returnData?.vendor_name || ''}
-            outstandingAmount={(fullApiData as any).refund_summary.remaining_amount}
+            outstandingAmount={apiData.data.refund_summary.remaining_amount}
           />
         </>
       )}

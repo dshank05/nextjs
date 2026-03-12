@@ -1,404 +1,534 @@
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
+import Link from 'next/link';
+import useStorageState from 'use-storage-state';
 import { useRouter } from 'next/router';
-import { TransactionTable } from '../../components/transactions/TransactionTable';
-import { TransactionFilters } from '../../components/transactions/TransactionFilters';
+import { ArrowUp, ArrowDown, Eye, Trash2 } from 'lucide-react';
+import { DateRangeFilter } from '../../components/common/DateRangeFilter';
+import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { ClearableInput, ExportMenu } from '../../components/common';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { RotateCcw, RefreshCw } from 'lucide-react';
-import { ExportMenu } from '../../components/common';
-import { getLocalDateString } from '../../lib/date-utils';
 import { useSnackbar } from '../../components/SnackbarProvider';
-
-// Define types for sales data (matching the Invoice and Invoiceitems tables)
-interface SaleItem {
-  id: number;
-  invoice_no: number;
-  name_of_product: string;
-  category_id?: number;
-  model_id?: number;
-  company_id?: number;
-  hsn?: string;
-  part?: string;
-  qty: number;
-  rate: number;
-  subtotal: number;
-  fy: number;
-  invoice_date: number | string;
-}
-
-interface Sale {
-  id: number;
-  invoice_no: number;
-  select_customer?: number;
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  items_total: number;
-  total_taxable_value: number;
-  total: number;
-  invoice_date: number | string;
-  fy: number;
-  mode?: number;
-  type?: string; // Changed from number to string to match actual usage ('invoice'/'invoicex')
-  items?: SaleItem[];
-  item_count?: number;
-}
-
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
+import { getLocalDateString } from '../../lib/date-utils';
+import { useSaleReturns, useDeleteSaleReturn } from '../../hooks/useSales';
+import { useDebounce } from '../../hooks/useDebounce';
+import type { SaleReturnFilters } from '../../types/sales';
 
 export default function SaleReturnPage() {
-  // Router for navigation
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
-  // Modal states for return confirmation
-  const [showReturnModal, setShowReturnModal] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<Sale | null>(null);
-  const [processingReturn, setProcessingReturn] = useState(false);
+  // Define filter type
+  type ReturnFilterState = {
+    returnNoFilter: string;
+    customerFilter: string;
+    statusFilter: string;
+    dateFrom: string;
+    dateTo: string;
+    amountMin: string;
+    amountMax: string;
+    uidFilter: string;
+    itemCount: string;
+    paymentMode: string;
+    sortBy: string;
+    sortOrder: string;
+  };
+
+  // Create persistent filter state
+  const [currentFilters, setCurrentFilters] = useStorageState<ReturnFilterState>('sale-returns-page-filters', {
+    defaultValue: {
+      returnNoFilter: '',
+      customerFilter: '',
+      statusFilter: 'all',
+      dateFrom: '',
+      dateTo: '',
+      amountMin: '',
+      amountMax: '',
+      uidFilter: '',
+      itemCount: '',
+      paymentMode: '',
+      sortBy: 'return_date',
+      sortOrder: 'desc'
+    },
+    storage: "session"
+  });
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const limit = 50;
 
   // Filter states
-  const [searchTerm, setSearchTerm] = useState('');
-  const [transactionType, setTransactionType] = useState('all');
-  const [customerFilter, setCustomerFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [amountMin, setAmountMin] = useState('');
-  const [amountMax, setAmountMax] = useState('');
-  const [limit, setLimit] = useState(25);
-
-  // Data states
-  const [sales, setSales] = useState<Sale[]>([]);
-  const [pagination, setPagination] = useState<Pagination>({
-    page: 1,
-    limit: 50,
-    total: 0,
-    totalPages: 0
+  const [filters, setFilters] = useState({
+    returnNoFilter: currentFilters.returnNoFilter || '',
+    customerFilter: currentFilters.customerFilter || '',
+    statusFilter: currentFilters.statusFilter || 'all',
+    dateFrom: currentFilters.dateFrom || '',
+    dateTo: currentFilters.dateTo || '',
+    amountMin: currentFilters.amountMin || '',
+    amountMax: currentFilters.amountMax || '',
+    uidFilter: currentFilters.uidFilter || '',
+    itemCount: currentFilters.itemCount || '',
+    paymentMode: currentFilters.paymentMode || '',
+    sortBy: currentFilters.sortBy || 'return_date',
+    sortOrder: currentFilters.sortOrder || 'desc'
   });
-  const [loading, setLoading] = useState(false);
 
-  // Custom actions for return buttons
-  const customActions = [
-    {
-      label: 'Process Return',
-      icon: <RotateCcw className="w-4 h-4" />,
-      onClick: (transaction: any) => handleProcessReturn(transaction as Sale),
-      className: 'text-blue-400 hover:text-blue-300',
-      title: 'Create partial return for selected items'
-    },
-    {
-      label: 'Return Whole Order',
-      icon: <RefreshCw className="w-4 h-4" />,
-      onClick: (transaction: any) => handleReturnWholeOrder(transaction as Sale),
-      className: 'text-green-400 hover:text-green-300',
-      title: 'Create return for entire invoice'
-    }
-  ];
+  // Debounce search terms
+  const debouncedReturnNo = useDebounce(filters.returnNoFilter, 300);
+  const debouncedCustomer = useDebounce(filters.customerFilter, 300);
+  const debouncedUid = useDebounce(filters.uidFilter, 300);
 
-  // Fetch sales data from API based on transaction type
-  const fetchSales = async (page: number = 1) => {
-    setLoading(true);
+  // Build query filters
+  const queryFilters: SaleReturnFilters = useMemo(() => ({
+    page,
+    limit,
+    search: debouncedReturnNo || debouncedCustomer || debouncedUid,
+    customerFilter: debouncedCustomer,
+    statusFilter: filters.statusFilter,
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    sortBy: filters.sortBy,
+    sortOrder: filters.sortOrder as 'asc' | 'desc'
+  }), [page, limit, debouncedReturnNo, debouncedCustomer, debouncedUid, filters]);
 
-    try {
-      // Build query parameters
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        search: searchTerm,
-        startDate: dateFrom,
-        endDate: dateTo,
-        fy: '' // Add financial year if needed
-      });
+  // Query hooks
+  const { data, isLoading, error } = useSaleReturns(queryFilters);
+  const deleteReturn = useDeleteSaleReturn();
 
-      // Add status filter if provided
-      if (statusFilter && statusFilter !== 'all') {
-        params.append('status', getApiStatusFilter());
-      }
+  const returns = data?.returns || [];
+  const pagination = data?.pagination || { page: 1, limit: 50, total: 0, totalPages: 1 };
 
-      // Add amount filters if provided (send even if empty for consistency)
-      if (amountMin !== undefined && amountMin !== null && amountMin !== '') {
-        params.append('amountMin', amountMin);
-      }
-      if (amountMax !== undefined && amountMax !== null && amountMax !== '') {
-        params.append('amountMax', amountMax);
-      }
+  // Delete modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [returnToDelete, setReturnToDelete] = useState<{ id: number; type: string } | null>(null);
 
-      // Add customer filter (for client-side filtering but send to API anyway)
-      if (customerFilter && customerFilter !== '') {
-        params.append('customer', customerFilter);
-      }
-
-      // Determine which API(s) to call based on transaction type
-      let allSales: Sale[] = [];
-      let totalCount = 0;
-
-      if (transactionType === 'all') {
-        // Call both APIs and combine results
-        const [invoiceResponse, invoicexResponse] = await Promise.all([
-          fetch(`/api/sales?${params}`),
-          fetch(`/api/salex?${params}`)
-        ]);
-
-        const invoiceData = invoiceResponse.ok ? await invoiceResponse.json() : { sales: [], pagination: { total: 0 } };
-        const invoicexData = invoicexResponse.ok ? await invoicexResponse.json() : { salex: [], pagination: { total: 0 } };
-
-        // Combine results (invoice first, then invoicex)
-        allSales = [
-          ...(invoiceData.sales || []).map((sale: any) => ({ ...sale, type: 'invoice' })),
-          ...(invoicexData.salex || []).map((salex: any) => ({ ...salex, type: 'invoicex' }))
-        ];
-        totalCount = (invoiceData.pagination?.total || 0) + (invoicexData.pagination?.total || 0);
-
-        // Apply pagination to combined results
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        allSales = allSales.slice(startIndex, endIndex);
-
-      } else if (transactionType === 'invoice') {
-        // Call invoice API only
-        const response = await fetch(`/api/sales?${params}`);
-        const data = response.ok ? await response.json() : { sales: [], pagination: { total: 0 } };
-
-        allSales = (data.sales || []).map((sale: any) => ({ ...sale, type: 'invoice' }));
-        totalCount = data.pagination?.total || 0;
-
-      } else if (transactionType === 'invoicex') {
-        // Call invoicex API only
-        const response = await fetch(`/api/salex?${params}`);
-        const data = response.ok ? await response.json() : { salex: [], pagination: { total: 0 } };
-
-        allSales = (data.salex || []).map((salex: any) => ({ ...salex, type: 'invoicex' }));
-        totalCount = data.pagination?.total || 0;
-      }
-
-      setSales(allSales);
-      setPagination({
-        page,
-        limit,
-        total: totalCount,
-        totalPages: Math.ceil(totalCount / limit)
-      });
-
-    } catch (error) {
-      console.error('Error fetching sales:', error);
-      setSales([]);
-      setPagination({
-        page: 1,
-        limit: 50,
-        total: 0,
-        totalPages: 0
-      });
-    } finally {
-      setLoading(false);
-    }
+  // Handle filter application
+  const handleApplyFilters = (newFilters: ReturnFilterState) => {
+    setCurrentFilters(newFilters);
+    setFilters(newFilters);
+    setPage(1); // Reset to first page when filters change
   };
 
-  // Handle page changes
-  const handlePageChange = (newPage: number) => {
-    setPagination(prev => ({ ...prev, page: newPage }));
-    fetchSales(newPage);
-  };
-
-  // Handle limit changes
-  const handleLimitChange = (newLimit: number) => {
-    setLimit(newLimit);
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  // Clear all filters
   const clearFilters = () => {
-    setSearchTerm('');
-    setTransactionType('all');
-    setCustomerFilter('');
-    setStatusFilter('all');
-    setDateFrom('');
-    setDateTo('');
-    setAmountMin('');
-    setAmountMax('');
-    setPagination(prev => ({ ...prev, page: 1 }));
+    const clearedFilters = {
+      returnNoFilter: '',
+      customerFilter: '',
+      statusFilter: 'all',
+      dateFrom: '',
+      dateTo: '',
+      amountMin: '',
+      amountMax: '',
+      uidFilter: '',
+      itemCount: '',
+      paymentMode: '',
+      sortBy: currentFilters.sortBy,
+      sortOrder: currentFilters.sortOrder
+    };
+    setFilters(clearedFilters);
+    handleApplyFilters(clearedFilters);
   };
 
-  // Get API status values based on UI filter values
-  const getApiStatusFilter = () => {
-    switch (statusFilter) {
-      case 'paid': return '1';
-      case 'unpaid': return '0';
-      case 'unknown': return 'unknown';
-      default: return '';
-    }
+  const handleDeleteClick = (returnItem: any) => {
+    setReturnToDelete({ id: returnItem.id, type: returnItem.invoice_type });
+    setDeleteModalOpen(true);
   };
 
-  // Handle view details
-  const handleViewDetails = (transaction: any) => {
-    console.log('View details for sale:', transaction);
-    // Route to correct view page based on transaction type
-    const viewPath = transaction.type === 'salex' ? '/salex/view/' : '/sale/view/';
-    router.push(`${viewPath}${transaction.id}`);
+  const handleCancelDelete = () => {
+    setDeleteModalOpen(false);
+    setReturnToDelete(null);
   };
 
-  // Handle Process Return - navigate to return creation form
-  const handleProcessReturn = (transaction: Sale) => {
-    console.log('Process return for sale:', transaction);
-    // Determine query parameter based on type
-    const queryParam = transaction.type === 'invoicex' ? 'invoicex' : 'invoice';
-    // Store invoice ID in sessionStorage for the return form
-    sessionStorage.setItem('returnInvoice', JSON.stringify({
-      id: transaction.id,
-      invoice_no: transaction.invoice_no,
-      customer_name: transaction.customer_name,
-      total: transaction.total,
-      invoice_date: transaction.invoice_date,
-      type: transaction.type
-    }));
-    router.push(`/entry/salereturn-create?${queryParam}=${transaction.id}`);
-  };
+  const handleConfirmDelete = () => {
+    if (!returnToDelete) return;
 
-  // Handle Return Whole Order - show confirmation modal
-  const handleReturnWholeOrder = (transaction: Sale) => {
-    console.log('Return whole order for sale:', transaction);
-    setSelectedTransaction(transaction);
-    setShowReturnModal(true);
-  };
-
-  // Confirm and process the full return
-  const confirmReturnWholeOrder = async () => {
-    if (!selectedTransaction) return;
-
-    setProcessingReturn(true);
-    try {
-      // Determine field names based on type
-      const isInvoicex = selectedTransaction.type === 'invoicex';
-      const invoiceIdField = isInvoicex ? 'invoicex_id' : 'invoice_id';
-      
-      // Call the unified sale returns API to create a full return
-      const response = await fetch('/api/sale-returns', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          [invoiceIdField]: selectedTransaction.id,
-          invoice_type: selectedTransaction.type,
-          full_return: true, // Flag for full return
-          return_date: Math.floor(Date.now() / 1000), // Current timestamp
-          notes: 'Full order return processed automatically'
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        showSnackbar('success', `Successfully processed full return for invoice #${selectedTransaction.invoice_no}`);
-        // Refresh the data to update the table
-        fetchSales(pagination.page);
-      } else {
-        const error = await response.json();
-        showSnackbar('error', `Failed to process return: ${error.message || 'Unknown error'}`);
+    deleteReturn.mutate(returnToDelete.id, {
+      onSuccess: () => {
+        showSnackbar('success', `Return deleted successfully`);
+        setDeleteModalOpen(false);
+        setReturnToDelete(null);
+      },
+      onError: (error: Error) => {
+        showSnackbar('error', error.message || 'Failed to delete return');
       }
-    } catch (error) {
-      console.error('Error processing return:', error);
-      showSnackbar('error', 'Network error occurred while processing return');
-    } finally {
-      setProcessingReturn(false);
-      setShowReturnModal(false);
-      setSelectedTransaction(null);
+    });
+  };
+
+  const handleSort = (field: string) => {
+    const newSortOrder = filters.sortBy === field && filters.sortOrder === 'asc' ? 'desc' : 'asc';
+    handleApplyFilters({
+      ...currentFilters,
+      sortBy: field,
+      sortOrder: newSortOrder
+    });
+  };
+
+
+
+  const getSortIcon = (field: string) => {
+    if (currentFilters.sortBy !== field) {
+      return null;
+    }
+    return currentFilters.sortOrder === 'asc' ?
+      <ArrowUp className="inline w-4 h-4 ml-1" /> :
+      <ArrowDown className="inline w-4 h-4 ml-1" />;
+  };
+
+  const getStatusBadge = (status: string) => {
+    if (status === 'Completed') {
+      return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Complete</span>;
+    } else {
+      return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Pending</span>;
     }
   };
 
-  // Cancel the return operation
-  const cancelReturnWholeOrder = () => {
-    setShowReturnModal(false);
-    setSelectedTransaction(null);
+  const getPaymentStatusBadge = (status: number) => {
+    switch (status) {
+      case 0: return <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>;
+      case 1: return <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>;
+      case 2: return <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partially Paid</span>;
+    }
   };
 
-  // Initial load and when filters change
-  useEffect(() => {
-    fetchSales(1);
-  }, [searchTerm, transactionType, customerFilter, statusFilter, dateFrom, dateTo, amountMin, amountMax, limit]);
-
-  // Convert sales data to transaction format for the table component
-  const salesAsTransactions = sales.map(sale => ({
-    ...sale,
-    type: sale.type === 'invoicex' ? 'salex' : 'sale', // Map table names to TransactionTable types
-    customer_vendor_name: sale.customer_name,
-    customer_vendor_address: sale.customer_address,
-    customer_vendor_gstin: sale.customer_gstin,
-    invoice_date: sale.invoice_date
-  })) as any;
+  const getPageNumbers = () => {
+    const pages = [];
+    const start = Math.max(1, pagination.page - 2);
+    const end = Math.min(pagination.totalPages, pagination.page + 2);
+    for (let i = start; i <= end; i++) pages.push(i);
+    return pages;
+  };
 
   return (
-    <div className="card">
-      {/* Header with Export Menu */}
-      <div className="flex items-center justify-end mb-4">
-        <ExportMenu
-          data={salesAsTransactions}
-          columns={[
-            { key: 'id', label: 'ID', enabled: true },
-            { key: 'invoice_no', label: 'Invoice No', enabled: true },
-            { key: 'customer_name', label: 'Customer Name', enabled: true },
-            { key: 'item_count', label: 'Items Qty', enabled: true },
-            { key: 'total', label: 'Total', enabled: true },
-            { key: 'invoice_date', label: 'Date', enabled: true },
-            { key: 'type', label: 'Type', enabled: true },
-          ]}
-          config={{
-            title: 'Sale Returns Report',
-            fileName: `Sale_Returns_Report_${getLocalDateString()}`
-          }}
-        />
+    <div className="space-y-6">
+      {error && (
+        <div className="card border-red-500 bg-red-500/10 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-red-400 text-lg">⚠️</span>
+              <div>
+                <div className="text-red-400 font-medium">Error loading returns</div>
+                <div className="text-red-300 text-sm">{error.message}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="flex items-center justify-end gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <ExportMenu
+              data={returns}
+              columns={[
+                { key: 'id', label: 'ID', enabled: true },
+                { key: 'return_no', label: 'Return No', enabled: true },
+                { key: 'invoice_no', label: 'Invoice No', enabled: true },
+                { key: 'customer_name', label: 'Customer Name', enabled: true },
+                { key: 'item_count', label: 'Items Qty', enabled: true },
+                { key: 'total_amount', label: 'Total', enabled: true },
+                { key: 'formattedDate', label: 'Date', enabled: true },
+                { key: 'payment_mode', label: 'Payment Mode', enabled: true },
+                { key: 'status', label: 'Return Status', enabled: true },
+                { key: 'notes', label: 'Notes', enabled: true },
+              ]}
+              config={{
+                title: 'Sale Returns Report',
+                fileName: `Sale_Returns_Report_${getLocalDateString()}`
+              }}
+            />
+            <Link
+              href="/entry/salereturn-create"
+              className="btn-primary"
+            >
+              Create Return
+            </Link>
+          </div>
+        </div>
+
+        {/* Filters Section */}
+        <div className="grid grid-cols-8 gap-4 mb-4">
+          {/* Return No Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Return No</label>
+            <ClearableInput
+              type="text"
+              placeholder="Enter return no"
+              value={filters.returnNoFilter}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setFilters(prev => ({ ...prev, returnNoFilter: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  returnNoFilter: newValue
+                });
+              }}
+            />
+          </div>
+
+          {/* Invoice No Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Invoice No</label>
+            <ClearableInput
+              type="text"
+              placeholder="Enter invoice no"
+              value={filters.uidFilter}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setFilters(prev => ({ ...prev, uidFilter: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  uidFilter: newValue
+                });
+              }}
+            />
+          </div>
+
+          {/* Customer Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Customer</label>
+            <ClearableInput
+              type="text"
+              placeholder="Enter customer name"
+              value={filters.customerFilter}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setFilters(prev => ({ ...prev, customerFilter: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  customerFilter: newValue
+                });
+              }}
+            />
+          </div>
+
+          {/* Items Qty Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Items Qty</label>
+            <ClearableInput
+              type="number"
+              placeholder="Enter item count"
+              value={filters.itemCount}
+              onChange={(e) => {
+                const newValue = e.target.value;
+                setFilters(prev => ({ ...prev, itemCount: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  itemCount: newValue
+                });
+              }}
+              min="0"
+            />
+          </div>
+
+          {/* Date Range Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Date</label>
+            <DateRangeFilter
+              startDate={filters.dateFrom}
+              endDate={filters.dateTo}
+              onDateChange={(start, end) => {
+                setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  dateFrom: start,
+                  dateTo: end
+                });
+              }}
+              placeholder="Select date range..."
+            />
+          </div>
+
+          {/* Payment Mode Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Payment Mode</label>
+            <SearchableSelect
+              options={[
+                { id: '', name: 'All Modes' },
+                { id: '0', name: 'Cash' },
+                { id: '1', name: 'Bank' }
+              ]}
+              selectedValue={filters.paymentMode}
+              onSelectionChange={(value) => {
+                const newValue = value || '';
+                setFilters(prev => ({ ...prev, paymentMode: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  paymentMode: newValue
+                });
+              }}
+              placeholder="Select payment mode..."
+            />
+          </div>
+
+          {/* Return Status Filter */}
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Return Status</label>
+            <SearchableSelect
+              options={[
+                { id: 'all', name: 'All Status' },
+                { id: 'Completed', name: 'Complete' },
+                { id: 'Pending', name: 'Pending' }
+              ]}
+              selectedValue={filters.statusFilter}
+              onSelectionChange={(value) => {
+                const newValue = value || 'all';
+                setFilters(prev => ({ ...prev, statusFilter: newValue }));
+                handleApplyFilters({
+                  ...currentFilters,
+                  statusFilter: newValue
+                });
+              }}
+              placeholder="Select status..."
+            />
+          </div>
+
+          {/* Clear Filters Button */}
+          <div className="flex items-end">
+            <button
+              onClick={clearFilters}
+              className="btn-secondary px-4 py-2"
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+
+        {/* Table Section */}
+        {pagination && (
+          <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
+            <div>Showing {returns.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} returns</div>
+            <div>Page {pagination.page} of {pagination.totalPages}</div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto relative">
+          {isLoading && (
+            <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-10 rounded-lg">
+              <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-blue-500"></div>
+            </div>
+          )}
+
+          <table className="table">
+            <thead>
+              <tr>
+                <th>S.N</th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('return_no')}>
+                  Return No {getSortIcon('return_no')}
+                </th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('invoice_no')}>
+                  Invoice No. {getSortIcon('invoice_no')}
+                </th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('customer_name')}>
+                  Customer {getSortIcon('customer_name')}
+                </th>
+                <th>Type</th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('item_count')}>
+                  Items Qty {getSortIcon('item_count')}
+                </th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('total_amount')}>
+                  Total {getSortIcon('total_amount')}
+                </th>
+                <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('return_date')}>
+                  Date {getSortIcon('return_date')}
+                </th>
+                <th>Payment Mode</th>
+                <th>Return Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {returns.map((returnItem, idx) => (
+                <tr key={returnItem.id}>
+                  <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
+                  <td className="font-medium text-white">
+                    {returnItem.return_no}
+                  </td>
+                  <td className="text-slate-300">
+                    {returnItem.invoice_no}
+                  </td>
+                  <td className="text-slate-300">
+                    <div className="font-medium">{returnItem.customer_name}</div>
+                  </td>
+                  <td className="text-slate-300">
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      returnItem.invoice_type === 'invoicex' 
+                        ? 'bg-purple-600 text-white' 
+                        : 'bg-blue-600 text-white'
+                    }`}>
+                      {returnItem.invoice_type === 'invoicex' ? 'Salex' : 'Sale'}
+                    </span>
+                  </td>
+                  <td className="text-slate-300">
+                    <div className="flex items-center gap-1">
+                      <span>{returnItem.item_count}</span>
+                      <span className="text-xs text-slate-400">items</span>
+                    </div>
+                  </td>
+                  <td className="text-slate-300 font-semibold">₹{returnItem.total_amount?.toLocaleString('en-IN')}</td>
+                  <td className="text-slate-300">{returnItem.formattedDate}</td>
+                  <td className="text-slate-300">
+                    {returnItem.payment_mode === 0 ? 'Cash' : returnItem.payment_mode === 1 ? 'Bank' : 'N/A'}
+                  </td>
+                  <td>{getPaymentStatusBadge(returnItem.payment_status)}</td>
+                  <td>
+                    <div className="flex items-center space-x-2">
+                      <Link
+                        href={`/entry/salereturn/${returnItem.id}`}
+                        title="View Return Details"
+                        className="btn-icon text-slate-300 hover:text-blue-400"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Link>
+                      <button
+                        onClick={() => handleDeleteClick(returnItem)}
+                        title="Delete Return"
+                        className="btn-icon text-red-400 hover:text-red-500"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {returns.length === 0 && !isLoading && (
+            <div className="text-center py-8 text-slate-400">
+              {filters.returnNoFilter || filters.customerFilter || filters.dateFrom || filters.dateTo || filters.statusFilter !== 'all'
+                ? 'No sale returns found with the current filters.'
+                : 'No sale returns found. Click "Create Return" to create a new return.'
+              }
+            </div>
+          )}
+        </div>
+
+        {pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
+            <button onClick={() => setPage(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
+            <div className="flex space-x-2">
+              {pagination.page > 3 && <> <button onClick={() => setPage(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
+              {getPageNumbers().map(p => <button key={p} onClick={() => setPage(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
+              {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => setPage(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
+            </div>
+            <button onClick={() => setPage(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
+          </div>
+        )}
       </div>
 
-      {/* Filters */}
-      <TransactionFilters
-        searchTerm={searchTerm}
-        setSearchTerm={setSearchTerm}
-        transactionType={transactionType}
-        setTransactionType={setTransactionType}
-        customerVendorFilter={customerFilter}
-        setCustomerVendorFilter={setCustomerFilter}
-        statusFilter={statusFilter}
-        setStatusFilter={setStatusFilter}
-        dateFrom={dateFrom}
-        setDateFrom={setDateFrom}
-        dateTo={dateTo}
-        setDateTo={setDateTo}
-        amountMin={amountMin}
-        setAmountMin={setAmountMin}
-        amountMax={amountMax}
-        setAmountMax={setAmountMax}
-        limit={limit}
-        handleLimitChange={handleLimitChange}
-        clearFilters={clearFilters}
-        allowedTransactionTypes={['invoice', 'invoicex']}
-      />
-
-      {/* Sales Table with Return Actions */}
-      <TransactionTable
-        transactions={salesAsTransactions}
-        pagination={pagination}
-        loading={loading}
-        onPageChange={handlePageChange}
-        onViewDetails={handleViewDetails}
-        customActions={customActions}
-        hideTypeColumn={false}
-      />
-
-      {/* Confirmation Modal for Full Order Return */}
+      {/* Delete Confirmation Modal */}
       <ConfirmationModal
-        isOpen={showReturnModal}
-        title="Confirm Full Order Return"
-        message={`Are you sure you want to process a full return for invoice #${selectedTransaction?.invoice_no} (${selectedTransaction?.customer_name})?
-
-This will return all items in the order and cannot be undone.`}
-        confirmText="Process Return"
+        isOpen={deleteModalOpen}
+        onCancel={handleCancelDelete}
+        onConfirm={handleConfirmDelete}
+        title="Delete Sale Return"
+        message={
+          returnToDelete
+            ? `Are you sure you want to delete this return? This action is irreversible and will restore stock quantities, create reversal entries in the ledger, and update customer balance. This operation cannot be undone.`
+            : ''
+        }
+        confirmText="Delete"
         cancelText="Cancel"
-        showLoading={processingReturn}
-        loadingText="Processing Return..."
-        onConfirm={confirmReturnWholeOrder}
-        onCancel={cancelReturnWholeOrder}
+        showLoading={deleteReturn.isPending}
+        loadingText="Deleting..."
       />
     </div>
   );

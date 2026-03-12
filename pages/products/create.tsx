@@ -8,6 +8,7 @@ import { ClearableInput, ClearableTextarea, FileUpload } from '../../components/
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast } from '../../lib/broadcast';
 import SessionStorageService from '../../lib/sessionStorage';
+import { useCreateProduct, useUpdateProduct } from '../../hooks/useProducts';
 
 interface ProductFormData {
   product_category: string;
@@ -41,6 +42,11 @@ interface FilterOptions {
 export default function ProductCreate() {
   const { showSnackbar } = useSnackbar();
   const router = useRouter();
+  
+  // Mutation hooks
+  const createProduct = useCreateProduct();
+  const updateProduct = useUpdateProduct();
+  
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     subcategories: [],
@@ -87,7 +93,6 @@ export default function ProductCreate() {
   const [editLoading, setEditLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
 
@@ -388,88 +393,78 @@ export default function ProductCreate() {
   };
 
   const handleConfirmSubmit = async () => {
-    // Don't close modal immediately - wait for API completion
-    // setShowConfirmModal(false); // Remove this line
-    if (isSaving) return;
+    // Generate display name first
+    const displayName = generateProductDisplay();
 
-    setIsSaving(true);
+    // Create FormData payload
+    const formDataToSend = new FormData();
 
-    try {
-      // Generate display name first
-      const displayName = generateProductDisplay();
+    // Add product data as JSON string with file state information
+    const productData = {
+      product_name: displayName,
+      product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
+      product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
+      car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null,
+      company_id: formData.company_id ? parseInt(formData.company_id) : null,
+      part_no: formData.part_no || null,
+      min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
+      opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
+      stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
+      opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
+      hsn: formData.hsn || null,
+      warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
+      gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
+      rack_id: formData.rack_id ? parseInt(formData.rack_id) : null,
+      rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
+      descriptions: formData.descriptions || null,
+      notes: formData.notes || null,
+      mrp: formData.mrp ? parseFloat(formData.mrp) : null,
+      discount: formData.discount ? parseFloat(formData.discount) : null,
+      margin: formData.margin ? parseFloat(formData.margin) : null,
+      fileStates: {
+        image: {
+          hasNewFile: isNewImage && !!imageFile,
+          existingUrl: existingImageUrl || null
+        },
+        barcode: {
+          hasNewFile: isNewBarcode && !!barcodeFile,
+          existingUrl: existingBarcodeUrl || null
+        }
+      }
+    };
 
-      // Create FormData payload (UI sends FormData with productData JSON + files)
-      const formDataToSend = new FormData();
+    formDataToSend.append('productData', JSON.stringify(productData));
 
-      // Add product data as JSON string with file state information
-      const productData = {
-        product_name: displayName, // Send display name format (without UID) - API will add UID
-        product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
-        product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
-        car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null, // Comma-separated IDs
-        company_id: formData.company_id ? parseInt(formData.company_id) : null, // Company should be FK to product_company table
-        part_no: formData.part_no || null,
-        min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
-        opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
-        stock: formData.opening_stock ? parseInt(formData.opening_stock) : null, // Set initial stock = opening_stock
-        opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
-        hsn: formData.hsn || null,
+    // Only add NEW files
+    if (isNewImage && imageFile) formDataToSend.append('image', imageFile);
+    if (isNewBarcode && barcodeFile) formDataToSend.append('barcode', barcodeFile);
 
-        // ===== NEW FK FIELDS =====
-        warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
-        gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
-
-        rack_id: formData.rack_id ? parseInt(formData.rack_id) : null,
-        rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
-        descriptions: formData.descriptions || null,
-        notes: formData.notes || null,
-        mrp: formData.mrp ? parseFloat(formData.mrp) : null,
-        discount: formData.discount ? parseFloat(formData.discount) : null,
-        margin: formData.margin ? parseFloat(formData.margin) : null,
-
-        // File state information for smart handling
-        fileStates: {
-          image: {
-            hasNewFile: isNewImage && !!imageFile,
-            existingUrl: existingImageUrl || null
+    if (isEditing && editingProductId) {
+      // Update existing product
+      updateProduct.mutate(
+        { id: editingProductId, formData: formDataToSend },
+        {
+          onSuccess: (responseData) => {
+            showSnackbar('success', 'Product updated successfully!');
+            broadcast({
+              type: 'updated',
+              resource: 'products',
+              id: editingProductId
+            });
+            setShowConfirmModal(false);
+            router.push(`/products/view/${editingProductId}`);
           },
-          barcode: {
-            hasNewFile: isNewBarcode && !!barcodeFile,
-            existingUrl: existingBarcodeUrl || null
+          onError: (error: Error) => {
+            showSnackbar('error', error.message || 'Failed to update product');
+            setShowConfirmModal(false);
           }
         }
-      };
-
-      formDataToSend.append('productData', JSON.stringify(productData));
-
-      // Only add NEW files (not existing ones)
-      if (isNewImage && imageFile) formDataToSend.append('image', imageFile);
-      if (isNewBarcode && barcodeFile) formDataToSend.append('barcode', barcodeFile);
-
-      const url = isEditing && editingProductId ? `/api/products/${editingProductId}` : '/api/products';
-      const method = isEditing && editingProductId ? 'PUT' : 'POST';
-
-      // Send FormData (no Content-Type header needed - browser sets it automatically)
-      const response = await fetch(url, {
-        method: method,
-        body: formDataToSend,
-      });
-
-      const responseData = await response.json();
-
-      if (response.ok) {
-        const action = isEditing ? 'updated' : 'created';
-        showSnackbar('success', `Product ${action} successfully!`);
-
-        // Broadcast the change to refresh other tabs
-        if (isEditing && editingProductId) {
-          broadcast({
-            type: 'updated',
-            resource: 'products',
-            id: editingProductId
-          });
-        } else {
-          // Get the created product ID from response if available, otherwise don't include ID
+      );
+    } else {
+      // Create new product
+      createProduct.mutate(formDataToSend, {
+        onSuccess: (responseData) => {
+          showSnackbar('success', 'Product created successfully!');
           const createdProductId = responseData.product?.id;
           broadcast({
             type: 'created',
@@ -477,30 +472,18 @@ export default function ProductCreate() {
             id: createdProductId,
             data: { name: displayName }
           });
+          setShowConfirmModal(false);
+          if (createdProductId) {
+            router.push(`/products/view/${createdProductId}`);
+          } else {
+            router.push('/products');
+          }
+        },
+        onError: (error: Error) => {
+          showSnackbar('error', error.message || 'Failed to create product');
+          setShowConfirmModal(false);
         }
-
-        setShowConfirmModal(false);
-
-        // Navigate to product view page for both create and update
-        const productId = isEditing ? editingProductId : responseData.product?.id;
-        if (productId) {
-          router.push(`/products/view/${productId}`);
-        } else {
-          // Fallback to products list if no product ID
-          router.push('/products');
-        }
-      } else {
-        console.error('API Error:', responseData);
-        const action = isEditing ? 'update' : 'create';
-        showSnackbar('error', responseData.message || `Failed to ${action} product`);
-        setShowConfirmModal(false); // Close modal on error too
-      }
-    } catch (error) {
-      console.error('Network error:', error);
-      showSnackbar('error', 'Network error occurred');
-      setShowConfirmModal(false); // Close modal on network error
-    } finally {
-      setIsSaving(false); // Reset loading state regardless of success/failure
+      });
     }
   };
 
@@ -912,7 +895,7 @@ export default function ProductCreate() {
         message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? `This will update the existing product with UID: ${editingProductId}.` : 'This action cannot be undone.'}`}
         confirmText={isEditing ? "Update Product" : "Create Product"}
         cancelText="Cancel"
-        showLoading={isSaving}
+        showLoading={createProduct.isPending || updateProduct.isPending}
         loadingText={isEditing ? "Updating Product..." : "Creating Product..."}
         onConfirm={handleConfirmSubmit}
         onCancel={() => setShowConfirmModal(false)}

@@ -247,7 +247,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
         subcategory_id: item.subcategory_id,
         model_id: item.model_id,
         company_id: item.company_id,
-        car_model: item.car_model || '',
+        car_model: '',
         invoice_date: item.invoice_date,
         fy: item.fy
       })),
@@ -413,26 +413,24 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
 
     // Update salex record and items - ALL operations inside transaction
     const result = await prisma.$transaction(async (tx) => {
-      // ✅ REFACTORED: Use customer transaction handler for payment status changes INSIDE transaction
+      // ✅ Use customer transaction handler for ALL edits (not just payment status changes)
       const oldPaymentStatus = existingSalex.payment_status
       const newPaymentStatus = parsedPaymentStatus
 
-      if (oldPaymentStatus !== newPaymentStatus && existingSalex.select_customer && existingSalex.select_customer !== 0) {
-        const operations = await customerTransactionHandler.handleSaleEdit(
-          parseInt(salexId),
-          {
-            old_status: oldPaymentStatus,
-            new_status: newPaymentStatus,
-            old_total: Number(existingSalex.total),
-            new_total: calculatedGrandTotal,
-            customer_id: existingSalex.select_customer,
-            payment_mode: parsedPaymentMode,
-            transaction_date: Math.floor(invoiceDate),
-            fy: financialYear,
-            notes: notes || `Salex ${existingSalex.invoice_no} updated`
-          },
-          'salex'
-        )
+      if (existingSalex.select_customer && existingSalex.select_customer !== 0) {
+        const operations = await customerTransactionHandler.handleSaleEdit({
+          type: 'salex',
+          oldStatus: oldPaymentStatus,
+          newStatus: newPaymentStatus,
+          oldTotal: Number(existingSalex.total),
+          newTotal: calculatedGrandTotal,
+          customerId: existingSalex.select_customer,
+          invoiceId: parseInt(salexId),
+          invoiceNo: existingSalex.invoice_no.toString(),
+          paymentMode: parsedPaymentMode,
+          paymentDate: Math.floor(invoiceDate),
+          fy: financialYear
+        })
 
         // Execute handler operations inside same transaction
         await customerTransactionHandler.executeInTransaction(tx, operations)
@@ -609,77 +607,77 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
         }
       }
 
+      // Update customer relationship records INSIDE transaction
+      await tx.bill_tosalesx.upsert({
+        where: { invoice_no: salex.id },
+        update: {
+          billing_name: req.body.customer_name,
+          contact_no: req.body.contact_number || '',
+          email: req.body.email_id || '',
+          billing_address: req.body.address || '',
+          billing_address2: req.body.address_2 || '',
+          billing_city: req.body.city || '',
+          billing_state: req.body.state || '',
+          billing_state_code: req.body.state_code || null,
+          billing_gstin: req.body.gst_number || ''
+        },
+        create: {
+          invoice_no: salex.id,
+          billing_name: req.body.customer_name,
+          contact_no: req.body.contact_number || '',
+          email: req.body.email_id || '',
+          billing_address: req.body.address || '',
+          billing_address2: req.body.address_2 || '',
+          billing_city: req.body.city || '',
+          billing_state: req.body.state || '',
+          billing_state_code: req.body.state_code || null,
+          billing_gstin: req.body.gst_number || ''
+        }
+      })
+
+      await tx.shiptox.upsert({
+        where: { invoice_no: salex.id },
+        update: {
+          shipping_name: req.body.customer_name,
+          shipping_address: req.body.address || '',
+          shipping_address2: req.body.address_2 || '',
+          shipping_city: req.body.city || '',
+          shipping_state: req.body.state || '',
+          shipping_state_code: req.body.state_code || null,
+          shipping_gstin: req.body.gst_number || ''
+        },
+        create: {
+          invoice_no: salex.id,
+          shipping_name: req.body.customer_name,
+          shipping_address: req.body.address || '',
+          shipping_address2: req.body.address_2 || '',
+          shipping_city: req.body.city || '',
+          shipping_state: req.body.state || '',
+          shipping_state_code: req.body.state_code || null,
+          shipping_gstin: req.body.gst_number || ''
+        }
+      })
+
+      // Update transport details if provided
+      if (transportDetails) {
+        await tx.transport_detailsx.upsert({
+          where: { invoice_id: salex.id },
+          update: {
+            trans_mode: transportDetails.trans_mode || '',
+            vehicle_no: transportDetails.vehicle_no || ''
+          },
+          create: {
+            invoice_id: salex.id,
+            trans_mode: transportDetails.trans_mode || '',
+            vehicle_no: transportDetails.vehicle_no || ''
+          }
+        })
+      }
+
       return salex
     }, {
       timeout: 30000
     })
-
-    // Update customer data
-    await prisma.bill_tosalesx.upsert({
-      where: { invoice_no: result.id },
-      update: {
-        billing_name: req.body.customer_name,
-        contact_no: req.body.contact_number || '',
-        email: req.body.email_id || '',
-        billing_address: req.body.address || '',
-        billing_address2: req.body.address_2 || '',
-        billing_city: req.body.city || '',
-        billing_state: req.body.state || '',
-        billing_state_code: req.body.state_code || null,
-        billing_gstin: req.body.gst_number || ''
-      },
-      create: {
-        invoice_no: result.id,
-        billing_name: req.body.customer_name,
-        contact_no: req.body.contact_number || '',
-        email: req.body.email_id || '',
-        billing_address: req.body.address || '',
-        billing_address2: req.body.address_2 || '',
-        billing_city: req.body.city || '',
-        billing_state: req.body.state || '',
-        billing_state_code: req.body.state_code || null,
-        billing_gstin: req.body.gst_number || ''
-      }
-    })
-
-    await prisma.shiptox.upsert({
-      where: { invoice_no: result.id },
-      update: {
-        shipping_name: req.body.customer_name,
-        shipping_address: req.body.address || '',
-        shipping_address2: req.body.address_2 || '',
-        shipping_city: req.body.city || '',
-        shipping_state: req.body.state || '',
-        shipping_state_code: req.body.state_code || null,
-        shipping_gstin: req.body.gst_number || ''
-      },
-      create: {
-        invoice_no: result.id,
-        shipping_name: req.body.customer_name,
-        shipping_address: req.body.address || '',
-        shipping_address2: req.body.address_2 || '',
-        shipping_city: req.body.city || '',
-        shipping_state: req.body.state || '',
-        shipping_state_code: req.body.state_code || null,
-        shipping_gstin: req.body.gst_number || ''
-      }
-    })
-
-    // Update transport details if provided
-    if (transportDetails) {
-      await prisma.transport_detailsx.upsert({
-        where: { invoice_id: result.id },
-        update: {
-          trans_mode: transportDetails.trans_mode || '',
-          vehicle_no: transportDetails.vehicle_no || ''
-        },
-        create: {
-          invoice_id: result.id,
-          trans_mode: transportDetails.trans_mode || '',
-          vehicle_no: transportDetails.vehicle_no || ''
-        }
-      })
-    }
 
     res.status(200).json({
       message: 'Salex updated successfully',
@@ -715,6 +713,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: 
         select_customer: true,
         total: true,
         payment_status: true,
+        return_status: true,
         fy: true
       }
     })
@@ -736,16 +735,14 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, salexId: 
 
     // ✅ Use customer transaction handler for deletion
     if (existingSalex.select_customer && existingSalex.select_customer !== 0) {
-      const operations = await customerTransactionHandler.handleSaleDelete(
-        parseInt(salexId),
-        {
-          customer_id: existingSalex.select_customer,
-          total: Number(existingSalex.total),
-          payment_status: existingSalex.payment_status,
-          fy: existingSalex.fy
-        },
-        'salex'
-      )
+      const operations = await customerTransactionHandler.handleSaleDelete({
+        type: 'salex',
+        invoiceId: parseInt(salexId),
+        customerId: existingSalex.select_customer,
+        invoiceNo: existingSalex.invoice_no,
+        paymentStatus: existingSalex.payment_status,
+        returnStatus: existingSalex.return_status || 0
+      })
 
       await prisma.$transaction(async (tx) => {
         await customerTransactionHandler.executeDeleteInTransaction(tx, operations)

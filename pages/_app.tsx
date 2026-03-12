@@ -4,6 +4,7 @@ import { SessionProvider } from 'next-auth/react'
 import { useRouter } from 'next/router'
 import Layout from '../components/Layout'
 import { SnackbarProvider } from '../components/SnackbarProvider'
+import { QueryProvider } from '../lib/queryClient'
 import { useDisableArrowAndScroll } from '../hooks/useDisableArrowAndScroll'
 
 export default function App({
@@ -21,18 +22,22 @@ export default function App({
   if (isAuthPage) {
     return (
       <SessionProvider session={session}>
-        <Component {...pageProps} />
+        <QueryProvider>
+          <Component {...pageProps} />
+        </QueryProvider>
       </SessionProvider>
     )
   }
 
   return (
     <SessionProvider session={session}>
-      <SnackbarProvider>
-        <Layout>
-          <Component {...pageProps} />
-        </Layout>
-      </SnackbarProvider>
+      <QueryProvider>
+        <SnackbarProvider>
+          <Layout>
+            <Component {...pageProps} />
+          </Layout>
+        </SnackbarProvider>
+      </QueryProvider>
     </SessionProvider>
   )
 }

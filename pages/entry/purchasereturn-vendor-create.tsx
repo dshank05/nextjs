@@ -8,64 +8,17 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
-
-interface Vendor {
-  id: string;
-  vendor_name: string;
-  state?: string;
-  state_code?: number;
-}
-
-interface PurchaseBill {
-  id: string;
-  invoice_no: string;
-  bill_reference: string;
-  invoice_date: string;
-  total_amount: number;
-  has_tax: boolean;
-  items: PurchaseItem[];
-  available_items: number;
-  total_items: number;
-}
-
-interface PurchaseItem {
-  id: string;
-  purchase_item_id?: number; // ID of the purchase item in purchaseitems table
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  part_number?: string;
-  original_qty?: number; // Original purchase quantity
-  already_returned?: number; // ✅ How much was already returned
-  available_qty: number;
-  is_fully_returned?: boolean; // ✅ Flag for UI
-  unit_price: number;
-  tax_rate: number;
-  bill_reference: string;
-  invoice_date: string;
-  return_qty?: number; // Added for edit mode
-  return_reason_id?: number; // Added for edit mode
-  current_stock: number; // Current stock from product table
-}
-
-interface ReturnReasons {
-  id: number;
-  reason_name: string;
-  type: string;
-}
-
-interface SelectedReturnItem extends PurchaseItem {
-  return_qty: number;
-  return_reason_id: number;
-  return_notes?: string;
-  // Calculated fields
-  subtotal: number;
-  tax_amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total: number;
-}
+import { useDebounce } from '../../hooks/useDebounce';
+import { useVendors } from '../../hooks/useVendors';
+import { 
+  useReturnReasons, 
+  useVendorPurchaseBills, 
+  usePurchaseReturn,
+  useCreatePurchaseReturn,
+  useUpdatePurchaseReturn 
+} from '../../hooks/usePurchases';
+import type { PurchaseBill, PurchaseReturnItem, ReturnReasons, SelectedReturnItem } from '../../types/purchases';
+import type { Vendor } from '../../types/vendors';
 
 export default function PurchaseReturnVendorCreatePage() {
   const router = useRouter();
@@ -73,52 +26,66 @@ export default function PurchaseReturnVendorCreatePage() {
   const { showSnackbar } = useSnackbar();
 
   const [isEditMode, setIsEditMode] = useState(false);
-  const [isLoadingEditData, setIsLoadingEditData] = useState(false);
-
-  // Ref to track if we're initializing vendor (to prevent multiple API calls)
-  const isInitializingVendor = useRef(false);
-
-  // Ref to track current abort controller for request cancellation
-  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Business state for tax calculations
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
   const [vendor, setVendor] = useState<Vendor | null>(null);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [bills, setBills] = useState<PurchaseBill[]>([]);
+  
+  // Query hooks - fetch data automatically
+  const { data: vendors = [], isLoading: loadingVendors } = useVendors();
+  const { data: returnReasons = [] } = useReturnReasons();
+  
+  // Mutation hooks
+  const createReturn = useCreatePurchaseReturn();
+  const updateReturn = useUpdatePurchaseReturn();
 
-  // Enable tax display if ANY bill has tax
-  const enableTax = useMemo(() => {
-    return bills.some(bill => bill.has_tax);
-  }, [bills]);
-  const [returnReasons, setReturnReasons] = useState<ReturnReasons[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [processingReturn, setProcessingReturn] = useState(false);
-  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [loadingVendors, setLoadingVendors] = useState(false);
-
-  // Pagination and filtering state
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 0,
-    hasNext: false,
-    hasPrev: false
-  });
-  const [appliedFilters, setAppliedFilters] = useState({
-    search: '',
-    from_date: '',
-    to_date: ''
-  });
-
-  // UI state
-  const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
+  
+  // Filter states
   const [billSearchTerm, setBillSearchTerm] = useState('');
   const [itemSearchTerm, setItemSearchTerm] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  
+  // Debounce search terms
+  const debouncedBillSearch = useDebounce(billSearchTerm, 300);
+  const debouncedItemSearch = useDebounce(itemSearchTerm, 300);
+  
+  // Fetch vendor bills using query hook
+  const billsQuery = useVendorPurchaseBills({
+    vendor_id: vendor?.id || '',
+    page: 1,
+    limit: 50,
+    search: debouncedBillSearch,
+    item_search: debouncedItemSearch,
+    from_date: dateFrom,
+    to_date: dateTo
+  });
+  
+  const bills = billsQuery.data?.data?.bills || [];
+  const pagination = billsQuery.data?.data?.pagination || {
+    page: 1,
+    limit: 50,
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false
+  };
+  
+  // Fetch return data for edit mode
+  const { data: editReturnData, isLoading: isLoadingEditData } = usePurchaseReturn(
+    isEditMode ? (returnIdParam as string) : undefined
+  );
+
+  // Enable tax display if ANY bill has tax
+  const enableTax = useMemo(() => {
+    return bills.some((bill: PurchaseBill) => bill.has_tax);
+  }, [bills]);
+  
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  
+  // UI state
+  const [expandedBills, setExpandedBills] = useState<Set<string>>(new Set());
   const [returnNotes, setReturnNotes] = useState('');
   const [returnDate, setReturnDate] = useState(getLocalDateString());
 
@@ -131,249 +98,23 @@ export default function PurchaseReturnVendorCreatePage() {
   const [packingForwardingAmount, setPackingForwardingAmount] = useState<number>(0);
 
   // New state for enhanced features
-  const [loadedDateRange, setLoadedDateRange] = useState({ from: '', to: '' });
-  const [allLoadedBills, setAllLoadedBills] = useState<PurchaseBill[]>([]);
   const [focusViewEnabled, setFocusViewEnabled] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Selected items for return
   const [selectedItems, setSelectedItems] = useState<Map<string, SelectedReturnItem>>(new Map());
 
-  // Consolidated search and filter effect (API call)
+  // Check if we're in edit mode
   useEffect(() => {
-    // Skip if no vendor selected
-    if (!vendor?.id) return;
-
-    // Skip if currently loading edit data
-    if (isLoadingEditData) return;
-
-    // Skip if in edit mode and bills already loaded from session storage
-    if (isEditMode && bills.length > 0) return;
-
-    // Skip if we're initializing vendor (prevents duplicate calls)
-    if (isInitializingVendor.current) return;
-
-    // Cancel any previous request
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-
-    // Create new abort controller for this request
-    abortControllerRef.current = new AbortController();
-
-    const timer = setTimeout(() => {
-      loadVendorBills(vendor.id, 1, billSearchTerm, dateFrom, dateTo);
-    }, 300);
-
-    return () => {
-      clearTimeout(timer);
-      // Cancel request if component unmounts or effect runs again
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-    };
-  }, [billSearchTerm, itemSearchTerm, dateFrom, dateTo, vendor?.id, isLoadingEditData, isEditMode]);
-
-  // Load data on mount
-  useEffect(() => {
-    loadReturnReasons();
-    loadVendors();
-
-    // Check if we're in edit mode
     if (returnIdParam) {
       setIsEditMode(true);
-      loadReturnForEdit(returnIdParam as string);
     }
   }, [returnIdParam]);
 
-  const loadVendors = async () => {
-    setLoadingVendors(true);
-    try {
-      const response = await fetch('/api/vendors');
-      if (response.ok) {
-        const data = await response.json();
-        setVendors(data.vendors || []);
-      } else {
-        throw new Error('Failed to load vendors');
-      }
-    } catch (error) {
-      console.error('Error loading vendors:', error);
-      showSnackbar('error', 'Failed to load vendors');
-      setVendors([]);
-    } finally {
-      setLoadingVendors(false);
-    }
-  };
-
-  const loadVendorBills = async (vendorId: string, page = 1, search = '', fromDate = '', toDate = '', isLoadMore = false) => {
-    if (isLoadMore) {
-      setIsLoadingMore(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const params = new URLSearchParams({
-        vendor_id: vendorId,
-        page: page.toString(),
-        limit: '50', // Increased for bulk returns
-        ...(search && { search }),
-        ...(itemSearchTerm && { item_search: itemSearchTerm }), // NEW: Item search parameter
-        ...(fromDate && { from_date: fromDate }),
-        ...(toDate && { to_date: toDate })
-      });
-
-      const billsResponse = await fetch(`/api/purchase-returns/vendor-items?${params}`);
-      if (billsResponse.ok) {
-        const billsData = await billsResponse.json();
-        const data = billsData.data;
-        const newBills = data?.bills || [];
-
-        if (isLoadMore) {
-          // Append new bills to existing ones
-          setAllLoadedBills(prev => {
-            const combined = [...prev, ...newBills];
-            // Remove duplicates based on bill id
-            const unique = combined.filter((bill, index, self) =>
-              index === self.findIndex(b => b.id === bill.id)
-            );
-            setBills(unique); // Update display bills
-            return unique;
-          });
-
-          // Update loaded date range
-          if (fromDate && (!loadedDateRange.from || fromDate < loadedDateRange.from)) {
-            setLoadedDateRange(prev => ({ ...prev, from: fromDate }));
-          }
-        } else {
-          // Replace all bills
-          setAllLoadedBills(newBills);
-          setBills(newBills);
-          setLoadedDateRange({ from: fromDate, to: toDate });
-        }
-
-        setPagination({
-          page: data?.pagination?.page || 1,
-          limit: data?.pagination?.limit || 50,
-          total: data?.pagination?.total || 0,
-          totalPages: data?.pagination?.totalPages || 0,
-          hasNext: data?.pagination?.hasNext || false,
-          hasPrev: data?.pagination?.hasPrev || false
-        });
-        setAppliedFilters({
-          search: data?.filters?.applied?.search || '',
-          from_date: data?.filters?.applied?.from_date || '',
-          to_date: data?.filters?.applied?.to_date || ''
-        });
-      } else {
-        throw new Error('Failed to load vendor bills');
-      }
-    } catch (error) {
-      console.error('Error loading vendor data:', error);
-      showSnackbar('error', 'Failed to load vendor data');
-      if (!isLoadMore) {
-        setBills([]);
-        setAllLoadedBills([]);
-      }
-    } finally {
-      setLoading(false);
-      setIsLoadingMore(false);
-    }
-  };
-
-  const handleVendorSelect = async (vendorId: string | null) => {
-    if (!vendorId) {
-      setVendor(null);
-      setBills([]);
-      setAllLoadedBills([]);
-      setSelectedItems(new Map());
-      setLoadedDateRange({ from: '', to: '' });
-      setPagination({
-        page: 1,
-        limit: 50,
-        total: 0,
-        totalPages: 0,
-        hasNext: false,
-        hasPrev: false
-      });
-      setAppliedFilters({
-        search: '',
-        from_date: '',
-        to_date: ''
-      });
-      return;
-    }
-
-    const selectedVendor = vendors.find(v => v.id === vendorId);
-    if (selectedVendor) {
-      // Set flag to prevent useEffect from triggering during initialization
-      isInitializingVendor.current = true;
-
-      setVendor(selectedVendor);
-
-      // Set default 1-month date range
-      const today = new Date();
-      const oneMonthAgo = new Date(today);
-      oneMonthAgo.setMonth(today.getMonth() - 1);
-
-      const fromDate = formatStartDateForAPI(oneMonthAgo);
-      const toDate = formatEndDateForAPI(today);
-
-      setDateFrom(fromDate);
-      setDateTo(toDate);
-      setLoadedDateRange({ from: fromDate, to: toDate });
-
-      // Reset search and other state
-      setBillSearchTerm('');
-      setItemSearchTerm('');
-      setAllLoadedBills([]);
-      setExpandedBills(new Set());
-      setSelectedItems(new Map());
-
-      // Load initial 3 months of data
-      await loadVendorBills(vendorId, 1, '', fromDate, toDate, false);
-
-      // Reset flag after loading completes
-      isInitializingVendor.current = false;
-    }
-  };
-
-  const loadReturnReasons = async () => {
-    try {
-      const response = await fetch('/api/return-reasons?type=purchase');
-      if (response.ok) {
-        const data = await response.json();
-        setReturnReasons(data.data || []);
-      } else {
-        throw new Error('Failed to load return reasons');
-      }
-    } catch (error) {
-      console.error('Error loading return reasons:', error);
-      showSnackbar('error', 'Failed to load return reasons');
-      setReturnReasons([]);
-    }
-  };
-
-  const loadReturnForEdit = async (returnId: string) => {
-    setIsLoadingEditData(true);
-    try {
-      // Check session storage first (like purchase edit)
-      let returnData = null
-
-      // If not in session storage, fetch from API
-      // if (!returnData) {
-      console.log('📡 No cached data, fetching from API...');
-      const response = await fetch(`/api/purchase-returns/${returnId}`);
-      if (response.ok) {
-        const data = await response.json();
-        returnData = data.data;
-      } else {
-        throw new Error('Failed to load return data');
-      }
-      // } else {
-      //   console.log('✅ Loaded return data from session storage');
-      // }
-
+  // Load edit data when available
+  useEffect(() => {
+    if (isEditMode && editReturnData?.data) {
+      const returnData = editReturnData.data;
+      
       // Set return data
       setReturnDate(returnData.return.return_date);
       setReturnNotes(returnData.return.notes || '');
@@ -397,16 +138,10 @@ export default function PurchaseReturnVendorCreatePage() {
         state_code: vendorData.state_code
       });
 
-      // Set bills and items
-      // ✅ FIX BUG #1: Use fresh available_qty from API, don't override with cached original_qty
-      // The API already calculates correct available_qty based on current purchase quantities
-      setBills(returnData.bills);
-      setAllLoadedBills(returnData.bills);
-
       // Pre-select the returned items with calculated fields
       const selectedItemsMap = new Map<string, SelectedReturnItem>();
       returnData.bills.forEach((bill: PurchaseBill) => {
-        bill.items.forEach((item: PurchaseItem) => {
+        bill.items.forEach((item: PurchaseReturnItem) => {
           if (item.return_qty && item.return_qty > 0) {
             // Calculate tax and totals
             const subtotal = item.return_qty * item.unit_price;
@@ -443,17 +178,41 @@ export default function PurchaseReturnVendorCreatePage() {
       // Expand bills that have selected items
       const billsToExpand = new Set<string>();
       returnData.bills.forEach((bill: PurchaseBill) => {
-        if (bill.items.some((item: PurchaseItem) => selectedItemsMap.has(item.id))) {
+        if (bill.items.some((item: PurchaseReturnItem) => selectedItemsMap.has(item.id))) {
           billsToExpand.add(bill.id);
         }
       });
       setExpandedBills(billsToExpand);
+    }
+  }, [isEditMode, editReturnData]);
 
-    } catch (error) {
-      console.error('Error loading return for edit:', error);
-      showSnackbar('error', 'Failed to load return data for editing');
-    } finally {
-      setIsLoadingEditData(false);
+  const handleVendorSelect = (vendorId: string | null) => {
+    if (!vendorId) {
+      setVendor(null);
+      setSelectedItems(new Map());
+      return;
+    }
+
+    const selectedVendor = vendors.find(v => v.id === vendorId);
+    if (selectedVendor) {
+      setVendor(selectedVendor);
+
+      // Set default 1-month date range
+      const today = new Date();
+      const oneMonthAgo = new Date(today);
+      oneMonthAgo.setMonth(today.getMonth() - 1);
+
+      const fromDate = formatStartDateForAPI(oneMonthAgo);
+      const toDate = formatEndDateForAPI(today);
+
+      setDateFrom(fromDate);
+      setDateTo(toDate);
+
+      // Reset search and other state
+      setBillSearchTerm('');
+      setItemSearchTerm('');
+      setExpandedBills(new Set());
+      setSelectedItems(new Map());
     }
   };
 
@@ -469,7 +228,7 @@ export default function PurchaseReturnVendorCreatePage() {
   };
 
   // Update return quantity for an item
-  const updateReturnQuantity = (itemId: string, quantity: number, item: PurchaseItem) => {
+  const updateReturnQuantity = (itemId: string, quantity: number, item: PurchaseReturnItem) => {
     const validatedQty = Math.max(0, Math.min(quantity, item.available_qty));
 
     if (validatedQty === 0) {
@@ -513,7 +272,7 @@ export default function PurchaseReturnVendorCreatePage() {
   };
 
   // Update return price for an item
-  const updateReturnPrice = (itemId: string, newPrice: number, item: PurchaseItem) => {
+  const updateReturnPrice = (itemId: string, newPrice: number, item: PurchaseReturnItem) => {
     const selectedItem = selectedItems.get(itemId);
     if (!selectedItem) return;
 
@@ -566,14 +325,6 @@ export default function PurchaseReturnVendorCreatePage() {
   const filteredBills = useMemo(() => {
     let filtered = bills;
 
-    // Date filter (only if explicitly set by user, not auto-loaded range)
-    if (dateFrom && dateFrom !== loadedDateRange.from) {
-      filtered = filtered.filter(bill => new Date(bill.invoice_date) >= new Date(dateFrom));
-    }
-    if (dateTo && dateTo !== loadedDateRange.to) {
-      filtered = filtered.filter(bill => new Date(bill.invoice_date) <= new Date(dateTo));
-    }
-
     // Item search: Show bills containing matching items
     if (itemSearchTerm) {
       const searchLower = itemSearchTerm.toLowerCase();
@@ -596,7 +347,7 @@ export default function PurchaseReturnVendorCreatePage() {
     }
 
     return filtered;
-  }, [bills, itemSearchTerm, dateFrom, dateTo, loadedDateRange, focusViewEnabled, selectedItems]);
+  }, [bills, itemSearchTerm, focusViewEnabled, selectedItems]);
 
   // Calculate return summary
   const returnSummary = useMemo(() => {
@@ -677,63 +428,55 @@ export default function PurchaseReturnVendorCreatePage() {
     setShowConfirmationModal(true);
   };
 
-  const confirmProcessReturn = async () => {
-    setProcessingReturn(true);
-    try {
-      const returnData = {
-        return_date: returnDate,
-        return_notes: returnNotes,
-        payment_status: paymentStatus, // 0=Incomplete, 1=Complete
-        payment_mode: paymentMode, // 0=Cash, 1=Bank
-        payment_date: paymentStatus === 1 && paymentDate ? paymentDate : undefined,  // Send as YYYY-MM-DD string, backend handles conversion
-        packing_forwarding_amount: packingForwardingAmount || 0,
-        items: Array.from(selectedItems.values()).map(item => ({
-          purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id
-          return_qty: item.return_qty,
-          return_reason_id: item.return_reason_id,
-          unit_price: item.unit_price,
-          tax_rate: item.tax_rate,
-          notes: item.return_notes || ''
-        }))
+  const confirmProcessReturn = () => {
+    const returnData = {
+      return_date: returnDate,
+      return_notes: returnNotes,
+      payment_status: paymentStatus, // 0=Incomplete, 1=Complete
+      payment_mode: paymentMode, // 0=Cash, 1=Bank
+      payment_date: paymentStatus === 1 && paymentDate ? paymentDate : undefined,  // Send as YYYY-MM-DD string, backend handles conversion
+      packing_forwarding_amount: packingForwardingAmount || 0,
+      items: Array.from(selectedItems.values()).map(item => ({
+        purchase_item_id: item.purchase_item_id, // Use purchase_item_id not item.id
+        return_qty: item.return_qty,
+        return_reason_id: item.return_reason_id,
+        unit_price: item.unit_price,
+        tax_rate: item.tax_rate,
+        notes: item.return_notes || ''
+      }))
+    };
+
+    if (isEditMode && returnIdParam) {
+      // Edit mode - update existing return
+      updateReturn.mutate({ id: returnIdParam as string, payload: returnData }, {
+        onSuccess: () => {
+          showSnackbar('success', `Return updated successfully! Return #${returnIdParam}`);
+          router.push(`/entry/purchasereturn-vendor/${returnIdParam}`);
+          setShowConfirmationModal(false);
+        },
+        onError: (error: Error) => {
+          showSnackbar('error', error.message || 'Failed to update return');
+          setShowConfirmationModal(false);
+        }
+      });
+    } else {
+      // Create mode - create new return
+      const createData = {
+        vendor_id: vendor?.id,
+        ...returnData
       };
-
-      let response;
-      if (isEditMode && returnIdParam) {
-        // Edit mode - update existing return
-        response = await fetch(`/api/purchase-returns/${returnIdParam}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(returnData)
-        });
-      } else {
-        // Create mode - create new return
-        const createData = {
-          vendor_id: vendor?.id,
-          ...returnData
-        };
-        response = await fetch('/api/purchase-returns/vendor-return', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(createData)
-        });
-      }
-
-      if (response.ok) {
-        const result = await response.json();
-        const action = isEditMode ? 'updated' : 'created';
-        const returnId = isEditMode ? returnIdParam : result.data.return.id;
-        showSnackbar('success', `Return ${action} successfully! Return #${returnId}`);
-        router.push(`/entry/purchasereturn-vendor/${returnId}`);
-      } else {
-        const error = await response.json();
-        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} return`);
-      }
-    } catch (error) {
-      console.error('Error processing return:', error);
-      showSnackbar('error', 'Network error occurred');
-    } finally {
-      setProcessingReturn(false);
-      setShowConfirmationModal(false);
+      createReturn.mutate(createData, {
+        onSuccess: (result) => {
+          const returnId = result.data.return.id;
+          showSnackbar('success', `Return created successfully! Return #${returnId}`);
+          router.push(`/entry/purchasereturn-vendor/${returnId}`);
+          setShowConfirmationModal(false);
+        },
+        onError: (error: Error) => {
+          showSnackbar('error', error.message || 'Failed to create return');
+          setShowConfirmationModal(false);
+        }
+      });
     }
   };
 
@@ -905,7 +648,7 @@ export default function PurchaseReturnVendorCreatePage() {
           </div>
 
           {/* Loading state for vendor data */}
-          {loading && vendor && (
+          {billsQuery.isLoading && vendor && (
             <div className="animate-pulse">
               <div className="h-8 bg-slate-700 rounded mb-4"></div>
               <div className="h-4 bg-slate-700 rounded mb-2"></div>
@@ -919,7 +662,7 @@ export default function PurchaseReturnVendorCreatePage() {
           )}
 
           {/* Bills and Items Selection */}
-          {vendor && !loading && (
+          {vendor && !billsQuery.isLoading && (
             <>
               <div className="border-t border-slate-600 pt-6 mb-6">
                 <h3 className="text-lg font-medium text-slate-200 mb-4 flex items-center gap-2">
@@ -1070,33 +813,7 @@ export default function PurchaseReturnVendorCreatePage() {
                   </div>
                 )}
 
-                {/* Pagination */}
-                {pagination.totalPages > 1 && (
-                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-600">
-                    <div className="text-sm text-slate-400">
-                      Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} bills
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => loadVendorBills(vendor!.id, pagination.page - 1, appliedFilters.search, appliedFilters.from_date, appliedFilters.to_date)}
-                        disabled={!pagination.hasPrev}
-                        className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-sm text-slate-300">
-                        Page {pagination.page} of {pagination.totalPages}
-                      </span>
-                      <button
-                        onClick={() => loadVendorBills(vendor!.id, pagination.page + 1, appliedFilters.search, appliedFilters.from_date, appliedFilters.to_date)}
-                        disabled={!pagination.hasNext}
-                        className="px-3 py-1 text-sm bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:text-slate-500 rounded"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {/* Pagination - Note: Pagination is handled by query hook filters, not implemented in UI yet */}
               </div>
 
               {/* Return Notes | Summary - 2 Column Layout */}
@@ -1219,7 +936,7 @@ export default function PurchaseReturnVendorCreatePage() {
         message={`Process return for ${selectedItems.size} items totaling ₹${(returnSummary.totalAmount + (Number(packingForwardingAmount) || 0))} (including P&F: ₹${(Number(packingForwardingAmount) || 0)})?`}
         confirmText="Process Return"
         cancelText="Cancel"
-        showLoading={processingReturn}
+        showLoading={createReturn.isPending || updateReturn.isPending}
         loadingText="Processing Return..."
         onConfirm={confirmProcessReturn}
         onCancel={() => setShowConfirmationModal(false)}

@@ -369,14 +369,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           }, tx);
         }
 
-        // Update customer balance
-        await tx.customer_details.update({
-          where: { id: parseInt(select_customer) },
-          data: {
-            total_paid: { increment: newPayment },
-            total_allocated: { increment: calculatedGrandTotal }
+        // Update customer balance using handler (with logging)
+        await customerBalanceHandler.incrementBalanceInTransaction(
+          tx,
+          parseInt(select_customer),
+          {
+            total_paid: newPayment,
+            total_allocated: calculatedGrandTotal
+          },
+          {
+            type: 'sale_create',
+            id: sale.id,
+            reference_no: sale.invoice_no.toString(),
+            notes: `Sale ${sale.invoice_no} created`
           }
-        });
+        );
       }
 
       return sale

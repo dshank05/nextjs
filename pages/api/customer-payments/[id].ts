@@ -108,13 +108,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
       payment_mode,
       payment_type,
       notes,
-      allocations // Array of { invoice_id?, invoicex_id?, allocated_amount, notes? }
+      allocations
     } = req.body
 
     // Validation
-    if (!payment_amount || !allocations || allocations.length === 0) {
+    if (!payment_amount) {
       return res.status(400).json({
-        message: 'Payment amount and allocations are required'
+        message: 'Payment amount is required'
       })
     }
 
@@ -136,161 +136,53 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
     // Convert payment date to Unix timestamp
     const paymentDateTimestamp = payment_date ? convertDateToTimestamp(payment_date) : existingPayment.payment_date
 
-    // Validate allocations
-    let totalAllocated = 0
-    const validatedAllocations = []
+    // Calculate old and new allocated amounts
+    const oldAllocated = existingPayment.allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0)
+    const newAllocated = allocations ? allocations.reduce((sum: number, a: any) => sum + parseFloat(a.allocated_amount), 0) : oldAllocated
 
-    for (const allocation of allocations) {
-      const allocatedAmount = parseFloat(allocation.allocated_amount)
-      if (allocatedAmount <= 0) {
-        return res.status(400).json({
-          message: 'Allocation amounts must be greater than 0'
-        })
-      }
+    // Use transaction handler for payment edit
+    const operations = await require('../../../lib/customer-transaction-handler').customerTransactionHandler.handleCustomerPaymentEdit({
+      paymentId: parseInt(paymentId),
+      oldAmount: Number(existingPayment.payment_amount),
+      newAmount: parseFloat(payment_amount),
+      oldAllocated,
+      newAllocated,
+      customerId: existingPayment.customer_id,
+      paymentMode: parseInt(payment_mode) || existingPayment.payment_mode,
+      transactionDate: paymentDateTimestamp,
+      fy: financialYear,
+      notes: notes || existingPayment.notes,
+      allocations: allocations || existingPayment.allocations.map(a => ({
+        invoice_id: a.invoice_id,
+        invoicex_id: a.invoicex_id,
+        allocated_amount: Number(a.allocated_amount)
+      }))
+    });
 
-      // Check if invoice exists and belongs to customer
-      let outstandingAmount = 0
-      let invoiceType = ''
-      let invoiceNo = ''
+    // Execute operations in transaction
+    await prisma.$transaction(async (tx) => {
+      await require('../../../lib/customer-transaction-handler').customerTransactionHandler.executeInTransaction(tx, operations);
+    }, {
+      timeout: 30000
+    });
 
-      if (allocation.invoice_id) {
-        const invoice = await prisma.invoice.findUnique({
-          where: { id: parseInt(allocation.invoice_id) },
-          select: {
-            id: true,
-            invoice_no: true,
-            total: true,
-            select_customer: true
-          }
-        })
-
-        if (!invoice) {
-          return res.status(400).json({
-            message: `Invoice ${allocation.invoice_id} not found`
-          })
-        }
-
-        if (invoice.select_customer !== existingPayment.customer_id) {
-          return res.status(400).json({
-            message: `Invoice ${allocation.invoice_id} does not belong to the payment's customer`
-          })
-        }
-
-        outstandingAmount = invoice.total || 0
-        invoiceType = 'sale'
-        invoiceNo = invoice.invoice_no.toString()
-      } else if (allocation.invoicex_id) {
-        const invoicex = await prisma.invoicex.findUnique({
-          where: { id: parseInt(allocation.invoicex_id) },
-          select: {
-            id: true,
-            invoice_no: true,
-            total: true,
-            select_customer: true
-          }
-        })
-
-        if (!invoicex) {
-          return res.status(400).json({
-            message: `Invoicex ${allocation.invoicex_id} not found`
-          })
-        }
-
-        if (invoicex.select_customer !== existingPayment.customer_id) {
-          return res.status(400).json({
-            message: `Invoicex ${allocation.invoicex_id} does not belong to the payment's customer`
-          })
-        }
-
-        outstandingAmount = invoicex.total || 0
-        invoiceType = 'salex'
-        invoiceNo = invoicex.invoice_no.toString()
-      } else {
-        return res.status(400).json({
-          message: 'Each allocation must specify either invoice_id or invoicex_id'
-        })
-      }
-
-      if (allocatedAmount > outstandingAmount) {
-        return res.status(400).json({
-          message: `Allocation amount ₹${allocatedAmount} exceeds outstanding amount ₹${outstandingAmount} for ${invoiceType} invoice ${invoiceNo}`
-        })
-      }
-
-      totalAllocated += allocatedAmount
-      validatedAllocations.push({
-        invoice_id: allocation.invoice_id ? parseInt(allocation.invoice_id) : null,
-        invoicex_id: allocation.invoicex_id ? parseInt(allocation.invoicex_id) : null,
-        allocated_amount: allocatedAmount,
-        allocation_date: paymentDateTimestamp,
-        notes: allocation.notes || ''
-      })
-    }
-
-    if (totalAllocated > parseFloat(payment_amount)) {
-      return res.status(400).json({
-        message: `Total allocated amount ₹${totalAllocated} exceeds payment amount ₹${payment_amount}`
-      })
-    }
-
-    // Use database transaction for payment update and allocations
-    const result = await prisma.$transaction(async (tx) => {
-      // Update the payment record
-      const payment = await tx.customer_payments.update({
-        where: { id: parseInt(paymentId) },
-        data: {
-          payment_date: paymentDateTimestamp,
-          payment_amount: parseFloat(payment_amount),
-          payment_mode: parseInt(payment_mode) || existingPayment.payment_mode,
-          payment_type: payment_type || existingPayment.payment_type,
-          notes: notes || existingPayment.notes,
-          fy: financialYear,
-          updated_at: new Date()
-        }
-      })
-
-      // Delete existing allocations
-      await tx.customer_payment_allocations.deleteMany({
-        where: { payment_id: parseInt(paymentId) }
-      })
-
-      // Create new allocation records
-      for (const allocation of validatedAllocations) {
-        await tx.customer_payment_allocations.create({
-          data: {
-            payment_id: payment.id,
-            invoice_id: allocation.invoice_id,
-            invoicex_id: allocation.invoicex_id,
-            allocated_amount: allocation.allocated_amount,
-            allocation_date: allocation.allocation_date,
-            notes: allocation.notes
-          }
-        })
-      }
-
-      // Update payment status for allocated invoices
-      for (const allocation of validatedAllocations) {
-        if (allocation.invoice_id) {
-          await updateInvoicePaymentStatus(tx, allocation.invoice_id, 'sale')
-        } else if (allocation.invoicex_id) {
-          await updateInvoicePaymentStatus(tx, allocation.invoicex_id, 'salex')
-        }
-      }
-
-      return payment
-    })
+    // Fetch updated payment
+    const updatedPayment = await prisma.customer_payments.findUnique({
+      where: { id: parseInt(paymentId) },
+      include: { allocations: true }
+    });
 
     res.status(200).json({
       success: true,
       message: 'Customer payment updated successfully',
       data: {
         payment: {
-          id: result.id,
-          payment_no: `PAY-${String(result.id).padStart(3, '0')}`,
-          payment_amount: result.payment_amount,
-          total_allocated: totalAllocated,
-          allocations_count: validatedAllocations.length,
-          notes: result.notes
+          id: updatedPayment.id,
+          payment_no: `PAY-${String(updatedPayment.id).padStart(3, '0')}`,
+          payment_amount: updatedPayment.payment_amount,
+          total_allocated: updatedPayment.allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0),
+          allocations_count: updatedPayment.allocations.length,
+          notes: updatedPayment.notes
         }
       }
     })
@@ -309,39 +201,37 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, paymentId
     // Check if payment exists
     const existingPayment = await prisma.customer_payments.findUnique({
       where: { id: parseInt(paymentId) },
-      include: { allocations: true }
+      select: {
+        id: true,
+        customer_id: true,
+        payment_amount: true,
+        fy: true,
+        allocations: true
+      }
     })
 
     if (!existingPayment) {
       return res.status(404).json({ message: 'Customer payment not found' })
     }
 
-    // Use database transaction for payment deletion and status updates
+    // Calculate total allocated
+    const totalAllocated = existingPayment.allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
+
+    // Use transaction handler for payment deletion
+    const operations = await require('../../../lib/customer-transaction-handler').customerTransactionHandler.handlePaymentDelete({
+      paymentId: parseInt(paymentId),
+      customerId: existingPayment.customer_id,
+      paymentAmount: Number(existingPayment.payment_amount),
+      allocatedAmount: totalAllocated,
+      fy: existingPayment.fy
+    });
+
+    // Execute operations in transaction
     await prisma.$transaction(async (tx) => {
-      // Get allocation details before deletion
-      const allocations = await tx.customer_payment_allocations.findMany({
-        where: { payment_id: parseInt(paymentId) }
-      })
-
-      // Delete allocations first
-      await tx.customer_payment_allocations.deleteMany({
-        where: { payment_id: parseInt(paymentId) }
-      })
-
-      // Delete the payment
-      await tx.customer_payments.delete({
-        where: { id: parseInt(paymentId) }
-      })
-
-      // Update payment status for affected invoices
-      for (const allocation of allocations) {
-        if (allocation.invoice_id) {
-          await updateInvoicePaymentStatus(tx, allocation.invoice_id, 'sale')
-        } else if (allocation.invoicex_id) {
-          await updateInvoicePaymentStatus(tx, allocation.invoicex_id, 'salex')
-        }
-      }
-    })
+      await require('../../../lib/customer-transaction-handler').customerTransactionHandler.executeDeleteInTransaction(tx, operations);
+    }, {
+      timeout: 30000
+    });
 
     res.status(200).json({
       success: true,
