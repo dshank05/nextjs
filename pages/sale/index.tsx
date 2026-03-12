@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { SaleTable } from '../../components/transactions/SaleTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { useSales } from '../../hooks/useSales';
+import { useSales, useCreateSaleReturn } from '../../hooks/useSales';
 import type { Sale } from '../../types/sales';
 import { useDebounce } from '../../hooks/useDebounce';
 
@@ -30,6 +30,9 @@ type SaleFilterState = {
 export default function SalesPage() {
   const { showSnackbar } = useSnackbar();
   const queryClient = useQueryClient();
+
+  // Mutation hook for full return
+  const createReturn = useCreateSaleReturn();
 
   const [currentFilters, setCurrentFilters] = useStorageState<SaleFilterState>('sales-page-filters', {
     defaultValue: {
@@ -125,35 +128,22 @@ export default function SalesPage() {
       return;
     }
 
-    try {
-      const response = await fetch('/api/sale-returns/customer-return', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customer_id: sale.select_customer,
-          invoice_id: sale.id,
-          return_type: 'full',
-          return_date: new Date().toISOString().split('T')[0],
-          return_notes: 'Full order return processed from sale index',
-          payment_status: 0,
-          payment_mode: 1
-        })
-      });
-
-      if (response.ok) {
+    createReturn.mutate({
+      customer_id: sale.select_customer,
+      invoice_id: sale.id,
+      return_type: 'full',
+      return_date: new Date().toISOString().split('T')[0],
+      return_notes: 'Full order return processed from sale index',
+      payment_status: 0,
+      payment_mode: 1
+    }, {
+      onSuccess: () => {
         showSnackbar('success', `Successfully processed full return for invoice #${sale.invoice_no}`);
-        // Invalidate and refetch
-        queryClient.invalidateQueries({ queryKey: ['sales'] });
-      } else {
-        const errorData = await response.json();
-        showSnackbar('error', `Failed to process return: ${errorData.message || 'Unknown error'}`);
+      },
+      onError: (error: Error) => {
+        showSnackbar('error', `Failed to process return: ${error.message}`);
       }
-    } catch (error) {
-      console.error('Error processing return:', error);
-      showSnackbar('error', 'Network error occurred while processing return');
-    }
+    });
   };
 
   const handleApplyFilters = (filters: SaleFilterState) => {

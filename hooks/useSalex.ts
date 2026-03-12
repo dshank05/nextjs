@@ -110,3 +110,92 @@ export function useSalexItem(id: string | number | undefined) {
     refetchOnWindowFocus: false,
   });
 }
+
+// ============================================================================
+// SALEX MUTATIONS
+// ============================================================================
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+
+// Create Salex Mutation
+async function createSalex(data: any) {
+  const response = await fetch('/api/salex', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Failed to create salex');
+  }
+
+  return result;
+}
+
+export function useCreateSalex() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: createSalex,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['salex'] });
+    },
+  });
+}
+
+// Update Salex Mutation
+async function updateSalex({ id, data }: { id: string | number; data: any }) {
+  const response = await fetch(`/api/salex/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Failed to update salex');
+  }
+
+  return result;
+}
+
+export function useUpdateSalex() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateSalex,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['salex'] });
+      queryClient.invalidateQueries({ queryKey: ['salex-item', variables.id] });
+    },
+  });
+}
+
+// Delete Salex Mutation
+async function deleteSalex(id: number) {
+  const response = await fetch(`/api/salex/${id}`, {
+    method: 'DELETE'
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to delete salex');
+  }
+
+  return data;
+}
+
+export function useDeleteSalex() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteSalex,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['salex'] });
+    },
+  });
+}

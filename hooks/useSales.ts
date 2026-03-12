@@ -260,3 +260,90 @@ export function useUpdateSaleReturn() {
     },
   });
 }
+
+// ============================================================================
+// SALE MUTATIONS
+// ============================================================================
+
+// Create Sale Mutation
+async function createSale(data: any) {
+  const response = await fetch('/api/sales', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Failed to create sale');
+  }
+
+  return result;
+}
+
+export function useCreateSale() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: createSale,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+    },
+  });
+}
+
+// Update Sale Mutation
+async function updateSale({ id, data }: { id: string | number; data: any }) {
+  const response = await fetch(`/api/sales/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Failed to update sale');
+  }
+
+  return result;
+}
+
+export function useUpdateSale() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateSale,
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['sale', variables.id] });
+    },
+  });
+}
+
+// Delete Sale Mutation
+async function deleteSale(id: number) {
+  const response = await fetch(`/api/sales/${id}`, {
+    method: 'DELETE'
+  });
+
+  const data = await response.json();
+
+  if (!response.ok || !data.success) {
+    throw new Error(data.error || 'Failed to delete sale');
+  }
+
+  return data;
+}
+
+export function useDeleteSale() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: deleteSale,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+    },
+  });
+}
