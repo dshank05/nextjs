@@ -1,32 +1,13 @@
-import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit } from 'lucide-react';
-import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { useSaleReturn } from '../../../hooks/useSales';
-
-interface ReturnItem {
-  id: number;
-  product_name: string;
-  part_number?: string;
-  return_qty: number;
-  unit_price: number;
-  tax_rate: number;
-  tax_amount: number;
-  subtotal: number;
-  total: number;
-  return_reason: string;
-  notes?: string;
-  bill_reference?: string;
-  bill_date?: string;
-  invoice_no?: string;
-}
+import type { SaleReturnItem } from '../../../types/sales';
 
 export default function SaleReturnDetailPage() {
   const router = useRouter();
   const { id } = router.query;
-  const { showSnackbar } = useSnackbar();
 
   // Query hook
   const { data: apiData, isLoading, error } = useSaleReturn(id as string);
@@ -51,7 +32,7 @@ export default function SaleReturnDetailPage() {
   } : null;
 
   // Transform return items
-  const returnItems: ReturnItem[] = apiData?.data?.bills ? apiData.data.bills.flatMap((bill: any) =>
+  const returnItems: SaleReturnItem[] = apiData?.data?.bills ? apiData.data.bills.flatMap((bill: any) =>
     bill.items.map((item: any, index: number) => ({
       id: item.id || (bill.id + index),
       product_name: item.product_name || item.display_name,
@@ -68,7 +49,7 @@ export default function SaleReturnDetailPage() {
       bill_date: bill.invoice_date,
       invoice_no: bill.invoice_no
     }))
-  ).filter((item: ReturnItem) => item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason')) : [];
+  ).filter((item: SaleReturnItem) => item.return_qty > 0 || (item.return_reason && item.return_reason !== 'Unknown Reason')) : [];
 
   const handleEditReturn = () => {
     if (apiData?.data && id) {

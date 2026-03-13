@@ -8,64 +8,10 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { getLocalDateString } from '../../lib/date-utils';
-import { useSaleReturn, useCreateSaleReturn, useUpdateSaleReturn } from '../../hooks/useSales';
-
-interface Customer {
-  id: string;
-  billing_name: string;
-  billing_state?: string;
-  billing_state_code?: number;
-}
-
-interface SaleBill {
-  id: string;
-  invoice_no: string;
-  bill_reference: string;
-  invoice_date: string;
-  total_amount: number;
-  has_tax: boolean;
-  items: SaleItem[];
-  available_items: number;
-  total_items: number;
-  payment_status: number;
-  outstanding_amount: number;
-}
-
-interface SaleItem {
-  id: string;
-  sale_item_id?: number; // ID of the sale item in invoice_items table
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  part_number?: string;
-  original_qty?: number; // Original sale quantity
-  available_qty: number;
-  unit_price: number;
-  tax_rate: number;
-  bill_reference: string;
-  invoice_date: string;
-  return_qty?: number; // Added for edit mode
-  return_reason_id?: number; // Added for edit mode
-}
-
-interface ReturnReasons {
-  id: number;
-  reason_name: string;
-  type: string;
-}
-
-interface SelectedReturnItem extends SaleItem {
-  return_qty: number;
-  return_reason_id: number;
-  return_notes?: string;
-  // Calculated fields
-  subtotal: number;
-  tax_amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total: number;
-}
+import { useSaleReturn, useCreateSaleReturn, useUpdateSaleReturn, useSaleReturnReasons, useCustomerBills, useSale } from '../../hooks/useSales';
+import { useCustomers } from '../../hooks/useStaff';
+import type { SaleBill, SaleItemForReturn, ReturnReason, SelectedReturnItem } from '../../types/sales';
+import type { Customer } from '../../types/staff';
 
 export default function SaleReturnCreatePage() {
   const router = useRouter();
@@ -75,6 +21,13 @@ export default function SaleReturnCreatePage() {
   // Mutation hooks
   const createReturn = useCreateSaleReturn();
   const updateReturn = useUpdateSaleReturn();
+
+  // Query hooks
+  const { data: customersData, isLoading: loadingCustomers } = useCustomers();
+  const customers = customersData || [];
+  
+  const { data: returnReasonsData } = useSaleReturnReasons();
+  const returnReasons = returnReasonsData || [];
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [isLoadingEditData, setIsLoadingEditData] = useState(false);
@@ -91,12 +44,9 @@ export default function SaleReturnCreatePage() {
   const enableTax = false;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [bills, setBills] = useState<SaleBill[]>([]);
-  const [returnReasons, setReturnReasons] = useState<ReturnReasons[]>([]);
   const [loading, setLoading] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
-  const [loadingCustomers, setLoadingCustomers] = useState(false);
 
   // Pagination and filtering state
   const [pagination, setPagination] = useState({
@@ -160,13 +110,7 @@ export default function SaleReturnCreatePage() {
   // Load data on mount and handle invoice mode
   useEffect(() => {
     const initializePage = async () => {
-      // Load return reasons and customers first
-      await Promise.all([
-        loadReturnReasons(),
-        loadCustomers()
-      ]);
-
-      // Then check if we're in edit mode or invoice mode
+      // Check if we're in edit mode or invoice mode
       if (returnIdParam) {
         setIsEditMode(true);
         await loadReturnForEdit(returnIdParam as string);
@@ -180,27 +124,8 @@ export default function SaleReturnCreatePage() {
     };
 
     initializePage();
-  }, [returnIdParam, invoiceIdParam]);
+  }, [returnIdParam, invoiceIdParam, customers.length]);
 
-
-  const loadCustomers = async () => {
-    setLoadingCustomers(true);
-    try {
-      const response = await fetch('/api/customers');
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
-      } else {
-        throw new Error('Failed to load customers');
-      }
-    } catch (error) {
-      console.error('Error loading customers:', error);
-      showSnackbar('error', 'Failed to load customers');
-      setCustomers([]);
-    } finally {
-      setLoadingCustomers(false);
-    }
-  };
 
   const loadCustomerBills = async (customerId: string, page = 1, search = '', fromDate = '', toDate = '', isLoadMore = false) => {
     if (isLoadMore) {
@@ -343,22 +268,6 @@ export default function SaleReturnCreatePage() {
     }
   };
 
-  const loadReturnReasons = async () => {
-    try {
-      const response = await fetch('/api/return-reasons?type=sale');
-      if (response.ok) {
-        const data = await response.json();
-        setReturnReasons(data.data || []);
-      } else {
-        throw new Error('Failed to load return reasons');
-      }
-    } catch (error) {
-      console.error('Error loading return reasons:', error);
-      showSnackbar('error', 'Failed to load return reasons');
-      setReturnReasons([]);
-    }
-  };
-
   const loadInvoiceForReturn = async (invoiceId: string) => {
     setLoading(true);
     try {
@@ -498,7 +407,7 @@ export default function SaleReturnCreatePage() {
         // In edit mode, set available_qty to the original_qty (from original sale)
         const adjustedBills = returnData.bills.map((bill: SaleBill) => ({
           ...bill,
-          items: bill.items.map((item: SaleItem) => ({
+          items: bill.items.map((item: SaleItemForReturn) => ({
             ...item,
             // In edit mode, available_qty should be the original_qty (original sale quantity)
             available_qty: item.original_qty || item.available_qty
@@ -511,7 +420,7 @@ export default function SaleReturnCreatePage() {
         // Pre-select the returned items with calculated fields
         const selectedItemsMap = new Map<string, SelectedReturnItem>();
         adjustedBills.forEach((bill: SaleBill) => {
-          bill.items.forEach((item: SaleItem) => {
+          bill.items.forEach((item: SaleItemForReturn) => {
             if (item.return_qty && item.return_qty > 0) {
               // Calculate tax and totals
               const subtotal = item.return_qty * item.unit_price;
@@ -549,7 +458,7 @@ export default function SaleReturnCreatePage() {
         // Expand bills that have selected items
         const billsToExpand = new Set<string>();
         adjustedBills.forEach((bill: SaleBill) => {
-          if (bill.items.some((item: SaleItem) => selectedItemsMap.has(item.id))) {
+          if (bill.items.some((item: SaleItemForReturn) => selectedItemsMap.has(item.id))) {
             billsToExpand.add(bill.id);
           }
         });
@@ -575,7 +484,7 @@ export default function SaleReturnCreatePage() {
   };
 
   // Update return quantity for an item
-  const updateReturnQuantity = (itemId: string, quantity: number, item: SaleItem) => {
+  const updateReturnQuantity = (itemId: string, quantity: number, item: SaleItemForReturn) => {
     const validatedQty = Math.max(0, Math.min(quantity, item.available_qty));
 
     if (validatedQty === 0) {
@@ -619,7 +528,7 @@ export default function SaleReturnCreatePage() {
   };
 
   // Update return price for an item
-  const updateReturnPrice = (itemId: string, newPrice: number, item: SaleItem) => {
+  const updateReturnPrice = (itemId: string, newPrice: number, item: SaleItemForReturn) => {
     const selectedItem = selectedItems.get(itemId);
     if (!selectedItem) return;
 

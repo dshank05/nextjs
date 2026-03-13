@@ -8,155 +8,84 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import SessionStorageService from '../../lib/sessionStorage';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
-
-interface StaffDetails {
-  id: string;
-  staff_name: string;
-}
-
-interface Mechanic {
-  id: string;
-  mechanic_name: string;
-}
-
-interface Customer {
-  id: string;
-  billing_name: string;
-  contact_no?: string;
-  email?: string;
-  billing_gstin?: string;
-  billing_address?: string;
-  billing_address_2?: string;
-  billing_city?: string;
-  billing_state?: string;
-  billing_state_code?: number;
-  billing_pin_code?: string;
-}
-
-interface Product {
-  id: number;
-  product_name: string;
-  display_name?: string;
-  hsn?: string;
-  product_category?: string;
-  product_subcategory?: string;
-  product_category_id?: number;
-  product_subcategory_id?: number;
-  car_model_ids?: string;
-  company?: string; // Keep for backward compatibility
-  company_id?: number; // New field for company ID
-  pic?: string;
-  part_no?: string;
-  min_stock?: number;
-  stock?: number;
-  rate?: number;
-  notes?: string;
-  category_name?: string;
-  subcategory_name?: string;
-  gst_rate?: number;
-  selling_price?: number;
-  latest_selling_price?: number;
-  gst_rate_percentage?: number;
-}
-
-interface InvoiceItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string; // Add display_name field
-  car_model_ids: string[];
-  car_model_names: string[];
-  category_id: number;
-  category_name: string;
-  subcategory_id: number;
-  subcategory_name: string;
-  company_id: number;
-  company_name: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number;
-  discount_percentage: number;
-  tax: number;
-  discount_amount: number;
-  total: number;
-  // New pricing fields from product create
-  hsn: string;
-  mrp: number;
-  discount: number;
-  margin: number;
-  // GST breakdown like purchase create
-  cgst: number;
-  sgst: number;
-  igst: number;
-}
-
-interface InvoiceFormData {
-  invoice_number: string;
-  bill_reference: string;
-  staff_id?: number | null;
-  date: string;
-  customer_name: string;
-  contact_number: string;
-  mechanic_name: string;
-  mechanic_id?: number | null;
-  vehicle_number: string;
-  commission: string;
-  address: string;
-  address_2: string;
-  transport_name: string;
-  city: string;
-  email_id: string;
-  discount: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  tax: string;
-  notes: string;
-  payment_status: number;
-  payment_mode: number;
-  total_discount: string;
-  subtotal: string;
-  total_tax: string;
-  grand_total: string;
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  total_cgst: string;
-  total_sgst: string;
-  total_igst: string;
-  pin_code: string;
-}
-
-interface FilterOptions {
-  categories: any[];
-  subcategories: any[];
-  companies: any[];
-  models: any[];
-}
+import type { StaffDetails, MechanicDetails, Customer } from '../../types/staff';
+import type { Product, FilterOptions } from '../../types/products';
+import type { SaleInvoiceItem, SaleFormData } from '../../types/sales';
+import { useStaff, useMechanics, useCustomers } from '../../hooks/useStaff';
+import { useProducts, useFilterOptions } from '../../hooks/useProducts';
+import { useStates } from '../../hooks/useStates';
+import { useSale, useLastSaleInvoiceNumber, useCreateSale, useUpdateSale } from '../../hooks/useSales';
 
 export default function InvoiceCreate() {
   const router = useRouter();
+  const { showSnackbar } = useSnackbar();
 
   // Business state hardcoded to Uttar Pradesh (assuming state code 9)
   const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
 
-  const [staffList, setStaffList] = useState<StaffDetails[]>([]);
-  const [mechanics, setMechanics] = useState<Mechanic[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<InvoiceItem[]>([]);
+  // React Query Hooks
+  const { data: staffData } = useStaff();
+  const { data: mechanicsData } = useMechanics();
+  const { data: customersData } = useCustomers();
+  const { data: statesData } = useStates();
+  const { data: filterOptionsData } = useFilterOptions();
+  const { data: lastInvoiceNumber, isLoading: invoiceNumberLoading } = useLastSaleInvoiceNumber();
+  
+  // Product filters for side panel
+  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
+  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
+  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
+  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  
+  const { data: productsData, isLoading: productsLoading } = useProducts({
+    fetchAll: true,
+    modelFilter: selectedPanelCarModel || undefined,
+    search: productSearchTerm || undefined,
+    categoryFilter: selectedPanelCategory || undefined,
+    subcategoryFilter: selectedPanelSubcategory || undefined,
+    companyFilter: selectedPanelCompany || undefined,
+  });
+
+  // Edit mode hooks
+  const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
+  const { data: saleData, isLoading: editDataLoading } = useSale(editInvoiceId || undefined);
+  
+  // Mutations
+  const createSale = useCreateSale();
+  const updateSale = useUpdateSale();
+
+  // Transform hook data to component state format
+  const staffList: StaffDetails[] = staffData?.map((staff: any) => ({
+    id: staff.id.toString(),
+    staff_name: staff.name
+  })) || [];
+
+  const mechanics: MechanicDetails[] = mechanicsData?.map((mechanic: any) => ({
+    id: mechanic.id.toString(),
+    mechanic_name: mechanic.name
+  })) || [];
+
+  const customers: Customer[] = customersData || [];
+  const products: Product[] = productsData?.products || [];
+  const states = statesData || [];
+  const filterOptions: FilterOptions = filterOptionsData || {
+    categories: [],
+    subcategories: [],
+    companies: [],
+    models: []
+  };
+
+  // Local state
+  const [selectedProducts, setSelectedProducts] = useState<SaleInvoiceItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Customer selection state (like vendor in purchase)
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  // Customer selection state
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerIdToSave, setCustomerIdToSave] = useState<number | null>(null);
   const [customerStateForTax, setCustomerStateForTax] = useState<string>('');
@@ -165,8 +94,6 @@ export default function InvoiceCreate() {
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
-  const [editDataLoading, setEditDataLoading] = useState(false);
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -192,11 +119,9 @@ export default function InvoiceCreate() {
   // State for filtered subcategories based on selected category
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
-  // State for sidepanel car model filtering
-  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
-  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
-  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
-  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
+  // State for product selection side panel
+  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
+  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
 
   // Helper function to get consistent company info from product
   const getCompanyInfo = (product: Product) => {
@@ -276,13 +201,6 @@ export default function InvoiceCreate() {
     }));
   };
 
-
-  // State for product selection side panel
-  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
-
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
     qty: '1',
@@ -305,20 +223,7 @@ export default function InvoiceCreate() {
 
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
-
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    categories: [],
-    subcategories: [],
-    companies: [],
-    models: []
-  });
-
-  // State for states data
-  const [states, setStates] = useState<{ id: string; name: string; code: number }[]>([]);
-
-  // Initialize snackbar hook
-  const { showSnackbar } = useSnackbar();
+  const [editingRowData, setEditingRowData] = useState<SaleInvoiceItem | null>(null);
 
   // Helper function to get state code from state name
   const getStateCodeFromName = (stateName: string): number | undefined => {
@@ -334,7 +239,7 @@ export default function InvoiceCreate() {
     filterOptions.models
   ]);
 
-  const [formData, setFormData] = useState<InvoiceFormData>({
+  const [formData, setFormData] = useState<SaleFormData>({
     invoice_number: '',
     bill_reference: '',
     staff_id: null,
@@ -379,37 +284,12 @@ export default function InvoiceCreate() {
     }
   }, [router.query]);
 
-  // Fetch data on mount and handle edit mode properly
+  // Set invoice number from hook data
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        // Fetch data in parallel
-        await Promise.all([
-          fetchStaffList(),
-          fetchMechanics(),
-          fetchCustomers(),
-          fetchProducts(),
-          fetchFilterOptions(),
-          fetchStates()
-        ]);
-      } catch (error) {
-        console.error('Error initializing data:', error);
-      }
-    };
-
-    initializeData();
-  }, []);
-
-  // Fetch last invoice number only in create mode
-  useEffect(() => {
-    // Wait for router to be ready
-    if (!router.isReady) return;
-    
-    // Only fetch if definitely in create mode (no edit param in URL)
-    if (!isEditMode && !router.query.edit) {
-      fetchLastInvoiceNumber();
+    if (lastInvoiceNumber && !isEditMode && !router.query.edit) {
+      setFormData(prev => ({ ...prev, invoice_number: lastInvoiceNumber.toString() }));
     }
-  }, [isEditMode, router.query.edit, router.isReady]);
+  }, [lastInvoiceNumber, isEditMode, router.query.edit]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -418,16 +298,14 @@ export default function InvoiceCreate() {
     }
   }, [isProductPanelOpen]);
 
-  // Refetch products when panel filters change
-  useEffect(() => {
-    fetchProducts(selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany);
-  }, [selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany]);
+  // Products are now fetched automatically by useProducts hook based on filter state
+  // No need for manual fetchProducts useEffect
 
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
-      const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
-        const itemObj: InvoiceItem = {
+      const convertedItems: SaleInvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
+        const itemObj: SaleInvoiceItem = {
           id: (index + 1).toString(),
           product_id: item.product_id || item.name_of_product || 1,
           product_name: item.name_of_product,
@@ -489,22 +367,112 @@ export default function InvoiceCreate() {
     }
   }, [rawInvoiceItems, filterOptions.categories, filterOptions.subcategories, filterOptions.companies, filterOptions.models]);
 
-  // Fetch invoice data when edit mode is detected
+  // Load invoice data when edit mode is detected (using useSale hook)
   useEffect(() => {
-    // Wait for router to be ready
-    if (!router.isReady) return;
-    
-    if (isEditMode && editInvoiceId) {
-      console.log('🔄 Loading edit data for invoice ID:', editInvoiceId);
-      setEditDataLoading(true);
-      fetchInvoiceForEdit(editInvoiceId);
+    if (!saleData || !isEditMode) return;
+
+    const invoice = saleData.invoice || saleData;
+    const transportDetails = saleData.transportDetails || {};
+
+    console.log('✅ Loading invoice data from hook:', invoice);
+
+    // Format date
+    const formatDateForInput = (dateValue: number | string) => {
+      if (typeof dateValue === 'string') {
+        if (/^\d+$/.test(dateValue)) {
+          const timestamp = parseInt(dateValue);
+          if (timestamp > 1000000000) {
+            return new Date(timestamp * 1000).toISOString().split('T')[0];
+          }
+        }
+        return new Date(dateValue).toISOString().split('T')[0];
+      }
+      return new Date(dateValue * 1000).toISOString().split('T')[0];
+    };
+
+    // Prefill form data
+    const formDataToSet = {
+      invoice_number: invoice.invoice_no ? invoice.invoice_no.toString() : '',
+      bill_reference: invoice.bill_reference || '',
+      staff_id: invoice.staff_id || null,
+      date: formatDateForInput(invoice.invoice_date),
+      customer_name: invoice.customer_name || '',
+      contact_number: invoice.contact_number || '',
+      mechanic_name: invoice.mechanic?.mechanic_name || '',
+      mechanic_id: invoice.mechanic_id || null,
+      vehicle_number: transportDetails.vehicle_no || '',
+      commission: invoice.commission ? invoice.commission.toString() : '',
+      address: invoice.address || '',
+      address_2: invoice.address_2 || '',
+      transport_name: transportDetails.trans_mode || '',
+      city: invoice.city || '',
+      email_id: invoice.email_id || '',
+      discount: invoice.discount || '',
+      state: invoice.state || '',
+      state_code: invoice.state_code,
+      gst_number: invoice.gst_number || '',
+      tax: invoice.tax || '',
+      notes: invoice.notes || '',
+      payment_status: invoice.payment_status !== undefined && invoice.payment_status !== null ? invoice.payment_status : 1,
+      payment_mode: invoice.payment_mode !== undefined && invoice.payment_mode !== null ? invoice.payment_mode : 0,
+      total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
+      subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
+      total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
+      grand_total: invoice.total ? invoice.total.toString() : '',
+      descriptions: invoice.descriptions || '',
+      packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
+      packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
+      packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
+      total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
+      total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
+      total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0',
+      pin_code: invoice.pin_code || ''
+    };
+
+    setFormData(formDataToSet);
+
+    // Override with billing details if available
+    if (saleData.billingDetails) {
+      setFormData(prev => ({
+        ...prev,
+        customer_name: saleData.billingDetails.customer_name || prev.customer_name,
+        contact_number: saleData.billingDetails.contact_number || prev.contact_number,
+        email_id: saleData.billingDetails.email_id || prev.email_id,
+        address: saleData.billingDetails.address || prev.address,
+        address_2: saleData.billingDetails.address_2 || prev.address_2,
+        city: saleData.billingDetails.city || prev.city,
+        state: saleData.billingDetails.state || prev.state,
+        gst_number: saleData.billingDetails.gst_number || prev.gst_number,
+        pin_code: saleData.billingDetails.pin_code || prev.pin_code,
+      }));
     }
 
-  }, [isEditMode, editInvoiceId, router.isReady]);
+    // Set staff and mechanic IDs
+    if (invoice.staff_id) {
+      setSelectedStaffId(invoice.staff_id.toString());
+    }
+    if (invoice.mechanic_id) {
+      setSelectedMechanicId(invoice.mechanic_id.toString());
+    }
 
-  // Customer selection function removed - no longer needed since we removed customer dropdown
+    // Store raw invoice items for conversion
+    if (saleData.invoiceItems && saleData.invoiceItems.length > 0) {
+      setRawInvoiceItems(saleData.invoiceItems);
+    }
 
-
+    // Set customer selection
+    if (saleData.customer && saleData.customer.id && saleData.customer.id !== '0' && saleData.customer.id !== 0) {
+      setTimeout(() => {
+        handleCustomerSelect(saleData.customer.id.toString());
+      }, 0);
+    } else {
+      setSelectedCustomerId('0');
+      setCustomerIdToSave(0);
+      setSelectedCustomer(null);
+      setIsOtherCustomerSelected(true);
+      setCustomerStateForTax(invoice.state || '');
+    }
+  }, [saleData, isEditMode]);
 
   // Filter subcategories for table filters when category changes (using loaded filter data)
   useEffect(() => {
@@ -607,268 +575,16 @@ export default function InvoiceCreate() {
   }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
 
-  const fetchStaffList = async () => {
-    try {
-      const response = await fetch('/api/staff');
-      if (response.ok) {
-        const data = await response.json();
-        setStaffList(data.staff.map((staff: any) => ({
-          id: staff.id.toString(),
-          staff_name: staff.name
-        })));
-      }
-    } catch (error) {
-      console.error('Error fetching staff:', error);
-    }
-  };
-
-  const fetchMechanics = async () => {
-    try {
-      const response = await fetch('/api/mechanics');
-      if (response.ok) {
-        const data = await response.json();
-        // Transform mechanic data to match expected format
-        const transformedMechanics = data.mechanics.map((mechanic: any) => ({
-          id: mechanic.id.toString(),
-          mechanic_name: mechanic.name
-        }));
-        setMechanics(transformedMechanics);
-      } else {
-        setMechanics([]);
-      }
-    } catch (error) {
-      console.error('Error fetching mechanics:', error);
-      setMechanics([]);
-    }
-  };
-
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/customers?dropdown=true');
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-    }
-  };
-
-  const fetchProducts = async (
-    modelFilter: string = '',
-    searchTerm: string = '',
-    categoryFilter: string = '',
-    subcategoryFilter: string = '',
-    companyFilter: string = ''
-  ) => {
-    setProductsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      // Always fetch all products for side panel (no pagination limit)
-      params.append('fetchAll', 'true');
-      if (modelFilter) params.append('modelFilter', modelFilter);
-      if (searchTerm) params.append('search', searchTerm);
-      if (categoryFilter) params.append('categoryFilter', categoryFilter);
-      if (subcategoryFilter) params.append('subcategoryFilter', subcategoryFilter);
-      if (companyFilter) params.append('companyFilter', companyFilter);
-      const url = `/api/products?${params.toString()}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setProducts(data.products || []);
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-    } finally {
-      setProductsLoading(false);
-    }
-  };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) { console.error('Error fetching filter options:', error); }
-  };
 
 
-  const fetchStates = async () => {
-    try {
-      const response = await fetch('/api/states');
-      if (response.ok) {
-        const data = await response.json();
-        // Transform states data to match SearchableSelect format
-        const formattedStates = data.states.map((state: any) => ({
-          id: state.id.toString(),
-          name: state.state_name || state.name,
-          code: state.code
-        }));
-        setStates(formattedStates);
-      } else {
-        showSnackbar('error', 'Failed to load states. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching states:', error);
-      showSnackbar('error', 'Failed to load states. Please try again.');
-    }
-  };
-
-  const fetchLastInvoiceNumber = async () => {
-    try {
-      // Implement similar to purchase creation - get last invoice number + 1
-      const response = await fetch('/api/sales?limit=1&sort=-invoice_no');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.sales && data.sales.length > 0) {
-          const lastInvoiceNum = Math.max(...data.sales.map((s: any) => s.invoice_no || 0));
-          const nextInvoiceNum = lastInvoiceNum + 1;
-          setFormData(prev => ({ ...prev, invoice_number: nextInvoiceNum.toString() }));
-        } else {
-          setFormData(prev => ({ ...prev, invoice_number: '1' }));
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching last invoice number:', error);
-      setFormData(prev => ({ ...prev, invoice_number: '1' })); // Fallback
-    } finally {
-      setInvoiceNumberLoading(false);
-    }
-  };
-
-  const fetchInvoiceForEdit = async (invoiceId: number) => {
-    try {
-      console.log('📡 Fetching invoice from API:', invoiceId);
-      
-      const response = await fetch(`/api/sales/${invoiceId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const invoice = data.invoice || data;
-        const transportDetails = data.transportDetails || {};
-
-        console.log('✅ Received invoice data:', invoice);
-
-        // Format date
-        const formatDateForInput = (dateValue: number | string) => {
-          if (typeof dateValue === 'string') {
-            if (/^\d+$/.test(dateValue)) {
-              const timestamp = parseInt(dateValue);
-              if (timestamp > 1000000000) {
-                return new Date(timestamp * 1000).toISOString().split('T')[0];
-              }
-            }
-            return new Date(dateValue).toISOString().split('T')[0];
-          }
-          return new Date(dateValue * 1000).toISOString().split('T')[0];
-        };
-
-        // Ensure invoice number is a string
-        const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
-
-        // Prefill form data with all available fields
-        const formDataToSet = {
-          invoice_number: invoiceNo,
-          bill_reference: invoice.bill_reference || '',
-          staff_id: invoice.staff_id || null,
-          date: formatDateForInput(invoice.invoice_date),
-          customer_name: invoice.customer_name || '',
-          contact_number: invoice.contact_number || '',
-          mechanic_name: invoice.mechanic?.mechanic_name || '',
-          mechanic_id: invoice.mechanic_id || null,
-          vehicle_number: transportDetails.vehicle_no || '',
-          commission: invoice.commission ? invoice.commission.toString() : '',
-          address: invoice.address || '',
-          address_2: invoice.address_2 || '',
-          transport_name: transportDetails.trans_mode || '',
-          city: invoice.city || '',
-          email_id: invoice.email_id || '',
-          discount: invoice.discount || '',
-          state: invoice.state || '',
-          state_code: invoice.state_code,
-          gst_number: invoice.gst_number || '',
-          tax: invoice.tax || '',
-          notes: invoice.notes || '',
-          payment_status: invoice.payment_status !== undefined && invoice.payment_status !== null ? invoice.payment_status : 1,
-          payment_mode: invoice.payment_mode !== undefined && invoice.payment_mode !== null ? invoice.payment_mode : 0,
-          total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
-          subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
-          total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
-          grand_total: invoice.total ? invoice.total.toString() : '',
-          descriptions: invoice.descriptions || '',
-          packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
-          packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
-          packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
-          total_cgst: invoice.total_cgst ? invoice.total_cgst.toString() : '0',
-          total_sgst: invoice.total_sgst ? invoice.total_sgst.toString() : '0',
-          total_igst: invoice.total_igst ? invoice.total_igst.toString() : '0',
-          pin_code: invoice.pin_code || ''
-        };
-
-        setFormData(formDataToSet);
-
-        // Override with bill_to data if available (for inline editing of "Other" customers)
-        if (data.billingDetails) {
-          setFormData(prev => ({
-            ...prev,
-            customer_name: data.billingDetails.customer_name || prev.customer_name,
-            contact_number: data.billingDetails.contact_number || prev.contact_number,
-            email_id: data.billingDetails.email_id || prev.email_id,
-            address: data.billingDetails.address || prev.address,
-            address_2: data.billingDetails.address_2 || prev.address_2,
-            city: data.billingDetails.city || prev.city,
-            state: data.billingDetails.state || prev.state,
-            gst_number: data.billingDetails.gst_number || prev.gst_number,
-            pin_code: data.billingDetails.pin_code || prev.pin_code,
-          }));
-        }
 
 
-       
 
-        // Set other related entity IDs
-        if (invoice.staff_id) {
-          setSelectedStaffId(invoice.staff_id.toString());
-          setFormData(prev => ({ ...prev, staff_id: invoice.staff_id }));
-        }
-        if (invoice.mechanic_id) {
-          setSelectedMechanicId(invoice.mechanic_id.toString());
-          setFormData(prev => ({ ...prev, mechanic_id: invoice.mechanic_id }));
-        }
 
-        // Store raw invoice items to convert later when filters are loaded
-        if (data.invoiceItems && data.invoiceItems.length > 0) {
-          console.log('Storing raw invoice items for conversion:', data.invoiceItems);
-          setRawInvoiceItems(data.invoiceItems);
-        }
 
-        // Set customer selection based on select_customer value - DO THIS LAST
-        // so it doesn't clear the form data we just set
-        if (data.customer && data.customer.id && data.customer.id !== '0' && data.customer.id !== 0) {
-          // Customer was selected from dropdown - trigger handleCustomerSelect to auto-populate all fields
-          console.log('📋 Setting customer from dropdown:', data.customer.id, data.customer.billing_name);
-          
-          // Use setTimeout to ensure this runs after form data is set
-          setTimeout(() => {
-            handleCustomerSelect(data.customer.id.toString());
-          }, 0);
-        } else {
-          // "Other" customer (manual entry)
-          console.log('📋 Setting "Other" customer - manual entry');
-          setSelectedCustomerId('0');
-          setCustomerIdToSave(0);
-          setSelectedCustomer(null);
-          setIsOtherCustomerSelected(true);
-          setCustomerStateForTax(invoice.state || '');
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching invoice for edit:', error);
-    } finally {
-      setInvoiceNumberLoading(false);
-      setEditDataLoading(false);
-    }
-  };
 
-  const handleInputChange = (field: keyof InvoiceFormData, value: string | number) => {
+
+  const handleInputChange = (field: keyof SaleFormData, value: string | number) => {
     setFormData(prev => ({ ...prev, [field]: value }));
 
     // Clear tax calculations when state changes
@@ -958,7 +674,7 @@ export default function InvoiceCreate() {
   };
 
 
-  const handleEditProduct = (item: InvoiceItem) => {
+  const handleEditProduct = (item: SaleInvoiceItem) => {
     // Enable inline editing for this specific row
     setEditingRowId(item.id);
 
@@ -1045,7 +761,7 @@ export default function InvoiceCreate() {
   }, [selectedProducts, formData.packing_forwarding_total]);
 
   // Tax validation functions
-  const validateTaxData = (item: InvoiceItem): Record<string, string> => {
+  const validateTaxData = (item: SaleInvoiceItem): Record<string, string> => {
     const taxErrors: Record<string, string> = {};
 
     // Skip validation if GST breakdown hasn't been calculated yet
@@ -1362,54 +1078,49 @@ export default function InvoiceCreate() {
 
       console.log('📤 UI SENDING COMPLETE PAYLOAD:', submitData);
 
-      const method = isEditMode ? 'PUT' : 'POST';
-      const url = isEditMode ? `/api/sales/${editInvoiceId}` : '/api/sales';
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(submitData),
-      });
-
-      if (response.ok) {
-        const responseData = await response.json();
+      // Use React Query mutations
+      if (isEditMode && editInvoiceId) {
+        await updateSale.mutateAsync({ id: editInvoiceId, data: submitData });
         
-        if (editInvoiceId) {
-          SessionStorageService.remove('sales', editInvoiceId.toString());
-        }
+        SessionStorageService.remove('sales', editInvoiceId.toString());
         setShowConfirmationModal(false);
 
-        // Broadcast the creation/update event
+        // Broadcast the update event
         broadcast({
-          type: isEditMode ? 'updated' : 'created',
+          type: 'updated',
           resource: 'sales',
-          data: { id: isEditMode ? editInvoiceId : responseData.sale?.id || responseData.id }
+          data: { id: editInvoiceId }
         });
 
-        // Navigate to sale view page for both create and update
-        const saleId = isEditMode ? editInvoiceId : responseData.sale?.id;
+        // Navigate to sale view page
+        router.push(`/sale/view/${editInvoiceId}`);
+        showSnackbar('success', 'Invoice updated successfully!');
+      } else {
+        const responseData = await createSale.mutateAsync(submitData);
+        
+        setShowConfirmationModal(false);
+
+        // Broadcast the creation event
+        broadcast({
+          type: 'created',
+          resource: 'sales',
+          data: { id: responseData.sale?.id || responseData.id }
+        });
+
+        // Navigate to sale view page
+        const saleId = responseData.sale?.id || responseData.id;
         if (saleId) {
           router.push(`/sale/view/${saleId}`);
         } else {
-          // Fallback to sales list if no sale ID
           router.push('/sale');
         }
-
-        // Show snackbar after navigation
-        showSnackbar('success', `Invoice ${isEditMode ? 'updated' : 'created'} successfully!`);
-      } else {
-        const error = await response.json();
-        console.error('❌ API Error:', error);
-        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
-        setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice` });
+        showSnackbar('success', 'Invoice created successfully!');
       }
-      // Always close modal after API completes (regardless of success/failure)
+    } catch (error: any) {
+      console.error('❌ Error:', error);
+      showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
+      setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice` });
       setShowConfirmationModal(false);
-    } catch (error) {
-      console.error('❌ Network Error:', error);
-      setErrors({ submit: 'Network error occurred' });
     } finally {
       setLoading(false);
     }
@@ -2176,7 +1887,7 @@ export default function InvoiceCreate() {
 
                                 const { companyId, companyName } = getCompanyInfo(selectedProduct);
 
-                                const newItem: InvoiceItem = {
+                                const newItem: SaleInvoiceItem = {
                                   id: Date.now().toString(),
                                   product_id: selectedProduct.id,
                                   product_name: selectedProduct.product_name,

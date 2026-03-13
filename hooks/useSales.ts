@@ -347,3 +347,95 @@ export function useDeleteSale() {
     },
   });
 }
+
+// Last Invoice Number Hook
+async function fetchLastSaleInvoiceNumber(signal?: AbortSignal): Promise<number> {
+  const response = await fetch('/api/sales?limit=1&sort=-invoice_no', { signal });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch last invoice number');
+  }
+
+  const data = await response.json();
+  const lastInvoice = data.sales?.[0];
+  return lastInvoice ? lastInvoice.invoice_no + 1 : 1;
+}
+
+export function useLastSaleInvoiceNumber() {
+  return useQuery({
+    queryKey: ['lastSaleInvoiceNumber'],
+    queryFn: ({ signal }) => fetchLastSaleInvoiceNumber(signal),
+    staleTime: 0, // Always fetch fresh
+    gcTime: 1 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// ============================================================================
+// SALE RETURN REASONS HOOK
+// ============================================================================
+
+async function fetchSaleReturnReasons(signal?: AbortSignal): Promise<any[]> {
+  const response = await fetch('/api/return-reasons?type=sale', { signal });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch return reasons');
+  }
+
+  const data = await response.json();
+  return data.data || [];
+}
+
+export function useSaleReturnReasons() {
+  return useQuery({
+    queryKey: ['returnReasons', 'sale'],
+    queryFn: ({ signal }) => fetchSaleReturnReasons(signal),
+    staleTime: 10 * 60 * 1000, // 10 minutes - rarely changes
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+// ============================================================================
+// CUSTOMER BILLS FOR SALE RETURN
+// ============================================================================
+
+interface CustomerBillsParams {
+  customerId: string;
+  page?: number;
+  limit?: number;
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+}
+
+async function fetchCustomerBills(params: CustomerBillsParams, signal?: AbortSignal): Promise<any> {
+  const queryParams = new URLSearchParams({
+    customer_id: params.customerId,
+    page: (params.page || 1).toString(),
+    limit: (params.limit || 50).toString(),
+    ...(params.search && { search: params.search }),
+    ...(params.fromDate && { from_date: params.fromDate }),
+    ...(params.toDate && { to_date: params.toDate })
+  });
+
+  const response = await fetch(`/api/sale-returns/customer-items?${queryParams}`, { signal });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch customer bills');
+  }
+
+  const data = await response.json();
+  return data.data || { bills: [], pagination: {}, filters: {} };
+}
+
+export function useCustomerBills(params: CustomerBillsParams) {
+  return useQuery({
+    queryKey: ['customerBills', params],
+    queryFn: ({ signal }) => fetchCustomerBills(params, signal),
+    enabled: !!params.customerId, // Only run if customer is selected
+    staleTime: 30000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}

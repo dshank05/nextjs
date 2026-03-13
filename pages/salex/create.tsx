@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
@@ -8,157 +8,81 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
-
-interface StaffDetails {
-  id: string;
-  staff_name: string;
-}
-
-interface Mechanic {
-  id: string;
-  mechanic_name: string;
-}
-
-interface Customer {
-  id: string;
-  billing_name: string;
-  contact_no?: string;
-  email?: string;
-  billing_gstin?: string;
-  billing_address?: string;
-  billing_address_2?: string;
-  billing_city?: string;
-  billing_state?: string;
-  billing_state_code?: number;
-  billing_pin_code?: string;
-}
-
-interface Product {
-  id: number;
-  product_name: string;
-  display_name?: string;
-  hsn?: string;
-  product_category?: string;
-  product_subcategory?: string;
-  product_category_id?: number;
-  product_subcategory_id?: number;
-  car_model_ids?: string;
-  company?: string; // Keep for backward compatibility
-  company_id?: number; // New field for company ID
-  pic?: string;
-  part_no?: string;
-  min_stock?: number;
-  stock?: number;
-  rate?: number;
-  notes?: string;
-  category_name?: string;
-  subcategory_name?: string;
-  gst_rate?: number;
-  selling_price?: number;
-  latest_selling_price?: number;
-  gst_rate_percentage?: number;
-}
-
-interface InvoiceItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string; // Add display_name field
-  car_model_ids: string[];
-  car_model_names: string[];
-  category_id: number;
-  category_name: string;
-  subcategory_id: number;
-  subcategory_name: string;
-  company_id: number;
-  company_name: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number; // Still kept for display but not used in calculations
-  discount_percentage: number;
-  tax: number; // Always 0 for salex
-  discount_amount: number;
-  total: number;
-  // New pricing fields from product create
-  hsn: string;
-  mrp: number;
-  discount: number;
-  margin: number;
-  // GST breakdown - always 0 for salex
-  cgst: number;
-  sgst: number;
-  igst: number;
-}
-
-interface InvoiceFormData {
-  invoice_number: string;
-  bill_reference: string;
-  staff_id?: number | null;
-  date: string;
-  customer_name: string;
-  contact_number: string;
-  mechanic_name: string;
-  vehicle_number: string;
-  commission: string;
-  address: string;
-  address_2: string;
-  transport_name: string;
-  city: string;
-  email_id: string;
-  discount: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  tax: string;
-  notes: string;
-  payment_status: number;
-  payment_mode: number;
-  total_discount: string;
-  subtotal: string;
-  total_tax: string;
-  grand_total: string;
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  tax_rate: string;
-  basic_value: string;
-  pin_code: string;
-  // Removed GST fields for salex
-  // total_cgst: string;
-  // total_sgst: string;
-  // total_igst: string;
-}
-
-interface FilterOptions {
-  categories: any[];
-  subcategories: any[];
-  companies: any[];
-  models: any[];
-}
+import type { StaffDetails, MechanicDetails, Customer } from '../../types/staff';
+import type { Product, FilterOptions } from '../../types/products';
+import type { SalexInvoiceItem, SalexFormData } from '../../types/sales';
+import { useStaff, useMechanics, useCustomers } from '../../hooks/useStaff';
+import { useProducts, useFilterOptions } from '../../hooks/useProducts';
+import { useStates } from '../../hooks/useStates';
+import { useSalexItem, useLastSalexInvoiceNumber, useCreateSalex, useUpdateSalex } from '../../hooks/useSalex';
 
 export default function InvoiceCCreate() {
   const router = useRouter();
-
-  // Initialize snackbar hook
   const { showSnackbar } = useSnackbar();
 
-  const [staffList, setStaffList] = useState<StaffDetails[]>([]);
-  const [mechanics, setMechanics] = useState<Mechanic[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
-  const [selectedProducts, setSelectedProducts] = useState<InvoiceItem[]>([]);
+  // React Query Hooks
+  const { data: staffData } = useStaff();
+  const { data: mechanicsData } = useMechanics();
+  const { data: customersData } = useCustomers();
+  const { data: statesData } = useStates();
+  const { data: filterOptionsData } = useFilterOptions();
+  const { data: lastInvoiceNumber, isLoading: invoiceNumberLoading } = useLastSalexInvoiceNumber();
+  
+  // Product filters for side panel
+  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
+  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
+  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
+  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
+  const [productSearchTerm, setProductSearchTerm] = useState('');
+  
+  const { data: productsData, isLoading: productsLoading } = useProducts({
+    fetchAll: true,
+    modelFilter: selectedPanelCarModel || undefined,
+    search: productSearchTerm || undefined,
+    categoryFilter: selectedPanelCategory || undefined,
+    subcategoryFilter: selectedPanelSubcategory || undefined,
+    companyFilter: selectedPanelCompany || undefined,
+  });
+
+  // Edit mode hooks
+  const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
+  const { data: salexData, isLoading: editDataLoading } = useSalexItem(editInvoiceId || undefined);
+  
+  // Mutations
+  const createSalex = useCreateSalex();
+  const updateSalex = useUpdateSalex();
+
+  // Transform hook data to component state format
+  const staffList: StaffDetails[] = staffData?.map((staff: any) => ({
+    id: staff.id.toString(),
+    staff_name: staff.name
+  })) || [];
+
+  const mechanics: MechanicDetails[] = mechanicsData?.map((mechanic: any) => ({
+    id: mechanic.id.toString(),
+    mechanic_name: mechanic.name
+  })) || [];
+
+  const customers: Customer[] = customersData || [];
+  const products: Product[] = productsData?.products || [];
+  const states = statesData || [];
+  const filterOptions: FilterOptions = filterOptionsData || {
+    categories: [],
+    subcategories: [],
+    companies: [],
+    models: []
+  };
+
+  // Local state
+  const [selectedProducts, setSelectedProducts] = useState<SalexInvoiceItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(false);
-  const [invoiceNumberLoading, setInvoiceNumberLoading] = useState(true);
   const [selectedStaffId, setSelectedStaffId] = useState<string>('');
   const [selectedMechanicId, setSelectedMechanicId] = useState<string>('');
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Customer selection state (like vendor in purchase)
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  // Customer selection state
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerIdToSave, setCustomerIdToSave] = useState<number | null>(null);
   const [customerStateForTax, setCustomerStateForTax] = useState<string>('');
@@ -167,9 +91,6 @@ export default function InvoiceCCreate() {
 
   // Edit mode state
   const [isEditMode, setIsEditMode] = useState(false);
-  const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
-  const [editDataLoading, setEditDataLoading] = useState(false);
-
 
   // Raw invoice data for re-conversion when filters load
   const [rawInvoiceItems, setRawInvoiceItems] = useState<any[]>([]);
@@ -192,11 +113,9 @@ export default function InvoiceCCreate() {
   // State for filtered subcategories based on selected category
   const [filteredSubcategories, setFilteredSubcategories] = useState<any[]>([]);
 
-  // State for sidepanel filtering
-  const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
-  const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
-  const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
-  const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
+  // State for product selection side panel
+  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
+  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
 
   // Helper function to get consistent company info from product
   const getCompanyInfo = (product: Product) => {
@@ -254,7 +173,7 @@ export default function InvoiceCCreate() {
       partNo: product.part_no || ''
     }));
 
-    console.log('🔄 PRODUCT SELECTED:', {
+    console.log('?? PRODUCT SELECTED:', {
       product: product.product_name,
       compatibleCarModels: compatibleModels.map(m => m.name),
       initialFilters: {
@@ -265,12 +184,6 @@ export default function InvoiceCCreate() {
       }
     });
   };
-
-  // State for product selection side panel
-  const [isProductPanelOpen, setIsProductPanelOpen] = useState(false);
-  const [productSearchTerm, setProductSearchTerm] = useState('');
-  const [searchedProducts, setSearchedProducts] = useState<Product[]>([]);
-  const [productsLoading, setProductsLoading] = useState(false);
 
   // State for template row inputs
   const [templateRow, setTemplateRow] = useState({
@@ -287,24 +200,12 @@ export default function InvoiceCCreate() {
   // State to track which field was last edited (for smart calculation)
   const [lastEditedField, setLastEditedField] = useState<'qty' | 'rate' | 'total' | null>(null);
 
-  // Removed auto-calculate useEffect - calculations now happen in onChange handlers
-
   // State for inline row editing
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [editingRowData, setEditingRowData] = useState<InvoiceItem | null>(null);
+  const [editingRowData, setEditingRowData] = useState<SalexInvoiceItem | null>(null);
 
   // New state for GST rates - not used for salex but kept for consistency
   const [gstRates, setGstRates] = useState<any[]>([]);
-
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    categories: [],
-    subcategories: [],
-    companies: [],
-    models: []
-  });
-
-  // State for states data
-  const [states, setStates] = useState<{ id: string; name: string; state_name: string; code: number }[]>([]);
 
   // Memoize the filterOptions to prevent unnecessary re-renders
   const memoizedFilterOptions = useMemo(() => filterOptions, [
@@ -314,7 +215,7 @@ export default function InvoiceCCreate() {
     filterOptions.models
   ]);
 
-  const [formData, setFormData] = useState<InvoiceFormData>({
+  const [formData, setFormData] = useState<SalexFormData>({
     invoice_number: '',
     bill_reference: '',
     staff_id: null,
@@ -362,52 +263,123 @@ export default function InvoiceCCreate() {
     }
   }, [router.query]);
 
-  // Fetch data on mount
-  useEffect(() => {
-    const initializeData = async () => {
-      try {
-        // Fetch data in parallel
-        await Promise.all([
-          fetchStaffList(),
-          fetchMechanics(),
-          fetchCustomers(),
-          fetchProducts(),
-          fetchFilterOptions(),
-          fetchGstRates(),
-          fetchStates()
-        ]);
+  // Data is now fetched automatically by React Query hooks - no manual fetch needed
 
+  // Set invoice number from hook data
+  useEffect(() => {
+    if (lastInvoiceNumber && !isEditMode && !router.query.edit) {
+      setFormData(prev => ({ ...prev, invoice_number: lastInvoiceNumber.toString() }));
+    }
+  }, [lastInvoiceNumber, isEditMode, router.query.edit]);
+
+  // Load invoice data when edit mode is detected (using useSalexItem hook)
+  useEffect(() => {
+    if (!salexData || !isEditMode) return;
+
+    const invoice = salexData.invoice || salexData;
+    const transportDetails = salexData.transportDetails || {};
+
+    console.log('? Loading salex data from hook:', invoice);
+
+    // Format date
+    const formatDateForInput = (dateValue: number | string) => {
+      try {
+        if (typeof dateValue === 'string') {
+          if (/^\d+$/.test(dateValue)) {
+            const timestamp = parseInt(dateValue);
+            if (timestamp > 1000000000) {
+              return new Date(timestamp * 1000).toISOString().split('T')[0];
+            }
+          }
+          return new Date(dateValue).toISOString().split('T')[0];
+        }
+        return new Date(dateValue * 1000).toISOString().split('T')[0];
       } catch (error) {
-        console.error('Error initializing data:', error);
+        return new Date().toISOString().split('T')[0];
       }
     };
 
-    initializeData();
-  }, []);
+    // Prefill form data
+    const formDataToSet = {
+      invoice_number: invoice.invoice_no ? invoice.invoice_no.toString() : '',
+      bill_reference: invoice.bill_reference || '',
+      staff_id: invoice.staff_id || null,
+      date: formatDateForInput(invoice.invoice_date),
+      customer_name: invoice.customer_name || '',
+      contact_number: invoice.contact_number || '',
+      mechanic_name: invoice.mechanic?.mechanic_name || '',
+      vehicle_number: transportDetails.vehicle_no || '',
+      commission: invoice.commission ? invoice.commission.toString() : '',
+      address: invoice.address || '',
+      address_2: invoice.address_2 || '',
+      transport_name: transportDetails.trans_mode || '',
+      city: invoice.city || '',
+      email_id: invoice.email_id || '',
+      discount: invoice.discount || '',
+      state: invoice.state || '',
+      state_code: invoice.state_code,
+      gst_number: invoice.gst_number || '',
+      tax: invoice.tax || '',
+      notes: invoice.notes || '',
+      payment_status: invoice.payment_status !== undefined && invoice.payment_status !== null ? invoice.payment_status : 1,
+      payment_mode: invoice.payment_mode !== undefined && invoice.payment_mode !== null ? invoice.payment_mode : 0,
+      total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
+      subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
+      total_tax: invoice.total_tax ? invoice.total_tax.toString() : '',
+      grand_total: invoice.total ? invoice.total.toString() : '',
+      descriptions: invoice.descriptions || '',
+      packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
+      packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
+      packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
+      tax_rate: invoice.tax_rate ? invoice.tax_rate.toString() : '',
+      basic_value: invoice.basic_value ? invoice.basic_value.toString() : '',
+      pin_code: invoice.pin_code || ''
+    };
 
-  // Fetch invoice data when edit mode is detected
-  useEffect(() => {
-    // Wait for router to be ready
-    if (!router.isReady) return;
-    
-    if (isEditMode && editInvoiceId) {
-      console.log('🔄 Loading edit data for invoicex ID:', editInvoiceId);
-      setEditDataLoading(true);
-      fetchInvoiceForEdit(editInvoiceId);
+    setFormData(formDataToSet);
+
+    // Override with billing details if available
+    if (salexData.billingDetails) {
+      setFormData(prev => ({
+        ...prev,
+        customer_name: salexData.billingDetails.customer_name || prev.customer_name,
+        contact_number: salexData.billingDetails.contact_number || prev.contact_number,
+        email_id: salexData.billingDetails.email_id || prev.email_id,
+        address: salexData.billingDetails.address || prev.address,
+        address_2: salexData.billingDetails.address_2 || prev.address_2,
+        city: salexData.billingDetails.city || prev.city,
+        state: salexData.billingDetails.state || prev.state,
+        gst_number: salexData.billingDetails.gst_number || prev.gst_number,
+        pin_code: salexData.billingDetails.pin_code || prev.pin_code,
+      }));
     }
 
-  }, [isEditMode, editInvoiceId, router.isReady]);
-
-  // Fetch last invoice number only in create mode
-  useEffect(() => {
-    // Wait for router to be ready
-    if (!router.isReady) return;
-    
-    // Only fetch if definitely in create mode (no edit param in URL)
-    if (!isEditMode && !router.query.edit) {
-      fetchLastInvoiceNumber();
+    // Set staff and mechanic IDs
+    if (invoice.staff_id) {
+      setSelectedStaffId(invoice.staff_id.toString());
     }
-  }, [isEditMode, router.query.edit, router.isReady]);
+    if (invoice.mechanic_id) {
+      setSelectedMechanicId(invoice.mechanic_id.toString());
+    }
+
+    // Store raw invoice items for conversion
+    if (salexData.items && salexData.items.length > 0) {
+      setRawInvoiceItems(salexData.items);
+    }
+
+    // Set customer selection
+    if (salexData.customer && salexData.customer.id && salexData.customer.id !== '0' && salexData.customer.id !== 0) {
+      setTimeout(() => {
+        handleCustomerSelect(salexData.customer.id.toString());
+      }, 0);
+    } else {
+      setSelectedCustomerId('0');
+      setCustomerIdToSave(0);
+      setSelectedCustomer(null);
+      setIsOtherCustomerSelected(true);
+      setCustomerStateForTax(invoice.state || '');
+    }
+  }, [salexData, isEditMode]);
 
   // Clear validation errors when side panel closes
   useEffect(() => {
@@ -444,10 +416,9 @@ export default function InvoiceCCreate() {
     fetchSubcategoriesForTable(productRowFilters.category);
   }, [productRowFilters.category]);
 
-  // Handle product search and filtering via API calls
-  useEffect(() => {
-    fetchProducts(selectedPanelCarModel, productSearchTerm, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany);
-  }, [productSearchTerm, selectedPanelCarModel, selectedPanelCategory, selectedPanelSubcategory, selectedPanelCompany]);
+  // Products are now fetched automatically by useProducts hook based on filter state
+  // No need for manual fetchProducts useEffect
+
 
   // Auto-select product when filters match exactly one product
   useEffect(() => {
@@ -500,8 +471,8 @@ export default function InvoiceCCreate() {
   // Convert raw invoice items when filterOptions are loaded
   useEffect(() => {
     if (rawInvoiceItems.length > 0 && filterOptions.categories.length > 0 && filterOptions.models.length > 0) {
-      const convertedItems: InvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
-        const itemObj: InvoiceItem = {
+      const convertedItems: SalexInvoiceItem[] = rawInvoiceItems.map((item: any, index: number) => {
+        const itemObj: SalexInvoiceItem = {
           id: (index + 1).toString(),
           product_id: item.product_id,
           product_name: item.product_name,
@@ -576,277 +547,9 @@ export default function InvoiceCCreate() {
   }, [formData.packing_forwarding_qty, formData.packing_forwarding_rate]);
 
 
-  const fetchStaffList = async () => {
-    try {
-      const response = await fetch('/api/staff');
-      if (response.ok) {
-        const data = await response.json();
-        setStaffList(data.staff.map((staff: any) => ({
-          id: staff.id.toString(),
-          staff_name: staff.name
-        })));
-      }
-    } catch (error) {
-      console.error('Error fetching staff:', error);
-    }
-  };
 
-  const fetchMechanics = async () => {
-    try {
-      const response = await fetch('/api/mechanics');
-      if (response.ok) {
-        const data = await response.json();
-        // Transform mechanic data to match expected format
-        const transformedMechanics = data.mechanics.map((mechanic: any) => ({
-          id: mechanic.id.toString(),
-          mechanic_name: mechanic.name
-        }));
-        setMechanics(transformedMechanics);
-      } else {
-        setMechanics([]);
-      }
-    } catch (error) {
-      console.error('Error fetching mechanics:', error);
-      setMechanics([]);
-    }
-  };
 
-  const fetchCustomers = async () => {
-    try {
-      const response = await fetch('/api/customers?dropdown=true');
-      if (response.ok) {
-        const data = await response.json();
-        setCustomers(data.customers || []);
-      }
-    } catch (error) {
-      console.error('Error fetching customers:', error);
-    }
-  };
-
-  const fetchProducts = async (
-    modelFilter: string = '',
-    searchTerm: string = '',
-    categoryFilter: string = '',
-    subcategoryFilter: string = '',
-    companyFilter: string = ''
-  ) => {
-    setProductsLoading(true);
-    try {
-      const params = new URLSearchParams();
-      // Always fetch all products for side panel (no pagination limit)
-      params.append('fetchAll', 'true');
-      if (modelFilter) params.append('modelFilter', modelFilter);
-      if (searchTerm) params.append('search', searchTerm);
-      if (categoryFilter) params.append('categoryFilter', categoryFilter);
-      if (subcategoryFilter) params.append('subcategoryFilter', subcategoryFilter);
-      if (companyFilter) params.append('companyFilter', companyFilter);
-      const url = `/api/products?${params.toString()}`;
-      const response = await fetch(url);
-      if (response.ok) {
-        const data = await response.json();
-        setProducts(data.products || []);
-      } else {
-        setProducts([]); // Set empty array on error
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      setProducts([]); // Set empty array on error
-    } finally {
-      setProductsLoading(false);
-    }
-  };
-
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) { console.error('Error fetching filter options:', error); }
-  };
-
-  const fetchGstRates = async () => {
-    try {
-      const response = await fetch('/api/gst-rates');
-      if (response.ok) {
-        const data = await response.json();
-        setGstRates(data.gstRates || []);
-      }
-    } catch (error) { console.error('Error fetching GST rates:', error); }
-  };
-
-  const fetchStates = async () => {
-    try {
-      const response = await fetch('/api/states');
-      if (response.ok) {
-        const data = await response.json();
-        // Transform states data to match SearchableSelect format
-        const formattedStates = data.states.map((state: any) => ({
-          id: state.id.toString(),
-          name: state.state_name || state.name,
-          code: state.code
-        }));
-        setStates(formattedStates);
-      } else {
-        showSnackbar('error', 'Failed to load states. Please try again.');
-      }
-    } catch (error) {
-      console.error('Error fetching states:', error);
-      showSnackbar('error', 'Failed to load states. Please try again.');
-    }
-  };
-
-  const fetchLastInvoiceNumber = async () => {
-    try {
-      const response = await fetch('/api/salex?limit=1&sort=-invoice_no');
-      if (response.ok) {
-        const data = await response.json();
-        if (data.salex && data.salex.length > 0) {
-          const lastInvoiceNum = Math.max(...data.salex.map((s: any) => s.invoice_no || 0));
-          const nextInvoiceNum = lastInvoiceNum + 1;
-          setFormData(prev => ({ ...prev, invoice_number: nextInvoiceNum.toString() }));
-        } else {
-          setFormData(prev => ({ ...prev, invoice_number: '1' }));
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching last invoice number:', error);
-      setFormData(prev => ({ ...prev, invoice_number: '1' }));
-    } finally {
-      setInvoiceNumberLoading(false);
-    }
-  };
-
-  const fetchInvoiceForEdit = async (invoiceId: number) => {
-    try {
-      const response = await fetch(`/api/salex/${invoiceId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const invoice = data.invoice || data;
-        const transportDetails = data.transportDetails || {};
-
-        // Format date
-        const formatDateForInput = (dateValue: number | string) => {
-          try {
-            if (typeof dateValue === 'string') {
-              if (/^\d+$/.test(dateValue)) {
-                const timestamp = parseInt(dateValue);
-                if (timestamp > 1000000000) {
-                  const date = new Date(timestamp * 1000);
-                  if (!isNaN(date.getTime())) {
-                    return date.toISOString().split('T')[0];
-                  }
-                }
-              }
-              const date = new Date(dateValue);
-              if (!isNaN(date.getTime())) {
-                return date.toISOString().split('T')[0];
-              }
-            } else if (typeof dateValue === 'number') {
-              if (dateValue > 1000000000) {
-                const date = new Date(dateValue * 1000);
-                if (!isNaN(date.getTime())) {
-                  return date.toISOString().split('T')[0];
-                }
-              } else {
-                const date = new Date(dateValue);
-                if (!isNaN(date.getTime())) {
-                  return date.toISOString().split('T')[0];
-                }
-              }
-            }
-            // Fallback for invalid dates
-            return new Date().toISOString().split('T')[0];
-          } catch (error) {
-            console.warn('Error formatting date:', dateValue, error);
-            return new Date().toISOString().split('T')[0];
-          }
-        };
-
-        // Ensure invoice number is a string
-        const invoiceNo = invoice.invoice_no ? invoice.invoice_no.toString() : '';
-
-        // Prefill form data with all available fields for salex
-        const formDataToSet = {
-          invoice_number: invoiceNo,
-          bill_reference: invoice.bill_reference || '',
-          staff_id: invoice.staff_id || null,
-          date: formatDateForInput(invoice.date || invoice.invoice_date), // API field can be 'date' or 'invoice_date'
-          customer_name: invoice.customer_name || '', // Now directly from API response
-          contact_number: invoice.contact_number || '', // Now directly from API response
-          mechanic_name: invoice.mechanic?.name || '', // API mechanic field is 'name', not 'mechanic_name'
-          mechanic_id: invoice.mechanic_id || null,
-          vehicle_number: invoice.vehicle_number || transportDetails.vehicle_no || '',
-          commission: invoice.commission ? invoice.commission.toString() : '',
-          address: invoice.address || '', // Now directly from API response
-          address_2: invoice.address_2 || '', // Now directly from API response
-          transport_name: invoice.transport_name || transportDetails.trans_mode || '',
-          city: invoice.city || '', // Now directly from API response
-          email_id: invoice.email_id || '', // Now directly from API response
-          discount: invoice.discount ? invoice.discount.toString() : '0',
-          state: invoice.state || '', // Now directly from API response
-          gst_number: invoice.gst_number || '', // Now directly from API response
-          tax: invoice.tax || '',
-          notes: invoice.notes || '',
-          payment_status: invoice.payment_status !== null && invoice.payment_status !== undefined ? invoice.payment_status : 0,
-          payment_mode: invoice.payment_mode !== null && invoice.payment_mode !== undefined ? invoice.payment_mode : 0,
-          total_discount: invoice.total_discount ? invoice.total_discount.toString() : '',
-          subtotal: invoice.subtotal ? invoice.subtotal.toString() : '',
-          total_tax: '0', // Always 0 for salex invoices
-          grand_total: invoice.total ? invoice.total.toString() : '',
-          descriptions: invoice.descriptions || '',
-          packing_forwarding_qty: invoice.packing_forwarding_qty !== null && invoice.packing_forwarding_qty !== undefined ? invoice.packing_forwarding_qty.toString() : '0',
-          packing_forwarding_rate: invoice.packing_forwarding_rate !== null && invoice.packing_forwarding_rate !== undefined ? invoice.packing_forwarding_rate.toString() : '0',
-          packing_forwarding_total: invoice.packing_forwarding_total !== null && invoice.packing_forwarding_total !== undefined ? invoice.packing_forwarding_total.toString() : '0',
-          tax_rate: '0', // Always 0 for salex
-          basic_value: invoice.basic_value || '0',
-          pin_code: invoice.pin_code || '',
-          state_code: invoice.state_code
-        };
-
-        setFormData(formDataToSet);
-
-        // Set other related entity IDs
-        if (invoice.staff_id) {
-          setSelectedStaffId(invoice.staff_id.toString());
-        }
-        if (invoice.mechanic_id) {
-          setSelectedMechanicId(invoice.mechanic_id.toString());
-        }
-
-        // Store raw invoice items to convert later when filters are loaded
-        if (data.items && data.items.length > 0) {
-          console.log('Storing raw invoice items for conversion:', data.items);
-          setRawInvoiceItems(data.items);
-        }
-
-        // Set customer selection based on customer_id value - DO THIS LAST
-        // so it doesn't clear the form data we just set
-        if (data.customer && data.customer.id && data.customer.id !== '0' && data.customer.id !== 0) {
-          // Customer was selected from dropdown - trigger handleCustomerSelect to auto-populate all fields
-          console.log('📋 Setting customer from dropdown:', data.customer.id, data.customer.billing_name);
-          
-          // Use setTimeout to ensure this runs after form data is set
-          setTimeout(() => {
-            handleCustomerSelect(data.customer.id.toString());
-          }, 0);
-        } else {
-          // "Other" customer (manual entry)
-          console.log('📋 Setting "Other" customer - manual entry');
-          setSelectedCustomerId('0');
-          setCustomerIdToSave(0);
-          setSelectedCustomer(null);
-          setIsOtherCustomerSelected(true);
-          setCustomerStateForTax(invoice.state || '');
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching invoice for edit:', error);
-    } finally {
-      setInvoiceNumberLoading(false);
-      setEditDataLoading(false);
-    }
-  };
-
-  const handleInputChange = (field: keyof InvoiceFormData, value: string) => {
+  const handleInputChange = (field: keyof SalexFormData, value: string) => {
     let processedValue: string | number | null = value;
 
     // Convert numeric fields to numbers
@@ -938,7 +641,7 @@ export default function InvoiceCCreate() {
   };
 
 
-  const handleEditProduct = (item: InvoiceItem) => {
+  const handleEditProduct = (item: SalexInvoiceItem) => {
     // Enable inline editing for this specific row
     setEditingRowId(item.id);
 
@@ -1135,7 +838,7 @@ export default function InvoiceCCreate() {
         // total_cgst, total_sgst, total_igst are not included
       };
 
-      console.log('📤 UI SENDING SALEX PAYLOAD:', submitData);
+      console.log('?? UI SENDING SALEX PAYLOAD:', submitData);
 
       let additionalFields = {};
 
@@ -1198,51 +901,51 @@ export default function InvoiceCCreate() {
 
       const finalSubmitData = { ...submitData, ...additionalFields };
 
-      console.log('📤 FINAL UI SENDING COMPLETE SALEX PAYLOAD:', finalSubmitData);
+      console.log('?? FINAL UI SENDING COMPLETE SALEX PAYLOAD:', finalSubmitData);
 
-      const response = await fetch(isEditMode ? `/api/salex/${editInvoiceId}` : '/api/salex', {
-        method: isEditMode ? 'PUT' : 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(isEditMode ? finalSubmitData : finalSubmitData),
-      });
-
-      if (response.ok) {
-        const responseData = await response.json();
+      // Use React Query mutations
+      if (isEditMode && editInvoiceId) {
+        await updateSalex.mutateAsync({ id: editInvoiceId, data: finalSubmitData });
         
-        if (editInvoiceId) {
-          SessionStorageService.remove('salex', editInvoiceId.toString());
-        }
+        SessionStorageService.remove('salex', editInvoiceId.toString());
         setShowConfirmationModal(false);
 
-        // Broadcast the creation/update event
+        // Broadcast the update event
         broadcast({
-          type: isEditMode ? 'updated' : 'created',
+          type: 'updated',
           resource: 'salex',
-          data: { id: isEditMode ? editInvoiceId : responseData.salex?.id || responseData.id }
+          data: { id: editInvoiceId }
         });
 
-        // Navigate to salex view page for both create and update
-        const salexId = isEditMode ? editInvoiceId : responseData.salex?.id;
+        // Navigate to salex view page
+        router.push(`/salex/view/${editInvoiceId}`);
+        showSnackbar('success', 'Salex invoice updated successfully!');
+      } else {
+        const responseData = await createSalex.mutateAsync(finalSubmitData);
+        
+        setShowConfirmationModal(false);
+
+        // Broadcast the creation event
+        broadcast({
+          type: 'created',
+          resource: 'salex',
+          data: { id: responseData.salex?.id || responseData.id }
+        });
+
+        // Navigate to salex view page
+        const salexId = responseData.salex?.id || responseData.id;
         if (salexId) {
           router.push(`/salex/view/${salexId}`);
         } else {
-          // Fallback to salex list if no salex ID
           router.push('/salex');
         }
-
-        // Show success snackbar after navigation
-        showSnackbar('success', isEditMode ? 'Salex invoice updated successfully!' : 'Salex invoice created successfully!');
-      } else {
-        const error = await response.json();
-        console.error('❌ API Error:', error);
-        showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice`);
-        setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice` });
+        showSnackbar('success', 'Salex invoice created successfully!');
       }
-    } catch (error) {
-      console.error('❌ Network Error:', error);
-      setErrors({ submit: 'Network error occurred' });
+    } catch (error: any) {
+      console.error('? Error:', error);
+      showSnackbar('error', error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice`);
+      setErrors({ submit: error.message || `Failed to ${isEditMode ? 'update' : 'create'} salex invoice` });
+      setShowConfirmationModal(false);
     } finally {
       setLoading(false);
     }
@@ -1616,7 +1319,7 @@ export default function InvoiceCCreate() {
                       </th>
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                          DISCOUNT (₹)
+                          DISCOUNT (?)
                         </th>
                       )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
@@ -1958,7 +1661,7 @@ export default function InvoiceCCreate() {
                                 const discountPercentage = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
                                 const finalTotal = subtotal - discountAmount; // No tax added
 
-                                const newItem: InvoiceItem = {
+                                const newItem: SalexInvoiceItem = {
                                   id: Date.now().toString(),
                                   product_id: selectedProduct.id,
                                   product_name: selectedProduct.product_name,
@@ -2045,7 +1748,7 @@ export default function InvoiceCCreate() {
                               className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
                               title="Clear selected product"
                             >
-                              ×
+                              �
                             </button>
                           )}
 
@@ -2254,7 +1957,7 @@ export default function InvoiceCCreate() {
                                   className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
                                   title="Save changes"
                                 >
-                                  ✓
+                                  ?
                                 </button>
                                 <button
                                   type="button"
@@ -2262,7 +1965,7 @@ export default function InvoiceCCreate() {
                                   className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
                                   title="Cancel edit"
                                 >
-                                  ✕
+                                  ?
                                 </button>
                               </div>
                             </td>
@@ -2274,15 +1977,15 @@ export default function InvoiceCCreate() {
                               {product.qty}
                             </td>
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ₹{Math.round(product.rate)}
+                              ?{Math.round(product.rate)}
                             </td>
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.discount_amount)}
+                                ?{Math.round(product.discount_amount)}
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                              ₹{Math.round(product.total)}
+                              ?{Math.round(product.total)}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
@@ -2317,7 +2020,7 @@ export default function InvoiceCCreate() {
                           {/* Display Subtotal */}
                         {/* Display Subtotal instead */}
                         <div className="text-sm font-semibold text-slate-200">
-                          Subtotal: ₹{subtotal.toFixed(2)}
+                          Subtotal: ?{subtotal.toFixed(2)}
                         </div>
                       </td>
                     </tr>
@@ -2491,7 +2194,7 @@ export default function InvoiceCCreate() {
                       <div className="flex items-center space-x-2">
                         <Calculator className="w-4 h-4 text-slate-400" />
                         <span className="text-white font-semibold text-lg">
-                          ₹{grandTotal.toFixed(2)}
+                          ?{grandTotal.toFixed(2)}
                         </span>
                       </div>
                     </div>
@@ -2580,7 +2283,7 @@ export default function InvoiceCCreate() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Create Invoice C?"
-        message={`Are you sure you want to create this Invoice C for ₹${grandTotal?.toFixed(2)}? This action cannot be undone.`}
+        message={`Are you sure you want to create this Invoice C for ?${grandTotal?.toFixed(2)}? This action cannot be undone.`}
         confirmText="Create Invoice C"
         cancelText="Cancel"
         showLoading={loading}

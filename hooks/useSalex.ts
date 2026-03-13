@@ -199,3 +199,27 @@ export function useDeleteSalex() {
     },
   });
 }
+
+// Last Invoice Number Hook
+async function fetchLastSalexInvoiceNumber(signal?: AbortSignal): Promise<number> {
+  const response = await fetch('/api/salex?limit=1&sort=-invoice_no', { signal });
+
+  if (!response.ok) {
+    throw new Error('Failed to fetch last invoice number');
+  }
+
+  const data = await response.json();
+  const lastInvoice = data.salexs?.[0];
+  return lastInvoice ? lastInvoice.invoice_no + 1 : 1;
+}
+
+export function useLastSalexInvoiceNumber() {
+  return useQuery({
+    queryKey: ['lastSalexInvoiceNumber'],
+    queryFn: ({ signal }) => fetchLastSalexInvoiceNumber(signal),
+    staleTime: 0, // Always fetch fresh
+    gcTime: 1 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+}
+

@@ -86,17 +86,31 @@ Create hooks in this order based on usage frequency and complexity:
 
 #### Sales Domain (Transaction Flow)
 ```typescript
-// hooks/useSales.ts ✅ DONE
-// Types: types/sales.ts ✅
+// hooks/useSales.ts ✅ COMPLETE
+// Types: types/sales.ts ✅ COMPLETE
 export function useSales(filters: SaleFilters) // ✅ DONE
 export function useSale(id: number) // ✅ DONE
-export function useSalex(filters: SalexFilters) // ✅ DONE
-export function useSalexItem(id: number) // ✅ DONE
+export function useSalex(filters: SalexFilters) // ✅ DONE (in useSalex.ts)
+export function useSalexItem(id: number) // ✅ DONE (in useSalex.ts)
 export function useSaleReturns(filters: SaleReturnFilters) // ✅ DONE
 export function useSaleReturn(id: number) // ✅ DONE
 export function useDeleteSaleReturn() // ✅ DONE (mutation)
 export function useCreateSaleReturn() // ✅ DONE (mutation)
 export function useUpdateSaleReturn() // ✅ DONE (mutation)
+export function useCreateSale() // ✅ DONE (mutation)
+export function useUpdateSale() // ✅ DONE (mutation)
+export function useDeleteSale() // ✅ DONE (mutation)
+export function useLastSaleInvoiceNumber() // ✅ DONE
+export function useSaleReturnReasons() // ✅ DONE
+export function useCustomerBills(params) // ✅ DONE
+
+// hooks/useSalex.ts ✅ COMPLETE
+export function useSalex(filters: SalexFilters) // ✅ DONE
+export function useSalexItem(id: number) // ✅ DONE
+export function useCreateSalex() // ✅ DONE (mutation)
+export function useUpdateSalex() // ✅ DONE (mutation)
+export function useDeleteSalex() // ✅ DONE (mutation)
+export function useLastSalexInvoiceNumber() // ✅ DONE
 ```
 
 #### Purchases Domain (Transaction Flow)
@@ -156,6 +170,8 @@ export function useStates() // ✅ DONE
 - ✅ `pages/sale/view/[id].tsx` - DONE (migrated to useSale hook)
 - ✅ `pages/purchases/view/[id].tsx` - DONE (migrated to usePurchase hook)
 - ✅ `pages/salex/view/[id].tsx` - DONE (migrated to useSalexItem hook)
+- ✅ `pages/sale/create.tsx` - DONE (1500 → ~1100 lines, 27% reduction - types moved, hooks integrated, mutations added)
+- ✅ `pages/salex/create.tsx` - DONE (2300 → ~1900 lines, 17% reduction - types moved, hooks integrated, mutations added)
 - ✅ `pages/reports/sale.tsx` - DONE (migrated to useSalesReport hook)
 - ✅ `pages/reports/salex.tsx` - DONE (migrated to useSalexReport hook)
 - ✅ `pages/purchases/create.tsx` - DONE (optimized with all hooks + mutations)
@@ -166,13 +182,13 @@ export function useStates() // ✅ DONE
 - ✅ `pages/vendor-transactions/view/[id].tsx` - DONE (350 → 304 lines, 13% reduction)
 - ✅ `pages/entry/vendor-transaction.tsx` - DONE (1088 → ~850 lines, 22% reduction)
 - ✅ `pages/entry/salereturn.tsx` - DONE (index page with query + mutation hooks)
-- ✅ `pages/entry/salereturn/[id].tsx` - DONE (view page with query hook)
-- ✅ `pages/entry/salereturn-create.tsx` - DONE (create/edit page with mutations)
+- ✅ `pages/entry/salereturn/[id].tsx` - DONE (view page with query hook, types moved)
+- ✅ `pages/entry/salereturn-create.tsx` - DONE (1290 → 1089 lines, 15.6% reduction - types moved, hooks integrated, mutations added)
 - ✅ `pages/entry/deadstock.tsx` - DONE (migrated to useDeadstock hook)
 - `pages/transactions/index.tsx` (uses mock data - skip for now)
 - `components/transactions/SaleTable.tsx`
 
-**Progress**: 19/19 completed (100%) ✅ WEEK 1 COMPLETE!
+**Progress**: 20/20 completed (100%) ✅ WEEK 1 COMPLETE!
 
 ---
 
@@ -608,30 +624,31 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 ### Hook Files (Consolidated Structure)
 | Hook File | Queries | Types File | Status |
 |-----------|---------|------------|--------|
-| `hooks/useSales.ts` | Sales, Salex, Sale Returns | `types/sales.ts` | ✅ Complete |
+| `hooks/useSales.ts` | Sales, Sale Returns, Customer Bills | `types/sales.ts` | ✅ Complete |
+| `hooks/useSalex.ts` | Salex (tax-exempt sales) | `types/sales.ts` | ✅ Complete |
 | `hooks/usePurchases.ts` | Purchases, Purchase Returns | `types/purchases.ts` | ✅ Complete |
 | `hooks/useVendorTransactions.ts` | Vendor Transactions, Bills, Returns | `types/vendor-transactions.ts` | ✅ Complete |
 | `hooks/useVendors.ts` | Vendors | `types/vendors.ts` | ✅ Complete |
 | `hooks/useProducts.ts` | Products, Deadstock | `types/products.ts` | ✅ Complete |
-| `hooks/useStaff.ts` | Staff | `types/staff.ts` | ✅ Complete |
+| `hooks/useStaff.ts` | Staff, Mechanics, Customers | `types/staff.ts` | ✅ Complete |
 | `hooks/useStates.ts` | States | - | ✅ Complete |
 | `hooks/useReports.ts` | All Reports | `types/reports.ts` | ✅ Partial (2/13) |
 | `hooks/useCustomers.ts` | Customers, Ledger, Transactions | `types/customers.ts` | ⏳ TODO |
 | `hooks/useSettings.ts` | Settings, Master Data | `types/settings.ts` | ⏳ TODO |
 | `hooks/useAdjustments.ts` | Adjustments | `types/adjustments.ts` | ⏳ TODO |
-| **Total Hook Files** | **~11 files** | **~9 type files** | **8/11 started (73%)** |
+| **Total Hook Files** | **~12 files** | **~9 type files** | **9/12 started (75%)** |
 
 ### Page Migration Progress
 | Category | Files to Migrate | Estimated Time | Status |
 |----------|-----------------|----------------|--------|
-| Sales/Purchases/Salex | 19 files | Week 1 | ✅ 19/19 (100%) COMPLETE! |
+| Sales/Purchases/Salex | 20 files | Week 1 | ✅ 20/20 (100%) COMPLETE! |
 | Customers/Vendors | 12 files | Week 2 | ⏳ 0/12 |
 | Products/Inventory | 10 files | Week 3 | ⏳ 0/10 |
 | Adjustments | 8 files | Week 4 | ⏳ 0/8 |
 | Payments/Refunds | 6 files | Week 5 | ⏳ 0/6 |
 | Reports/Analytics | 13 files | Week 6 | ✅ 2/13 (15%) |
 | Settings/Master Data | 8 files | Week 7 | ⏳ 0/8 |
-| **Total Query Pages** | **76 files** | **7 weeks** | **21/76 (28%)** |
+| **Total Query Pages** | **77 files** | **7 weeks** | **22/77 (29%)** |
 | | | | |
 | Transaction Mutations | 6 files | Week 8 | ✅ 3/6 (50%) |
 | Customer/Vendor Mutations | 4 files | Week 9 | ⏳ 0/4 |
@@ -639,7 +656,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 | Return/Payment Mutations | 8 files | Week 11 | ✅ 6/8 (75%) |
 | **Total Mutations** | **23 files** | **4 weeks** | **9/23 (39%)** |
 | | | | |
-| **GRAND TOTAL** | **99 files** | **11 weeks** | **30/99 (30%)** |
+| **GRAND TOTAL** | **100 files** | **11 weeks** | **31/100 (31%)** |
 
 ---
 
@@ -723,11 +740,11 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 - [x] Add sale return mutations to `useSales.ts`
 - [x] Migrate `pages/entry/salereturn.tsx` (index page)
 - [x] Migrate `pages/entry/salereturn/[id].tsx` (view page)
-- [x] Migrate `pages/entry/salereturn-create.tsx` (create/edit page)
+- [x] Migrate `pages/entry/salereturn-create.tsx` (create/edit page - 1290 → 1089 lines, 15.6% reduction)
 - [x] Add deadstock queries to `useProducts.ts`
 - [x] Migrate `pages/entry/deadstock.tsx`
 - [x] Build verification (PASSING ✅)
-- [x] **Result**: Week 1 complete - 19/19 files migrated (100%)
+- [x] **Result**: Week 1 complete - 20/20 files migrated (100%)
 
 ### Phase 4: Continue with Week 2 - Customer Domain 🔄 NEXT
 - [ ] Create `hooks/useCustomers.ts`
@@ -762,23 +779,63 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 ## Recent Achievements
 
-### Week 1 Completion (Latest) ✅
+### Week 1 Completion - Sale & Salex Domain (Latest) ✅
 **Date**: Current session
-**Files Migrated**: 4 files (sale returns + deadstock)
-- ✅ `pages/entry/salereturn.tsx` - Index page with query + mutation hooks
-- ✅ `pages/entry/salereturn/[id].tsx` - View page with query hook
-- ✅ `pages/entry/salereturn-create.tsx` - Create/edit page with mutations
-- ✅ `pages/entry/deadstock.tsx` - Migrated to useDeadstock hook
+**Files Migrated**: 4 files (sale/salex create pages + sale return view)
+
+**Sale Create Page** (`pages/sale/create.tsx`):
+- ✅ Step 1: Moved types to `types/sales.ts` and `types/staff.ts`
+  - `SaleInvoiceItem`, `SaleFormData` → `types/sales.ts`
+  - `StaffDetails`, `MechanicDetails`, `Customer` → `types/staff.ts`
+- ✅ Step 2: Replaced 8 manual fetch functions with hooks
+  - `useStaff()`, `useMechanics()`, `useCustomers()`, `useProducts()`, `useFilterOptions()`, `useStates()`, `useLastSaleInvoiceNumber()`, `useSale(id)`
+- ✅ Step 3: Added mutations
+  - `useCreateSale()`, `useUpdateSale()`
+- **Result**: 1500 → ~1100 lines (27% reduction), ~400 lines removed
+
+**Salex Create Page** (`pages/salex/create.tsx`):
+- ✅ Step 1: Moved types to `types/sales.ts`
+  - `SalexInvoiceItem`, `SalexFormData` → `types/sales.ts`
+- ✅ Step 2: Replaced 8 manual fetch functions with hooks
+  - Same hooks as sale create + `useLastSalexInvoiceNumber()`, `useSalexItem(id)`
+- ✅ Step 3: Added mutations
+  - `useCreateSalex()`, `useUpdateSalex()`
+- **Result**: 2300 → ~1900 lines (17% reduction), ~400 lines removed
+
+**Sale Return View Page** (`pages/entry/salereturn/[id].tsx`):
+- ✅ Step 1: Moved `ReturnItem` type to `types/sales.ts` as `SaleReturnItem`
+- ✅ Step 2: Already using `useSaleReturn(id)` hook
+- ✅ Step 3: No mutations needed (read-only view)
+- ✅ Cleanup: Removed unused imports (`useState`, `showSnackbar`)
+- **Result**: Types properly organized, no manual fetches
+
+**Sale Return Create Page** (`pages/entry/salereturn-create.tsx`):
+- ✅ Step 1: Moved types to `types/sales.ts`
+  - `SaleBill`, `SaleItemForReturn`, `ReturnReason`, `SelectedReturnItem` → `types/sales.ts`
+- ✅ Step 2: Replaced 2 manual fetch functions with hooks
+  - `useCustomers()` replaced `loadCustomers()`
+  - `useSaleReturnReasons()` replaced `loadReturnReasons()`
+  - Note: `loadCustomerBills()` kept as manual function (complex pagination logic)
+- ✅ Step 3: Mutations already integrated
+  - `useCreateSaleReturn()`, `useUpdateSaleReturn()`
+- **Result**: 1290 → 1089 lines (15.6% reduction, 201 lines removed)
 
 **Hooks Enhanced**:
-- ✅ `hooks/useSales.ts` - Added sale return queries and mutations (useSaleReturns, useSaleReturn, useDeleteSaleReturn, useCreateSaleReturn, useUpdateSaleReturn)
-- ✅ `hooks/useProducts.ts` - Added deadstock query (useDeadstock)
-- ✅ `types/sales.ts` - Added SaleReturn, SaleReturnFilters, SaleReturnsResponse types
-- ✅ `types/products.ts` - Added Deadstock, DeadstockFilters, DeadstockResponse types
+- ✅ `hooks/useSales.ts` - Added mutations (useCreateSale, useUpdateSale, useDeleteSale, useLastSaleInvoiceNumber, useSaleReturnReasons, useCustomerBills)
+- ✅ `hooks/useSalex.ts` - Added mutations (useCreateSalex, useUpdateSalex, useDeleteSalex, useLastSalexInvoiceNumber)
+- ✅ `hooks/useStaff.ts` - Already had useCustomers, useMechanics, useStaff
+- ✅ `hooks/useProducts.ts` - Already had useProducts, useFilterOptions
+- ✅ `hooks/useStates.ts` - Already had useStates
+
+**Types Enhanced**:
+- ✅ `types/sales.ts` - Added SaleInvoiceItem, SaleFormData, SalexInvoiceItem, SalexFormData, SaleReturnItem, SaleBill, SaleItemForReturn, ReturnReason, SelectedReturnItem
+- ✅ `types/staff.ts` - Added StaffDetails, MechanicDetails, Customer
 
 **Impact**:
-- Week 1 now 100% complete (19/19 files)
-- All core transaction flows migrated
+- 4 major create/edit pages fully migrated with 3-step process
+- ~1,000 lines of code removed total (sale/salex/sale return create pages)
+- All manual fetch calls eliminated where possible
+- Proper type organization
 - Build passing with TypeScript validation ✅
    - Track progress in this document
 
