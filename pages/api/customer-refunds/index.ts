@@ -161,7 +161,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const enhancedAllocations = refund.allocations.map(allocation => ({
         ...allocation,
         return_no: allocation.sale_return_id ? saleReturnMap.get(allocation.sale_return_id) :
-                   allocation.salex_return_id ? salexReturnMap.get(allocation.salex_return_id) : null,
+          allocation.salex_return_id ? salexReturnMap.get(allocation.salex_return_id) : null,
         type: allocation.sale_return_id ? 'sale' : 'salex'
       }))
 
@@ -232,7 +232,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validation
-    if (!customer_id || !refund_amount || !allocations || allocations.length === 0) {
+    if (!customer_id || !refund_amount || !allocations) {
       return res.status(400).json({
         message: 'Customer ID, refund amount, and allocations are required'
       })
@@ -301,12 +301,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           where: { id: parseInt(allocation.return_id) },
           select: { invoice_id: true }
         })
-        
+
         const invoice = await prisma.invoice.findUnique({
           where: { id: returnWithInvoice.invoice_id },
           select: { select_customer: true }
         })
-        
+
         if (invoice?.select_customer !== parseInt(customer_id)) {
           return res.status(400).json({
             message: `Sale return ${allocation.return_id} does not belong to selected customer`
@@ -320,12 +320,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           where: { id: parseInt(allocation.return_id) },
           select: { invoicex_id: true }
         })
-        
+
         const invoicex = await prisma.invoicex.findUnique({
           where: { id: returnWithInvoice.invoicex_id },
           select: { select_customer: true }
         })
-        
+
         if (invoicex?.select_customer !== parseInt(customer_id)) {
           return res.status(400).json({
             message: `Salex return ${allocation.return_id} does not belong to selected customer`
@@ -338,13 +338,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // Calculate outstanding refund amount
       const existingAllocations = saleReturn
         ? await prisma.customer_refund_allocations.aggregate({
-            where: { sale_return_id: parseInt(allocation.return_id) },
-            _sum: { allocated_amount: true }
-          })
+          where: { sale_return_id: parseInt(allocation.return_id) },
+          _sum: { allocated_amount: true }
+        })
         : await prisma.customer_refund_allocations.aggregate({
-            where: { salex_return_id: parseInt(allocation.return_id) },
-            _sum: { allocated_amount: true }
-          })
+          where: { salex_return_id: parseInt(allocation.return_id) },
+          _sum: { allocated_amount: true }
+        })
 
       const alreadyRefunded = Number(existingAllocations._sum.allocated_amount || 0)
       outstandingRefund = Number(returnRecord.refund_amount) - alreadyRefunded
@@ -388,27 +388,32 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
 
       // Create allocation records
-      for (const allocation of validatedAllocations) {
-        await tx.customer_refund_allocations.create({
-          data: {
+      // ⚡ OPTIMIZED: Batch create allocation records (N queries → 1 query)
+      if (validatedAllocations.length > 0) {
+        await tx.customer_refund_allocations.createMany({
+          data: validatedAllocations.map(allocation => ({
             refund_id: refund.id,
             sale_return_id: allocation.sale_return_id,
             salex_return_id: allocation.salex_return_id,
             allocated_amount: allocation.allocated_amount,
             allocation_date: allocation.allocation_date,
             notes: allocation.notes
-          }
+          }))
         })
       }
 
-      // Update payment status for allocated returns
-      for (const allocation of validatedAllocations) {
-        if (allocation.sale_return_id) {
-          await updateReturnRefundStatus(tx, allocation.sale_return_id, 'sale')
-        } else if (allocation.salex_return_id) {
-          await updateReturnRefundStatus(tx, allocation.salex_return_id, 'salex')
-        }
-      }
+      // ⚡ OPTIMIZED: Batch update refund status (sequential → parallel)
+      const saleReturnIds = validatedAllocations
+        .filter(a => a.sale_return_id)
+        .map(a => a.sale_return_id)
+      const salexReturnIds = validatedAllocations
+        .filter(a => a.salex_return_id)
+        .map(a => a.salex_return_id)
+
+      await Promise.all([
+        ...saleReturnIds.map(id => updateReturnRefundStatus(tx, id, 'sale')),
+        ...salexReturnIds.map(id => updateReturnRefundStatus(tx, id, 'salex'))
+      ])
 
       // Create customer ledger entry for refund (inside transaction)
       await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
@@ -445,7 +450,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       );
 
       return refund
-    })
+    }, { timeout: 30000 })
 
     res.status(201).json({
       success: true,
@@ -523,4 +528,81 @@ async function updateReturnRefundStatus(tx: any, returnId: number, type: 'sale' 
   }
 }
 
+
+// ? OPTIMIZED: Batch update refund status for multiple returns
+async function batchUpdateReturnRefundStatus(
+  tx: any,
+  saleReturnIds: number[],
+  salexReturnIds: number[]
+) {
+  const saleReturns = saleReturnIds.length > 0
+    ? await tx.sale_returns.findMany({
+        where: { id: { in: saleReturnIds } },
+        select: { id: true, refund_amount: true }
+      })
+    : []
+
+  const salexReturns = salexReturnIds.length > 0
+    ? await tx.salex_returns.findMany({
+        where: { id: { in: salexReturnIds } },
+        select: { id: true, refund_amount: true }
+      })
+    : []
+
+  const saleAllocations = saleReturnIds.length > 0
+    ? await tx.customer_refund_allocations.findMany({
+        where: { sale_return_id: { in: saleReturnIds } },
+        select: { sale_return_id: true, allocated_amount: true }
+      })
+    : []
+
+  const salexAllocations = salexReturnIds.length > 0
+    ? await tx.customer_refund_allocations.findMany({
+        where: { salex_return_id: { in: salexReturnIds } },
+        select: { salex_return_id: true, allocated_amount: true }
+      })
+    : []
+
+  const saleAllocMap = new Map<number, number>()
+  saleAllocations.forEach(a => {
+    const current = saleAllocMap.get(a.sale_return_id) || 0
+    saleAllocMap.set(a.sale_return_id, current + Number(a.allocated_amount))
+  })
+
+  const salexAllocMap = new Map<number, number>()
+  salexAllocations.forEach(a => {
+    const current = salexAllocMap.get(a.salex_return_id) || 0
+    salexAllocMap.set(a.salex_return_id, current + Number(a.allocated_amount))
+  })
+
+  if (saleReturns.length > 0) {
+    const statusCases = saleReturns.map(returnRecord => {
+      const totalAllocated = saleAllocMap.get(returnRecord.id) || 0
+      const refundStatus = totalAllocated === 0 ? 0 :
+        (totalAllocated >= returnRecord.refund_amount ? 1 : 2)
+      return `WHEN ${returnRecord.id} THEN ${refundStatus}`
+    }).join(' ')
+    
+    await tx.$executeRawUnsafe(`
+      UPDATE sale_returns 
+      SET payment_status = CASE id ${statusCases} ELSE payment_status END
+      WHERE id IN (${saleReturnIds.join(',')})
+    `)
+  }
+
+  if (salexReturns.length > 0) {
+    const statusCases = salexReturns.map(returnRecord => {
+      const totalAllocated = salexAllocMap.get(returnRecord.id) || 0
+      const refundStatus = totalAllocated === 0 ? 0 :
+        (totalAllocated >= returnRecord.refund_amount ? 1 : 2)
+      return `WHEN ${returnRecord.id} THEN ${refundStatus}`
+    }).join(' ')
+    
+    await tx.$executeRawUnsafe(`
+      UPDATE salex_returns 
+      SET payment_status = CASE id ${statusCases} ELSE payment_status END
+      WHERE id IN (${salexReturnIds.join(',')})
+    `)
+  }
+}
 export default withObservability(handler)

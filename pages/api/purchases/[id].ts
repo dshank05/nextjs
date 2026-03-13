@@ -795,23 +795,30 @@ export default async function handler(
               }
             }
 
-            // ✅ OPTIMIZATION 2: Execute deletions in parallel
+            // ===== OPTIMIZED: Batch stock updates for deletions =====
             if (itemsToDelete.length > 0) {
+              const productIds = itemsToDelete.map(item => item.productId);
+              
+              // Build CASE statement for stock decrements
+              const stockCases = itemsToDelete
+                .filter(item => item.qty > 0)
+                .map(item => `WHEN ${item.productId} THEN stock - ${item.qty}`)
+                .join(' ');
+
               await Promise.all([
                 // Delete all items at once
                 tx.purchaseitems.deleteMany({
                   where: { id: { in: itemsToDelete.map(item => item.id) } }
                 }),
-                // Parallel stock decrements
-                ...itemsToDelete.map(item =>
-                  item.qty > 0
-                    ? tx.product.update({
-                        where: { id: item.productId },
-                        data: { stock: { decrement: item.qty } }
-                      })
-                    : Promise.resolve()
-                )
-              ])
+                // Single query for all stock decrements
+                stockCases.length > 0
+                  ? tx.$executeRawUnsafe(`
+                      UPDATE product 
+                      SET stock = CASE id ${stockCases} ELSE stock END
+                      WHERE id IN (${productIds.join(',')})
+                    `)
+                  : Promise.resolve()
+              ]);
             }
 
             // ✅ OPTIMIZATION 3: Batch load products for new items
@@ -869,24 +876,38 @@ export default async function handler(
                 }
               })
 
-              // Parallel: Bulk insert + stock updates
+              // ===== OPTIMIZED: Batch stock updates for additions =====
+              const addProductIds = itemsToAdd.map(item => item.productId);
+              
+              // Build CASE statements for stock increments
+              const stockCases = itemsToAdd.map(item => 
+                `WHEN ${item.productId} THEN stock + ${parseFloat(item.data.qty.toString())}`
+              ).join(' ');
+              
+              const rateCases = itemsToAdd.map(item => 
+                `WHEN ${item.productId} THEN ${parseFloat(item.data.rate.toString())}`
+              ).join(' ');
+
+              // Parallel: Bulk insert + single stock update query
               await Promise.all([
                 tx.purchaseitems.createMany({ data: bulkInsertData }),
-                ...itemsToAdd.map(item => 
-                  tx.product.update({
-                    where: { id: item.productId },
-                    data: {
-                      stock: { increment: parseFloat(item.data.qty.toString()) },
-                      latest_purchase_rate: parseFloat(item.data.rate.toString()),
-                      last_purchase_date: updatedPurchase.invoice_date
-                    }
-                  })
-                )
-              ])
+                tx.$executeRawUnsafe(`
+                  UPDATE product 
+                  SET 
+                    stock = CASE id ${stockCases} ELSE stock END,
+                    latest_purchase_rate = CASE id ${rateCases} ELSE latest_purchase_rate END,
+                    last_purchase_date = ${updatedPurchase.invoice_date}
+                  WHERE id IN (${addProductIds.join(',')})
+                `)
+              ]);
             }
 
-            // ✅ OPTIMIZATION 5: Parallel item updates
+            // ===== OPTIMIZED: Batch stock updates for modifications =====
             if (itemsToUpdate.length > 0) {
+              // Separate items that need stock updates vs rate updates
+              const itemsWithStockChanges = itemsToUpdate.filter(item => Math.abs(item.qtyDiff) > 0.001);
+              const itemsWithRateChanges = itemsToUpdate.filter(item => item.rateChanged);
+              
               await Promise.all([
                 // Parallel item updates
                 ...itemsToUpdate.map(item =>
@@ -906,27 +927,35 @@ export default async function handler(
                     }
                   })
                 ),
-                // Parallel stock updates
-                ...itemsToUpdate.map(item => {
-                  const productUpdateData: any = {}
-
-                  if (Math.abs(item.qtyDiff) > 0.001) {
-                    productUpdateData.stock = { increment: item.qtyDiff }
-                  }
-
-                  if (item.rateChanged) {
-                    productUpdateData.latest_purchase_rate = parseFloat(item.data.rate.toString())
-                    productUpdateData.last_purchase_date = updatedPurchase.invoice_date
-                  }
-
-                  return Object.keys(productUpdateData).length > 0
-                    ? tx.product.update({
-                        where: { id: item.productId },
-                        data: productUpdateData
-                      })
-                    : Promise.resolve()
-                })
-              ])
+                // Single query for stock increments
+                itemsWithStockChanges.length > 0
+                  ? tx.$executeRawUnsafe(`
+                      UPDATE product 
+                      SET stock = CASE id 
+                        ${itemsWithStockChanges.map(item => 
+                          `WHEN ${item.productId} THEN stock + ${item.qtyDiff}`
+                        ).join(' ')}
+                        ELSE stock 
+                      END
+                      WHERE id IN (${itemsWithStockChanges.map(item => item.productId).join(',')})
+                    `)
+                  : Promise.resolve(),
+                // Single query for rate updates
+                itemsWithRateChanges.length > 0
+                  ? tx.$executeRawUnsafe(`
+                      UPDATE product 
+                      SET 
+                        latest_purchase_rate = CASE id 
+                          ${itemsWithRateChanges.map(item => 
+                            `WHEN ${item.productId} THEN ${parseFloat(item.data.rate.toString())}`
+                          ).join(' ')}
+                          ELSE latest_purchase_rate 
+                        END,
+                        last_purchase_date = ${updatedPurchase.invoice_date}
+                      WHERE id IN (${itemsWithRateChanges.map(item => item.productId).join(',')})
+                    `)
+                  : Promise.resolve()
+              ]);
             }
           }
 

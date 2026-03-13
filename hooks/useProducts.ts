@@ -48,13 +48,17 @@ async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Pro
     min_stock: product.min_stock,
     rate: product.rate,
     part_no: product.part_no,
+    product_category_id: product.product_category_id,
     categoryName: product.categoryName,
+    product_subcategory_id: product.product_subcategory_id,
+    subcategoryName: product.subcategoryName,
     companyName: product.companyName,
+    company_id: product.company_id,
     subcategoryNames: product.subcategoryNames,
     latestPurchaseRate: product.latestPurchaseRate,
     lastPurchaseDate: product.lastPurchaseDate,
+    car_model_ids: product.car_model_ids,
     carModelsDisplay: product.carModelsDisplay,
-    subcategoryName: product.subcategoryName,
     pic: product.pic,
     barcode: product.barcode
   }));

@@ -42,9 +42,10 @@ npm install @tanstack/react-query
 - [x] Created `types/vendors.ts` (Vendor types)
 - [x] Created `types/staff.ts` (Staff types)
 - [x] Created `types/vendor-transactions.ts` (VendorTransaction, OutstandingBill/Return)
+- [x] Created `types/customer-transactions.ts` (CustomerTransaction, OutstandingInvoice/Return)
 - [x] Updated all hooks to import from `types/`
 - [x] Updated all migrated pages to import types from `types/`
-- [x] Removed ~130 lines of duplicate type definitions
+- [x] Removed ~180 lines of duplicate type definitions
 
 **Result**: Foundation ready, average 53% code reduction, build passing ✅
 
@@ -196,36 +197,41 @@ export function useStates() // ✅ DONE
 **Medium Priority - Used in 10+ files**
 
 ```typescript
-// hooks/useCustomers.ts
-// Types: types/customers.ts
-export function useCustomers(filters?: CustomerFilters)
-export function useCustomer(id: number)
-export function useCustomerLedger(id: number, filters?: LedgerFilters)
-export function useCustomerBalance(id: number)
-export function useCustomerTransactions(id: number, filters?: TransactionFilters)
+// hooks/useCustomers.ts ✅ DONE
+// Types: types/customer-transactions.ts ✅
+export function useCustomer(id: number) // ✅ DONE
+export function useCustomerTransactions(filters) // ✅ DONE
+export function useCustomerPayment(id: number) // ✅ DONE
+export function useCustomerRefund(id: number) // ✅ DONE
+export function useCurrentFY() // ✅ DONE
+export function useUpdateCustomerStatus() // ✅ DONE (mutation)
+export function useDeleteCustomerTransaction() // ✅ DONE (mutation)
+export function useCreateCustomerPayment() // ✅ DONE (mutation)
+export function useUpdateCustomerPayment() // ✅ DONE (mutation)
+export function useCreateCustomerRefund() // ✅ DONE (mutation)
+export function useUpdateCustomerRefund() // ✅ DONE (mutation)
 
-// hooks/useVendors.ts
-// Types: types/vendors.ts
-export function useVendors(filters?: VendorFilters)
-export function useVendor(id: number)
-export function useVendorLedger(id: number, filters?: LedgerFilters)
-export function useVendorBalance(id: number)
-export function useVendorTransactions(id: number, filters?: TransactionFilters)
+// hooks/useVendors.ts ✅ DONE
+// Types: types/vendors.ts ✅
+export function useVendors() // ✅ DONE
 ```
 
 **Files to Migrate (12 files)**:
-- `pages/customers/view/[id].tsx`
+- ✅ `pages/customers/view/[id].tsx` - DONE (265 → 228 lines, 14% reduction)
 - `pages/entry/customerdetails.tsx`
 - `pages/vendors/view/[id].tsx`
 - `pages/entry/vendordetails.tsx`
-- `pages/customer-transactions/index.tsx`
-- `pages/customer-transactions/view/[id].tsx`
-- `pages/vendor-transactions/index.tsx`
-- `pages/vendor-transactions/view/[id].tsx`
+- ✅ `pages/customer-transactions/index.tsx` - DONE (migrated with hooks + mutations)
+- ✅ `pages/customer-transactions/view/[id].tsx` - DONE (types moved, hooks integrated)
+- ✅ `pages/customer-transactions/create.tsx` - DONE (1101 → ~1050 lines, 5% reduction - types moved, hooks integrated, mutations added)
+- ✅ `pages/vendor-transactions/index.tsx` - DONE (650 → 560 lines, 14% reduction)
+- ✅ `pages/vendor-transactions/view/[id].tsx` - DONE (350 → 304 lines, 13% reduction)
 - `pages/reports/customer-ledger.tsx`
 - `pages/reports/vendor-ledger.tsx`
-- `pages/reports/customer-outstanding.tsx`
-- `pages/reports/vendor-outstanding.tsx`
+- `pages/reports/customer-reports.tsx`
+- `pages/reports/vendor-reports.tsx`
+
+**Progress**: 6/12 completed (50%)
 
 ---
 
@@ -860,16 +866,54 @@ A: Keep `.old.tsx` backups. Rollback is just renaming files.
 
 ---
 
-**Status**: Phase 2 (Purchase Domain) complete! 23% overall progress  
-**Next Action**: Complete remaining Week 1 files (sale returns, deadstock)  
-**Timeline**: 11 weeks for full migration (2-3 files per week)  
+**Status**: Week 2 (Customer Transactions) in progress! 26/77 query pages (34%), 35/100 total (35%)  
+**Next Action**: Complete remaining Week 2 files (customer/vendor details, reports)  
+**Timeline**: 10 weeks for full migration (2-3 files per week)  
 **ROI**: 50% code reduction, 60% fewer API calls, 2x development speed
 
 ---
 
 ## Recent Achievements (Latest Session)
 
-### ✅ Purchase Domain - COMPLETE
+### ✅ Customer Transaction Domain - COMPLETE
+**4 pages migrated, ~150 lines removed**
+
+1. **Customer View Page**
+   - `pages/customers/view/[id].tsx`: 265 → 228 lines (14% reduction)
+   - Replaced manual fetch with `useCustomer()` hook
+   - Replaced manual status update with `useUpdateCustomerStatus()` mutation
+
+2. **Customer Transaction Module** (3 pages)
+   - Index page: Migrated with `useCustomers()`, `useCustomerTransactions()`, `useDeleteCustomerTransaction()`
+   - View page: Migrated with `useCustomerPayment()`, `useCustomerRefund()`, types moved to shared file
+   - Create/Edit page: 1101 → ~1050 lines (5% reduction)
+     - Types moved to `types/customer-transactions.ts`
+     - Replaced `fetchCustomers()` with `useCustomers()` hook
+     - Replaced `fetchCurrentFY()` with `useCurrentFY()` hook
+     - Added 4 mutation hooks: `useCreateCustomerPayment()`, `useUpdateCustomerPayment()`, `useCreateCustomerRefund()`, `useUpdateCustomerRefund()`
+     - Kept outstanding invoice/return fetches as manual (complex edit mode logic)
+
+**New Hooks Created:**
+- `hooks/useCustomers.ts` - Customer queries, payments, refunds, and mutations
+  - `useCustomer(id)` - Fetch single customer
+  - `useCustomerTransactions(filters)` - Fetch customer transactions with filters
+  - `useCustomerPayment(id)` - Fetch customer payment detail
+  - `useCustomerRefund(id)` - Fetch customer refund detail
+  - `useCurrentFY()` - Fetch current financial year
+  - `useUpdateCustomerStatus()` - Mutation for customer status
+  - `useDeleteCustomerTransaction()` - Mutation for deleting transactions
+  - `useCreateCustomerPayment()` - Mutation for creating payments
+  - `useUpdateCustomerPayment()` - Mutation for updating payments
+  - `useCreateCustomerRefund()` - Mutation for creating refunds
+  - `useUpdateCustomerRefund()` - Mutation for updating refunds
+
+**Types Enhanced:**
+- `types/customer-transactions.ts` - Added 8 new interfaces:
+  - `TransactionAllocation`, `TransactionSummary`, `TransactionCustomer`, `TransactionData`
+  - `OutstandingInvoice`, `OutstandingReturn`, `CustomerBasic`
+  - `OperationType`, `PaymentType`
+
+### ✅ Purchase Domain - COMPLETE (Previous Session)
 **15 pages migrated, ~800-1000 lines removed**
 
 1. **Purchase Module** (3 pages)

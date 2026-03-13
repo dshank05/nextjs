@@ -357,7 +357,7 @@ export default function PurchaseCreate() {
       categoryName: categoryName,
       subcategory: product.product_subcategory_id || null,
       subcategoryName: subcategoryName,
-      carModels: [product.car_model_ids.split(",")[0]],
+      carModels: product.car_model_ids ? [product.car_model_ids.split(",")[0]] : [],
       company: companyId,
       companyName: companyName,
       partNo: product.part_no || ''
@@ -371,7 +371,7 @@ export default function PurchaseCreate() {
         categoryName: categoryName,
         subcategory: product.product_subcategory_id,
         subcategoryName: subcategoryName,
-        carModels: [product.car_model_ids.split(",")[0]],
+        carModels: product.car_model_ids ? [product.car_model_ids.split(",")[0]] : [],
         company: companyId,
         companyName: companyName
       }

@@ -22,6 +22,7 @@ export interface LedgerEntryData {
   notes?: string
   fy: number
   transaction_id?: number  // Stores payment_id or refund_id for tracking deletions
+  vendor_name?: string  // ? OPTIMIZATION: Pass vendor name directly to avoid bill_to lookup for vendor_id=0
 }
 
 export class LedgerService {

@@ -66,6 +66,7 @@ async function handler(
     const {
       page = '1',
       limit = '50',
+      fetchAll = 'false',
       search = '',
       category = '',
       subcategory = '', // Filters actual subcategories
@@ -82,14 +83,15 @@ async function handler(
     } = req.query
 
     console.log('[PRODUCTS OPTIMIZED API] Parsed parameters:', {
-      page, limit, search, category, subcategory, model, company_id, quantity,
+      page, limit, fetchAll, search, category, subcategory, model, company_id, quantity,
       lowStock, startDate, endDate, uid, part_no, sortBy, sortOrder
     });
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
+    const isFetchAll = fetchAll === 'true'
 
-    console.log('[PRODUCTS OPTIMIZED API] Parsed numeric values:', { pageNum, limitNum });
+    console.log('[PRODUCTS OPTIMIZED API] Parsed numeric values:', { pageNum, limitNum, isFetchAll });
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'product_name', 'part_no', 'stock', 'rate', 'lastPurchaseDate', 'categoryName', 'companyName', 'subcategoryName']
@@ -282,7 +284,12 @@ async function handler(
       else if (sortField === 'stock') orderByClause = `p.stock ${sortDirection}`;
       else if (sortField === 'lastPurchaseDate') orderByClause = `p.last_purchase_date ${sortDirection}`;
 
-      rawQuery += ` ORDER BY ${orderByClause} LIMIT ${limitNum} OFFSET ${(pageNum - 1) * limitNum}`;
+      rawQuery += ` ORDER BY ${orderByClause}`
+      
+      // Add pagination only if not fetching all
+      if (!isFetchAll) {
+        rawQuery += ` LIMIT ${limitNum} OFFSET ${(pageNum - 1) * limitNum}`
+      };
 
       console.log('[PRODUCTS OPTIMIZED API] Executing raw SQL query:', rawQuery);
       products = await prisma.$queryRawUnsafe(rawQuery) as any[];
@@ -291,7 +298,8 @@ async function handler(
     } else {
       console.log('[PRODUCTS OPTIMIZED API] Using Prisma query for simple filters');
       // Simple case - use Prisma's efficient pagination
-      const skip = (pageNum - 1) * limitNum;
+      const skip = isFetchAll ? 0 : (pageNum - 1) * limitNum;
+      const take = isFetchAll ? undefined : limitNum;
 
       // Build orderBy based on sort field
       let orderBy: any;
@@ -315,7 +323,7 @@ async function handler(
         prisma.product.findMany({
           where,
           skip,
-          take: limitNum,
+          take,
           orderBy,
           include: sortField === 'categoryName' ? { category_ref: true } :
                   sortField === 'companyName' ? { product_company_ref: true } :
@@ -411,10 +419,13 @@ async function handler(
         min_stock: product.min_stock || 0,
         rate: latestPurchaseRate,
         part_no: product.part_no || '',
+        product_category_id: product.product_category_id || undefined,
         categoryName,
+        product_subcategory_id: product.product_subcategory_id || undefined,
+        subcategoryName: subcategoryName || undefined,
         company_id: product.company_id || undefined,
         companyName: product.company_id ? companyMap.get(product.company_id.toString()) || '' : '',
-        subcategoryName: subcategoryName || undefined,
+        car_model_ids: product.car_model_ids || undefined,
         carModelsDisplay,
         latestPurchaseRate,
         lastPurchaseDate: product.last_purchase_date ? format(new Date(product.last_purchase_date * 1000), 'dd/MM/yyyy') : '-',

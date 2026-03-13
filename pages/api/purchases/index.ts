@@ -493,7 +493,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // ===== STEP 3: DATA PREPARATION ===== 
     // ✅ TIMEZONE SAFE: Use convertDateToTimestamp for consistent midnight local time
     // ✅ VALIDATION: Fallback to current date if not provided
-    const invoiceDate = date 
+    const invoiceDate = date
       ? convertDateToTimestamp(date)
       : Math.floor(Date.now() / 1000);
     const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
@@ -648,11 +648,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         });
 
         // Calculate advance balance
-        const advanceBalance = vendor 
-          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) + 
-            (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
+        const advanceBalance = vendor
+          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) +
+          (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
           : 0;
-        
+
         const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
         const newPayment = calculatedGrandTotal - advanceUsed;
 
@@ -665,26 +665,38 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       await Promise.all([
-        // Stock updates (parallel)
-        Promise.all(
-          items.map(async (item) => {
-            const productId = parseInt(item.product_id);
-            const validatedQty = Number(item.qty) || 0;
+        // ===== OPTIMIZED: Batch stock updates in single query =====
+        (async () => {
+          if (items.length === 0) return;
 
-            return tx.product.update({
-              where: { id: productId },
-              data: {
-                stock: {
-                  increment: validatedQty
-                },
-                latest_purchase_rate: parseFloat(item.rate) || 0,
-                last_purchase_date: invoiceDate
-              }
-            });
-          })
-        ),
+          const productIds = items.map(item => parseInt(item.product_id));
+
+          // Build CASE statements for stock increment
+          const stockCases = items.map(item => {
+            const productId = parseInt(item.product_id);
+            const qty = Number(item.qty) || 0;
+            return `WHEN ${productId} THEN stock + ${qty}`;
+          }).join(' ');
+
+          // Build CASE statements for latest_purchase_rate
+          const rateCases = items.map(item => {
+            const productId = parseInt(item.product_id);
+            const rate = parseFloat(item.rate) || 0;
+            return `WHEN ${productId} THEN ${rate}`;
+          }).join(' ');
+
+
+          // Single UPDATE query for all products
+          await tx.$executeRawUnsafe(`
+            UPDATE product 
+            SET 
+              stock = CASE id ${stockCases} ELSE stock END,
+              latest_purchase_rate = CASE id ${rateCases} ELSE latest_purchase_rate END,
+              last_purchase_date = ${invoiceDate}
+            WHERE id IN (${productIds.join(',')})
+          `);
+        })(),
         // Ledger entry (parallel with stock updates)
-        // ✅ Issue 3 FIX: Pass notes showing advance usage
         ledgerService.createPurchaseEntry({
           id: purchase.id,
           vendor_id: parseInt(vendor_id),
@@ -692,9 +704,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           invoice_date: Math.floor(invoiceDate),
           total: calculatedGrandTotal,
           fy: currentFy,
-          notes: purchaseNotes  // ✅ Add advance usage notes
+          notes: purchaseNotes
         }, tx)
       ]);
+
+
 
       // ===== PAYMENT OPERATIONS (if paid) =====
       if (payment_status === 1) {
@@ -711,11 +725,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
         // ✅ Calculate advance balance and determine new payment needed
         // Include both unallocated payments AND unallocated refunds
-        const advanceBalance = vendor 
-          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) + 
-            (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
+        const advanceBalance = vendor
+          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) +
+          (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
           : 0;
-        
+
         const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
         const newPayment = calculatedGrandTotal - advanceUsed;
 
@@ -734,7 +748,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
               fy: currentFy
             }
           });
-          
+
           advancePaymentId = advancePayment.id;
 
           await tx.payment_allocations.create({
@@ -765,7 +779,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
               fy: currentFy
             }
           });
-          
+
           newPaymentId = payment.id;
 
           await tx.payment_allocations.create({
@@ -778,7 +792,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
             }
           });
         }
-        
+
         // ✅ NOW CREATE PAYMENT LEDGER ENTRY - Only if new payment needed, WITH transaction_id
         if (newPayment > 0 && newPaymentId) {
           await ledgerService.createEntry({
@@ -817,14 +831,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
         if (balanceOp) {
           await balanceHandler.incrementBalanceInTransaction(
-            tx, 
-            balanceOp.vendorId, 
+            tx,
+            balanceOp.vendorId,
             balanceOp.update,
             {
               type: 'purchase_create',
               id: purchase.id,
               reference_no: `INV-${purchase.invoice_no}`,
-              notes: advanceUsed > 0 
+              notes: advanceUsed > 0
                 ? `Purchase: ₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment`
                 : `Purchase: ₹${calculatedGrandTotal.toFixed(2)} paid`
             }

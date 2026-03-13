@@ -161,7 +161,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       const enhancedAllocations = payment.allocations.map(allocation => ({
         ...allocation,
         invoice_no: allocation.invoice_id ? invoiceMap.get(allocation.invoice_id) :
-                   allocation.invoicex_id ? invoicexMap.get(allocation.invoicex_id) : null,
+          allocation.invoicex_id ? invoicexMap.get(allocation.invoicex_id) : null,
         type: allocation.invoice_id ? 'sale' : 'salex'
       }))
 
@@ -232,7 +232,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validation
-    if (!customer_id || !payment_amount || !allocations || allocations.length === 0) {
+    if (!customer_id || !payment_amount || !allocations) {
       return res.status(400).json({
         message: 'Customer ID, payment amount, and allocations are required'
       })
@@ -374,30 +374,31 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       })
 
-      // Create allocation records
-      for (const allocation of validatedAllocations) {
-        await tx.customer_payment_allocations.create({
-          data: {
+      if (validatedAllocations.length > 0) {
+        await tx.customer_payment_allocations.createMany({
+          data: validatedAllocations.map(allocation => ({
             payment_id: payment.id,
             invoice_id: allocation.invoice_id,
             invoicex_id: allocation.invoicex_id,
             allocated_amount: allocation.allocated_amount,
             allocation_date: allocation.allocation_date,
             notes: allocation.notes
-          }
+          }))
         })
       }
 
-      // Update payment status for allocated invoices
-      for (const allocation of validatedAllocations) {
-        if (allocation.invoice_id) {
-          // Update sale invoice payment status
-          await updateInvoicePaymentStatus(tx, allocation.invoice_id, 'sale')
-        } else if (allocation.invoicex_id) {
-          // Update salex invoice payment status
-          await updateInvoicePaymentStatus(tx, allocation.invoicex_id, 'salex')
-        }
-      }
+      // ⚡ OPTIMIZED: Batch update payment status (sequential → parallel)
+      const saleInvoiceIds = validatedAllocations
+        .filter(a => a.invoice_id)
+        .map(a => a.invoice_id)
+      const salexInvoiceIds = validatedAllocations
+        .filter(a => a.invoicex_id)
+        .map(a => a.invoicex_id)
+
+      await Promise.all([
+        ...saleInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'sale')),
+        ...salexInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'salex'))
+      ])
 
       // Create customer ledger entry for receipt (inside transaction)
       await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
@@ -434,7 +435,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       );
 
       return payment
-    })
+    }, { timeout: 30000 })
 
     res.status(201).json({
       success: true,
@@ -512,4 +513,81 @@ async function updateInvoicePaymentStatus(tx: any, invoiceId: number, type: 'sal
   }
 }
 
+
+// ? OPTIMIZED: Batch update payment status for multiple invoices
+async function batchUpdateInvoicePaymentStatus(
+  tx: any,
+  saleInvoiceIds: number[],
+  salexInvoiceIds: number[]
+) {
+  const saleInvoices = saleInvoiceIds.length > 0
+    ? await tx.invoice.findMany({
+        where: { id: { in: saleInvoiceIds } },
+        select: { id: true, total: true }
+      })
+    : []
+
+  const salexInvoices = salexInvoiceIds.length > 0
+    ? await tx.invoicex.findMany({
+        where: { id: { in: salexInvoiceIds } },
+        select: { id: true, total: true }
+      })
+    : []
+
+  const saleAllocations = saleInvoiceIds.length > 0
+    ? await tx.customer_payment_allocations.findMany({
+        where: { invoice_id: { in: saleInvoiceIds } },
+        select: { invoice_id: true, allocated_amount: true }
+      })
+    : []
+
+  const salexAllocations = salexInvoiceIds.length > 0
+    ? await tx.customer_payment_allocations.findMany({
+        where: { invoicex_id: { in: salexInvoiceIds } },
+        select: { invoicex_id: true, allocated_amount: true }
+      })
+    : []
+
+  const saleAllocMap = new Map<number, number>()
+  saleAllocations.forEach(a => {
+    const current = saleAllocMap.get(a.invoice_id) || 0
+    saleAllocMap.set(a.invoice_id, current + Number(a.allocated_amount))
+  })
+
+  const salexAllocMap = new Map<number, number>()
+  salexAllocations.forEach(a => {
+    const current = salexAllocMap.get(a.invoicex_id) || 0
+    salexAllocMap.set(a.invoicex_id, current + Number(a.allocated_amount))
+  })
+
+  if (saleInvoices.length > 0) {
+    const statusCases = saleInvoices.map(invoice => {
+      const totalAllocated = saleAllocMap.get(invoice.id) || 0
+      const paymentStatus = totalAllocated === 0 ? 0 :
+        (totalAllocated >= invoice.total ? 1 : 2)
+      return `WHEN ${invoice.id} THEN ${paymentStatus}`
+    }).join(' ')
+    
+    await tx.$executeRawUnsafe(`
+      UPDATE invoice 
+      SET payment_status = CASE id ${statusCases} ELSE payment_status END
+      WHERE id IN (${saleInvoiceIds.join(',')})
+    `)
+  }
+
+  if (salexInvoices.length > 0) {
+    const statusCases = salexInvoices.map(invoice => {
+      const totalAllocated = salexAllocMap.get(invoice.id) || 0
+      const paymentStatus = totalAllocated === 0 ? 0 :
+        (totalAllocated >= invoice.total ? 1 : 2)
+      return `WHEN ${invoice.id} THEN ${paymentStatus}`
+    }).join(' ')
+    
+    await tx.$executeRawUnsafe(`
+      UPDATE invoicex 
+      SET payment_status = CASE id ${statusCases} ELSE payment_status END
+      WHERE id IN (${salexInvoiceIds.join(',')})
+    `)
+  }
+}
 export default withObservability(handler)
