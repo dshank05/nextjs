@@ -1134,7 +1134,7 @@ export default function InvoiceCreate() {
     <div className="space-y-3">
       {/* Edit Data Loading Spinner */}
       {editDataLoading && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center !mt-0">
           <div className="bg-slate-800 rounded-lg p-6 flex flex-col items-center space-y-4 shadow-xl">
             <Loader className="w-8 h-8 animate-spin text-blue-400" />
             <div className="text-center">

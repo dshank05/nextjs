@@ -7,7 +7,7 @@ import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common/ExportMenu';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
-import QuickPaymentModal from '../../../components/QuickPaymentModal';
+import QuickCustomerPaymentModal from '../../../components/QuickCustomerPaymentModal';
 import { getLocalDateString } from '../../../lib/date-utils';
 import { useSale } from '../../../hooks/useSales';
 
@@ -680,20 +680,22 @@ export default function InvoiceView() {
             summary={(invoice as any).payment_summary}
             history={(invoice as any).payment_history || []}
           />
-          <QuickPaymentModal
+          <QuickCustomerPaymentModal
             isOpen={showQuickPaymentModal}
             onClose={() => setShowQuickPaymentModal(false)}
             onSuccess={() => {
               refetch();
               setShowQuickPaymentModal(false);
             }}
-            purchaseId={invoice.invoice_no}
-            vendorId={invoice.customer_id || 0}
-            vendorName={invoice.customer?.billing_name || ''}
+            invoiceId={invoice.invoice_no}
+            customerId={invoice.customer_id || 0}
+            customerName={invoice.customer?.billing_name || ''}
             outstandingAmount={(invoice as any).payment_summary.remaining_amount}
             totalBill={(invoice as any).payment_summary.total_bill}
             totalPaid={(invoice as any).payment_summary.total_paid}
             paymentHistory={(invoice as any).payment_history || []}
+            invoiceType="invoice"
+            fy={invoice.fy}
           />
         </>
       )}

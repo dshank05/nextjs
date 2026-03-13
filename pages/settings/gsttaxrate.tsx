@@ -407,7 +407,7 @@ export default function GSTTaxRate() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 !mt-0">
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingRate ? 'Edit GST Rate' : 'Add GST Rate'}</h2>
             <form onSubmit={handleSubmit}>

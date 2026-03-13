@@ -193,7 +193,7 @@ export default function DeadstockModal({
   const selectedProduct = products.find(p => p.id === selectedProductId);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 !mt-0">
       <div className="bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-700">

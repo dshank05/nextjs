@@ -652,7 +652,7 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
 
       {/* Column Selector Modal */}
       {showColumnSelector && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 !mt-0">
           <div className="bg-slate-800 p-6 rounded-lg w-full max-w-md shadow-xl">
             <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">
               Select Columns for Excel Export

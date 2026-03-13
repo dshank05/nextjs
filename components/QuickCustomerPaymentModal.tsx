@@ -14,31 +14,37 @@ interface PaymentHistory {
   created_at: string;
 }
 
-interface QuickPaymentModalProps {
+interface QuickCustomerPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  purchaseId: number;
-  vendorId: number;
-  vendorName: string;
+  invoiceId: number;
+  invoicexId?: number; // For salex
+  customerId: number;
+  customerName: string;
   outstandingAmount: number;
   totalBill?: number;
   totalPaid?: number;
   paymentHistory?: PaymentHistory[];
+  invoiceType?: 'invoice' | 'invoicex'; // To determine which API to use
+  fy: number; // Financial year from invoice
 }
 
-export default function QuickPaymentModal({
+export default function QuickCustomerPaymentModal({
   isOpen,
   onClose,
   onSuccess,
-  purchaseId,
-  vendorId,
-  vendorName,
+  invoiceId,
+  invoicexId,
+  customerId,
+  customerName,
   outstandingAmount,
   totalBill,
   totalPaid = 0,
-  paymentHistory = []
-}: QuickPaymentModalProps) {
+  paymentHistory = [],
+  invoiceType = 'invoice',
+  fy
+}: QuickCustomerPaymentModalProps) {
   const { showSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [paymentAmount, setPaymentAmount] = useState(outstandingAmount.toString());
@@ -63,20 +69,31 @@ export default function QuickPaymentModal({
 
     setLoading(true);
     try {
-      const response = await fetch('/api/vendor-payments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          vendor_id: vendorId,
-          payment_date: paymentDate,  // Send as YYYY-MM-DD string, backend handles conversion
-          payment_amount: amount,
-          payment_mode: paymentMode,
-          notes: notes || `Payment for purchase #${purchaseId}`,
-          allocations: [{
-            purchase_id: purchaseId,
+      // Build allocations based on invoice type
+      const allocations = invoiceType === 'invoicex' 
+        ? [{
+            invoicex_id: invoicexId || invoiceId,
             allocated_amount: amount,
             notes: notes || null
           }]
+        : [{
+            invoice_id: invoiceId,
+            allocated_amount: amount,
+            notes: notes || null
+          }];
+
+      const response = await fetch('/api/customer-payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_id: customerId,
+          payment_date: paymentDate,
+          payment_amount: amount,
+          payment_mode: paymentMode,
+          payment_type: 'BILL_SPECIFIC', // Payment allocated to specific invoice
+          fy: fy, // Financial year from invoice
+          notes: notes || `Payment for ${invoiceType === 'invoicex' ? 'Invoice C' : 'invoice'} #${invoiceId}`,
+          allocations
         })
       });
 
@@ -117,8 +134,8 @@ export default function QuickPaymentModal({
         {/* Content */}
         <div className="p-6 space-y-4">
           <div>
-            <p className="text-sm text-slate-400">Vendor</p>
-            <p className="text-white font-medium">{vendorName}</p>
+            <p className="text-sm text-slate-400">Customer</p>
+            <p className="text-white font-medium">{customerName}</p>
           </div>
 
           {/* Summary Cards */}
