@@ -254,24 +254,23 @@ async function handleUpdateRefund(
         });
       }
 
-      // 4. ⚡ OPTIMIZATION: Parallel allocation updates
-      await Promise.all([
-        // Delete old allocations
-        tx.customer_refund_allocations.deleteMany({
-          where: { refund_id: refundId }
-        }),
-        // Create new allocations - using createMany for bulk insert
-        tx.customer_refund_allocations.createMany({
-          data: allocations.map((alloc: any) => ({
-            refund_id: refundId,
-            sale_return_id: alloc.type === 'sale' ? alloc.return_id : null,
-            salex_return_id: alloc.type === 'salex' ? alloc.return_id : null,
-            allocated_amount: alloc.allocated_amount,
-            allocation_date: refund_date,
-            notes: alloc.notes || null
-          }))
-        })
-      ]);
+      // 4. ⚡ OPTIMIZATION: Sequential allocation updates (delete then create)
+      // Delete old allocations first
+      await tx.customer_refund_allocations.deleteMany({
+        where: { refund_id: refundId }
+      })
+      
+      // Create new allocations - using createMany for bulk insert
+      await tx.customer_refund_allocations.createMany({
+        data: allocations.map((alloc: any) => ({
+          refund_id: refundId,
+          sale_return_id: alloc.type === 'sale' ? alloc.return_id : null,
+          salex_return_id: alloc.type === 'salex' ? alloc.return_id : null,
+          allocated_amount: alloc.allocated_amount,
+          allocation_date: refund_date,
+          notes: alloc.notes || null
+        }))
+      });
 
       // 5. ⚡ OPTIMIZATION: Recalculate return statuses in parallel
       const returnsToUpdate = handlerResult.metadata?.returnsToUpdate || [];

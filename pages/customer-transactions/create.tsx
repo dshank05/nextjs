@@ -293,14 +293,14 @@ export default function CustomerTransactionEntry() {
         if (isIncome && transaction.allocations && transaction.allocations.length > 0) {
           // Build list of allocated invoices with their data
           const allocatedInvoices: OutstandingInvoice[] = transaction.allocations.map((alloc: any) => ({
-            invoice_id: alloc.invoice_id,
+            invoice_id: alloc.invoice_id || alloc.invoicex_id,
             invoice_no: alloc.invoice_no,
             invoice_date: alloc.invoice_date,
-            total_bill: alloc.invoice_total,
+            total_bill: alloc.invoice_total || 0,
             total_paid: alloc.allocated_amount,
             // ✅ FIX 1: Cap outstanding at 0 to prevent showing negative amounts
-            outstanding_amount: Math.max(0, alloc.invoice_total - alloc.allocated_amount),
-            payment_status: alloc.payment_status,
+            outstanding_amount: Math.max(0, (alloc.invoice_total || 0) - alloc.allocated_amount),
+            payment_status: alloc.payment_status || 0,
             allocated: alloc.allocated_amount,
             isInCurrentPayment: true  // Mark as part of current payment
           }))
