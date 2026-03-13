@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { ConfirmationModal } from '../../../components/ConfirmationModal';
+import { useCustomer, useUpdateCustomerStatus } from '../../../hooks/useCustomers';
 
 interface Customer {
   id: string;
@@ -31,35 +32,16 @@ interface Customer {
 export default function CustomerView() {
   const router = useRouter();
   const { id } = router.query;
-  const [customer, setCustomer] = useState<Customer | null>(null);
-  const [loading, setLoading] = useState(true);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [statusModalData, setStatusModalData] = useState<{
     newStatus: string;
     customerId: string;
     customerName: string;
   } | null>(null);
-  const [statusUpdating, setStatusUpdating] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchCustomer();
-    }
-  }, [id]);
-
-  const fetchCustomer = async () => {
-    try {
-      const response = await fetch(`/api/customers/${id}`);
-      if (response.ok) {
-        const data = await response.json();
-        setCustomer(data);
-      }
-    } catch (error) {
-      console.error('Error fetching customer:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // React Query hooks
+  const { data: customer, isLoading: loading } = useCustomer(id as string);
+  const updateStatusMutation = useUpdateCustomerStatus();
 
   const handleStatusToggle = (customerId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
@@ -74,38 +56,21 @@ export default function CustomerView() {
   const confirmStatusChange = async () => {
     if (!statusModalData) return;
 
-    setStatusUpdating(true);
-    try {
-      const response = await fetch(`/api/customers/${statusModalData.customerId}/status`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+    updateStatusMutation.mutate(
+      {
+        id: statusModalData.customerId,
+        status: statusModalData.newStatus
+      },
+      {
+        onSuccess: () => {
+          setShowStatusModal(false);
+          setStatusModalData(null);
         },
-        body: JSON.stringify({
-          status: statusModalData.newStatus,
-          confirmed: true
-        }),
-      });
-
-      if (response.ok) {
-        // Update local state
-        if (customer) {
-          setCustomer({
-            ...customer,
-            status: statusModalData.newStatus
-          });
+        onError: (error) => {
+          console.error('Status update failed:', error);
         }
-        setShowStatusModal(false);
-        setStatusModalData(null);
-      } else {
-        const error = await response.json();
-        console.error('Status update failed:', error);
       }
-    } catch (error) {
-      console.error('Status update error:', error);
-    } finally {
-      setStatusUpdating(false);
-    }
+    );
   };
 
   if (loading) {
@@ -284,7 +249,7 @@ export default function CustomerView() {
         isOpen={showStatusModal}
         title={`${statusModalData?.newStatus === 'Active' ? 'Activate' : 'Deactivate'} Customer`}
         message={`Are you sure you want to ${statusModalData?.newStatus === 'Active' ? 'activate' : 'deactivate'} customer "${statusModalData?.customerName}"? This will affect their availability in transaction selections.`}
-        showLoading={statusUpdating}
+        showLoading={updateStatusMutation.isPending}
         onConfirm={confirmStatusChange}
         onCancel={() => {
           setShowStatusModal(false);

@@ -6,6 +6,23 @@ import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
+import { useCustomers } from '../../hooks/useStaff'
+import { 
+  useCurrentFY, 
+  useCustomerPayment, 
+  useCustomerRefund,
+  useCreateCustomerPayment,
+  useUpdateCustomerPayment,
+  useCreateCustomerRefund,
+  useUpdateCustomerRefund
+} from '../../hooks/useCustomers'
+import type { 
+  OutstandingInvoice, 
+  OutstandingReturn, 
+  CustomerBasic, 
+  OperationType, 
+  PaymentType 
+} from '../../types/customer-transactions'
 
 // ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
 function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
@@ -37,44 +54,11 @@ function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => v
   return [storedValue, setValue];
 }
 
-interface OutstandingInvoice {
-  invoice_id: number
-  invoice_no: number
-  invoice_date: number
-  total_bill: number
-  total_paid: number
-  outstanding_amount: number
-  payment_status: number
-  allocated?: number
-  isInCurrentPayment?: boolean  // Track if invoice is part of current payment being edited
-}
-
-interface OutstandingReturn {
-  return_id: number
-  credit_note_no: string
-  return_date: number
-  total_return: number
-  total_refunded: number
-  outstanding_refund: number
-  payment_status: number
-  allocated?: number
-  isInCurrentPayment?: boolean  // Track if return is part of current refund being edited
-}
-
-interface Customer {
-  id: number
-  billing_name: string
-}
-
-type OperationType = 'INCOME' | 'EXPENSE' | ''
-type PaymentType = 'BILL_SPECIFIC' | 'MIXED' | 'DIRECT'
-
 export default function CustomerTransactionEntry() {
   const router = useRouter()
   const { edit, type } = router.query
   const { showSnackbar } = useSnackbar()
   const [loading, setLoading] = useState(false)
-  const [customers, setCustomers] = useState<Customer[]>([])
   const [selectedCustomer, setSelectedCustomer] = useSessionStorage<string>('customer-transaction-customer', '')
   const [operationType, setOperationType] = useState<OperationType>('')
   const [paymentType, setPaymentType] = useState<PaymentType>('BILL_SPECIFIC') // Default for INCOME
@@ -84,7 +68,6 @@ export default function CustomerTransactionEntry() {
   const [mode, setMode] = useState<number>(1)
   const [amount, setAmount] = useState<string>('')
   const [notes, setNotes] = useState<string>('')
-  const [currentFY, setCurrentFY] = useState<number>(2024)
   const [error, setError] = useState<string>('')
   const [showConfirmationModal, setShowConfirmationModal] = useState(false)
   
@@ -92,6 +75,16 @@ export default function CustomerTransactionEntry() {
   const isEditMode = !!edit
   const [transactionId, setTransactionId] = useState<number>(0)
   const [isInitializing, setIsInitializing] = useState(false)
+
+  // React Query hooks
+  const { data: customers = [] } = useCustomers()
+  const { data: currentFY = 2024 } = useCurrentFY()
+  
+  // Mutations
+  const createPaymentMutation = useCreateCustomerPayment()
+  const updatePaymentMutation = useUpdateCustomerPayment()
+  const createRefundMutation = useCreateCustomerRefund()
+  const updateRefundMutation = useUpdateCustomerRefund()
 
   // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
@@ -103,8 +96,6 @@ export default function CustomerTransactionEntry() {
       setDate(getLocalDateString())
     }
 
-    fetchCustomers()
-    fetchCurrentFY()
     if (isEditMode && edit && type) {
       fetchTransactionForEdit(edit as string, type as string)
     }
@@ -139,28 +130,6 @@ export default function CustomerTransactionEntry() {
       setOutstandingReturns([])
     }
   }, [selectedCustomer, operationType])
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await fetch('/api/customers')
-      const data = await res.json()
-      setCustomers(data.customers || [])
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-    }
-  }
-
-  const fetchCurrentFY = async () => {
-    try {
-      const res = await fetch('/api/financial-years')
-      const data = await res.json()
-      if (data.currentFyId) {
-        setCurrentFY(data.currentFyId)
-      }
-    } catch (error) {
-      console.error('Error fetching FY:', error)
-    }
-  }
 
   const fetchOutstandingInvoices = async (customerId: number, skipStateUpdate = false) => {
     if (!skipStateUpdate) {
@@ -319,9 +288,6 @@ export default function CustomerTransactionEntry() {
         
         // Set notes
         setNotes(transaction.notes || '')
-        
-        // Set FY
-        setCurrentFY(transaction.fy)
         
         // ✅ FIX: Load allocated invoices/returns for edit mode with proper merging
         if (isIncome && transaction.allocations && transaction.allocations.length > 0) {
@@ -604,97 +570,91 @@ export default function CustomerTransactionEntry() {
   }
 
   const confirmRecordTransaction = async () => {
-    setLoading(true)
-    try {
-      const amountNum = parseFloat(amount)
-      const timestamp = convertDateToTimestamp(date)
+    const amountNum = parseFloat(amount)
+    const timestamp = convertDateToTimestamp(date)
+    
+    let payload: any = {}
+    
+    if (operationType === 'INCOME') {
+      const allocations = paymentType === 'DIRECT' ? [] : outstandingInvoices
+        .filter(invoice => invoice.allocated && invoice.allocated > 0)
+        .map(invoice => ({
+          invoice_id: invoice.invoice_id,
+          allocated_amount: invoice.allocated,
+          notes: `Payment for Invoice ${invoice.invoice_no}`
+        }))
       
-      let endpoint = ''
-      let payload: any = {}
-      const method = isEditMode ? 'PUT' : 'POST'
-      
-      if (operationType === 'INCOME') {
-        endpoint = isEditMode ? `/api/customer-payments/${transactionId}` : '/api/customer-payments'
-        const allocations = paymentType === 'DIRECT' ? [] : outstandingInvoices
-          .filter(invoice => invoice.allocated && invoice.allocated > 0)
-          .map(invoice => ({
-            invoice_id: invoice.invoice_id,
-            allocated_amount: invoice.allocated,
-            notes: `Payment for Invoice ${invoice.invoice_no}`
-          }))
-        
-        payload = {
-          customer_id: selectedCustomer,
-          payment_amount: amountNum,
-          payment_mode: mode,
-          payment_date: timestamp,
-          payment_type: paymentType,
-          notes,
-          allocations,
-          fy: currentFY
-        }
-      } else {
-        endpoint = isEditMode ? `/api/customer-refunds/${transactionId}` : '/api/customer-refunds'
-        const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
-          .filter(ret => ret.allocated && ret.allocated > 0)
-          .map(ret => ({
-            return_id: ret.return_id,
-            allocated_amount: ret.allocated,
-            notes: `Refund for ${ret.credit_note_no}`
-          }))
-        
-        payload = {
-          customer_id: selectedCustomer,
-          refund_amount: amountNum,
-          refund_mode: mode,
-          refund_date: timestamp,
-          refund_type: paymentType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC',
-          notes,
-          allocations,
-          fy: currentFY
-        }
+      payload = {
+        customer_id: selectedCustomer,
+        payment_amount: amountNum,
+        payment_mode: mode,
+        payment_date: timestamp,
+        payment_type: paymentType,
+        notes,
+        allocations,
+        fy: currentFY
       }
-      
-      const res = await fetch(endpoint, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+
+      const mutation = isEditMode ? updatePaymentMutation : createPaymentMutation
+      const mutationPayload = isEditMode ? { id: transactionId, payload } : payload
+
+      mutation.mutate(mutationPayload, {
+        onSuccess: (data) => {
+          const transactionType = 'Payment'
+          const action = isEditMode ? 'updated' : 'recorded'
+          showSnackbar('success', `${transactionType} ${action} successfully!`)
+          
+          const createdId = isEditMode ? transactionId : (data.data?.payment?.id)
+          
+          if (createdId) {
+            router.push(`/customer-transactions/view/${createdId}?type=income`)
+          }
+        },
+        onError: (error: any) => {
+          setError(error.message || 'Failed to record transaction')
+          setShowConfirmationModal(false)
+        }
       })
+    } else {
+      const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
+        .filter(ret => ret.allocated && ret.allocated > 0)
+        .map(ret => ({
+          return_id: ret.return_id,
+          allocated_amount: ret.allocated,
+          notes: `Refund for ${ret.credit_note_no}`
+        }))
       
-      const data = await res.json()
-      
-      if (res.ok && data.success) {
-        const transactionType = operationType === 'INCOME' ? 'Payment' : 'Refund'
-        const action = isEditMode ? 'updated' : 'recorded'
-        showSnackbar('success', `${transactionType} ${action} successfully!`)
-        
-        // Extract transaction ID from response
-        const createdId = isEditMode ? transactionId : (data.data?.payment?.id || data.data?.refund?.id)
-        
-        // Redirect to transaction detail view after creation/edit
-        if (createdId) {
-          router.push(`/customer-transactions/view/${createdId}?type=${operationType === 'INCOME' ? 'income' : 'expense'}`)
-        } else {
-          // Fallback: Reset form if ID not found (shouldn't happen)
-          setSelectedCustomer('')
-          setOperationType('')
-          setOutstandingInvoices([])
-          setOutstandingReturns([])
-          setAmount('')
-          setMode(1)
-          setDate(getLocalDateString())
-          setNotes('')
-          setError('')
-        }
-      } else {
-        setError(data.error || 'Failed to record transaction')
+      payload = {
+        customer_id: selectedCustomer,
+        refund_amount: amountNum,
+        refund_mode: mode,
+        refund_date: timestamp,
+        refund_type: paymentType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC',
+        notes,
+        allocations,
+        fy: currentFY
       }
-    } catch (error) {
-      console.error('Error submitting transaction:', error)
-      setError('Failed to record transaction')
-    } finally {
-      setLoading(false)
-      setShowConfirmationModal(false)
+
+      const mutation = isEditMode ? updateRefundMutation : createRefundMutation
+      const mutationPayload = isEditMode ? { id: transactionId, payload } : payload
+
+      mutation.mutate(mutationPayload, {
+        onSuccess: (data) => {
+          const transactionType = 'Refund'
+          const action = isEditMode ? 'updated' : 'recorded'
+          showSnackbar('success', `${transactionType} ${action} successfully!`)
+          
+          const createdId = isEditMode ? transactionId : (data.data?.refund?.id)
+          
+          if (createdId) {
+            router.push(`/customer-transactions/view/${createdId}?type=expense`)
+          }
+        },
+        onError: (error: any) => {
+          setError(error.message || 'Failed to record transaction')
+          setShowConfirmationModal(false)
+        }
+      })
     }
   }
 
@@ -702,6 +662,10 @@ export default function CustomerTransactionEntry() {
   const amountNum = parseFloat(amount) || 0
   const difference = amountNum - totalAllocated
   const outstandingItems = operationType === 'INCOME' ? outstandingInvoices : outstandingReturns
+  
+  // Check if any mutation is pending
+  const isMutating = createPaymentMutation.isPending || updatePaymentMutation.isPending || 
+                     createRefundMutation.isPending || updateRefundMutation.isPending
 
   return (
     <div className="space-y-6">
@@ -1054,16 +1018,16 @@ export default function CustomerTransactionEntry() {
             <button
               onClick={() => router.back()}
               className="btn-secondary"
-              disabled={loading}
+              disabled={isMutating}
             >
               Cancel
             </button>
             <button
               onClick={handleRecordTransaction}
               className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-600"
-              disabled={isRecordDisabled()}
+              disabled={isRecordDisabled() || isMutating}
             >
-              {loading ? (isEditMode ? 'Updating...' : 'Recording...') : (isEditMode ? 'Update Transaction' : 'Record Transaction')}
+              {isMutating ? (isEditMode ? 'Updating...' : 'Recording...') : (isEditMode ? 'Update Transaction' : 'Record Transaction')}
             </button>
           </div>
         </div>
@@ -1090,7 +1054,7 @@ export default function CustomerTransactionEntry() {
         }
         confirmText={isEditMode ? "Update Transaction" : "Record Transaction"}
         cancelText="Cancel"
-        showLoading={loading}
+        showLoading={isMutating}
         loadingText="Recording Transaction..."
         onConfirm={confirmRecordTransaction}
         onCancel={() => setShowConfirmationModal(false)}

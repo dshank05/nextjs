@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { Eye, ArrowUp, ArrowDown, Trash2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
@@ -8,6 +7,9 @@ import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
+import { useCustomers } from '../../hooks/useStaff'
+import { useCustomerTransactions, useDeleteCustomerTransaction } from '../../hooks/useCustomers'
+import type { CustomerTransaction, TransactionType, TransactionSortField } from '../../types/customer-transactions'
 
 // ✅ Custom sessionStorage hook: Unique per tab, persists on refresh
 function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => void] {
@@ -39,33 +41,11 @@ function useSessionStorage<T>(key: string, initialValue: T): [T, (value: T) => v
   return [storedValue, setValue];
 }
 
-interface Transaction {
-  id: number
-  transaction_type: 'INCOME' | 'EXPENSE'
-  customer_id: number
-  customer_name: string
-  date: number
-  amount: number
-  payment_mode: number
-  payment_type: string
-  notes: string | null
-  invoice_numbers: string[]
-  allocations_count: number
-  fy: number
-}
-
-type TransactionType = 'all' | 'income' | 'expense'
-type SortField = 'id' | 'customer_name' | 'amount' | 'date' | 'type'
 type SortOrder = 'asc' | 'desc'
 
 export default function CustomerTransactionsPage() {
-  const router = useRouter()
   const { showSnackbar } = useSnackbar()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [total, setTotal] = useState(0)
   const limit = 50
 
   // UI state - show transactions only after customer selection
@@ -74,10 +54,8 @@ export default function CustomerTransactionsPage() {
   // Delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [deleteTransaction, setDeleteTransaction] = useState<{ id: number; type: string } | null>(null)
-  const [deleting, setDeleting] = useState(false)
 
   // Filters
-  const [customers, setCustomers] = useState<any[]>([])
   const [selectedCustomer, setSelectedCustomer] = useSessionStorage<string>('customer-transactions-customer', '')
   const [dateFrom, setDateFrom] = useSessionStorage<string>('customer-transactions-dateFrom', '')
   const [dateTo, setDateTo] = useSessionStorage<string>('customer-transactions-dateTo', '')
@@ -86,8 +64,30 @@ export default function CustomerTransactionsPage() {
   const [transactionType, setTransactionType] = useState<TransactionType>('all')
 
   // Sorting - ✅ FIX: Changed to ascending order to show oldest transactions first
-  const [sortBy, setSortBy] = useState<SortField>('date')
+  const [sortBy, setSortBy] = useState<TransactionSortField>('date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  // React Query hooks
+  const { data: customers = [] } = useCustomers()
+
+  const { data: transactionsData, isLoading: loading } = useCustomerTransactions({
+    customer_id: selectedCustomer,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
+    type: transactionType,
+    dateFrom,
+    dateTo,
+    payment_mode: paymentMode,
+    payment_type: paymentType
+  })
+
+  const transactions = transactionsData?.data || []
+  const totalPages = transactionsData?.pagination?.totalPages || 1
+  const total = transactionsData?.pagination?.total || 0
+
+  const deleteMutation = useDeleteCustomerTransaction()
 
   // Initialize with current month date range (only if no stored dates)
   useEffect(() => {
@@ -104,8 +104,6 @@ export default function CustomerTransactionsPage() {
       setDateFrom(formatStartDateForAPI(firstDay))
       setDateTo(formatEndDateForAPI(lastDay))
     }
-
-    fetchCustomers()
   }, []);
   
   // ✅ Cleanup sessionStorage on component unmount
@@ -118,56 +116,12 @@ export default function CustomerTransactionsPage() {
     };
   }, []);
 
-  // Only fetch transactions when customer is selected
+  // Show transactions when customer is selected
   useEffect(() => {
     if (selectedCustomer) {
       setShowTransactions(true)
-      fetchTransactions()
     }
-  }, [page, selectedCustomer, dateFrom, dateTo, paymentMode, paymentType, transactionType, sortBy, sortOrder])
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await fetch('/api/customers')
-      const data = await res.json()
-      setCustomers(data.customers || [])
-    } catch (error) {
-      console.error('Error fetching customers:', error)
-    }
-  }
-
-  const fetchTransactions = async () => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        sortBy,
-        sortOrder,
-        type: transactionType
-      })
-
-      if (selectedCustomer) params.append('customer_id', selectedCustomer)
-      if (dateFrom) params.append('dateFrom', dateFrom)
-      if (dateTo) params.append('dateTo', dateTo)
-      if (paymentMode) params.append('payment_mode', paymentMode)
-      if (paymentType) params.append('payment_type', paymentType)
-
-      const response = await fetch(`/api/customer-transactions?${params}`)
-      const data = await response.json()
-
-      if (data.success) {
-        setTransactions(data.data || [])
-        setTotalPages(data.pagination?.totalPages || 1)
-        setTotal(data.pagination?.total || 0)
-      }
-    } catch (error) {
-      console.error('Error fetching transactions:', error)
-      setTransactions([])
-    } finally {
-      setLoading(false)
-    }
-  }
+  }, [selectedCustomer])
 
   const handleClearFilters = () => {
     // Clear customer selection and hide transactions
@@ -185,10 +139,9 @@ export default function CustomerTransactionsPage() {
     setPaymentType('')
     setTransactionType('all')
     setPage(1)
-    setTransactions([])
   }
 
-  const handleSort = (field: SortField) => {
+  const handleSort = (field: TransactionSortField) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')
     } else {
@@ -197,7 +150,7 @@ export default function CustomerTransactionsPage() {
     }
   }
 
-  const getSortIcon = (field: SortField) => {
+  const getSortIcon = (field: TransactionSortField) => {
     if (sortBy !== field) return null
     return sortOrder === 'asc' ? <ArrowUp className="inline w-4 h-4 ml-1" /> : <ArrowDown className="inline w-4 h-4 ml-1" />
   }
@@ -268,32 +221,22 @@ export default function CustomerTransactionsPage() {
   const handleConfirmDelete = async () => {
     if (!deleteTransaction) return
 
-    setDeleting(true)
-    try {
-      const endpoint = deleteTransaction.type === 'income'
-        ? `/api/customer-payments/${deleteTransaction.id}`
-        : `/api/customer-refunds/${deleteTransaction.id}`
-
-      const response = await fetch(endpoint, {
-        method: 'DELETE'
-      })
-
-      const data = await response.json()
-
-      if (data.success) {
-        showSnackbar('success', 'Transaction deleted successfully', 3000)
-        fetchTransactions() // Refresh list
-        setShowDeleteModal(false)
-        setDeleteTransaction(null)
-      } else {
-        showSnackbar('error', data.error || 'Failed to delete transaction', 5000)
+    deleteMutation.mutate(
+      {
+        id: deleteTransaction.id,
+        type: deleteTransaction.type as 'income' | 'expense'
+      },
+      {
+        onSuccess: () => {
+          showSnackbar('success', 'Transaction deleted successfully', 3000)
+          setShowDeleteModal(false)
+          setDeleteTransaction(null)
+        },
+        onError: (error: any) => {
+          showSnackbar('error', error.message || 'Failed to delete transaction', 5000)
+        }
       }
-    } catch (error) {
-      console.error('Error deleting transaction:', error)
-      showSnackbar('error', 'Failed to delete transaction', 5000)
-    } finally {
-      setDeleting(false)
-    }
+    )
   }
 
   // Prepare export data
@@ -656,7 +599,7 @@ export default function CustomerTransactionsPage() {
         message={`This action is irreversible. The transaction will be permanently deleted and all allocations will be removed. Payment/refund statuses for affected invoices/returns will be recalculated.`}
         confirmText="Delete Transaction"
         cancelText="Cancel"
-        showLoading={deleting}
+        showLoading={deleteMutation.isPending}
         loadingText="Deleting..."
       />
     </div>

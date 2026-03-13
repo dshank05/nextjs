@@ -1,118 +1,50 @@
-import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import Link from 'next/link'
 import { Edit } from 'lucide-react'
 import SessionStorageService from '../../../lib/sessionStorage'
-
-interface TransactionData {
-  id: number
-  customer: {
-    id: number
-    name: string
-    contact: string | null
-    email: string | null
-  }
-  payment_date?: number
-  refund_date?: number
-  payment_amount?: number
-  refund_amount?: number
-  payment_mode?: number
-  refund_mode?: number
-  payment_mode_text?: string
-  refund_mode_text?: string
-  payment_type?: string
-  refund_type?: string
-  notes: string | null
-  fy: number
-  allocations: Array<{
-    allocation_id: number
-    invoice_id?: number
-    invoicex_id?: number
-    return_id?: number
-    invoice_no?: number | string
-    credit_note_no?: string
-    invoice_date?: number
-    return_date?: number
-    allocated_amount: number
-    invoice_total?: number
-    return_total?: number
-    payment_status?: number
-    payment_status_text?: string
-    type?: string
-  }>
-  summary: {
-    payment_amount?: number
-    refund_amount?: number
-    total_allocated: number
-    allocation_count: number
-    difference: number
-  }
-}
+import { useCustomerPayment, useCustomerRefund } from '../../../hooks/useCustomers'
+import type { TransactionData } from '../../../types/customer-transactions'
 
 export default function ViewCustomerTransactionPage() {
   const router = useRouter()
   const { id, type } = router.query
-  const [transaction, setTransaction] = useState<TransactionData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string>('')
 
   const isIncome = type === 'income'
 
-  useEffect(() => {
-    if (id && type) {
-      fetchTransaction()
-    }
-  }, [id, type])
+  // React Query hooks - fetch based on transaction type
+  const { data: paymentData, isLoading: paymentLoading, error: paymentError } = useCustomerPayment(
+    isIncome ? (id as string) : undefined
+  )
+  const { data: refundData, isLoading: refundLoading, error: refundError } = useCustomerRefund(
+    !isIncome ? (id as string) : undefined
+  )
 
-  const fetchTransaction = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const endpoint = isIncome
-        ? `/api/customer-payments/${id}`
-        : `/api/customer-refunds/${id}`
+  const loading = isIncome ? paymentLoading : refundLoading
+  const error = isIncome ? paymentError : refundError
+  const rawTransaction = isIncome ? paymentData : refundData
 
-      const response = await fetch(endpoint)
-      const data = await response.json()
-
-      if (data.success || data.payment || data.data) {
-        // Handle different response structures
-        let transactionData = data.payment || data.data
-        
-        // Ensure summary exists
-        if (!transactionData.summary) {
-          const amount = isIncome ? transactionData.payment_amount : transactionData.refund_amount
-          const totalAllocated = transactionData.total_allocated || 
-            (transactionData.allocations?.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0) || 0)
-          
-          transactionData.summary = {
-            payment_amount: transactionData.payment_amount,
-            refund_amount: transactionData.refund_amount,
-            total_allocated: totalAllocated,
-            allocation_count: transactionData.allocations?.length || 0,
-            difference: (amount || 0) - totalAllocated
-          }
-        }
-        
-        // Ensure customer exists
-        if (!transactionData.customer && transactionData.customer_name) {
-          transactionData.customer = {
-            id: transactionData.customer_id || 0,
-            name: transactionData.customer_name,
-            contact: transactionData.customer?.contact || null,
-            email: transactionData.customer?.email || null
-          }
-        }
-        
-        setTransaction(transactionData)
-      } else {
-        setError(data.error || 'Failed to fetch transaction')
+  // Process transaction data
+  let transaction: TransactionData | null = null
+  if (rawTransaction) {
+    const amount = isIncome ? rawTransaction.payment_amount : rawTransaction.refund_amount
+    const totalAllocated = rawTransaction.total_allocated || 
+      (rawTransaction.allocations?.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0) || 0)
+    
+    transaction = {
+      ...rawTransaction,
+      summary: rawTransaction.summary || {
+        payment_amount: rawTransaction.payment_amount,
+        refund_amount: rawTransaction.refund_amount,
+        total_allocated: totalAllocated,
+        allocation_count: rawTransaction.allocations?.length || 0,
+        difference: (amount || 0) - totalAllocated
+      },
+      customer: rawTransaction.customer || {
+        id: rawTransaction.customer_id || 0,
+        name: rawTransaction.customer_name,
+        contact: rawTransaction.customer?.contact || null,
+        email: rawTransaction.customer?.email || null
       }
-    } catch (error) {
-      console.error('Error fetching transaction:', error)
-      setError('Failed to fetch transaction details')
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -185,7 +117,7 @@ export default function ViewCustomerTransactionPage() {
   if (error || !transaction) {
     return (
       <div className="card">
-        <p className="text-center text-slate-400">{error || 'Transaction not found'}</p>
+        <p className="text-center text-slate-400">{error?.message || 'Transaction not found'}</p>
       </div>
     )
   }
