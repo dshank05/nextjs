@@ -494,8 +494,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       totalAmount += subtotal
       totalTax += taxAmount
 
+      // Accept both invoice_item_id and sale_item_id for compatibility
+      const itemId = item.invoice_item_id || item.sale_item_id
+      if (!itemId) {
+        throw new Error('Missing invoice_item_id or sale_item_id in item')
+      }
+
       processedItems.push({
-        invoice_item_id: parseInt(item.invoice_item_id),
+        invoice_item_id: parseInt(itemId),
         return_qty: item.return_qty,
         return_reason_id: parseInt(item.return_reason_id),
         unit_price: item.unit_price,

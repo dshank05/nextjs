@@ -475,9 +475,19 @@ export default function InvoiceCCreate() {
         const itemObj: SalexInvoiceItem = {
           id: (index + 1).toString(),
           product_id: item.product_id,
-          product_name: item.product_name,
+          product_name: item.display_name || item.name_of_product || '',
           car_model_ids: item.model_id ? [item.model_id.toString()] : [],
-          car_model_names: item.model_id ? [filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name || ''] : [],
+          car_model_names: (() => {
+            if (item.model_id) {
+              const modelName = filterOptions.models.find(model => model.id.toString() === item.model_id?.toString())?.name;
+              return modelName ? [modelName] : [];
+            }
+            // Fallback: try to extract from car_model field if it exists
+            if (item.car_model) {
+              return [item.car_model];
+            }
+            return [];
+          })(),
           category_id: item.category_id || 0,
           category_name: filterOptions.categories.find(cat => cat.id.toString() === item.category_id?.toString())?.name || '',
           subcategory_id: item.subcategory_id || null,
@@ -1977,15 +1987,15 @@ export default function InvoiceCCreate() {
                               {product.qty}
                             </td>
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ?{Math.round(product.rate)}
+                              {Math.round(product.rate)}
                             </td>
                             {enableDiscount && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ?{Math.round(product.discount_amount)}
+                                {Math.round(product.discount_amount)}
                               </td>
                             )}
                             <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                              ?{Math.round(product.total)}
+                              {Math.round(product.total)}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
@@ -2020,7 +2030,7 @@ export default function InvoiceCCreate() {
                           {/* Display Subtotal */}
                         {/* Display Subtotal instead */}
                         <div className="text-sm font-semibold text-slate-200">
-                          Subtotal: ?{subtotal.toFixed(2)}
+                          Subtotal: {subtotal.toFixed(2)}
                         </div>
                       </td>
                     </tr>

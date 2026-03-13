@@ -227,6 +227,19 @@ export default function InvoiceCView() {
             </h1>
             <div className="flex justify-center gap-2">
               <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full">Tax-Free</span>
+              {(invoice as any).return_status && (invoice as any).return_status.has_returns && (
+                <>
+                  {(invoice as any).return_status.status === 'PARTIAL_RETURN' && (
+                    <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Partial Return</span>
+                  )}
+                  {(invoice as any).return_status.status === 'FULLY_RETURNED' && (
+                    <span className="px-2 py-1 bg-red-600 text-white text-xs rounded-full">Fully Returned</span>
+                  )}
+                  <span className="text-xs text-blue-200 bg-blue-800/50 px-2 py-1 rounded-full">
+                    {(invoice as any).return_status.fully_returned_items}/{(invoice as any).return_status.total_items} items returned
+                  </span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -422,15 +435,26 @@ export default function InvoiceCView() {
                 Mark as Paid
               </button>
             )}
-            <Link
-              href={`/salex/create?edit=${id}`}
-              onClick={handleEditInvoice}
-              className="btn-primary flex items-center gap-2"
-              title="Edit Invoice C"
-            >
-              <Edit className="w-4 h-4" />
-              Edit Invoice C
-            </Link>
+            {(invoice as any).return_status?.is_fully_returned ? (
+              <button
+                disabled
+                className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed"
+                title="Cannot edit invoice - fully returned"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Disabled (Fully Returned)
+              </button>
+            ) : (
+              <Link
+                href={`/salex/create?edit=${id}`}
+                onClick={handleEditInvoice}
+                className="btn-primary flex items-center gap-2"
+                title="Edit Invoice C"
+              >
+                <Edit className="w-4 h-4" />
+                Edit Invoice C
+              </Link>
+            )}
           </div>
         </div>
 
@@ -450,17 +474,29 @@ export default function InvoiceCView() {
                 </tr>
               </thead>
               <tbody>
-                {invoiceItems.map((item, index) => (
-                  <tr key={index}>
-                    <td>{index + 1}</td>
-                    <td className="font-medium text-white">{item.display_name || item.product_name}</td>
-                    <td className="text-slate-300">{item.part || 'N/A'}</td>
-                    <td className="text-slate-300">{item.hsn || 'N/A'}</td>
-                    <td className="text-slate-300 font-medium">{item.qty}</td>
-                    <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
-                    <td className="text-slate-300 font-semibold">₹{item.subtotal?.toLocaleString('en-IN')}</td>
-                  </tr>
-                ))}
+                {invoiceItems.map((item: any, index) => {
+                  const isFullyReturned = item.is_fully_returned || false;
+                  const hasReturns = item.returned_qty && item.returned_qty > 0;
+
+                  return (
+                    <tr key={index} className={isFullyReturned ? 'bg-red-900/10' : ''}>
+                      <td>{index + 1}</td>
+                      <td className="font-medium text-white">
+                        {item.display_name || item.product_name}
+                        {hasReturns && (
+                          <div className="text-xs text-orange-400 mt-1">
+                            Returned: {item.returned_qty}/{item.original_qty || item.qty}
+                          </div>
+                        )}
+                      </td>
+                      <td className="text-slate-300">{item.part || 'N/A'}</td>
+                      <td className="text-slate-300">{item.hsn || 'N/A'}</td>
+                      <td className="text-slate-300 font-medium">{item.qty}</td>
+                      <td className="text-slate-300">₹{item.rate?.toLocaleString('en-IN')}</td>
+                      <td className="text-slate-300 font-semibold">₹{item.subtotal?.toLocaleString('en-IN')}</td>
+                    </tr>
+                  );
+                })}
                 {invoiceItems.length === 0 && (
                   <tr>
                     <td colSpan={7} className="text-center text-slate-400 py-4">
@@ -487,6 +523,87 @@ export default function InvoiceCView() {
             </table>
           </div>
         </div>
+
+        {/* Salex Returns Section */}
+        {(invoice as any).returns && (invoice as any).returns.length > 0 && (
+          <div className="border-t border-slate-700 mt-6 pt-6">
+            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              📦 Salex Returns
+            </h3>
+            <div className="space-y-6">
+              {(invoice as any).returns.map((ret: any) => {
+                const returnItems = ret.items || [];
+
+                return (
+                  <div key={ret.id} className="bg-slate-800 border border-slate-700 rounded p-4">
+                    {/* Return Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                      <div>
+                        <span className="text-slate-400 text-sm">Return Number:</span>
+                        <div className="text-white font-medium">{ret.return_no}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-sm">Date:</span>
+                        <div className="text-white font-medium">{new Date(ret.return_date * 1000).toLocaleDateString('en-IN')}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-sm">Total Amount:</span>
+                        <div className="text-white font-medium">₹{ret.total_amount?.toLocaleString('en-IN')}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-sm">Refund Amount:</span>
+                        <div className="text-white font-medium">₹{ret.refund_amount?.toLocaleString('en-IN')}</div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-sm">Payment Status:</span>
+                        <div>
+                          {ret.payment_status === 0 && <span className="px-2 py-1 bg-yellow-600 text-white text-xs rounded-full">Unpaid</span>}
+                          {ret.payment_status === 1 && <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>}
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 text-sm">Payment Mode:</span>
+                        <div className="text-white font-medium">{ret.payment_mode === 0 ? 'Cash' : 'Bank'}</div>
+                      </div>
+                      {ret.notes && (
+                        <div className="col-span-full">
+                          <span className="text-slate-400 text-sm">Notes:</span>
+                          <div className="text-white">{ret.notes}</div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Return Items Table */}
+                    {returnItems.length > 0 && (
+                      <div className="overflow-x-auto mt-4">
+                        <table className="table text-sm">
+                          <thead>
+                            <tr>
+                              <th>Product</th>
+                              <th>Qty</th>
+                              <th>Unit Price</th>
+                              <th>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {returnItems.map((item: any, idx: number) => (
+                              <tr key={idx}>
+                                <td className="text-white">{item.product_name}</td>
+                                <td className="text-slate-300">{item.return_qty}</td>
+                                <td className="text-slate-300">₹{item.unit_price?.toLocaleString('en-IN')}</td>
+                                <td className="text-white font-medium">₹{item.total?.toLocaleString('en-IN')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modals */}

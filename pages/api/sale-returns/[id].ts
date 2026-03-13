@@ -184,7 +184,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Get ALL invoice items from the original invoice based on type
     const allInvoiceItems = isInvoicex
       ? await prisma.invoice_itemsx.findMany({
-          where: { invoice_no: invoice.invoice_no },
+          where: { invoice_no: invoice.id }, // ✅ FIX: Use invoice.id, not invoice.invoice_no
           select: {
             id: true,
             product_id: true,
@@ -199,7 +199,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           gst_percentage: 0
         })))
       : await prisma.invoiceitems.findMany({
-          where: { invoice_no: invoice.invoice_no },
+          where: { invoice_no: invoice.id }, // ✅ FIX: Use invoice.id, not invoice.invoice_no
           select: {
             id: true,
             product_id: true,
@@ -456,8 +456,14 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         totalAmount += subtotal
         totalTax += taxAmount
 
+        // Accept both invoice_item_id and sale_item_id for compatibility
+        const itemId = item.invoice_item_id || item.sale_item_id
+        if (!itemId) {
+          throw new Error('Missing invoice_item_id or sale_item_id in item')
+        }
+
         return {
-          invoice_item_id: parseInt(item.invoice_item_id),
+          invoice_item_id: parseInt(itemId),
           return_qty: item.return_qty,
           unit_price: item.unit_price,
           tax_amount: taxAmount,
@@ -476,16 +482,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ]
       const uniqueInvoiceItemIds = Array.from(new Set(allInvoiceItemIds))
 
-      // Fetch product_ids for all items in one query based on type
-      const invoiceItems = isInvoicex
-        ? await tx.invoice_itemsx.findMany({
-            where: { id: { in: uniqueInvoiceItemIds } },
-            select: { id: true, product_id: true }
-          })
-        : await tx.invoiceitems.findMany({
-            where: { id: { in: uniqueInvoiceItemIds } },
-            select: { id: true, product_id: true }
-          })
+      // Fetch product_ids for all items in one query based on type (only if items exist)
+      const invoiceItems = uniqueInvoiceItemIds.length > 0
+        ? (isInvoicex
+            ? await tx.invoice_itemsx.findMany({
+                where: { id: { in: uniqueInvoiceItemIds } },
+                select: { id: true, product_id: true }
+              })
+            : await tx.invoiceitems.findMany({
+                where: { id: { in: uniqueInvoiceItemIds } },
+                select: { id: true, product_id: true }
+              }))
+        : []
       
       const invoiceItemMap = new Map(invoiceItems.map(ii => [ii.id, ii.product_id]))
 

@@ -683,7 +683,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const totalPages = Math.ceil(total / limitNum)
 
     res.status(200).json({
-      salex: enhancedSalex,
+      salexs: enhancedSalex,
       pagination: {
         page: pageNum,
         limit: limitNum,

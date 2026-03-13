@@ -189,6 +189,7 @@ export interface SaleBill {
 
 export interface SaleItemForReturn {
   id: string;
+  invoice_item_id?: number;
   sale_item_id?: number;
   product_id: number;
   product_name: string;

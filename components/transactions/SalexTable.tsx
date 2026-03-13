@@ -796,10 +796,10 @@ export const SalexTable: React.FC<SalexTableProps> = ({
                     <span className="text-xs text-slate-400">items</span>
                   </div>
                 </td>
-                <td className="text-slate-300 font-semibold">₹{salex.total?.toLocaleString('en-IN')}</td>
-                <td className="text-slate-300">₹{(salex.total_tax || 0)?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300 font-semibold">{salex.total?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">{(salex.total_tax || 0)?.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{salex.notes || 'N/A'}</td>
-                <td className="text-slate-300">₹{(salex.packing_forwarding_total || 0)?.toLocaleString('en-IN')}</td>
+                <td className="text-slate-300">{(salex.packing_forwarding_total || 0)?.toLocaleString('en-IN')}</td>
                 <td className="text-slate-300">{formatDate(salex.invoice_date)}</td>
                 <td className="text-slate-300">{getPaymentModeText(salex.payment_mode)}</td>
                 <td>{getStatusBadge(salex.payment_status)}</td>

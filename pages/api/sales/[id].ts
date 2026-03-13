@@ -60,6 +60,55 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
+    // Get return status for each sale item
+    const saleItemIds = saleItems.map(item => item.id)
+    const returnItems = await prisma.sale_return_items.findMany({
+      where: { invoice_item_id: { in: saleItemIds } },
+      include: {
+        sale_return: {
+          select: {
+            id: true,
+            return_date: true,
+            status: true
+          }
+        }
+      }
+    })
+
+    // Group return items by invoice_item_id and calculate totals
+    const returnSummaryMap = new Map<number, {
+      returned_qty: number
+      return_history: Array<{
+        return_id: string
+        return_no: string
+        qty: number
+        date: number
+        unit_price: number
+        tax_amount: number
+        reason_id: number
+        notes: string
+      }>
+    }>()
+
+    returnItems.forEach(returnItem => {
+      const itemId = returnItem.invoice_item_id
+      const existing = returnSummaryMap.get(itemId) || { returned_qty: 0, return_history: [] }
+
+      existing.returned_qty += returnItem.return_qty
+      existing.return_history.push({
+        return_id: returnItem.sale_return.id.toString(),
+        return_no: `SR-${returnItem.sale_return.id.toString().padStart(3, '0')}`,
+        qty: returnItem.return_qty,
+        date: returnItem.sale_return.return_date,
+        unit_price: returnItem.unit_price,
+        tax_amount: returnItem.tax_amount,
+        reason_id: returnItem.return_reason_id,
+        notes: returnItem.notes || ''
+      })
+
+      returnSummaryMap.set(itemId, existing)
+    })
+
     let customerData = null
     if (sale.select_customer === 0) {
       const billToData = await prisma.bill_tosales.findUnique({
@@ -153,6 +202,115 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       created_at: alloc.payment.created_at
     }))
 
+    // Calculate return status for items and sale
+    let fullyReturnedItems = 0
+    const itemsWithReturnStatus = saleItems.map(item => {
+      const returnData = returnSummaryMap.get(item.id) || { returned_qty: 0, return_history: [] }
+      const originalQty = item.qty || 0
+      const returnedQty = returnData.returned_qty
+      const availableQty = Math.max(0, originalQty - returnedQty)
+      const isFullyReturned = returnedQty >= originalQty
+
+      if (isFullyReturned) {
+        fullyReturnedItems++
+      }
+
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        name_of_product: item.product?.display_name || item.name_of_product,
+        display_name: item.product?.display_name || item.name_of_product,
+        qty: item.qty,
+        rate: item.rate,
+        subtotal: item.subtotal,
+        gst_percentage: item.gst_percentage || 0,
+        cgst: item.cgst || 0,
+        sgst: item.sgst || 0,
+        igst: item.igst || 0,
+        tax: item.tax || 0,
+        discount: item.discount || 0,
+        discountrate: item.discountrate || 0,
+        hsn: item.hsn || '',
+        part: item.part,
+        category_id: item.category_id,
+        subcategory_id: item.subcategory_id,
+        model_id: item.model_id,
+        company_id: item.company_id,
+        invoice_date: item.invoice_date,
+        fy: item.fy,
+        // Return status fields
+        original_qty: originalQty,
+        returned_qty: returnedQty,
+        available_qty: availableQty,
+        is_fully_returned: isFullyReturned,
+        return_history: returnData.return_history
+      }
+    })
+
+    // Calculate overall sale return status
+    const hasReturns = fullyReturnedItems > 0 || returnItems.length > 0
+    const isFullyReturned = fullyReturnedItems === saleItems.length
+    const returnStatus = isFullyReturned ? 'FULLY_RETURNED' :
+                       hasReturns ? 'PARTIAL_RETURN' : 'NO_RETURNS'
+
+    // Get return transaction details
+    const uniqueReturnIds = new Set<number>()
+    returnItems.forEach(item => {
+      uniqueReturnIds.add(item.sale_return.id)
+    })
+
+    const returnTransactions = await prisma.sale_returns.findMany({
+      where: { id: { in: Array.from(uniqueReturnIds) } },
+      select: {
+        id: true,
+        return_date: true,
+        total_amount: true,
+        total_tax: true,
+        refund_amount: true,
+        payment_status: true,
+        payment_mode: true,
+        payment_date: true,
+        notes: true
+      }
+    })
+
+    // Build return transactions with items
+    const returns = returnTransactions.map(ret => {
+      const retItems = returnItems
+        .filter(item => item.sale_return.id === ret.id)
+        .map(item => {
+          const saleItem = saleItems.find(si => si.id === item.invoice_item_id)
+          return {
+            id: item.id,
+            invoice_item_id: item.invoice_item_id,
+            product_name: saleItem?.product?.display_name || saleItem?.name_of_product || 'Unknown',
+            return_qty: item.return_qty,
+            unit_price: item.unit_price,
+            tax_amount: item.tax_amount,
+            subtotal: item.return_qty * item.unit_price,
+            total: (item.return_qty * item.unit_price) + item.tax_amount,
+            return_reason_id: item.return_reason_id,
+            notes: item.notes
+          }
+        })
+
+      return {
+        id: ret.id,
+        return_no: `SR-${ret.id.toString().padStart(3, '0')}`,
+        return_date: ret.return_date,
+        total_amount: ret.total_amount,
+        total_tax: ret.total_tax,
+        refund_amount: ret.refund_amount,
+        payment_status: ret.payment_status,
+        payment_mode: ret.payment_mode,
+        payment_date: ret.payment_date,
+        notes: ret.notes,
+        items: retItems,
+        item_count: retItems.length,
+        total_qty: retItems.reduce((sum, item) => sum + item.return_qty, 0)
+      }
+    })
+
     const transformedSale = {
       invoice_no: sale.invoice_no,
       invoice_date: sale.invoice_date,
@@ -190,29 +348,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       descriptions: sale.descriptions || '',
       fy: sale.fy,
       updated_at: sale.updated_at,
-      invoiceItems: saleItems.map(item => ({
-        product_id: item.product_id,
-        name_of_product: item.product?.display_name || item.name_of_product,
-        display_name: item.product?.display_name || item.name_of_product,
-        qty: item.qty,
-        rate: item.rate,
-        subtotal: item.subtotal,
-        gst_percentage: item.gst_percentage || 0,
-        cgst: item.cgst || 0,
-        sgst: item.sgst || 0,
-        igst: item.igst || 0,
-        tax: item.tax || 0,
-        discount: item.discount || 0,
-        discountrate: item.discountrate || 0,
-        hsn: item.hsn || '',
-        part: item.part,
-        category_id: item.category_id,
-        subcategory_id: item.subcategory_id,
-        model_id: item.model_id,
-        company_id: item.company_id,
-        invoice_date: item.invoice_date,
-        fy: item.fy
-      })),
+      invoiceItems: itemsWithReturnStatus,
+      items: itemsWithReturnStatus,
+      // Return status
+      return_status: {
+        has_returns: hasReturns,
+        fully_returned_items: fullyReturnedItems,
+        total_items: saleItems.length,
+        is_fully_returned: isFullyReturned,
+        status: returnStatus
+      },
+      returns: returns,
       customer_id: sale.select_customer,
       customer: customerData,
       billingDetails: sale.select_customer === 0 ? {

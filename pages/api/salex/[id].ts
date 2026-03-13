@@ -111,6 +111,154 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       })
     ])
 
+    // Get return status for each salex item
+    const salexItemIds = salexItems.map(item => item.id)
+    const returnItems = await prisma.salex_return_items.findMany({
+      where: { invoice_itemx_id: { in: salexItemIds } },
+      include: {
+        salex_return: {
+          select: {
+            id: true,
+            return_date: true,
+            status: true
+          }
+        }
+      }
+    })
+
+    // Group return items by invoice_itemx_id and calculate totals
+    const returnSummaryMap = new Map<number, {
+      returned_qty: number
+      return_history: Array<{
+        return_id: string
+        return_no: string
+        qty: number
+        date: number
+        unit_price: number
+        reason_id: number
+        notes: string
+      }>
+    }>()
+
+    returnItems.forEach(returnItem => {
+      const itemId = returnItem.invoice_itemx_id
+      const existing = returnSummaryMap.get(itemId) || { returned_qty: 0, return_history: [] }
+
+      existing.returned_qty += returnItem.return_qty
+      existing.return_history.push({
+        return_id: returnItem.salex_return.id.toString(),
+        return_no: `SXR-${returnItem.salex_return.id.toString().padStart(3, '0')}`,
+        qty: returnItem.return_qty,
+        date: returnItem.salex_return.return_date,
+        unit_price: returnItem.unit_price,
+        reason_id: returnItem.return_reason_id,
+        notes: returnItem.notes || ''
+      })
+
+      returnSummaryMap.set(itemId, existing)
+    })
+
+    // Calculate return status for items
+    let fullyReturnedItems = 0
+    const itemsWithReturnStatus = salexItems.map(item => {
+      const returnData = returnSummaryMap.get(item.id) || { returned_qty: 0, return_history: [] }
+      const originalQty = item.qty || 0
+      const returnedQty = returnData.returned_qty
+      const availableQty = Math.max(0, originalQty - returnedQty)
+      const isFullyReturned = returnedQty >= originalQty
+
+      if (isFullyReturned) {
+        fullyReturnedItems++
+      }
+
+      return {
+        id: item.id,
+        product_id: item.product_id,
+        name_of_product: item.product?.display_name || item.name_of_product,
+        display_name: item.product?.display_name || item.name_of_product,
+        qty: item.qty,
+        rate: item.rate,
+        subtotal: item.subtotal,
+        discount: item.discount || 0,
+        discountrate: item.discountrate || 0,
+        hsn: item.hsn || '',
+        part: item.part,
+        category_id: item.category_id,
+        subcategory_id: item.subcategory_id,
+        model_id: item.model_id,
+        company_id: item.company_id,
+        invoice_date: item.invoice_date,
+        fy: item.fy,
+        // Return status fields
+        original_qty: originalQty,
+        returned_qty: returnedQty,
+        available_qty: availableQty,
+        is_fully_returned: isFullyReturned,
+        return_history: returnData.return_history
+      }
+    })
+
+    // Calculate overall salex return status
+    const hasReturns = fullyReturnedItems > 0 || returnItems.length > 0
+    const isFullyReturned = fullyReturnedItems === salexItems.length
+    const returnStatus = isFullyReturned ? 'FULLY_RETURNED' :
+                       hasReturns ? 'PARTIAL_RETURN' : 'NO_RETURNS'
+
+    // Get return transaction details
+    const uniqueReturnIds = new Set<number>()
+    returnItems.forEach(item => {
+      uniqueReturnIds.add(item.salex_return.id)
+    })
+
+    const returnTransactions = await prisma.salex_returns.findMany({
+      where: { id: { in: Array.from(uniqueReturnIds) } },
+      select: {
+        id: true,
+        return_date: true,
+        total_amount: true,
+        refund_amount: true,
+        payment_status: true,
+        payment_mode: true,
+        payment_date: true,
+        notes: true
+      }
+    })
+
+    // Build return transactions with items
+    const returns = returnTransactions.map(ret => {
+      const retItems = returnItems
+        .filter(item => item.salex_return.id === ret.id)
+        .map(item => {
+          const salexItem = salexItems.find(si => si.id === item.invoice_itemx_id)
+          return {
+            id: item.id,
+            invoice_itemx_id: item.invoice_itemx_id,
+            product_name: salexItem?.product?.display_name || salexItem?.name_of_product || 'Unknown',
+            return_qty: item.return_qty,
+            unit_price: item.unit_price,
+            subtotal: item.return_qty * item.unit_price,
+            total: item.return_qty * item.unit_price,
+            return_reason_id: item.return_reason_id,
+            notes: item.notes
+          }
+        })
+
+      return {
+        id: ret.id,
+        return_no: `SXR-${ret.id.toString().padStart(3, '0')}`,
+        return_date: ret.return_date,
+        total_amount: ret.total_amount,
+        refund_amount: ret.refund_amount,
+        payment_status: ret.payment_status,
+        payment_mode: ret.payment_mode,
+        payment_date: ret.payment_date,
+        notes: ret.notes,
+        items: retItems,
+        item_count: retItems.length,
+        total_qty: retItems.reduce((sum, item) => sum + item.return_qty, 0)
+      }
+    })
+
     const itemCount = await prisma.invoice_itemsx.count({
       where: { invoice_no: salex.id }
     })
@@ -205,7 +353,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       descriptions: salex.descriptions,
       payment_status: salex.payment_status !== null && salex.payment_status !== undefined ? salex.payment_status : 0,
       payment_mode: salex.payment_mode !== null && salex.payment_mode !== undefined ? salex.payment_mode : 0,
-      return_status: salex.return_status,
       fy: salex.fy,
       staff_id: salex.staff_id,
       staff_name: staffData?.name,
@@ -219,38 +366,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, salexId: str
       packing_forwarding_rate: salex.packing_forwarding_rate !== null && salex.packing_forwarding_rate !== undefined ? salex.packing_forwarding_rate : 0,
       packing_forwarding_total: salex.packing_forwarding_total !== null && salex.packing_forwarding_total !== undefined ? salex.packing_forwarding_total : 0,
       item_count: itemCount,
-      return_count: returnData.length,
+      return_count: returns.length,
       total_allocated: totalAllocated,
       outstanding_amount: salex.total - totalAllocated,
       created_at: salex.updated_at,
       updated_at: salex.updated_at,
+      // Return status
+      return_status: {
+        has_returns: hasReturns,
+        fully_returned_items: fullyReturnedItems,
+        total_items: salexItems.length,
+        is_fully_returned: isFullyReturned,
+        status: returnStatus
+      },
+      returns: returns,
       // Items array
-      items: salexItems.map(item => ({
-        id: item.id,
-        product_id: item.product_id,
-        product_name: item.product?.display_name || item.name_of_product,
-        display_name: item.product?.display_name || item.name_of_product,
-        qty: item.qty,
-        rate: item.rate,
-        subtotal: item.subtotal,
-        total: item.subtotal,
-        gst_percentage: 0, // Salex is tax-free
-        cgst: 0,
-        sgst: 0,
-        igst: 0,
-        tax: 0,
-        discount: item.discount || 0,
-        discountrate: item.discountrate || 0,
-        hsn: item.hsn || '',
-        part: item.part,
-        category_id: item.category_id,
-        subcategory_id: item.subcategory_id,
-        model_id: item.model_id,
-        company_id: item.company_id,
-        car_model: '',
-        invoice_date: item.invoice_date,
-        fy: item.fy
-      })),
+      items: itemsWithReturnStatus,
+      invoiceItems: itemsWithReturnStatus,
       // Complete customer object for dropdown selection
       customer: customerData ? {
         ...customerData,

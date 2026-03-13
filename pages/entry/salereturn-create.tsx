@@ -641,7 +641,7 @@ export default function SaleReturnCreatePage() {
       payment_mode: paymentMode,
       payment_date: paymentDate || undefined,
       items: Array.from(selectedItems.values()).map(item => ({
-        sale_item_id: item.sale_item_id,
+        invoice_item_id: item.invoice_item_id || item.sale_item_id || item.id,
         return_qty: item.return_qty,
         return_reason_id: item.return_reason_id,
         unit_price: item.unit_price,
