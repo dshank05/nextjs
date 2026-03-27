@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2 } from 'lucide-react';
+import { Search, Plus, Trash2, Calculator, Loader, Edit, Edit2, Check, X } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
@@ -23,16 +23,13 @@ import type { Staff } from '../../types/staff';
 export default function PurchaseCreate() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
-  
   // Mutation hooks
   const createPurchase = useCreatePurchase();
   const updatePurchase = useUpdatePurchase();
-  
   // Edit mode state - must be set before using query hooks
   const [isEditMode, setIsEditMode] = useState(false);
   const [editPurchaseId, setEditPurchaseId] = useState<number | null>(null);
   const [isRouterReady, setIsRouterReady] = useState(false);
-  
   // Query hooks - fetch data automatically
   const { data: vendors = [], isLoading: vendorsLoading, refetch: refetchVendors } = useVendors();
   const { data: staff = [], isLoading: staffLoading } = useStaff();
@@ -40,7 +37,6 @@ export default function PurchaseCreate() {
   const { data: states = [], isLoading: statesLoading } = useStates();
   const { data: lastInvoiceNumber, isLoading: invoiceNumberLoading } = useLastInvoiceNumber(!isEditMode);
   const { data: editPurchaseData, isLoading: editDataLoading } = usePurchase(isEditMode ? editPurchaseId : undefined);
-  
   // Product fetching with filters
   const [productFilters, setProductFilters] = useState({
     modelFilter: '',
@@ -52,7 +48,7 @@ export default function PurchaseCreate() {
   });
   const { data: productsData, isLoading: productsLoading } = useProducts(productFilters);
   const products = productsData?.products || [];
-  
+
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProducts, setSelectedProducts] = useState<PurchaseItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -127,7 +123,7 @@ export default function PurchaseCreate() {
   // State for delete confirmation modal
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<PurchaseItem | null>(null);
-  
+
   // Store original data for change detection in edit mode
   const [originalData, setOriginalData] = useState<any>(null);
 
@@ -654,46 +650,46 @@ export default function PurchaseCreate() {
       }
     }
 
-        // Convert purchase items to local format
+    // Convert purchase items to local format
     const convertedItems: PurchaseItem[] = purchase.items && purchase.items.length > 0
       ? purchase.items.map((item: any, index: number) => {
-          const qty = item.qty || 1;
-          const rate = item.rate || 0;
+        const qty = item.qty || 1;
+        const rate = item.rate || 0;
 
-          // Use existing tax breakdown from database if available, otherwise calculate
-          const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
-          const total = item.total || item.subtotal || (qty * rate + tax);
+        // Use existing tax breakdown from database if available, otherwise calculate
+        const tax = item.tax || (item.subtotal ? (item.subtotal - (qty * rate)) : 0);
+        const total = item.total || item.subtotal || (qty * rate + tax);
 
-          // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
-          const cgst = item.cgst || 0;
-          const sgst = item.sgst || 0;
-          const igst = item.igst || 0;
+        // Preserve existing CGST/SGST/IGST if available, otherwise set to 0
+        const cgst = item.cgst || 0;
+        const sgst = item.sgst || 0;
+        const igst = item.igst || 0;
 
-          return {
-            id: (index + 1).toString(),
-            product_id: item.product_id || item.category_id || 1,
-            product_name: item.product_name || item.name_of_product || '',
-            car_model: item.car_model || '',
-            category: item.category_id?.toString() || '',
-            sub_category: item.subcategory_id?.toString() || '',
-            company: item.company_id?.toString() || '',
-            part_number: item.part_number || item.part || '',
-            qty: qty,
-            rate: rate,
-            gst_percentage: item.gst_percentage || item.gst_rate || 0,
-            tax: tax,
-            cgst: cgst,
-            sgst: sgst,
-            igst: igst,
-            total: total,
-            // Include return status fields
-            original_qty: item.original_qty,
-            returned_qty: item.returned_qty,
-            available_qty: item.available_qty,
-            is_fully_returned: item.is_fully_returned,
-            return_history: item.return_history
-          };
-        })
+        return {
+          id: (index + 1).toString(),
+          product_id: item.product_id || item.category_id || 1,
+          product_name: item.product_name || item.name_of_product || '',
+          car_model: item.car_model || '',
+          category: item.category_id?.toString() || '',
+          sub_category: item.subcategory_id?.toString() || '',
+          company: item.company_id?.toString() || '',
+          part_number: item.part_number || item.part || '',
+          qty: qty,
+          rate: rate,
+          gst_percentage: item.gst_percentage || item.gst_rate || 0,
+          tax: tax,
+          cgst: cgst,
+          sgst: sgst,
+          igst: igst,
+          total: total,
+          // Include return status fields
+          original_qty: item.original_qty,
+          returned_qty: item.returned_qty,
+          available_qty: item.available_qty,
+          is_fully_returned: item.is_fully_returned,
+          return_history: item.return_history
+        };
+      })
       : [];
 
     if (convertedItems.length > 0) {
@@ -702,7 +698,7 @@ export default function PurchaseCreate() {
 
     // Mark initial data loading as complete
     setIsInitialDataLoaded(true);
-    
+
     // Store original data for change detection
     setOriginalData({
       formData: {
@@ -881,12 +877,12 @@ export default function PurchaseCreate() {
       companyName: '',
       partNo: ''
     });
-                                setTemplateRow({
-                                  qty: '',
-                                  rate: '',
-                                  gst: '0',
-                                  total: ''
-                                });
+    setTemplateRow({
+      qty: '',
+      rate: '',
+      gst: '0',
+      total: ''
+    });
   };
 
   const handleConfirmDelete = (item: PurchaseItem) => {
@@ -1220,7 +1216,7 @@ export default function PurchaseCreate() {
                   </h3>
                   <p className="text-slate-300 mt-1">
                     {purchaseReturnStatus.fully_returned_items} of {purchaseReturnStatus.total_items} items have been returned.
-                    {purchaseReturnStatus.is_fully_returned 
+                    {purchaseReturnStatus.is_fully_returned
                       ? ' This purchase cannot be edited.'
                       : ' Items with returns have editing restrictions.'}
                   </p>
@@ -1549,7 +1545,7 @@ export default function PurchaseCreate() {
                 </div>
 
                 {/* Barcode Test Input */}
-                {/* <div className="flex items-center space-x-3 p-3 bg-slate-800 rounded border border-slate-600">
+              {/* <div className="flex items-center space-x-3 p-3 bg-slate-800 rounded border border-slate-600">
                   <label className="text-sm font-medium text-slate-300">Test Barcode:</label>
                   <input
                     type="text"
@@ -1686,9 +1682,8 @@ export default function PurchaseCreate() {
                               }
                             }}
                             disabled={!selectedVendorId}
-                            className={`w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-white placeholder-slate-400 ${
-                              !selectedVendorId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
-                            }`}
+                            className={`w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-white placeholder-slate-400 ${!selectedVendorId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                              }`}
                             placeholder={!selectedVendorId ? 'Select vendor first' : 'Click to search products...'}
                             title={!selectedVendorId ? 'Please select a vendor first' : selectedRowProduct ? 'Selected product - click ✕ to clear' : 'Click to search products'}
                           />
@@ -1722,7 +1717,7 @@ export default function PurchaseCreate() {
                           )}
                         </div>
                       </td>
-                        {/* <td className="px-2 py-2">
+                      {/* <td className="px-2 py-2">
                           <SearchableSelect
                             options={[
                               { id: '', name: 'Select Category' },
@@ -1850,15 +1845,15 @@ export default function PurchaseCreate() {
                           onChange={(e) => {
                             const newQty = e.target.value;
                             setLastEditedField('qty');
-                            
+
                             if (newQty === '') {
                               setTemplateRow(prev => ({ ...prev, qty: '', total: '' }));
                               return;
                             }
-                            
+
                             const qty = parseInt(newQty);
                             if (isNaN(qty) || qty < 0) return;
-                            
+
                             // If user already entered total manually, calculate rate from it
                             if (lastEditedField === 'total' && templateRow.total) {
                               const total = parseInt(templateRow.total);
@@ -1876,7 +1871,7 @@ export default function PurchaseCreate() {
                               const subtotal = qty * rate;
                               const taxAmount = (subtotal * gstPercent) / 100;
                               const total = Math.round(subtotal + taxAmount);
-                              
+
                               setTemplateRow(prev => ({
                                 ...prev,
                                 qty: qty.toString(),
@@ -1902,15 +1897,15 @@ export default function PurchaseCreate() {
                           onChange={(e) => {
                             const newRate = e.target.value;
                             setLastEditedField('rate');
-                            
+
                             if (newRate === '') {
                               setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
                               return;
                             }
-                            
+
                             const rate = parseFloat(newRate);
                             if (isNaN(rate) || rate < 0) return;
-                            
+
                             const qty = parseInt(templateRow.qty) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
@@ -1971,15 +1966,15 @@ export default function PurchaseCreate() {
                           onChange={(e) => {
                             const newTotal = e.target.value;
                             setLastEditedField('total');
-                            
+
                             if (newTotal === '') {
                               setTemplateRow(prev => ({ ...prev, total: '', rate: '' }));
                               return;
                             }
-                            
+
                             const enteredTotal = parseInt(newTotal);
                             if (isNaN(enteredTotal) || enteredTotal < 0) return;
-                            
+
                             const qty = parseInt(templateRow.qty) || 0;
                             const gstPercent = enableTax ? (parseFloat(templateRow.gst) || 0) : 0;
 
@@ -2106,23 +2101,24 @@ export default function PurchaseCreate() {
                                     companyName: '',
                                     partNo: ''
                                   });
-                                setTemplateRow({
-                                  qty: '',
-                                  rate: '',
-                                  gst: '0',
-                                  total: ''
-                                });
-                                setLastEditedField(null); // Reset field tracking
+                                  setTemplateRow({
+                                    qty: '',
+                                    rate: '',
+                                    gst: '0',
+                                    total: ''
+                                  });
+                                  setLastEditedField(null); // Reset field tracking
                                 }
                               }
                             }}
                             disabled={!selectedRowProduct}
-                            className={`px-3 py-1 text-xs rounded font-medium transition-colors ${selectedRowProduct
+                            className={`px-2 py-1 text-xs rounded transition-colors ${selectedRowProduct
                               ? 'bg-blue-600 hover:bg-blue-700 text-white'
                               : 'bg-slate-600 text-slate-400 cursor-not-allowed'
                               }`}
+                            title={editingItemId ? "Update product" : "Add product"}
                           >
-                            {editingItemId ? 'Update' : 'Add'}
+                            <Plus className="w-3 h-3" />
                           </button>
 
                           {selectedRowProduct && (
@@ -2149,10 +2145,10 @@ export default function PurchaseCreate() {
                                 });
                                 setErrors(prev => ({ ...prev, addProduct: '' }));
                               }}
-                              className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                              className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
                               title="Clear selection"
                             >
-                              ✕
+                              <X className="w-3 h-3" />
                             </button>
                           )}
                         </div>
@@ -2170,16 +2166,16 @@ export default function PurchaseCreate() {
                           <td className="px-2 py-2 text-center text-xs text-slate-300" id="idx">
                             {serialNumber}
                             {isFullyReturned && (
-                              <div 
-                                className="text-red-400 text-xs font-bold" 
+                              <div
+                                className="text-red-400 text-xs font-bold"
                                 title={`Fully returned: ${product.returned_qty} of ${product.original_qty} items`}
                               >
                                 🔒
                               </div>
                             )}
                             {hasReturns && !isFullyReturned && (
-                              <div 
-                                className="text-orange-400 text-xs text-center" 
+                              <div
+                                className="text-orange-400 text-xs text-center"
                                 title={`Returned ${product.returned_qty} of ${product.original_qty} items. Available: ${product.available_qty}`}
                               >
                                 <div>⚠️</div>
@@ -2192,451 +2188,451 @@ export default function PurchaseCreate() {
                               <div>{editingRowId === product.id ? (editingRowData?.display_name || editingRowData?.product_name) : (product.display_name || product.product_name)}</div>
                             </div>
                           </td>
-                        {/* <td className="px-2 py-2 text-xs text-slate-200">
+                          {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const catOption = filterOptions.categories.find(cat => cat.id.toString() === product.category);
                             return catOption?.name || product.category;
                           })()}
                         </td> */}
-                        {/* <td className="px-2 py-2 text-xs text-slate-200">
+                          {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const subCatOption = filterOptions.subcategories.find(sub => sub.id.toString() === product.sub_category);
                             return subCatOption?.name || product.sub_category;
                           })()}
                         </td> */}
-                        {editingRowId === product.id ? (
-                          <td className="px-2 py-2">
-                            {(() => {
-                              // Find the product being edited
-                              const editingProduct = products.find(p => p.id === product.product_id);
-                              // Filter compatible models for this product
-                              const compatibleModels = editingProduct ? getFilteredCarModelsForProduct(editingProduct) : [];
-                              // Convert current car_model name to model_id for pre-selection
-                              const currentModel = filterOptions.models.find(model => model.name.trim() === editingRowData?.car_model?.trim());
-                              const selectedModelId = currentModel ? currentModel.id.toString() : '';
+                          {editingRowId === product.id ? (
+                            <td className="px-2 py-2">
+                              {(() => {
+                                // Find the product being edited
+                                const editingProduct = products.find(p => p.id === product.product_id);
+                                // Filter compatible models for this product
+                                const compatibleModels = editingProduct ? getFilteredCarModelsForProduct(editingProduct) : [];
+                                // Convert current car_model name to model_id for pre-selection
+                                const currentModel = filterOptions.models.find(model => model.name.trim() === editingRowData?.car_model?.trim());
+                                const selectedModelId = currentModel ? currentModel.id.toString() : '';
 
-                              return (
-                                <SearchableMultiSelect
-                                  options={compatibleModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
-                                  selectedValues={[selectedModelId].filter(Boolean)}
-                                  onSelectionChange={(values) => {
-                                    // For inline editing, only allow single car model selection
-                                    let newCarModel = '';
-                                    let updatedProductName = editingRowData?.product_name || '';
+                                return (
+                                  <SearchableMultiSelect
+                                    options={compatibleModels.map(model => ({ id: model.id.toString(), name: model.name })) || []}
+                                    selectedValues={[selectedModelId].filter(Boolean)}
+                                    onSelectionChange={(values) => {
+                                      // For inline editing, only allow single car model selection
+                                      let newCarModel = '';
+                                      let updatedProductName = editingRowData?.product_name || '';
 
-                                    if (values.length > 0) {
-                                      const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
-                                      newCarModel = selectedModel ? selectedModel.name : '';
+                                      if (values.length > 0) {
+                                        const selectedModel = compatibleModels.find(model => model.id.toString() === values[0]);
+                                        newCarModel = selectedModel ? selectedModel.name : '';
 
-                                      // Update the product name directly when car model changes
-                                      if (newCarModel && editingRowData?.product_name) {
-                                        // Find the product being edited to get full details
-                                        const editingProduct = products.find(p => p.id === product.product_id);
-                                        if (editingProduct) {
-                                          updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
+                                        // Update the product name directly when car model changes
+                                        if (newCarModel && editingRowData?.product_name) {
+                                          // Find the product being edited to get full details
+                                          const editingProduct = products.find(p => p.id === product.product_id);
+                                          if (editingProduct) {
+                                            updatedProductName = generateDynamicProductName(editingProduct, [values[0]], editingRowData.part_number);
+                                          }
                                         }
                                       }
-                                    }
 
-                                    // Update editing row data with both car model and updated product name
-                                    setEditingRowData(prev => prev ? {
-                                      ...prev,
-                                      car_model: newCarModel,
-                                      product_name: updatedProductName,
-                                      display_name : updatedProductName
-                                    } : null);
-                                  }}
-                                  placeholder="Select car model..."
-                                />
-                              );
-                            })()}
-                          </td>
-                        ) : (
-                          <td className="px-2 py-2 text-xs text-slate-200">
-                            {product.car_model}
-                          </td>
-                        )}
-                        {/* <td className="px-2 py-2 text-xs text-slate-200">
+                                      // Update editing row data with both car model and updated product name
+                                      setEditingRowData(prev => prev ? {
+                                        ...prev,
+                                        car_model: newCarModel,
+                                        product_name: updatedProductName,
+                                        display_name: updatedProductName
+                                      } : null);
+                                    }}
+                                    placeholder="Select car model..."
+                                  />
+                                );
+                              })()}
+                            </td>
+                          ) : (
+                            <td className="px-2 py-2 text-xs text-slate-200">
+                              {product.car_model}
+                            </td>
+                          )}
+                          {/* <td className="px-2 py-2 text-xs text-slate-200">
                           {(() => {
                             const compOption = filterOptions.companies.find(comp => comp.id.toString() === product.company);
                             return compOption?.name || product.company;
                           })()}
                         </td> */}
-                        <td className="px-2 py-2 text-xs text-slate-200">
-                          {product.part_number || 'N/A'}
-                        </td>
-                        {editingRowId === product.id ? (
-                          enableTax ? (
-                            <>
-                              {/* Editable fields when inline editing with tax */}
-                              <td className="px-2 py-2 text-center w-24">
-                                <input
-                                  type="number"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0"
-                                  value={editingRowData?.qty || ''}
-                                  onChange={(e) => {
-                                    const newQty = e.target.value;
-                                    const qty = parseFloat(newQty) || 0;
-                                    const rate = editingRowData?.rate || 0;
-                                    const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
+                          <td className="px-2 py-2 text-xs text-slate-200">
+                            {product.part_number || 'N/A'}
+                          </td>
+                          {editingRowId === product.id ? (
+                            enableTax ? (
+                              <>
+                                {/* Editable fields when inline editing with tax */}
+                                <td className="px-2 py-2 text-center w-24">
+                                  <input
+                                    type="number"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0"
+                                    value={editingRowData?.qty || ''}
+                                    onChange={(e) => {
+                                      const newQty = e.target.value;
+                                      const qty = parseFloat(newQty) || 0;
+                                      const rate = editingRowData?.rate || 0;
+                                      const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
 
-                                    if (qty >= 0 && rate >= 0) {
-                                      const subtotal = qty * rate;
-                                      const taxAmount = (subtotal * gstPercent) / 100;
-                                      const total = subtotal + taxAmount;
+                                      if (qty >= 0 && rate >= 0) {
+                                        const subtotal = qty * rate;
+                                        const taxAmount = (subtotal * gstPercent) / 100;
+                                        const total = subtotal + taxAmount;
 
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          qty: parseFloat(newQty) || 0,
+                                          total: total
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          qty: parseFloat(newQty) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 text-center w-24">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0"
+                                    value={editingRowData?.rate || ''}
+                                    onChange={(e) => {
+                                      const newRate = e.target.value;
+                                      // Don't recalculate total - let user enter it manually
                                       setEditingRowData(prev => prev ? {
                                         ...prev,
-                                        qty: parseFloat(newQty) || 0,
-                                        total: total
+                                        rate: parseInt(newRate) || 0
                                       } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        qty: parseFloat(newQty) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center w-24">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0"
-                                  value={editingRowData?.rate || ''}
-                                  onChange={(e) => {
-                                    const newRate = e.target.value;
-                                    // Don't recalculate total - let user enter it manually
-                                    setEditingRowData(prev => prev ? {
-                                      ...prev,
-                                      rate: parseInt(newRate) || 0
-                                    } : null);
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center w-20">
-                                <input
-                                  type="number"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0%"
-                                  value={editingRowData?.gst_percentage || ''}
-                                  onChange={(e) => {
-                                    const newGst = e.target.value;
-                                    const qty = editingRowData?.qty || 0;
-                                    const rate = editingRowData?.rate || 0;
-                                    const gstPercent = parseFloat(newGst) || 0;
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 text-center w-20">
+                                  <input
+                                    type="number"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0%"
+                                    value={editingRowData?.gst_percentage || ''}
+                                    onChange={(e) => {
+                                      const newGst = e.target.value;
+                                      const qty = editingRowData?.qty || 0;
+                                      const rate = editingRowData?.rate || 0;
+                                      const gstPercent = parseFloat(newGst) || 0;
 
-                                    if (qty > 0 && rate > 0) {
-                                      const subtotal = qty * rate;
-                                      const taxAmount = (subtotal * gstPercent) / 100;
-                                      const total = subtotal + taxAmount;
+                                      if (qty > 0 && rate > 0) {
+                                        const subtotal = qty * rate;
+                                        const taxAmount = (subtotal * gstPercent) / 100;
+                                        const total = subtotal + taxAmount;
 
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        gst_percentage: parseFloat(newGst) || 0,
-                                        total: total
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        gst_percentage: parseFloat(newGst) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center w-20">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0"
-                                  value={editingRowData?.total || ''}
-                                  onChange={(e) => {
-                                    const newTotal = e.target.value;
-                                    const qty = editingRowData?.qty || 0;
-                                    const enteredTotal = parseInt(newTotal) || 0;
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          gst_percentage: parseFloat(newGst) || 0,
+                                          total: total
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          gst_percentage: parseFloat(newGst) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 text-center w-20">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0"
+                                    value={editingRowData?.total || ''}
+                                    onChange={(e) => {
+                                      const newTotal = e.target.value;
+                                      const qty = editingRowData?.qty || 0;
+                                      const enteredTotal = parseInt(newTotal) || 0;
 
-                                    if (qty > 0 && enteredTotal > 0) {
-                                      const rate = enteredTotal / qty;
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        total: parseInt(newTotal) || 0,
-                                        rate: Math.round(rate)
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        total: parseInt(newTotal) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              {/* Save/Cancel buttons */}
-                              <td className="px-2 py-2 text-center">
-                                <div className="flex items-center justify-center space-x-1">
-                                  <button
-                                    type="button"
-                                    onClick={saveInlineEdit}
-                                    className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
-                                    title="Save changes"
-                                  >
-                                    ✓
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelInlineEdit}
-                                    className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
-                                    title="Cancel edit"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              </td>
-                            </>
+                                      if (qty > 0 && enteredTotal > 0) {
+                                        const rate = enteredTotal / qty;
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          total: parseInt(newTotal) || 0,
+                                          rate: Math.round(rate)
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          total: parseInt(newTotal) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                {/* Save/Cancel buttons */}
+                                <td className="px-2 py-2 text-center">
+                                  <div className="flex items-center justify-center space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={saveInlineEdit}
+                                      className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                      title="Save changes"
+                                    >
+                                      <Check className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelInlineEdit}
+                                      className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                      title="Cancel edit"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                {/* Editable fields when inline editing without tax */}
+                                <td className="px-2 py-2 text-center w-24">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder=""
+                                    value={editingRowData?.qty || ''}
+                                    onChange={(e) => {
+                                      const newQty = e.target.value;
+                                      const qty = parseFloat(newQty) || 0;
+                                      const rate = editingRowData?.rate || 0;
+                                      const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
+
+                                      if (qty >= 0 && rate > 0) {
+                                        const subtotal = qty * rate;
+                                        const taxAmount = (subtotal * gstPercent) / 100;
+                                        const total = subtotal + taxAmount;
+
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          qty: parseFloat(newQty) || 0,
+                                          total: total
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          qty: parseFloat(newQty) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 text-center w-24">
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0"
+                                    value={editingRowData?.rate || ''}
+                                    onChange={(e) => {
+                                      const newRate = e.target.value;
+                                      const qty = editingRowData?.qty || 0;
+                                      const rate = parseFloat(newRate) || 0;
+                                      const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
+
+                                      if (qty > 0 && rate > 0) {
+                                        const subtotal = qty * rate;
+                                        const taxAmount = (subtotal * gstPercent) / 100;
+                                        const total = subtotal + taxAmount;
+
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          rate: parseFloat(newRate) || 0,
+                                          total: total
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          rate: parseFloat(newRate) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 text-center w-20">
+                                  <input
+                                    type="number"
+                                    step="1"
+                                    className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
+                                    placeholder="0"
+                                    value={editingRowData?.total || ''}
+                                    onChange={(e) => {
+                                      const newTotal = e.target.value;
+                                      const qty = editingRowData?.qty || 0;
+                                      const enteredTotal = parseInt(newTotal) || 0;
+
+                                      if (qty > 0 && enteredTotal > 0) {
+                                        const rate = enteredTotal / qty;
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          total: parseInt(newTotal) || 0,
+                                          rate: Math.round(rate)
+                                        } : null);
+                                      } else {
+                                        setEditingRowData(prev => prev ? {
+                                          ...prev,
+                                          total: parseInt(newTotal) || 0
+                                        } : null);
+                                      }
+                                    }}
+                                    onWheel={(e) => e.preventDefault()}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                                        e.preventDefault();
+                                      }
+                                    }}
+                                  />
+                                </td>
+                                {/* Save/Cancel buttons */}
+                                <td className="px-2 py-2 text-center">
+                                  <div className="flex items-center justify-center space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={saveInlineEdit}
+                                      className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                      title="Save changes"
+                                    >
+                                      ✓
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={cancelInlineEdit}
+                                      className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                      title="Cancel edit"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            )
                           ) : (
-                            <>
-                              {/* Editable fields when inline editing without tax */}
-                              <td className="px-2 py-2 text-center w-24">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder=""
-                                  value={editingRowData?.qty || ''}
-                                  onChange={(e) => {
-                                    const newQty = e.target.value;
-                                    const qty = parseFloat(newQty) || 0;
-                                    const rate = editingRowData?.rate || 0;
-                                    const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
-
-                                    if (qty >= 0 && rate > 0) {
-                                      const subtotal = qty * rate;
-                                      const taxAmount = (subtotal * gstPercent) / 100;
-                                      const total = subtotal + taxAmount;
-
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        qty: parseFloat(newQty) || 0,
-                                        total: total
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        qty: parseFloat(newQty) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center w-24">
-                                <input
-                                  type="number"
-                                  inputMode="numeric"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0"
-                                  value={editingRowData?.rate || ''}
-                                  onChange={(e) => {
-                                    const newRate = e.target.value;
-                                    const qty = editingRowData?.qty || 0;
-                                    const rate = parseFloat(newRate) || 0;
-                                    const gstPercent = enableTax ? (editingRowData?.gst_percentage || 0) : 0;
-
-                                    if (qty > 0 && rate > 0) {
-                                      const subtotal = qty * rate;
-                                      const taxAmount = (subtotal * gstPercent) / 100;
-                                      const total = subtotal + taxAmount;
-
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        rate: parseFloat(newRate) || 0,
-                                        total: total
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        rate: parseFloat(newRate) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-center w-20">
-                                <input
-                                  type="number"
-                                  step="1"
-                                  className="w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center"
-                                  placeholder="0"
-                                  value={editingRowData?.total || ''}
-                                  onChange={(e) => {
-                                    const newTotal = e.target.value;
-                                    const qty = editingRowData?.qty || 0;
-                                    const enteredTotal = parseInt(newTotal) || 0;
-
-                                    if (qty > 0 && enteredTotal > 0) {
-                                      const rate = enteredTotal / qty;
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        total: parseInt(newTotal) || 0,
-                                        rate: Math.round(rate)
-                                      } : null);
-                                    } else {
-                                      setEditingRowData(prev => prev ? {
-                                        ...prev,
-                                        total: parseInt(newTotal) || 0
-                                      } : null);
-                                    }
-                                  }}
-                                  onWheel={(e) => e.preventDefault()}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                                      e.preventDefault();
-                                    }
-                                  }}
-                                />
-                              </td>
-                              {/* Save/Cancel buttons */}
-                              <td className="px-2 py-2 text-center">
-                                <div className="flex items-center justify-center space-x-1">
-                                  <button
-                                    type="button"
-                                    onClick={saveInlineEdit}
-                                    className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
-                                    title="Save changes"
-                                  >
-                                    ✓
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={cancelInlineEdit}
-                                    className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
-                                    title="Cancel edit"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              </td>
-                            </>
-                          )
-                        ) : (
-                          enableTax ? (
-                            <>
-                              {/* Read-only display with tax */}
-                              <td className="px-2 py-2 text-center text-xs text-slate-200">
-                                {product.qty}
-                              </td>
-                              <td className="px-2 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.rate)}
-                              </td>
-                              <td className="px-2 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.tax)}
-                              </td>
-                              <td className="px-2 py-2 text-center text-xs font-medium text-slate-200">
-                                ₹{Math.round(product.total)}
-                              </td>
-                              <td className="px-2 py-2 text-center">
-                                <div className="flex items-center justify-center space-x-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditProduct(product)}
-                                    disabled={isFullyReturned}
-                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                                    title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
-                                  >
-                                    <Edit2 className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmDelete(product)}
-                                    disabled={isFullyReturned}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                                    title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              {/* Read-only display without tax */}
-                              <td className="px-2 py-2 text-center text-xs text-slate-200">
-                                {product.qty}
-                              </td>
-                              <td className="px-2 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.rate)}
-                              </td>
-                              <td className="px-2 py-2 text-center text-xs font-medium text-slate-200">
-                                ₹{Math.round(product.total)}
-                              </td>
-                              <td className="px-2 py-2 text-center">
-                                <div className="flex items-center justify-center space-x-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditProduct(product)}
-                                    disabled={isFullyReturned}
-                                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                                    title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
-                                  >
-                                    <Edit2 className="w-3 h-3" />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleConfirmDelete(product)}
-                                    disabled={isFullyReturned}
-                                    className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
-                                    title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
-                                  >
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
-                                </div>
-                              </td>
-                            </>
-                          )
-                        )}
-                      </tr>
-                    );
-                  })}
+                            enableTax ? (
+                              <>
+                                {/* Read-only display with tax */}
+                                <td className="px-2 py-2 text-center text-xs text-slate-200">
+                                  {product.qty}
+                                </td>
+                                <td className="px-2 py-2 text-center text-xs text-slate-200">
+                                  ₹{Math.round(product.rate)}
+                                </td>
+                                <td className="px-2 py-2 text-center text-xs text-slate-200">
+                                  ₹{Math.round(product.tax)}
+                                </td>
+                                <td className="px-2 py-2 text-center text-xs font-medium text-slate-200">
+                                  ₹{Math.round(product.total)}
+                                </td>
+                                <td className="px-2 py-2 text-center">
+                                  <div className="flex items-center justify-center space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditProduct(product)}
+                                      disabled={isFullyReturned}
+                                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                      title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmDelete(product)}
+                                      disabled={isFullyReturned}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                      title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            ) : (
+                              <>
+                                {/* Read-only display without tax */}
+                                <td className="px-2 py-2 text-center text-xs text-slate-200">
+                                  {product.qty}
+                                </td>
+                                <td className="px-2 py-2 text-center text-xs text-slate-200">
+                                  ₹{Math.round(product.rate)}
+                                </td>
+                                <td className="px-2 py-2 text-center text-xs font-medium text-slate-200">
+                                  ₹{Math.round(product.total)}
+                                </td>
+                                <td className="px-2 py-2 text-center">
+                                  <div className="flex items-center justify-center space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEditProduct(product)}
+                                      disabled={isFullyReturned}
+                                      className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                      title={isFullyReturned ? "Cannot edit - item fully returned" : "Edit product"}
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmDelete(product)}
+                                      disabled={isFullyReturned}
+                                      className="px-2 py-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-600 disabled:cursor-not-allowed text-white text-xs rounded transition-colors"
+                                      title={isFullyReturned ? "Cannot delete - item fully returned" : "Remove product"}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </>
+                            )
+                          )}
+                        </tr>
+                      );
+                    })}
 
                   </tbody>
                   {selectedProducts.length > 0 && (
@@ -2973,23 +2969,76 @@ export default function PurchaseCreate() {
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
         isLoading={productsLoading}
-        onProductSelect={(product) => {
-          handleProductSelection(product);
-          setTemplateRow({
-            qty: '',
-            rate: product.latest_purchase_rate?.toString() ||
-                  product.opening_rate?.toString() ||
-                  product.rate?.toString() || '',
-            gst: product.gst_rate_percentage?.toString() || '0',
-            total: ''
+        onProductSelect={(products) => {
+          products.forEach((product, index) => {
+            // Check for duplicates - skip if product already exists
+            const isDuplicate = selectedProducts.some(item => item.product_id === product.id);
+            if (isDuplicate) {
+              console.log('⚠️ DUPLICATE DETECTED - Skipping product:', product.product_name);
+              return; // Skip this product
+            }
+
+            if (products.length === 1) {
+              // Single product - use template row
+              handleProductSelection(product);
+              setTemplateRow({
+                qty: '1',
+                rate: product.latest_purchase_rate?.toString() || product.opening_rate?.toString() || product.rate?.toString() || '',
+                gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '0',
+                total: ''
+              });
+              setIsProductPanelOpen(false);
+            } else {
+              // Multi - add directly with defaults
+              const qty = 1;
+              const rate = product.latest_purchase_rate || product.opening_rate || product.rate || 0;
+              const gstPercent = enableTax ? (product.gst_rate_percentage || product.gst_rate || 0) : 0;
+              const subtotal = qty * rate;
+              const taxAmount = enableTax ? (subtotal * gstPercent) / 100 : 0;
+              
+              // Calculate tax breakdown
+              const businessState = 'Uttar Pradesh';
+              const isIntraState = vendorStateForTax === businessState;
+              const cgst = enableTax && isIntraState ? taxAmount / 2 : 0;
+              const sgst = enableTax && isIntraState ? taxAmount / 2 : 0;
+              const igst = enableTax && !isIntraState ? taxAmount : 0;
+              
+              const carModels = product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [];
+              
+              const newItem: PurchaseItem = {
+                id: Date.now().toString() + '-' + product.id + '-' + index,
+                product_id: product.id,
+                product_name: product.product_name,
+                display_name: product.product_name,
+                car_model: carModels.length > 0 
+                  ? filterOptions.models.find(m => m.id.toString() === carModels[0])?.name || ''
+                  : '',
+                category: product.product_category_id?.toString() || '',
+                sub_category: product.product_subcategory_id?.toString() || '',
+                company: product.company_id?.toString() || product.company?.toString() || '',
+                part_number: product.part_no || '',
+                qty: qty,
+                rate: rate,
+                gst_percentage: gstPercent,
+                tax: taxAmount,
+                cgst: cgst,
+                sgst: sgst,
+                igst: igst,
+                total: subtotal + taxAmount
+              };
+              setSelectedProducts(prev => [...prev, newItem]);
+            }
           });
-          setIsProductPanelOpen(false);
-          setProductSearchTerm('');
-          // Clear filters after selection
-          setSelectedPanelCarModel('');
-          setSelectedPanelCategory('');
-          setSelectedPanelSubcategory('');
-          setSelectedPanelCompany('');
+          
+          // Clear search and filters only for single select
+          if (products.length === 1) {
+            setProductSearchTerm('');
+            setSelectedPanelCarModel('');
+            setSelectedPanelCategory('');
+            setSelectedPanelSubcategory('');
+            setSelectedPanelCompany('');
+          }
+          // Panel stays open for multi-select, closes for single select
         }}
       />
 

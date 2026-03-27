@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
+import { Calculator, Loader, Trash2, Edit2, Plus, Filter, Trash, Check, X, IndianRupee } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
@@ -27,14 +27,14 @@ export default function InvoiceCCreate() {
   const { data: statesData } = useStates();
   const { data: filterOptionsData } = useFilterOptions();
   const { data: lastInvoiceNumber, isLoading: invoiceNumberLoading } = useLastSalexInvoiceNumber();
-  
+
   // Product filters for side panel
   const [selectedPanelCarModel, setSelectedPanelCarModel] = useState<string>('');
   const [selectedPanelCategory, setSelectedPanelCategory] = useState<string>('');
   const [selectedPanelSubcategory, setSelectedPanelSubcategory] = useState<string>('');
   const [selectedPanelCompany, setSelectedPanelCompany] = useState<string>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
-  
+
   const { data: productsData, isLoading: productsLoading } = useProducts({
     fetchAll: true,
     modelFilter: selectedPanelCarModel || undefined,
@@ -47,7 +47,7 @@ export default function InvoiceCCreate() {
   // Edit mode hooks
   const [editInvoiceId, setEditInvoiceId] = useState<number | null>(null);
   const { data: salexData, isLoading: editDataLoading } = useSalexItem(editInvoiceId || undefined);
-  
+
   // Mutations
   const createSalex = useCreateSalex();
   const updateSalex = useUpdateSalex();
@@ -916,7 +916,7 @@ export default function InvoiceCCreate() {
       // Use React Query mutations
       if (isEditMode && editInvoiceId) {
         await updateSalex.mutateAsync({ id: editInvoiceId, data: finalSubmitData });
-        
+
         SessionStorageService.remove('salex', editInvoiceId.toString());
         setShowConfirmationModal(false);
 
@@ -932,7 +932,7 @@ export default function InvoiceCCreate() {
         showSnackbar('success', 'Salex invoice updated successfully!');
       } else {
         const responseData = await createSalex.mutateAsync(finalSubmitData);
-        
+
         setShowConfirmationModal(false);
 
         // Broadcast the creation event
@@ -1329,7 +1329,7 @@ export default function InvoiceCCreate() {
                       </th>
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                          DISCOUNT (?)
+                          DISCOUNT (<IndianRupee className="w-3 h-3 inline-block" />)
                         </th>
                       )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
@@ -1470,20 +1470,20 @@ export default function InvoiceCCreate() {
                           onChange={(e) => {
                             const newQty = e.target.value;
                             setLastEditedField('qty');
-                            
+
                             if (newQty === '') {
                               setTemplateRow(prev => ({ ...prev, qty: '', total: '' }));
                               return;
                             }
-                            
+
                             const enteredQty = parseInt(newQty);
                             if (isNaN(enteredQty) || enteredQty < 0) return;
-                            
+
                             // If user already entered total manually, calculate rate from it
                             if (lastEditedField === 'total' && templateRow.total) {
                               const total = parseInt(templateRow.total);
                               const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
-                              
+
                               if (enteredQty > 0) {
                                 const rate = (total + discountAmount) / enteredQty;
                                 setTemplateRow(prev => ({
@@ -1501,7 +1501,7 @@ export default function InvoiceCCreate() {
                               // Normal flow: calculate total from qty and rate
                               const rate = parseFloat(templateRow.rate) || 0;
                               const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
-                              
+
                               if (rate > 0) {
                                 const subtotal = enteredQty * rate;
                                 const total = Math.round(subtotal - discountAmount);
@@ -1536,18 +1536,18 @@ export default function InvoiceCCreate() {
                           onChange={(e) => {
                             const newRate = e.target.value;
                             setLastEditedField('rate');
-                            
+
                             if (newRate === '') {
                               setTemplateRow(prev => ({ ...prev, rate: '', total: '' }));
                               return;
                             }
-                            
+
                             const enteredRate = parseFloat(newRate);
                             if (isNaN(enteredRate) || enteredRate < 0) return;
-                            
+
                             const qty = parseInt(templateRow.qty) || 0;
                             const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
-                            
+
                             if (qty > 0) {
                               const subtotal = qty * enteredRate;
                               const total = Math.round(subtotal - discountAmount);
@@ -1605,15 +1605,15 @@ export default function InvoiceCCreate() {
                           onChange={(e) => {
                             const newTotal = e.target.value;
                             setLastEditedField('total');
-                            
+
                             if (newTotal === '') {
                               setTemplateRow(prev => ({ ...prev, total: '', rate: '' }));
                               return;
                             }
-                            
+
                             const enteredTotal = parseInt(newTotal);
                             if (isNaN(enteredTotal) || enteredTotal < 0) return;
-                            
+
                             const qty = parseInt(templateRow.qty) || 0;
                             const discountAmount = enableDiscount ? (parseFloat(templateRow.discount) || 0) : 0;
 
@@ -1967,15 +1967,15 @@ export default function InvoiceCCreate() {
                                   className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
                                   title="Save changes"
                                 >
-                                  ?
+                                  <Check className="w-3 h-3" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={cancelInlineEdit}
-                                  className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  className="px-2 py-1 bg-red-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
                                   title="Cancel edit"
                                 >
-                                  ?
+                                  <X className="w-3 h-3" />
                                 </button>
                               </div>
                             </td>
@@ -2013,7 +2013,7 @@ export default function InvoiceCCreate() {
                                   className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded transition-colors"
                                   title="Remove product"
                                 >
-                                  <Trash2 className="w-3 h-3" />
+                                  <Trash className="w-3 h-3" />
                                 </button>
                               </div>
                             </td>
@@ -2028,76 +2028,76 @@ export default function InvoiceCCreate() {
                         <td colSpan={enableDiscount ? 7 : 6} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           {/* Display Subtotal */}
-                        {/* Display Subtotal instead */}
-                        <div className="text-sm font-semibold text-slate-200">
-                          Subtotal: {subtotal.toFixed(2)}
-                        </div>
-                      </td>
-                    </tr>
+                          {/* Display Subtotal instead */}
+                          <div className="text-sm font-semibold text-slate-200">
+                            Subtotal: {subtotal.toFixed(2)}
+                          </div>
+                        </td>
+                      </tr>
                     </tfoot>
                   )}
-              </table>
-            </div>
-            {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
-          </div>
-
-          {/* Additional Information */}
-          <div className="mb-3 border-t border-slate-600 pt-4">
-            {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
-                <textarea
-                  value={formData.descriptions}
-                  onChange={(e) => handleInputChange('descriptions', e.target.value)}
-                  rows={3}
-                  className="input w-full"
-                  placeholder="Enter additional descriptions or comments"
-                />
+                </table>
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
-                <textarea
-                  value={formData.notes}
-                  onChange={(e) => handleInputChange('notes', e.target.value)}
-                  rows={3}
-                  className="input w-full"
-                  placeholder="Enter additional notes"
-                />
-              </div>
+              {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
             </div>
-          </div>
 
-          {/* Summary & Payment */}
-          <div className="border-t border-slate-600 pt-4">
-            {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
-            <div className="space-y-6">
-
-              {/* Calculations */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
-                  <input
-                    type="number"
-
-                    value={subtotal.toFixed(2)}
-                    readOnly
-                    disabled
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+            {/* Additional Information */}
+            <div className="mb-3 border-t border-slate-600 pt-4">
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Additional Information</h3> */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">DESCRIPTIONS</label>
+                  <textarea
+                    value={formData.descriptions}
+                    onChange={(e) => handleInputChange('descriptions', e.target.value)}
+                    rows={3}
+                    className="input w-full"
+                    placeholder="Enter additional descriptions or comments"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL DISCOUNT</label>
-                  <input
-                    type="number"
-
-                    value={totalDiscount.toFixed(2)}
-                    readOnly
-                    disabled
-                    className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2">NOTES</label>
+                  <textarea
+                    value={formData.notes}
+                    onChange={(e) => handleInputChange('notes', e.target.value)}
+                    rows={3}
+                    className="input w-full"
+                    placeholder="Enter additional notes"
                   />
                 </div>
-                {/* <div>
+              </div>
+            </div>
+
+            {/* Summary & Payment */}
+            <div className="border-t border-slate-600 pt-4">
+              {/* <h3 className="text-lg font-medium text-slate-200 mb-3">Summary & Payment</h3> */}
+              <div className="space-y-6">
+
+                {/* Calculations */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">SUBTOTAL</label>
+                    <input
+                      type="number"
+
+                      value={subtotal.toFixed(2)}
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL DISCOUNT</label>
+                    <input
+                      type="number"
+
+                      value={totalDiscount.toFixed(2)}
+                      readOnly
+                      disabled
+                      className="input w-full bg-slate-700 bg-opacity-75 text-slate-400 border-slate-600 cursor-not-allowed"
+                    />
+                  </div>
+                  {/* <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">DISCOUNT</label>
                     <input
                       type="number"
@@ -2108,31 +2108,31 @@ export default function InvoiceCCreate() {
                       placeholder="0"
                     />
                   </div> */}
-              </div>
+                </div>
 
-              {/* Packing & Forwarding */}
-              <div>
-                {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
-                    <input
-                      type="number"
-                      step="1"
-                      value={formData.packing_forwarding_qty}
-                      onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
-                      onWheel={(e) => e.preventDefault()}
-                      onKeyDown={(e) => {
-                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                          e.preventDefault();
-                        }
-                      }}
-                      className="input w-full"
-                      placeholder="0"
-                    />
-                  </div>
-                  {/* RATE FIELD HIDDEN - Auto-calculated */}
-                  {/* <div>
+                {/* Packing & Forwarding */}
+                <div>
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-3">Packing & Forwarding</h4> */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">QTY</label>
+                      <input
+                        type="number"
+                        step="1"
+                        value={formData.packing_forwarding_qty}
+                        onChange={(e) => handleInputChange('packing_forwarding_qty', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="input w-full"
+                        placeholder="0"
+                      />
+                    </div>
+                    {/* RATE FIELD HIDDEN - Auto-calculated */}
+                    {/* <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">RATE</label>
                     <input
                       type="number"
@@ -2149,104 +2149,105 @@ export default function InvoiceCCreate() {
                       placeholder="0"
                     />
                   </div> */}
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
-                    <input
-                      type="number"
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">TOTAL</label>
+                      <input
+                        type="number"
 
-                      value={formData.packing_forwarding_total}
-                      onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
-                      onWheel={(e) => e.preventDefault()}
-                      onKeyDown={(e) => {
-                        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                          e.preventDefault();
-                        }
-                      }}
-                      className="input w-full"
-                      placeholder="0"
-                    />
+                        value={formData.packing_forwarding_total}
+                        onChange={(e) => handleInputChange('packing_forwarding_total', e.target.value)}
+                        onWheel={(e) => e.preventDefault()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                          }
+                        }}
+                        className="input w-full"
+                        placeholder="0"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Payment Details */}
-              <div className="border-t border-slate-600 pt-4">
-                {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
-                    <SearchableSelect
-                      options={[
-                        { id: '0', name: 'Unpaid' },
-                        { id: '1', name: 'Paid' }
-                      ]}
-                      selectedValue={formData.payment_status.toString()}
-                      onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '0')).toString())}
-                      placeholder="Select Payment Status"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
-                    <SearchableSelect
-                      options={[
-                        { id: '0', name: 'Cash' },
-                        { id: '1', name: 'Bank' }
-                      ]}
-                      selectedValue={formData.payment_mode.toString()}
-                      onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '0')).toString())}
-                      placeholder="Select Payment Mode"
-                    />
-                  </div>
-                  {/* Grand Total */}
-                  <div className="bg-slate-700 rounded p-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-slate-300 font-medium">GRAND TOTAL</span>
-                      <div className="flex items-center space-x-2">
-                        <Calculator className="w-4 h-4 text-slate-400" />
-                        <span className="text-white font-semibold text-lg">
-                          ?{grandTotal.toFixed(2)}
-                        </span>
+                {/* Payment Details */}
+                <div className="border-t border-slate-600 pt-4">
+                  {/* <h4 className="text-sm font-medium text-slate-300 mb-4">Payment Details</h4> */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT STATUS *</label>
+                      <SearchableSelect
+                        options={[
+                          { id: '0', name: 'Unpaid' },
+                          { id: '1', name: 'Paid' }
+                        ]}
+                        selectedValue={formData.payment_status.toString()}
+                        onSelectionChange={(value) => handleInputChange('payment_status', (parseInt(value || '0')).toString())}
+                        placeholder="Select Payment Status"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-2">PAYMENT MODE *</label>
+                      <SearchableSelect
+                        options={[
+                          { id: '0', name: 'Cash' },
+                          { id: '1', name: 'Bank' }
+                        ]}
+                        selectedValue={formData.payment_mode.toString()}
+                        onSelectionChange={(value) => handleInputChange('payment_mode', (parseInt(value || '0')).toString())}
+                        placeholder="Select Payment Mode"
+                      />
+                    </div>
+                    {/* Grand Total */}
+                    <div className="bg-slate-700 rounded p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-300 font-medium">GRAND TOTAL</span>
+                        <div className="flex items-center space-x-2">
+                          <Calculator className="w-4 h-4 text-slate-400" />
+                          <span className="text-white font-semibold text-lg flex items-center">
+                            <IndianRupee className="w-4 h-4 mr-1" />
+                            {grandTotal.toFixed(2)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
+
+
               </div>
+            </div>
 
+          </div>
 
+          {/* Form Actions */}
+          <div className="border-t border-slate-600 pt-6 mt-6 px-6">
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  SessionStorageService.remove('salex', editInvoiceId.toString());
+                  router.push('/salex')
+                }}
+                className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice C' : 'Create Invoice C')}
+              </button>
             </div>
           </div>
-
         </div>
+      </form >
 
-        {/* Form Actions */}
-        <div className="border-t border-slate-600 pt-6 mt-6 px-6">
-          <div className="flex justify-end space-x-3">
-            <button
-              type="button"
-              onClick={() => {
-                SessionStorageService.remove('salex', editInvoiceId.toString());
-                router.push('/salex')
-              }}
-              className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? (isEditMode ? 'Updating...' : 'Creating...') : (isEditMode ? 'Update Invoice C' : 'Create Invoice C')}
-            </button>
-          </div>
-        </div>
-      </div>
-    </form >
-
-      {/* Product Selection Side Panel */ }
+      {/* Product Selection Side Panel */}
       <ProductSelectionPanel
-        isOpen = { isProductPanelOpen }
-        onClose = {() => {
+        isOpen={isProductPanelOpen}
+        onClose={() => {
           setIsProductPanelOpen(false);
           // Clear filters when closing
           setSelectedPanelCarModel('');
@@ -2255,37 +2256,96 @@ export default function InvoiceCCreate() {
           setSelectedPanelCompany('');
         }}
 
-        title = "Select Product"
-        showCarModelFilter = { true}
-        filterOptions = { memoizedFilterOptions }
-        selectedCarModel = { selectedPanelCarModel }
-        onCarModelSelection = { setSelectedPanelCarModel }
-        selectedCategory = { selectedPanelCategory }
-        onCategorySelection = { setSelectedPanelCategory }
-        selectedSubcategory = { selectedPanelSubcategory }
-        onSubcategorySelection = { setSelectedPanelSubcategory }
-        selectedCompany = { selectedPanelCompany }
-        onCompanySelection = { setSelectedPanelCompany }
-        searchedProducts = { products }
-        productSearchTerm = { productSearchTerm }
-        onSearchTermChange = { setProductSearchTerm }
-        isLoading = { productsLoading }
-        onProductSelect = {(product) => {
-          handleProductSelection(product);
-          setTemplateRow({
-            qty: '1',
-            rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
-            gst: '0',
-            discount: '0',
-            total: ''
+        title="Select Product"
+        showCarModelFilter={true}
+        filterOptions={memoizedFilterOptions}
+        selectedCarModel={selectedPanelCarModel}
+        onCarModelSelection={setSelectedPanelCarModel}
+        selectedCategory={selectedPanelCategory}
+        onCategorySelection={setSelectedPanelCategory}
+        selectedSubcategory={selectedPanelSubcategory}
+        onSubcategorySelection={setSelectedPanelSubcategory}
+        selectedCompany={selectedPanelCompany}
+        onCompanySelection={setSelectedPanelCompany}
+        searchedProducts={products}
+        productSearchTerm={productSearchTerm}
+        onSearchTermChange={setProductSearchTerm}
+        isLoading={productsLoading}
+        defaultToMultiSelect={true}
+        onProductSelect={(products) => {
+          products.forEach((product, index) => {
+            // Check for duplicates - skip if product already exists
+            const isDuplicate = selectedProducts.some(item => item.product_id === product.id);
+            if (isDuplicate) {
+              console.log('⚠️ DUPLICATE DETECTED - Skipping product:', product.product_name);
+              return; // Skip this product
+            }
+            
+            if (products.length === 1) {
+              // Single product - use template row
+              handleProductSelection(product);
+              setTemplateRow({
+                qty: '1',
+                rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
+                gst: '0',
+                discount: '0',
+                total: ''
+              });
+            } else {
+              // Multi - add directly with defaults
+              const qty = 1;
+              const rate = product.latest_selling_price || product.rate || 0;
+              const discountAmount = 0;
+              const carModels = product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [];
+              const { companyId, companyName } = getCompanyInfo(product);
+              
+              const newItem: SalexInvoiceItem = {
+                id: Date.now().toString() + '-' + product.id + '-' + index,
+                product_id: product.id,
+                product_name: product.product_name,
+                car_model_ids: carModels,
+                car_model_names: carModels.map(id => 
+                  filterOptions.models.find(m => m.id.toString() === id)?.name || ''
+                ),
+                category_id: product.product_category_id || 0,
+                category_name: filterOptions.categories.find(c => 
+                  c.id.toString() === product.product_category_id?.toString()
+                )?.name || '',
+                subcategory_id: product.product_subcategory_id || null,
+                subcategory_name: filterOptions.subcategories.find(s => 
+                  s.id.toString() === product.product_subcategory_id?.toString()
+                )?.name || '',
+                company_id: companyId,
+                company_name: companyName,
+                part_number: product.part_no || '',
+                qty: qty,
+                rate: rate,
+                gst_percentage: 0,
+                discount_percentage: 0,
+                tax: 0,
+                discount_amount: 0,
+                total: qty * rate,
+                hsn: product.hsn || '',
+                mrp: 0,
+                discount: 0,
+                margin: 0,
+                cgst: 0,
+                sgst: 0,
+                igst: 0
+              };
+              setSelectedProducts(prev => [...prev, newItem]);
+            }
           });
-          setIsProductPanelOpen(false);
-          setProductSearchTerm('');
-          // Clear filters after selection
-          setSelectedPanelCarModel('');
-          setSelectedPanelCategory('');
-          setSelectedPanelSubcategory('');
-          setSelectedPanelCompany('');
+          
+          // Clear search and filters only for single select
+          if (products.length === 1) {
+            setProductSearchTerm('');
+            setSelectedPanelCarModel('');
+            setSelectedPanelCategory('');
+            setSelectedPanelSubcategory('');
+            setSelectedPanelCompany('');
+          }
+          // Panel stays open for multi-select, closes for single select
         }}
       />
 
@@ -2293,7 +2353,7 @@ export default function InvoiceCCreate() {
       <ConfirmationModal
         isOpen={showConfirmationModal}
         title="Create Invoice C?"
-        message={`Are you sure you want to create this Invoice C for ?${grandTotal?.toFixed(2)}? This action cannot be undone.`}
+        message={`Are you sure you want to create this Invoice C for ₹${grandTotal?.toFixed(2)}? This action cannot be undone.`}
         confirmText="Create Invoice C"
         cancelText="Cancel"
         showLoading={loading}

@@ -54,8 +54,9 @@ export interface ProductSelectionPanelProps {
     searchedProducts: Product[];
     productSearchTerm: string;
     onSearchTermChange: (value: string) => void;
-    onProductSelect: (product: Product) => void;
+    onProductSelect: (products: Product[]) => void;
     isLoading?: boolean; // New prop for loading state
+    defaultToMultiSelect?: boolean; // New prop to default to multi-select mode
 }
 
 export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
@@ -77,8 +78,13 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     onSearchTermChange,
     onProductSelect,
     isLoading = false, // Default to false
+    defaultToMultiSelect = false, // Default to single-select
 }) => {
     const inputRef = useRef<HTMLInputElement>(null);
+    
+    // Multi-select state
+    const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
+    const [selectMode, setSelectMode] = useState<'single' | 'multi'>(defaultToMultiSelect ? 'multi' : 'single');
     
     // Internal state for filter options - will fetch from API if not provided via props
     const [internalFilterOptions, setInternalFilterOptions] = useState<FilterOptions>({
@@ -121,6 +127,54 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
         }
     }, [isOpen]);
 
+    // Clear selections when panel closes or opens
+    useEffect(() => {
+        if (!isOpen) {
+            setSelectedProductIds(new Set());
+            setSelectMode(defaultToMultiSelect ? 'multi' : 'single');
+        }
+    }, [isOpen, defaultToMultiSelect]);
+
+    // Handle product selection based on mode
+    const handleProductClick = (product: Product) => {
+        if (selectMode === 'single') {
+            // Single select mode - call callback with array of 1 product and close
+            onProductSelect([product]);
+            onClose();
+        } else {
+            // Multi select mode - toggle checkbox
+            const newSet = new Set(selectedProductIds);
+            if (newSet.has(product.id)) {
+                newSet.delete(product.id);
+            } else {
+                newSet.add(product.id);
+            }
+            setSelectedProductIds(newSet);
+        }
+    };
+
+    // Handle "Add Selected Products" button click
+    const handleAddSelected = () => {
+        const selectedProducts = searchedProducts.filter(p => selectedProductIds.has(p.id));
+        if (selectedProducts.length > 0) {
+            onProductSelect(selectedProducts);
+            setSelectedProductIds(new Set()); // Clear selections after adding
+            onClose(); // Close panel after adding (requirement #2)
+        }
+    };
+
+    // Handle "Select All" / "Deselect All"
+    const handleToggleSelectAll = () => {
+        if (selectedProductIds.size === searchedProducts.length) {
+            // Deselect all
+            setSelectedProductIds(new Set());
+        } else {
+            // Select all visible products
+            const allIds = new Set(searchedProducts.map(p => p.id));
+            setSelectedProductIds(allIds);
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
@@ -136,13 +190,47 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                 {/* Header */}
                 <div className="p-4 border-b border-slate-700">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-medium text-slate-200">{title}</h3>
-                        <button
-                            onClick={onClose}
-                            className="p-1 hover:bg-slate-800 rounded"
-                        >
-                            <span className="text-slate-400 text-xl">×</span>
-                        </button>
+                        <div className="flex items-center space-x-4">
+                            <h3 className="text-lg font-medium text-slate-200">{title}</h3>
+                            {selectMode === 'multi' && searchedProducts.length > 0 && (
+                                <span className="text-sm text-slate-400">
+                                    {selectedProductIds.size} of {searchedProducts.length} selected
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            {/* Button group for single/multi select toggle */}
+                            <div className="inline-flex rounded-md shadow-sm" role="group">
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectMode('single')}
+                                    className={`px-3 py-1 text-sm font-medium rounded-l-md transition-colors ${
+                                        selectMode === 'single'
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                    }`}
+                                >
+                                    Single
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectMode('multi')}
+                                    className={`px-3 py-1 text-sm font-medium rounded-r-md transition-colors ${
+                                        selectMode === 'multi'
+                                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                                    }`}
+                                >
+                                    Multi
+                                </button>
+                            </div>
+                            <button
+                                onClick={onClose}
+                                className="p-1 hover:bg-slate-800 rounded"
+                            >
+                                <span className="text-slate-400 text-xl">×</span>
+                            </button>
+                        </div>
                     </div>
 
           {/* Search Input */}
@@ -156,6 +244,26 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
               className="flex-1 pl-3 pr-4 py-2 bg-transparent text-white text-sm focus:outline-none placeholder-slate-400"
             />
           </div>
+
+          {/* Multi-select actions (only show in multi mode)
+          {selectMode === 'multi' && searchedProducts.length > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <button
+                onClick={handleToggleSelectAll}
+                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                {selectedProductIds.size === searchedProducts.length ? 'Deselect All' : 'Select All'}
+              </button>
+              {selectedProductIds.size > 0 && (
+                <button
+                  onClick={() => setSelectedProductIds(new Set())}
+                  className="text-sm text-slate-400 hover:text-slate-300 transition-colors"
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+          )} */}
 
           {/* Filters Row */}
           {filterOptionsLoading ? (
@@ -248,15 +356,39 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
                                 .map((product) => (
                                 <div
                                     key={product.id}
-                                    className="p-3 bg-slate-800 border border-slate-700 rounded hover:bg-slate-700 cursor-pointer transition-colors"
-                                    onClick={() => onProductSelect(product)}
+                                    className={`p-3 bg-slate-800 border rounded transition-colors relative ${
+                                        selectMode === 'multi' && selectedProductIds.has(product.id)
+                                            ? 'border-blue-500 bg-blue-900/20'
+                                            : 'border-slate-700 hover:bg-slate-700'
+                                    } ${selectMode === 'single' ? 'cursor-pointer' : ''}`}
+                                    onClick={() => handleProductClick(product)}
                                 >
                                     <div className="flex flex-col">
-                                        {/* First row: UID-Display Name-Part No | Stock */}
+                                        {/* First row: Checkbox (multi mode) + UID-Display Name-Part No | Stock */}
                                         <div className="flex justify-between items-center mb-2">
-                                            <h4 className="text-slate-200 font-bold text-sm flex-1">
-                                                {product.display_name || product.product_name}  
-                                            </h4>
+                                            <div className="flex items-center flex-1">
+                                                {selectMode === 'multi' && (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedProductIds.has(product.id)}
+                                                        onChange={(e) => {
+                                                            e.stopPropagation();
+                                                            const newSet = new Set(selectedProductIds);
+                                                            if (e.target.checked) {
+                                                                newSet.add(product.id);
+                                                            } else {
+                                                                newSet.delete(product.id);
+                                                            }
+                                                            setSelectedProductIds(newSet);
+                                                        }}
+                                                        className="mr-3 w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500 focus:ring-2"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    />
+                                                )}
+                                                <h4 className="text-slate-200 font-bold text-sm">
+                                                    {product.display_name || product.product_name}  
+                                                </h4>
+                                            </div>
                                             <div className="flex items-center ml-2 flex-shrink-0">
                                                 <span className="text-green-400 font-semibold text-sm mr-1">Stock:</span>
                                                 <span className="text-white font-bold text-sm">{product.stock || 0} units</span>
@@ -297,12 +429,29 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
 
                 {/* Footer */}
                 <div className="p-4 border-t border-slate-700">
-                    <button
-                        onClick={onClose}
-                        className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
-                    >
-                        Cancel
-                    </button>
+                    {selectMode === 'multi' && selectedProductIds.size > 0 ? (
+                        <div className="space-y-2">
+                            <button
+                                onClick={handleAddSelected}
+                                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors font-medium"
+                            >
+                                Add Selected Products ({selectedProductIds.size})
+                            </button>
+                            <button
+                                onClick={onClose}
+                                className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={onClose}
+                            className="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded transition-colors"
+                        >
+                            {selectMode === 'multi' ? 'Close' : 'Cancel'}
+                        </button>
+                    )}
                 </div>
             </div>
         </>

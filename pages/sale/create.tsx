@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import { Calculator, Loader, Trash2, Edit2, Plus, Filter } from 'lucide-react';
+import { Calculator, Loader, Trash2, Edit2, Plus, Filter, Check, X, IndianRupee } from 'lucide-react';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ProductSelectionPanel } from '../../components/common/ProductSelectionPanel';
@@ -1511,7 +1511,7 @@ export default function InvoiceCreate() {
                       )}
                       {enableDiscount && (
                         <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
-                          DISCOUNT (₹)
+                          DISCOUNT (<IndianRupee className="w-3 h-3 inline-block" />)
                         </th>
                       )}
                       <th className="px-4 py-3 text-center text-xs font-medium text-slate-300 uppercase tracking-wider w-20">
@@ -2181,15 +2181,15 @@ export default function InvoiceCreate() {
                                   className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
                                   title="Save changes"
                                 >
-                                  ✓
+                                  <Check className="w-3 h-3" />
                                 </button>
                                 <button
                                   type="button"
                                   onClick={cancelInlineEdit}
-                                  className="px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
+                                  className="px-2 py-1 bg-red-600 hover:bg-gray-700 text-white text-xs rounded transition-colors"
                                   title="Cancel edit"
                                 >
-                                  ✕
+                                  <X className="w-3 h-3" />
                                 </button>
                               </div>
                             </td>
@@ -2200,8 +2200,9 @@ export default function InvoiceCreate() {
                             <td className="px-3 py-2 text-center text-xs text-slate-200">
                               {product.qty}
                             </td>
-                            <td className="px-3 py-2 text-center text-xs text-slate-200">
-                              ₹{Math.round(product.rate)}
+                            <td className="px-3 py-2 text-center text-xs text-slate-200 flex items-center justify-center">
+                              <IndianRupee className="w-3 h-3 mr-1" />
+                              {Math.round(product.rate)}
                             </td>
                             {enableTax && (
                               <td className="px-3 py-2 text-center text-xs text-slate-200">
@@ -2209,12 +2210,14 @@ export default function InvoiceCreate() {
                               </td>
                             )}
                             {enableDiscount && (
-                              <td className="px-3 py-2 text-center text-xs text-slate-200">
-                                ₹{Math.round(product.discount_amount)}
+                              <td className="px-3 py-2 text-center text-xs text-slate-200 flex items-center justify-center">
+                                <IndianRupee className="w-3 h-3 mr-1" />
+                                {Math.round(product.discount_amount)}
                               </td>
                             )}
-                            <td className="px-3 py-2 text-center text-sm font-medium text-slate-200">
-                              ₹{Math.round(product.total)}
+                            <td className="px-3 py-2 text-center text-sm font-medium text-slate-200 flex items-center justify-center">
+                              <IndianRupee className="w-3 h-3 mr-1" />
+                              {Math.round(product.total)}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <div className="flex items-center justify-center space-x-1">
@@ -2249,8 +2252,10 @@ export default function InvoiceCreate() {
                           <td className="px-4 py-3 text-right text-xs font-medium text-slate-200 uppercase tracking-wider">
                             TOTAL DISCOUNT
                           </td>
-                          <td className="px-4 py-3 text-center text-sm font-semibold text-green-400">
-                            -₹{totalDiscount.toFixed(2)}
+                          <td className="px-4 py-3 text-center text-sm font-semibold text-green-400 flex items-center justify-center">
+                            <span className="mr-1">-</span>
+                            <IndianRupee className="w-3 h-3 mr-1" />
+                            {totalDiscount.toFixed(2)}
                           </td>
                         </tr>
                       )}
@@ -2258,8 +2263,10 @@ export default function InvoiceCreate() {
                         <td colSpan={enableDiscount && enableTax ? 8 : enableDiscount || enableTax ? 7 : 6} className="px-4 py-3"></td>
                         <td colSpan={2} className="px-4 py-3 text-center">
                           {/* Display Subtotal */}
-                          <div className="text-sm font-semibold text-slate-200">
-                            Subtotal: ₹{subtotal.toFixed(2)}
+                          <div className="text-sm font-semibold text-slate-200 flex items-center justify-center">
+                            <span className="mr-1">Subtotal:</span>
+                            <IndianRupee className="w-3 h-3 mr-1" />
+                            {subtotal.toFixed(2)}
                           </div>
                         </td>
                       </tr>
@@ -2472,12 +2479,13 @@ export default function InvoiceCreate() {
                     </div>
                     {/* Grand Total */}
                     <div className="bg-slate-700 rounded p-4">
-                      <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between">
                         <span className="text-slate-300 font-medium">GRAND TOTAL</span>
                         <div className="flex items-center space-x-2">
                           <Calculator className="w-4 h-4 text-slate-400" />
-                          <span className="text-white font-semibold text-lg">
-                            ₹{grandTotal.toFixed(2)}
+                          <span className="text-white font-semibold text-lg flex items-center">
+                            <IndianRupee className="w-4 h-4 mr-1" />
+                            {grandTotal.toFixed(2)}
                           </span>
                         </div>
                       </div>
@@ -2543,28 +2551,108 @@ export default function InvoiceCreate() {
         productSearchTerm={productSearchTerm}
         onSearchTermChange={setProductSearchTerm}
         isLoading={productsLoading}
-        onProductSelect={(product) => {
-          console.log('🎯 SELECTED PRODUCT FROM PANEL:', {
-            product: product.product_name,
-            latest_selling_price: product.latest_selling_price,
-            gst_rate_percentage: product.gst_rate_percentage,
-            gst_rate: product.gst_rate
+        defaultToMultiSelect={true}
+        onProductSelect={(products) => {
+          console.log('🎯 SELECTED PRODUCTS FROM PANEL:', products.length, 'products');
+          
+          // Handle both single and multi-select
+          products.forEach((product, index) => {
+            console.log('🎯 Processing product:', {
+              product: product.product_name,
+              latest_selling_price: product.latest_selling_price,
+              gst_rate_percentage: product.gst_rate_percentage,
+              gst_rate: product.gst_rate
+            });
+            
+            // Check for duplicates - skip if product already exists
+            const isDuplicate = selectedProducts.some(item => item.product_id === product.id);
+            if (isDuplicate) {
+              console.log('⚠️ DUPLICATE DETECTED - Skipping product:', product.product_name);
+              return; // Skip this product
+            }
+            
+            // For single product, use existing template row flow
+            if (products.length === 1) {
+              handleProductSelection(product);
+              setTemplateRow({
+                qty: '1',
+                rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
+                gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '0',
+                discount: '0',
+                total: ''
+              });
+            } else {
+              // For multi-select, add products directly with default values
+              const qty = 1;
+              const rate = product.latest_selling_price || product.rate || 0;
+              const gstPercent = enableTax ? (product.gst_rate_percentage || product.gst_rate || 0) : 0;
+              const carModels = product.car_model_ids ? [product.car_model_ids.split(',')[0]] : [];
+              
+              // Calculate tax
+              const subtotal = qty * rate;
+              const discountAmount = 0; // No discount for multi-select defaults
+              const taxableAmount = subtotal - discountAmount;
+              const taxAmount = enableTax ? (taxableAmount * gstPercent) / 100 : 0;
+              
+              // GST breakdown
+              const customerStateCode = getStateCodeFromName(formData.state);
+              const gstBreakdown = enableTax ? calculateGSTBreakdown(taxAmount, customerStateCode || null) : { cgst: 0, sgst: 0, igst: 0 };
+              
+              // Get company info
+              const { companyId, companyName } = getCompanyInfo(product);
+              
+              // Generate unique ID
+              const uniqueId = Date.now().toString() + '-' + product.id + '-' + index;
+              
+              // Create item
+              const newItem: SaleInvoiceItem = {
+                id: uniqueId,
+                product_id: product.id,
+                product_name: product.product_name,
+                car_model_ids: carModels,
+                car_model_names: carModels.map(id => 
+                  filterOptions.models.find(m => m.id.toString() === id)?.name || ''
+                ),
+                category_id: product.product_category_id || 0,
+                category_name: filterOptions.categories.find(c => 
+                  c.id.toString() === product.product_category_id?.toString()
+                )?.name || '',
+                subcategory_id: product.product_subcategory_id || null,
+                subcategory_name: filterOptions.subcategories.find(s => 
+                  s.id.toString() === product.product_subcategory_id?.toString()
+                )?.name || '',
+                company_id: companyId,
+                company_name: companyName,
+                part_number: product.part_no || '',
+                qty: qty,
+                rate: rate,
+                gst_percentage: gstPercent,
+                discount_percentage: 0,
+                tax: taxAmount,
+                discount_amount: 0,
+                total: taxableAmount + taxAmount,
+                hsn: product.hsn || '',
+                mrp: 0,
+                discount: 0,
+                margin: 0,
+                cgst: gstBreakdown.cgst,
+                sgst: gstBreakdown.sgst,
+                igst: gstBreakdown.igst
+              };
+              
+              setSelectedProducts(prev => [...prev, newItem]);
+            }
           });
-          handleProductSelection(product);
-          setTemplateRow({
-            qty: '1',
-            rate: product.latest_selling_price?.toString() || product.rate?.toString() || '0',
-            gst: product.gst_rate_percentage?.toString() || product.gst_rate?.toString() || '0',
-            discount: '0',
-            total: ''
-          });
-          setIsProductPanelOpen(false);
-          setProductSearchTerm('');
-          // Clear filters after selection
-          setSelectedPanelCarModel('');
-          setSelectedPanelCategory('');
-          setSelectedPanelSubcategory('');
-          setSelectedPanelCompany('');
+          
+          // Clear search and filters only for single select
+          if (products.length === 1) {
+            setProductSearchTerm('');
+            setSelectedPanelCarModel('');
+            setSelectedPanelCategory('');
+            setSelectedPanelSubcategory('');
+            setSelectedPanelCompany('');
+          }
+          // Panel stays open for multi-select, closes for single select
         }}
       />
 
