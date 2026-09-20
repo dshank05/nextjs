@@ -5,6 +5,7 @@ import { withObservability } from '../../../lib/withObservability'
 import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../auth/[...nextauth]'
+import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 async function handler(
   req: NextApiRequest,
@@ -527,9 +528,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       })
     }
 
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+    // F-01: financial year comes from Settings, never from the calendar.
+    const financialYear = await getCurrentFinancialYear()
 
     const invoiceDate = dateValue ? convertDateToTimestamp(dateValue) : existingSalex.invoice_date
 

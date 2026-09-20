@@ -18,6 +18,7 @@ node_modules/
 .env
 .env*.local
 .env.production
+.env.test
 
 # Debug
 npm-debug.log*
@@ -73,3 +74,7 @@ public/uploads/
 # package-lock.json
 # yarn.lock
 # pnpm-lock.yaml
+tsconfig.tsbuildinfo
+
+# Local database dumps - never commit these
+backups/

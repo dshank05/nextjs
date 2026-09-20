@@ -29,9 +29,9 @@ export default function States() {
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const [editingState, setEditingState] = useState<{id: number, state_name: string} | null>(null);
-  const [formData, setFormData] = useState({ id: 0, state_name: '' });
-  const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string } | null>(null);
+  const [editingState, setEditingState] = useState<{id: number, state_name: string, code: number} | null>(null);
+  const [formData, setFormData] = useState({ id: 0, state_name: '', code: '' });
+  const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string, code: string } | null>(null);
   const [sortBy, setSortBy] = useState('state_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
@@ -113,15 +113,18 @@ export default function States() {
 
   const handleAdd = () => {
     setEditingState(null);
-    setFormData({ id: 0, state_name: '' });
+    setFormData({ id: 0, state_name: '', code: '' });
     setShowModal(true);
   };
 
-  const handleEdit = (state: {id: number, state_name: string}) => {
+  const handleEdit = (state: {id: number, state_name: string, code: number}) => {
     setEditingState(state);
     setFormData({
       id: state.id,
-      state_name: state.state_name
+      state_name: state.state_name,
+      // Code 0 means "never configured" (F-29) - show it as empty so the field
+      // reads as something to fill in rather than a real value.
+      code: state.code ? state.code.toString() : ''
     });
     setShowModal(true);
   };
@@ -150,7 +153,10 @@ export default function States() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ state_name: pendingFormData.state_name }),
+        body: JSON.stringify({
+          state_name: pendingFormData.state_name,
+          code: pendingFormData.code
+        }),
       });
 
       if (!response.ok) {
@@ -306,6 +312,25 @@ export default function States() {
                   placeholder="Enter state name"
                   required
                 />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  GST State Code
+                </label>
+                <ClearableInput
+                  type="number"
+                  min={1}
+                  max={38}
+                  value={formData.code}
+                  onChange={(e) => setFormData(prev => ({ ...prev, code: e.target.value }))}
+                  placeholder="e.g. 9 for Uttar Pradesh"
+                  required
+                />
+                <p className="text-xs text-slate-400 mt-2">
+                  The official GST code for this state (1-38). This decides whether
+                  invoices to this state are charged CGST+SGST or IGST, so it must
+                  be correct.
+                </p>
               </div>
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>

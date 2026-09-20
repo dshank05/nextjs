@@ -9,6 +9,7 @@ import {
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
 import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
+import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 const prisma = new PrismaClient();
 
@@ -77,22 +78,10 @@ async function handleCreatePayment(
       });
     }
 
-    // If fy not provided, fetch it from the first purchase allocation
-    let financialYear = fy;
-    if (!financialYear && allocations.length > 0) {
-      const firstPurchase = await prisma.purchase.findUnique({
-        where: { id: allocations[0].purchase_id },
-        select: { fy: true }
-      });
-      financialYear = firstPurchase?.fy;
-    }
-
-    if (!financialYear) {
-      return res.status(400).json({
-        error: 'Financial year (fy) is required',
-        details: 'Could not determine financial year from purchase'
-      });
-    }
+    // F-01: financial year comes from Settings, never from the client and never
+    // inherited from the allocated document. A payment made in the open period
+    // belongs to that period, even when it settles an older bill.
+    const financialYear = await getCurrentFinancialYear()
 
     // ✅ FIX: Convert payment_date using date-utils to ensure consistent timezone handling
     const paymentTimestamp = convertDateToTimestamp(payment_date);

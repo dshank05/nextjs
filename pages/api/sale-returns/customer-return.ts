@@ -4,6 +4,7 @@ import { withObservability } from '../../../lib/withObservability'
 import { customerLedgerService } from '../../../lib/customer-ledger-service'
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
+import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 async function handler(
   req: NextApiRequest,
@@ -46,10 +47,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Get financial year
-    const currentDate = new Date()
-    const currentYear = currentDate.getFullYear()
-    const financialYear = currentDate.getMonth() >= 3 ? currentYear : currentYear - 1
+    // F-01: financial year comes from Settings, never from the calendar.
+    const financialYear = await getCurrentFinancialYear()
 
     // Convert dates
     const returnDateTimestamp = return_date ? convertDateToTimestamp(return_date) : Math.floor(Date.now() / 1000)

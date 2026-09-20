@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { isValidGstStateCode, MIN_GST_STATE_CODE, MAX_GST_STATE_CODE } from '../../../lib/gst'
 
 async function handler(
   req: NextApiRequest,
@@ -78,11 +79,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { state_name } = req.body
+    const { state_name, code } = req.body
 
     if (!state_name || typeof state_name !== 'string' || !state_name.trim()) {
       return res.status(400).json({
         message: 'State name is required and must be a non-empty string'
+      })
+    }
+
+    // F-29: the GST state code is what decides CGST+SGST vs IGST on every
+    // invoice to this state. It used to be hardcoded to 0, which made every
+    // state created here unusable for billing. It is required.
+    const stateCode = typeof code === 'number' ? code : parseInt(code, 10)
+
+    if (!isValidGstStateCode(stateCode)) {
+      return res.status(400).json({
+        message: `GST state code is required and must be between ${MIN_GST_STATE_CODE} and ${MAX_GST_STATE_CODE}`
       })
     }
 
@@ -103,15 +115,27 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Create new state (provide default code value since it's required in schema)
+    // Two states cannot share a GST state code. The schema has no unique
+    // constraint on `code` yet, so enforce it here as well.
+    const codeConflict = await prisma.states.findFirst({
+      where: { code: stateCode }
+    })
+
+    if (codeConflict) {
+      return res.status(409).json({
+        message: `GST state code ${stateCode} is already used by "${codeConflict.state_name}"`
+      })
+    }
+
     const state = await prisma.states.create({
       data: {
         state_name: trimmedName,
-        code: 0 // Default code, can be updated later if needed
+        code: stateCode
       },
       select: {
         id: true,
-        state_name: true
+        state_name: true,
+        code: true
       }
     })
 

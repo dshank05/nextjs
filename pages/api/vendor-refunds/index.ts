@@ -9,6 +9,7 @@ import {
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
 import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
+import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 const prisma = new PrismaClient();
 
@@ -78,15 +79,10 @@ async function handleCreateRefund(
       });
     }
 
-    // If fy not provided, fetch it from the first return allocation
-    let financialYear = fy;
-    if (!financialYear && allocations.length > 0) {
-      const firstReturn = await prisma.purchase_returns.findUnique({
-        where: { id: allocations[0].return_id },
-        select: { fy: true }
-      });
-      financialYear = firstReturn?.fy;
-    }
+    // F-01: financial year comes from Settings, never from the client and never
+    // inherited from the allocated document. A refund received in the open period
+    // belongs to that period, even when it settles an older debit note.
+    const financialYear = await getCurrentFinancialYear()
 
     // ✅ FIX: Convert refund_date using date-utils to ensure consistent timezone handling
     const refundTimestamp = convertDateToTimestamp(refund_date);

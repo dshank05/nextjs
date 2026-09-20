@@ -1,6 +1,7 @@
  import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { isValidGstStateCode, MIN_GST_STATE_CODE, MAX_GST_STATE_CODE } from '../../../lib/gst'
 
 async function handler(
   req: NextApiRequest,
@@ -24,12 +25,24 @@ async function handler(
 
 async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string) {
   try {
-    const { state_name } = req.body
+    const { state_name, code } = req.body
 
     if (!state_name || typeof state_name !== 'string' || !state_name.trim()) {
       return res.status(400).json({
         message: 'State name is required and must be a non-empty string'
       })
+    }
+
+    // F-29: `code` is optional on update so existing callers that only rename a
+    // state keep working, but when supplied it must be a real GST state code.
+    let stateCode: number | undefined
+    if (code !== undefined && code !== null && code !== '') {
+      stateCode = typeof code === 'number' ? code : parseInt(code, 10)
+      if (!isValidGstStateCode(stateCode)) {
+        return res.status(400).json({
+          message: `GST state code must be between ${MIN_GST_STATE_CODE} and ${MAX_GST_STATE_CODE}`
+        })
+      }
     }
 
     const stateId = parseInt(id, 10)
@@ -68,13 +81,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string) 
       })
     }
 
+    if (stateCode !== undefined) {
+      const codeConflict = await prisma.states.findFirst({
+        where: { code: stateCode, id: { not: stateId } }
+      })
+
+      if (codeConflict) {
+        return res.status(409).json({
+          message: `GST state code ${stateCode} is already used by "${codeConflict.state_name}"`
+        })
+      }
+    }
+
     // Update state
     const updatedState = await prisma.states.update({
       where: { id: stateId },
-      data: { state_name: trimmedName },
+      data: {
+        state_name: trimmedName,
+        ...(stateCode !== undefined ? { code: stateCode } : {})
+      },
       select: {
         id: true,
-        state_name: true
+        state_name: true,
+        code: true
       }
     })
 
@@ -82,7 +111,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string) 
       message: 'State updated successfully',
       state: {
         id: updatedState.id.toString(),
-        state_name: updatedState.state_name
+        state_name: updatedState.state_name,
+        code: updatedState.code
       }
     })
   } catch (error) {

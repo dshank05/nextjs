@@ -14,14 +14,17 @@ import type { SaleInvoiceItem, SaleFormData } from '../../types/sales';
 import { useStaff, useMechanics, useCustomers } from '../../hooks/useStaff';
 import { useProducts, useFilterOptions } from '../../hooks/useProducts';
 import { useStates } from '../../hooks/useStates';
+import { calculateGstBreakdown, resolveSupplyType, getBusinessStateCode } from '../../lib/gst';
 import { useSale, useLastSaleInvoiceNumber, useCreateSale, useUpdateSale } from '../../hooks/useSales';
 
 export default function InvoiceCreate() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
-  // Business state hardcoded to Uttar Pradesh (assuming state code 9)
-  const BUSINESS_STATE_CODE = 9; // Uttar Pradesh
+  // Supplier state code. Properly this is the first two digits of the business
+  // GSTIN (see getBusinessStateCode); business_details is not fetched on this
+  // page yet, so the Uttar Pradesh default stands in until it is. F-30.
+  const BUSINESS_STATE_CODE = getBusinessStateCode(process.env.NEXT_PUBLIC_BUSINESS_GSTIN) ?? 9;
 
   // React Query Hooks
   const { data: staffData } = useStaff();
@@ -161,26 +164,16 @@ export default function InvoiceCreate() {
     );
   };
 
-  // Function to calculate GST breakdown based on state comparison
-  const calculateGSTBreakdown = (taxAmount: number, customerStateCode: number | null) => {
-    const isIntraState = customerStateCode === BUSINESS_STATE_CODE;
-
-    if (isIntraState) {
-      // Intra-state: CGST + SGST (50-50 split)
-      return {
-        cgst: taxAmount / 2,
-        sgst: taxAmount / 2,
-        igst: 0
-      };
-    } else {
-      // Inter-state: IGST only
-      return {
-        cgst: 0,
-        sgst: 0,
-        igst: taxAmount
-      };
-    }
-  };
+  // F-28: one shared resolver, used by BOTH the calculation and the validator
+  // below. They used to decide this independently and disagreed on the
+  // unknown-state case, which made those sales impossible to save.
+  const calculateGSTBreakdown = (taxAmount: number, customerStateCode: number | null) =>
+    calculateGstBreakdown(
+      taxAmount,
+      customerStateCode,
+      BUSINESS_STATE_CODE,
+      Boolean(formData.state)
+    );
 
   // Function to handle product selection and update filters
   const handleProductSelection = (product: Product) => {
@@ -824,14 +817,31 @@ export default function InvoiceCreate() {
     // Then, validate overall state-based tax logic based on TOTALS, not individual products
     if (selectedProducts.length > 0 && formData.state) {
       const { totalCgst, totalSgst, totalIgst } = calculateExpectedTax();
-      const isIntraState = !customerStateCode || customerStateCode === BUSINESS_STATE_CODE;
+      // F-28: same resolver the calculation uses, so the two cannot disagree.
+      const supplyType = resolveSupplyType(
+        customerStateCode,
+        BUSINESS_STATE_CODE,
+        Boolean(formData.state)
+      );
+
+      if (supplyType === null) {
+        // A state was selected but has no usable GST state code (states created
+        // through Settings default to 0 - see F-29). Guessing the treatment here
+        // would mis-charge tax, so surface it as the configuration error it is.
+        taxErrors.stateLogic = `"${formData.state}" has no GST state code configured. Set it under Settings > States before billing to this state.`;
+      }
+
+      const isIntraState = supplyType === 'INTRA_STATE';
 
       // Check if there are any products with GST > 0
       const hasTaxableProducts = selectedProducts.some(product => product.gst_percentage > 0);
 
       console.log('💰 TOTAL TAX VALIDATION:', { totalCgst, totalSgst, totalIgst, isIntraState, hasTaxableProducts });
 
-      if (isIntraState) {
+      if (supplyType === null) {
+        // Already reported above as a configuration error; skip the split checks
+        // rather than layering a contradictory "should not have IGST" on top.
+      } else if (isIntraState) {
         // Intra-state: Must have CGST + SGST in totals if there are taxable products, no IGST
         if (totalIgst > 0) {
           taxErrors.stateLogic = 'Intra-state transactions should not have IGST';

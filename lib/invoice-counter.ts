@@ -1,4 +1,5 @@
 import { prisma } from './db';
+import { getCurrentFinancialYear } from './financial-year';
 
 /**
  * Get the next invoice number for the current financial year
@@ -17,16 +18,8 @@ export async function getNextInvoiceNumber(
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await prisma.$transaction(async (tx) => {
-        // Get current FY from settings
-        const settings = await tx.settings.findFirst({
-          select: { currentfy: true }
-        });
-
-        if (!settings || !settings.currentfy) {
-          throw new Error('Current financial year not set in settings');
-        }
-
-        const currentFy = settings.currentfy;
+        // Get current FY from settings (shared resolver - see lib/financial-year.ts)
+        const currentFy = await getCurrentFinancialYear(tx);
 
         // Get max invoice_no for this FY based on type
         let maxInvoiceNo = 0;
@@ -85,17 +78,8 @@ export async function getNextInvoiceNumber(
 }
 
 /**
- * Get the current financial year from settings
- * @returns The current financial year ID
+ * Re-exported from lib/financial-year.ts, which is the single source of truth
+ * for financial year resolution. Kept here for backwards compatibility with
+ * existing imports.
  */
-export async function getCurrentFinancialYear(): Promise<number> {
-  const settings = await prisma.settings.findFirst({
-    select: { currentfy: true }
-  });
-  
-  if (!settings || !settings.currentfy) {
-    throw new Error('Current financial year not set in settings');
-  }
-  
-  return settings.currentfy;
-}
+export { getCurrentFinancialYear } from './financial-year';
