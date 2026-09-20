@@ -807,3 +807,46 @@ What is verified: all eleven settings pages render cleanly with and without quer
 parameters, and the whole project type-checks. What is **not** verified: the browser-level
 round trip - typing a search, refreshing, and seeing it restored. That needs a real
 browser, not an HTTP probe, because these lists are fetched client-side.
+
+---
+
+## 10. Journey → report map
+
+Built before Phase 3, deliberately shallow: enough to know **which reports should move
+when the journey changes something**, so that during phases 3-6 we can swing past the
+affected reports and see whether they moved. Not a reports audit - that is Phase 7.
+
+Derived from what each endpoint actually queries, not from its name.
+
+| Journey step | Reports that should reflect it | Page |
+|---|---|---|
+| **Product** created / stock changed | `minimum-stock` — **the only report that reads `product` at all** | `minimumstock` |
+| **Purchase** created / edited | `bill-reference-purchase`, `vendor-ledger-accounting`, `vendor-outstanding`, `packing-forwarding`, `transport-cost`, `notes-mentioned`, `staff-sales` | `billreferencepurchase`, `vendor-ledger`, `vendor-reports`, `packing`, `transport`, `notes`, `staff` |
+| **Sale / Salex** created / edited | `sales`, `salex-report`, `bill-reference-sale`, `commissions`, `mechanic-sales`, `staff-sales`, `customer-ledger-accounting`, `customer-outstanding`, `packing-forwarding`, `transport-cost`, `notes-mentioned` | `sale`, `salex`, `billreferencesale`, `commissions`, `mechanic`, `staff`, `customer-ledger`, `customer-reports`, `packing`, `transport`, `notes` |
+| **Sale return** | `credit-notes`, `customer-ledger-accounting`, `customer-outstanding`, `customer-balance-logs` | `customer-reports`, `customer-ledger`, `customer-balance-logs` |
+| **Purchase return** | `debit-notes`, `vendor-ledger-accounting`, `vendor-outstanding`, `vendor-balance-logs` | `debit-notes`, `vendor-ledger`, `vendor-reports`, `vendor-balance-logs` |
+| **Payment / refund** | both `*-ledger-accounting`, both `*-outstanding`, both `*-balance-logs` | `customer-ledger`, `vendor-ledger`, `customer-reports`, `vendor-reports`, `*-balance-logs` |
+
+### What this map already tells us
+
+**Reports are document-centric, not product-centric.** Only `minimum-stock` reads the
+`product` table. Everything else reads invoices, purchases, returns and ledgers. So
+editing a product after it has been invoiced *should not* retroactively change any
+historical report - the documents carry their own captured lines. That is correct
+behaviour and it is worth **testing for explicitly** in Phase 3: if changing a product's
+rate moves an old invoice's total, something is reading through to the product when it
+should be reading the line.
+
+**There is no stock report.** Nothing reports stock on hand or stock valuation.
+`minimum-stock` answers only "what is below its minimum". `deadstock` has an API and an
+entry screen but no report. So the stock reconciliation assertion in §7 has **no UI to
+check it against** - it has to be run against the database directly.
+
+**`openingclosing` is a three-line stub** (F-23) - `return <Underworks />`. That is
+precisely the report that would tie opening stock to closing stock across the journey,
+which makes it the most valuable thing in the reports section to actually build, and the
+reason Phase 7 cannot simply be "check the reports agree".
+
+**The mirrored pair diverges here too.** `salex-report` is a dedicated line-item report
+for salex; sale has no standalone equivalent, its line detail being folded into
+`sales`. Both line-item tables are read by `sales.ts`, via raw SQL.
