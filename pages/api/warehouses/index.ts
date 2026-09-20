@@ -35,12 +35,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       status = 'Active',
       includeInactive = 'false', // New parameter to include inactive warehouses
       sortBy = 'name',
-      sortOrder = 'asc'
+      sortOrder = 'asc',
+      dropdown = 'false'
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
     const skip = (pageNum - 1) * limitNum
+
+    // `dropdown=true` returns every active row, unpaginated. A picker that
+    // silently shows only the first page is worse than one that is slow: the
+    // entry is simply absent, with nothing to indicate it was cut off (F-58/F-64).
+    const isDropdown = dropdown === 'true'
 
     // Validate sortBy to prevent SQL injection
     const validSortFields = ['id', 'name', 'location', 'status']
@@ -67,8 +73,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const [warehouses, total] = await Promise.all([
       prisma.warehouse.findMany({
         where,
-        skip,
-        take: limitNum,
+        ...(isDropdown ? {} : { skip, take: limitNum }),
         orderBy: { [sortField]: sortDirection }
       }),
       prisma.warehouse.count({ where })

@@ -43,9 +43,23 @@ export default function Products() {
     storage: "session"
   });
 
-  const [page, setPage] = useState(1);
+  // Persisted alongside the filters above, in the same session storage.
+  //
+  // The filter panel already survived a refresh, but search and page number did
+  // not - so returning from a product you had found by searching dropped you
+  // back at an unfiltered page one (F-65). Kept on session storage rather than
+  // moved to the URL: this page's filter state is a twelve-field object, which
+  // makes for an unreadable query string, and the settings pages that DID move
+  // to the URL each carry only three simple values.
+  const [page, setPage] = useStorageState<number>('products-page-number', {
+    defaultValue: 1,
+    storage: 'session'
+  });
   const [limit, setLimit] = useState(50);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useStorageState<string>('products-page-search', {
+    defaultValue: '',
+    storage: 'session'
+  });
 
   // Debounce search
   const debouncedSearch = useDebounce(searchTerm, 300);

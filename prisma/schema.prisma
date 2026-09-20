@@ -72,6 +72,7 @@ model Product {
   last_purchase_date     Int?
   latest_purchase_rate   Float?
   invoice_items          Invoiceitems[]
+  purchase_items         Purchaseitems[]
   invoice_itemsx         invoice_itemsx[]
   category_ref           product_category?    @relation(fields: [product_category_id], references: [id], map: "product_category_fkey")
   product_company_ref    product_company?     @relation(fields: [company_id], references: [id], map: "product_company_fkey")
@@ -242,6 +243,11 @@ model Purchaseitems {
   sgst                  Float?
   tax                   Float?
   purchase_return_items purchase_return_items[]
+  // Added 2026-09-20. purchase_items carried product_id as a bare Int with no
+  // constraint, so a product could be deleted out from under its purchase
+  // history while the sale side was protected by RESTRICT. Applied while the
+  // table was still empty; later it would have needed a data-repair pass first.
+  product               Product?                @relation(fields: [product_id], references: [id], map: "purchase_items_product_fkey")
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
   @@index([invoice_no, product_id], map: "idx_purchase_items_invoice_product")

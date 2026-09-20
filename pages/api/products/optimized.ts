@@ -55,19 +55,12 @@ async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
-  console.log('[PRODUCTS OPTIMIZED API] Request received:', {
-    method: req.method,
-    query: req.query,
-    timestamp: new Date().toISOString()
-  });
 
   if (req.method !== 'GET') {
-    console.log('[PRODUCTS OPTIMIZED API] Method not allowed:', req.method);
     return res.status(405).json({ message: 'Method not allowed' })
   }
 
   try {
-    console.log('[PRODUCTS OPTIMIZED API] Starting query processing');
     const {
       page = '1',
       limit = '50',
@@ -87,16 +80,11 @@ async function handler(
       sortOrder = 'asc' // NEW: Sort order (default: asc)
     } = req.query
 
-    console.log('[PRODUCTS OPTIMIZED API] Parsed parameters:', {
-      page, limit, fetchAll, search, category, subcategory, model, company_id, quantity,
-      lowStock, startDate, endDate, uid, part_no, sortBy, sortOrder
-    });
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
     const isFetchAll = fetchAll === 'true'
 
-    console.log('[PRODUCTS OPTIMIZED API] Parsed numeric values:', { pageNum, limitNum, isFetchAll });
 
     // Validate and set sort parameters
     const validSortFields = ['id', 'product_name', 'part_no', 'stock', 'rate', 'lastPurchaseDate', 'categoryName', 'companyName', 'subcategoryName']
@@ -209,22 +197,12 @@ async function handler(
     // Determine if we need special handling for complex filters
     const needsSpecialHandling = lowStock === 'true' || carModelId || hasModelFilter;
 
-    console.log('[PRODUCTS OPTIMIZED API] Query setup complete:', {
-      where,
-      needsSpecialHandling,
-      sortField,
-      sortDirection,
-      carModelId,
-      selectedModelIds: model ? (model as string).split(',').map(id => id.trim()).filter(id => id !== '') : []
-    });
 
     let products: any[];
     let total: number;
 
-    console.log('[PRODUCTS OPTIMIZED API] Starting main product query...');
 
     if (needsSpecialHandling) {
-      console.log('[PRODUCTS OPTIMIZED API] Using raw SQL query for complex filters');
       // For complex filters that require raw SQL, get all matching products
       // Raw SQL is only needed for the filters Prisma cannot express: low-stock
       // (a column-to-column comparison) and car-model matching against the
@@ -234,8 +212,14 @@ async function handler(
       // interpolated straight into the string, which was injectable through the
       // search box (F-11).
       const params: any[] = [];
+      // The joins exist purely so the raw path can sort by the same fields the
+      // Prisma path sorts by. They are LEFT JOINs on indexed foreign keys, and
+      // only p.* is selected, so nothing else changes.
       let rawQuery = `
         SELECT p.* FROM product p
+        LEFT JOIN product_category pc ON p.product_category_id = pc.id
+        LEFT JOIN product_subcategory psc ON p.product_subcategory_id = psc.id
+        LEFT JOIN product_company pcm ON p.company_id = pcm.id
         WHERE p.is_active = true
       `;
 
@@ -267,7 +251,18 @@ async function handler(
 
       // Low stock condition
       if (lowStock === 'true') {
-        rawQuery += ` AND (p.stock < p.min_stock OR p.stock < 2)`;
+        // "Low stock" means below the minimum someone actually set for the
+        // product. A min_stock of 0 or NULL means no minimum was defined, so
+        // the product cannot be below it.
+        //
+        // This used to read `stock < min_stock OR stock < 2`. The second half
+        // was a workaround for min_stock being unset across the catalogue - it
+        // made the filter return something, but that something was every
+        // product with 0 or 1 in stock: 362 of 602 here, which is noise, not a
+        // reorder list. Two other places in the app already used the strict
+        // rule, so the filter, the Low Stock page and the minimum-stock report
+        // each gave a different answer (F-70).
+        rawQuery += ` AND p.min_stock IS NOT NULL AND p.min_stock > 0 AND p.stock < p.min_stock`;
       }
 
       // Car model conditions.
@@ -300,11 +295,27 @@ async function handler(
 
       // Add sorting and pagination. Sort field and direction are whitelisted
       // above, so they are safe to interpolate; LIMIT/OFFSET are parameterised.
-      let orderByClause = 'p.id DESC'; // default
-      if (sortField === 'product_name') orderByClause = `p.product_name ${sortDirection}`;
-      else if (sortField === 'part_no') orderByClause = `p.part_no ${sortDirection}`;
-      else if (sortField === 'stock') orderByClause = `p.stock ${sortDirection}`;
-      else if (sortField === 'lastPurchaseDate') orderByClause = `p.last_purchase_date ${sortDirection}`;
+      // Every sort the Prisma path supports must be supported here too.
+      //
+      // Four of them were missing, and one of the four - categoryName - is the
+      // LIST PAGE'S DEFAULT SORT. So applying a low-stock or car-model filter
+      // silently dropped the sort back to `p.id DESC` while the column header
+      // still showed the list as sorted (F-62).
+      const RAW_SORT_COLUMNS: Record<string, string> = {
+        product_name: 'p.product_name',
+        part_no: 'p.part_no',
+        stock: 'p.stock',
+        lastPurchaseDate: 'p.last_purchase_date',
+        rate: 'p.opening_rate',
+        categoryName: 'pc.category_name',
+        subcategoryName: 'psc.subcategory_name',
+        companyName: 'pcm.company_name'
+      };
+
+      // sortDirection is already constrained to asc/desc, and the column comes
+      // from this map, so neither can carry anything injectable.
+      const sortColumn = RAW_SORT_COLUMNS[sortField as string];
+      const orderByClause = sortColumn ? `${sortColumn} ${sortDirection}` : 'p.id DESC';
 
       rawQuery += ` ORDER BY ${orderByClause}`;
 
@@ -315,7 +326,6 @@ async function handler(
 
       products = await prisma.$queryRawUnsafe(rawQuery, ...params) as any[];
     } else {
-      console.log('[PRODUCTS OPTIMIZED API] Using Prisma query for simple filters');
       // Simple case - use Prisma's efficient pagination
       const skip = isFetchAll ? 0 : (pageNum - 1) * limitNum;
       const take = isFetchAll ? undefined : limitNum;
@@ -336,7 +346,6 @@ async function handler(
         orderBy = { [sortField]: sortDirection };
       }
 
-      console.log('[PRODUCTS OPTIMIZED API] Executing Prisma query...');
       // Get products with efficient pagination
       const [productsResult, totalResult] = await Promise.all([
         prisma.product.findMany({
@@ -353,12 +362,10 @@ async function handler(
 
       products = productsResult;
       total = totalResult;
-      console.log(`[PRODUCTS OPTIMIZED API] Prisma query completed. Found ${products.length} products, total: ${total}`);
     }
 
 
 
-    console.log('[PRODUCTS OPTIMIZED API] Starting lookup data queries...');
 
     // 🔥 PHASE 3 OPTIMIZATION: Batch all related data queries
     // Get all required lookup data in parallel for better performance
@@ -374,13 +381,6 @@ async function handler(
     const companyIds = Array.from(new Set(products.map(p => p.company_id).filter(Boolean)));
     const productIds = products.map(p => p.id.toString());
 
-    console.log('[PRODUCTS OPTIMIZED API] Lookup data IDs:', {
-      categoryIds: categoryIds.length,
-      subcategoryIds: subcategoryIds.length,
-      carModelIds: carModelIds.length,
-      companyIds: companyIds.length,
-      productIds: productIds.length
-    });
 
     // Single batch query for all lookup data
     const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, purchaseRates] = await Promise.all([
@@ -403,13 +403,6 @@ async function handler(
       getPurchaseRatesOptimized(productIds)
     ]);
 
-    console.log('[PRODUCTS OPTIMIZED API] Lookup data queries completed:', {
-      categoryRecords: categoryRecords.length,
-      subcategoryRecords: subcategoryRecords.length,
-      carModelRecords: carModelRecords.length,
-      companyRecords: companyRecords.length,
-      purchaseRatesFound: purchaseRates.size
-    });
 
     // Create efficient lookup maps
     const categoryMap = new Map(categoryRecords.map(cat => [cat.id, cat.category_name]));
@@ -456,13 +449,6 @@ async function handler(
 
     const totalPages = Math.ceil(total / limitNum);
 
-    console.log('[PRODUCTS OPTIMIZED API] Processing complete. Sending response:', {
-      productsCount: enhancedProducts.length,
-      total,
-      totalPages,
-      page: pageNum,
-      hasMore: pageNum < totalPages
-    });
 
     res.status(200).json({
       products: enhancedProducts,

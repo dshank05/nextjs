@@ -34,7 +34,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // time it was opened (F-48).
     const where: any = {
       stock: { lt: prisma.product.fields.min_stock },
-      min_stock: { not: null }
+      // `> 0` as well as `not null`: a minimum of 0 means none was set, so the
+      // product cannot be below it. Matches the rule the products endpoint
+      // applies, so this report and the Low Stock page cannot disagree (F-70).
+      min_stock: { not: null, gt: 0 }
     };
 
     // Search filter

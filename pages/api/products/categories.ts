@@ -148,8 +148,30 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ message: 'ID is required' });
     }
 
+    // Refuse to delete a category that is still in use.
+    //
+    // The FK is ON DELETE SET NULL, so without this the delete SUCCEEDS and
+    // silently un-categorises every product that used it - no error, no count,
+    // nothing to notice (F-66). `subcategories.ts` and the warehouse-rack
+    // endpoint already guard this way; this brings the rest into line.
+    const categoryId = parseInt(id, 10);
+
+    const [productsCount, subcategoriesCount] = await Promise.all([
+      prisma.product.count({ where: { product_category_id: categoryId } }),
+      prisma.product_subcategory.count({ where: { category_id: categoryId } })
+    ]);
+
+    if (productsCount > 0 || subcategoriesCount > 0) {
+      const parts = [];
+      if (productsCount > 0) parts.push(`${productsCount} product(s)`);
+      if (subcategoriesCount > 0) parts.push(`${subcategoriesCount} subcategory/subcategories`);
+      return res.status(409).json({
+        message: `Cannot delete this category. ${parts.join(' and ')} still reference it.`
+      });
+    }
+
     await prisma.product_category.delete({
-      where: { id: parseInt(id, 10) },
+      where: { id: categoryId },
     });
     res.status(204).end();
   } catch (error) {

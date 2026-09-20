@@ -1,7 +1,9 @@
+import { prisma } from '../../../lib/db';
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+// Uses the shared client from lib/db. This file used to construct its own
+// PrismaClient and disconnect it per request, which opens a second connection
+// pool and, under dev HMR, leaks one per reload (F-72).
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -77,8 +79,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
+      // Refuse while products still reference it - the FK is SET NULL, so an
+      // unguarded delete silently blanks the company on every one of them (F-66).
+      const companyId = parseInt(id, 10);
+      const productsCount = await prisma.product.count({
+        where: { company_id: companyId }
+      });
+
+      if (productsCount > 0) {
+        return res.status(409).json({
+          message: `Cannot delete this company. ${productsCount} product(s) still reference it.`
+        });
+      }
+
       await prisma.product_company.delete({
-        where: { id: parseInt(id, 10) },
+        where: { id: companyId },
       });
       res.status(204).end();
     } else {
@@ -87,7 +102,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ message: 'Internal server error' });
-  } finally {
-    await prisma.$disconnect();
   }
 }

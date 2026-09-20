@@ -26,12 +26,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       search = '',
       includeInactive = 'false',
       sortBy = 'description',
-      sortOrder = 'asc'
+      sortOrder = 'asc',
+      dropdown = 'false'
     } = req.query
 
     const pageNum = parseInt(page as string)
     const limitNum = parseInt(limit as string)
     const skip = (pageNum - 1) * limitNum
+
+    // `dropdown=true` returns every active row, unpaginated. A picker that
+    // silently shows only the first page is worse than one that is slow: the
+    // entry is simply absent, with nothing to indicate it was cut off (F-58/F-64).
+    const isDropdown = dropdown === 'true'
     const sortField = sortBy as string
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
@@ -67,8 +73,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const [gstRates, total] = await Promise.all([
       prisma.gst_tax_rate.findMany({
         where,
-        skip,
-        take: limitNum,
+        ...(isDropdown ? {} : { skip, take: limitNum }),
         orderBy: { [field]: sortDirection }
       }),
       prisma.gst_tax_rate.count({ where })

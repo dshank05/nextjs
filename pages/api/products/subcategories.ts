@@ -223,9 +223,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ message: 'Internal server error' });
-  } finally {
-    await prisma.$disconnect();
   }
+  // No $disconnect here on purpose: `prisma` is the shared singleton from
+  // lib/db, and tearing it down after every request defeats the pool that every
+  // other route shares (F-71).
 }
 
 export default withObservability(handler)

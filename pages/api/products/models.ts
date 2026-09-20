@@ -1,8 +1,9 @@
+import { prisma } from '../../../lib/db';
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
 import { withObservability } from '../../../lib/withObservability';
 
-const prisma = new PrismaClient();
+// Uses the shared client from lib/db; this file used to build its own and
+// disconnect it per request (F-72).
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -80,8 +81,34 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       if (!id) {
         return res.status(400).json({ message: 'ID is required' });
       }
+      // Car models are the one case with NO foreign key to lean on: products
+      // store `car_model_ids` as a comma-joined string, so the database cannot
+      // see the reference and cannot protect it. Deleting a model used to leave
+      // its id embedded in every product that referenced it, permanently (F-67).
+      //
+      // The id has to be matched at one of four positions in the list: middle,
+      // first, last, or as the only value - a plain `contains` would match 18
+      // inside 180.
+      const modelId = parseInt(id, 10);
+      const productsCount = await prisma.product.count({
+        where: {
+          OR: [
+            { car_model_ids: { contains: `,${modelId},` } },
+            { car_model_ids: { startsWith: `${modelId},` } },
+            { car_model_ids: { endsWith: `,${modelId}` } },
+            { car_model_ids: String(modelId) }
+          ]
+        }
+      });
+
+      if (productsCount > 0) {
+        return res.status(409).json({
+          message: `Cannot delete this car model. ${productsCount} product(s) still reference it.`
+        });
+      }
+
       await prisma.car_models.delete({
-        where: { id: parseInt(id, 10) },
+        where: { id: modelId },
       });
       res.status(204).end();
     } else {
@@ -90,8 +117,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   } catch (error) {
     console.error('Error:', error);
     res.status(500).json({ message: 'Internal server error' });
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

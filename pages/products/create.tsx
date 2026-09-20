@@ -163,7 +163,7 @@ export default function ProductCreate() {
 
   const fetchWarehouses = async () => {
     try {
-      const response = await fetch('/api/warehouses');
+      const response = await fetch('/api/warehouses?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setWarehouses(data.warehouses || []);
@@ -174,7 +174,7 @@ export default function ProductCreate() {
 
   const fetchGstRates = async () => {
     try {
-      const response = await fetch('/api/gst-rates');
+      const response = await fetch('/api/gst-rates?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setGstRates(data.gstRates || []);

@@ -46,15 +46,12 @@ async function deleteOldFile(fileUrl: string): Promise<void> {
     // Try to delete the file
     try {
       await client.remove(`/public_html/uploads/${filename}`);
-      console.log('Old file deleted successfully:', filename);
     } catch (deleteError) {
       // File might not exist or already deleted - not a critical error
-      console.warn('Could not delete old file (might not exist):', filename);
     }
 
     client.close();
   } catch (error) {
-    console.warn('Error deleting old file:', error);
     // Don't throw - file deletion failure shouldn't break the update
   }
 }
@@ -89,12 +86,13 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
 
     // Clean up local temp file
     fs.unlink(file.filepath, (err) => {
-      if (err) console.warn('Failed to clean up temp file:', err);
+      // Kept as an error, not dropped with the debug logging: a temp file that
+      // will not delete is a real condition worth seeing in the logs.
+      if (err) console.error('Failed to remove temp upload file:', file.filepath, err);
     });
 
     const hostingerDomain = process.env.HOSTINGER_DOMAIN || 'https://baijnathsons.com';
     const publicUrl = `${hostingerDomain}/uploads/${uniqueName}`;
-    console.log('FTP upload successful:', publicUrl);
 
     return publicUrl;
   } catch (error) {
@@ -126,7 +124,16 @@ async function enhanceProduct(product: any) {
   const companyIds = product.company_id ? [product.company_id] : [];
   const warehouseIds = product.warehouse_id ? [product.warehouse_id] : [];
   const rackIds = product.rack_id ? [product.rack_id] : [];
-  const gstRateIds = product.hsn ? [product.hsn] : [];
+  // Resolve the GST rate through the gst_rate_id foreign key, which is what
+  // the product form writes and what the list endpoint reads.
+  //
+  // This used to match product.hsn against gst_tax_rate.hsn_code instead - a
+  // second, string-based resolution of the same fact. The two disagreed by
+  // construction, and since hsn is NULL on all 602 products the detail endpoint
+  // reported every product at 0% tax while the list reported the real rate
+  // (F-43). One product, two answers, depending on which screen you arrived
+  // from.
+  const gstRateId = product.gst_rate_id ?? null;
 
   const [
     categoryRecords,
@@ -135,7 +142,7 @@ async function enhanceProduct(product: any) {
     companyRecords,
     warehouseRecords,
     rackRecords,
-    gstRateRecords
+    gstRateRecord
   ] = await Promise.all([
     categoryIds.length ? prisma.product_category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, category_name: true } }) : Promise.resolve([]),
     subcategoryIds.length ? prisma.product_subcategory.findMany({ where: { id: { in: subcategoryIds } }, select: { id: true, subcategory_name: true } }) : Promise.resolve([]),
@@ -143,7 +150,7 @@ async function enhanceProduct(product: any) {
     companyIds.length ? prisma.product_company.findMany({ where: { id: { in: companyIds } }, select: { id: true, company_name: true } }) : Promise.resolve([]),
     warehouseIds.length ? prisma.warehouse.findMany({ where: { id: { in: warehouseIds } }, select: { id: true, name: true, location: true } }) : Promise.resolve([]),
     rackIds.length ? prisma.warehouse_racks.findMany({ where: { id: { in: rackIds } }, select: { id: true, rack_number: true } }) : Promise.resolve([]),
-    gstRateIds.length ? prisma.gst_tax_rate.findMany({ where: { hsn_code: { in: gstRateIds } }, select: { id: true, rate: true, hsn_code: true } }) : Promise.resolve([])
+    gstRateId ? prisma.gst_tax_rate.findUnique({ where: { id: gstRateId }, select: { id: true, rate: true, hsn_code: true } }) : Promise.resolve(null)
   ]);
 
   const categoryMap = new Map(categoryRecords.map(c => [c.id, c.category_name]));
@@ -152,7 +159,7 @@ async function enhanceProduct(product: any) {
   const companyMap = new Map(companyRecords.map(c => [c.id.toString(), c.company_name]));
   const warehouseMap = new Map(warehouseRecords.map(w => [w.id, { name: w.name, location: w.location }]));
   const rackMap = new Map(rackRecords.map(r => [r.id, r.rack_number]));
-  const gstRateMap = new Map(gstRateRecords.map(g => [g.hsn_code, g.rate]));
+  // gstRateRecord is the single rate this product points at, or null.
 
   const carModelNames = carModelIds.map(id => carModelMap.get(id)).filter(Boolean) as string[];
 
@@ -167,7 +174,7 @@ async function enhanceProduct(product: any) {
     rack_number: product.rack_id ? rackMap.get(product.rack_id) || product.rack_number || '' : product.rack_number || '',
     carModelsDisplay: carModelNames.join(', '),
     sale_price: (latestPurchaseRate || product?.opening_rate || 0) + (product.margin || 0) - (product.discount || 0),
-    gst_rate: product.hsn ? gstRateMap.get(product.hsn) || 0 : 0,
+    gst_rate: gstRateRecord?.rate ?? 0,
     opening_rate: product.opening_rate || 0
   };
 }
@@ -264,7 +271,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               await deleteOldFile(currentProduct.pic);
             }
           } catch (deleteError) {
-            console.warn('Failed to delete existing image file:', deleteError);
           }
           imageUrl = null; // Set DB field to null
         } else if (fileStates.image?.existingUrl) {
@@ -302,7 +308,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               await deleteOldFile(currentProduct.barcode);
             }
           } catch (deleteError) {
-            console.warn('Failed to delete existing barcode file:', deleteError);
           }
           barcodeUrl = null; // Set DB field to null
         } else if (fileStates.barcode?.existingUrl) {
@@ -348,8 +353,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       case 'DELETE': {
-        await prisma.product.delete({ where: { id: productId } });
-        return res.status(204).end();
+        // Deactivate, do not destroy.
+        //
+        // This was a hard delete with no reference check. Two things were wrong
+        // with that. Products that have been SOLD are protected by ON DELETE
+        // RESTRICT from invoice_items/invoice_itemsx/deadstock, so the delete
+        // failed - but as a raw 500, not an explanation. Products that had only
+        // been PURCHASED were not protected at all, because Purchaseitems
+        // carries product_id with no foreign key, so their purchase lines were
+        // left pointing at a product that no longer existed (F-63).
+        //
+        // `is_active` already existed and there is a whole inactive-products
+        // screen built around it; nothing was using it here.
+        const existing = await prisma.product.findUnique({
+          where: { id: productId },
+          select: { id: true, is_active: true }
+        });
+
+        if (!existing) {
+          return res.status(404).json({ message: 'Product not found' });
+        }
+
+        await prisma.product.update({
+          where: { id: productId },
+          data: { is_active: false }
+        });
+
+        return res.status(200).json({
+          status: 'success',
+          message: 'Product deactivated. It stays on existing documents and can be restored from Inactive Products.'
+        });
       }
 
       default:

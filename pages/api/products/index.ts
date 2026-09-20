@@ -36,12 +36,13 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
 
     // Clean up local temp file
     fs.unlink(file.filepath, (err) => {
-      if (err) console.warn('Failed to clean up temp file:', err);
+      // Kept as an error, not dropped with the debug logging: a temp file that
+      // will not delete is a real condition worth seeing in the logs.
+      if (err) console.error('Failed to remove temp upload file:', file.filepath, err);
     });
 
     const hostingerDomain = process.env.HOSTINGER_DOMAIN || 'https://baijnathsons.com';
     const publicUrl = `${hostingerDomain}/uploads/${uniqueName}`;
-    console.log('FTP upload successful:', publicUrl);
 
     return publicUrl;
   } catch (error) {
@@ -58,7 +59,6 @@ async function uploadFileToStorage(file: formidable.File): Promise<string | null
 // ---------------------
 function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; files: formidable.Files }> {
   return new Promise((resolve, reject) => {
-    console.log('FORMIDABLE: Creating formidable instance...');
 
     const form = formidable({
       keepExtensions: true,
@@ -66,7 +66,6 @@ function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; fi
       filter: (part) => ['image/jpeg','image/png','image/gif','image/webp'].includes(part.mimetype || ''),
     });
 
-    console.log('FORMIDABLE: Setting up event handlers...');
 
     // Add timeout
     const timeout = setTimeout(() => {
@@ -75,19 +74,15 @@ function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; fi
     }, 30000); // 30 second timeout
 
     form.on('field', (name, value) => {
-      console.log(`FORMIDABLE: Received field: ${name} = ${value.substring(0, 100)}...`);
     });
 
     form.on('fileBegin', (name, file) => {
-      console.log(`FORMIDABLE: File begin: ${name}, ${file.originalFilename}`);
     });
 
     form.on('file', (name, file) => {
-      console.log(`FORMIDABLE: File received: ${name}, ${file.originalFilename}, size: ${file.size}`);
     });
 
     form.on('progress', (bytesReceived, bytesExpected) => {
-      console.log(`FORMIDABLE: Progress: ${bytesReceived}/${bytesExpected} bytes`);
     });
 
     form.on('error', (err) => {
@@ -97,18 +92,15 @@ function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; fi
     });
 
     form.on('end', () => {
-      console.log('FORMIDABLE: Parsing completed successfully');
       clearTimeout(timeout);
     });
 
-    console.log('FORMIDABLE: Starting parse...');
     form.parse(req, (err, fields, files) => {
       clearTimeout(timeout);
       if (err) {
         console.error('FORMIDABLE: Parse callback error:', err);
         return reject(err);
       }
-      console.log('FORMIDABLE: Parse callback success, fields:', Object.keys(fields), 'files:', Object.keys(files));
       resolve({ fields, files });
     });
   });
@@ -335,18 +327,14 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 // ---------------------
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    console.log('POST /products: Starting request processing');
 
     // Parse FormData (UI sends FormData with productData JSON)
-    console.log('POST /products: Parsing FormData...');
     const { fields, files } = await parseForm(req);
     
-    console.log('POST /products: Form parsed successfully');
 
     const productDataStr = Array.isArray(fields.productData) ? fields.productData[0] : fields.productData;
     if (!productDataStr) return res.status(400).json({ message: 'Product data is required' });
     const productData = JSON.parse(productDataStr);
-    console.log('POST /products: Product data parsed:', productData);
 
 
 
@@ -390,11 +378,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Basic validation
     if (!productData.product_name || productData.product_name.trim() === '') {
-      console.log('POST /products: Product name validation failed');
       return res.status(400).json({ message: 'Product name is required' });
     }
     if (!productData.warehouse_id) {
-      console.log('POST /products: Warehouse validation failed');
       return res.status(400).json({ message: 'Warehouse is required' });
     }
 
@@ -410,34 +396,25 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       ` as any[];
 
       if (existingProduct.length > 0) {
-        console.log('POST /products: Duplicate part number validation failed');
         return res.status(400).json({
           message: `Part number "${trimmedPartNo}" is already in use by another product (ID: ${existingProduct[0].id}). Please use a different part number.`
         });
       }
     }
 
-    console.log('POST /products: Basic validation passed');
 
     // Optional FK validations
-    console.log('POST /products: Starting FK validations');
     if (productData.company_id && !(await prisma.product_company.findUnique({ where: { id: parseInt(productData.company_id) } }))) {
-      console.log('POST /products: Company validation failed');
       return res.status(400).json({ message: 'Invalid company selected' });
     }
-    console.log('POST /products: Company validation passed');
 
     if (!(await prisma.warehouse.findUnique({ where: { id: parseInt(productData.warehouse_id) } }))) {
-      console.log('POST /products: Warehouse validation failed');
       return res.status(400).json({ message: 'Invalid warehouse selected' });
     }
-    console.log('POST /products: Warehouse validation passed');
 
     if (productData.gst_rate_id && !(await prisma.gst_tax_rate.findUnique({ where: { id: parseInt(productData.gst_rate_id) } }))) {
-      console.log('POST /products: GST rate validation failed');
       return res.status(400).json({ message: 'Invalid GST rate selected' });
     }
-    console.log('POST /products: GST rate validation passed');
 
     // ===== IMPLEMENTATION: opening_stock = stock during product creation =====
     const initialStock = productData.stock ? parseInt(productData.stock) : 0;
@@ -467,12 +444,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       notes: productData.notes || null,
     };
 
-    console.log('POST /products: Final product data prepared:', finalProductData);
-    console.log('POST /products: Creating product in database...');
 
     try {
       const product = await prisma.product.create({ data: finalProductData });
-      console.log('POST /products: Product created successfully:', product.id);
 
       // ===== BACKGROUND: Update display_name with UID =====
       // Fire background update - don't wait for it to complete
