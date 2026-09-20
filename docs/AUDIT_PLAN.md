@@ -815,6 +815,11 @@ browser, not an HTTP probe, because these lists are fetched client-side.
 
 ## 10. Journey → report map
 
+> Phase 3 onward is logged in **`docs/JOURNEY_AUDIT.md`**, not here. This document keeps
+> the phase plan, the statutory reference and the master findings register; that one holds
+> the journey work. Finding IDs run in one sequence across both.
+
+
 Built before Phase 3, deliberately shallow: enough to know **which reports should move
 when the journey changes something**, so that during phases 3-6 we can swing past the
 affected reports and see whether they moved. Not a reports audit - that is Phase 7.
