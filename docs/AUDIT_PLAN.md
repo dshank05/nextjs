@@ -583,7 +583,10 @@ Run all four after every round-trip test. They catch the whole class of bugs in 
 
 Severity: **Critical** = wrong money or lost data · **High** = wrong results or a crash · **Medium** = wrong behaviour, recoverable · **Low** = hygiene.
 
-Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
+Status: `open` · `in-progress` · `fixed` · `by design` · `wontfix` · `invalid`
+
+`by design` means the behaviour was examined, understood and confirmed correct by the
+owner. It is not a deferred fix and should not be revisited as one.
 
 | ID | Sev | Conf | Module | Finding | Evidence | Status |
 |---|---|---|---|---|---|---|
@@ -625,8 +628,8 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-53 | High | [C] | Settings/Sale | **Settings did not propagate.** `sale/create.tsx` took the supplier state code from `process.env.NEXT_PUBLIC_BUSINESS_GSTIN`, which is set in no `.env` file, so it always fell through to a hardcoded `9`. Correct only by luck — the real GSTIN starts `09`. Changing the GSTIN in Settings changed nothing on the page that depends on it most | `sale/create.tsx:27` | **fixed** — reads `useBusinessDetails()`; closes F-30 |
 | F-54 | Low | [C] | Settings | Phone/landline validation checked `.length !== 10`, not digits, so `abcdefghij` was a valid phone number. The page also checked the untrimmed value while the API trimmed, so a 10-character value with a trailing space passed the form and was rejected by the server | `business-details/index.ts:63`, `businessdetails.tsx:82` | **fixed** — `/^[0-9]{10}$/` on both sides |
 | F-55 | Medium | [C] | Settings | Bank IFSC was never validated. The live table already carries a bad one: row 2's IFSC is `5124142`, which is not an IFSC in any form | `bank-details/index.ts:128,219` | **fixed** — `lib/bank.ts`, enforced on API and page, stored uppercased. Verified: bad shapes → 400, lowercase normalised, omitted → null |
-| F-56 | Low | [C] | Settings | `bank_details` has no DELETE route and no `status` column, so a bank account can be added but never removed or deactivated | `pages/api/bank-details/` | **wontfix** — owner's decision 2026-09-20 |
-| F-57 | Low | [C] | Settings | `bank_details` is write-only: no invoice, PDF, export or screen reads it. The only reference in the app is the nav link | no consumers found | **wontfix** — owner's decision 2026-09-20, kept deliberately |
+| F-56 | — | [C] | Settings | `bank_details` has no DELETE route and no `status` column, so a bank account can be added but never removed or deactivated | `pages/api/bank-details/` | **by design** — working as expected, confirmed by the owner 2026-09-20. Not a defect; do not "fix" it |
+| F-57 | — | [C] | Settings | `bank_details` is write-only: no invoice, PDF, export or screen reads it. The only reference in the app is the nav link | no consumers found | **by design** — working as expected, confirmed by the owner 2026-09-20. Not a defect; do not "fix" it |
 | F-58 | High | [C] | Cross | **Every dropdown in the app showed only the first 50 rows.** `dropdown=true` filtered to Active but still paginated, and the hooks passed no `limit`, so past 50 active records the customer, vendor, staff or mechanic simply was not in the list - no error, no "showing 50 of 300", just absent | `customers/index.ts:127`, `vendors/index.ts:60`, `staff/index.ts:60`, `mechanics/index.ts:60` | **fixed** — `dropdown=true` now skips pagination. Verified: `limit=2` returns 2 normally, all 5 in dropdown mode |
 | F-59 | Low | [C] | Settings | Staff and mechanic phone/email never format-validated (`!name \|\| !phone` only), so `abcdefghij` was a valid phone. Left business-details enforcing a rule its twins did not | `staff/index.ts:99`, `mechanics/index.ts:100` | **fixed** — `lib/validators.ts` shared by both APIs and both pages; verified 400s |
 | F-60 | Critical | [C] | Settings/Auth | **A user created through the Users page could never log in.** `users/index.ts:243` stored an unsalted SHA-256 digest — the comment `// Hash password - in a real app, you'd use bcrypt` was still in the file — while `authorize()` verifies with `bcrypt.compare()`, which rejects anything that is not a bcrypt hash. The correct helpers already existed in `lib/user-management.ts` and were simply not called | `users/index.ts:243` vs `[...nextauth].ts:50` | **fixed** — `lib/password.ts`; **verified end to end**: created a user through the API and signed in as them, which previously returned `CredentialsSignin` |
@@ -753,7 +756,7 @@ a setting that cannot reach the rest of the app is not a working setting.
 | Page | CRUD | Filter/sort | Refresh restore | Propagation | Findings |
 |---|---|---|---|---|---|
 | `businessdetails` | read + upsert, no delete (correct for a singleton) | n/a - single record | n/a - refetches on mount | **was broken** | F-51, F-52, F-53, F-54 - all fixed |
-| `bankdetails` | create + update. No delete - **kept that way by decision** (F-56) | correct: sort fields whitelisted, search on real columns, pagination sound | fixed (F-49) | none by design - write-only, **kept that way by decision** (F-57) | F-55 fixed; F-56/F-57 wontfix |
+| `bankdetails` | create + update; no delete **by design** (F-56) | correct: sort fields whitelisted, search on real columns, pagination sound | fixed (F-49) | none **by design** - write-only (F-57) | F-55 fixed; F-56/F-57 are expected behaviour, not defects |
 | `staffdetails` | full, and **soft delete done properly** - status → Inactive, never a row removal | correct: whitelisted sort, search on real columns | fixed (F-49) | correct - Active-only by default, so deactivated staff leave the dropdowns | F-58, F-59 - both fixed |
 | `mechanics` | identical to staff, soft delete too | correct | fixed (F-49) | correct | F-58, F-59 - both fixed |
 | `users` | create + update; status field doubles as deactivate | correct: whitelisted sort, email/phone validated, uniqueness gives 409 | fixed (F-49) | **was broken** - new accounts could not authenticate at all | F-60, F-61 - both fixed. F-26 deferred |
