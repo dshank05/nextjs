@@ -1,13 +1,22 @@
 import NextAuth, { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import { PrismaAdapter } from '@next-auth/prisma-adapter'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 
 const prisma = new PrismaClient()
 
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  // No adapter on purpose.
+  //
+  // PrismaAdapter requires Account, Session, User and VerificationToken models
+  // in the NextAuth shape. This schema has none of them - prisma.account,
+  // prisma.session and prisma.verificationToken are all undefined - so NextAuth
+  // failed its adapter validation at init and every auth call returned
+  // `/api/auth/error?error=Configuration`.
+  //
+  // An adapter is not needed here anyway: sessions are JWTs, and the
+  // credentials provider looks the user up directly in `authorize()` below.
+  // NextAuth does not support database sessions with CredentialsProvider.
   providers: [
     CredentialsProvider({
       name: 'credentials',

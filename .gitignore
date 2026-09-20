@@ -78,3 +78,4 @@ tsconfig.tsbuildinfo
 
 # Local database dumps - never commit these
 backups/
+dev.log

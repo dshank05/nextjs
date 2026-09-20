@@ -24,66 +24,90 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    // Build where clause for customer_details
-    const where: any = {
-      balance: {
-        not: 0 // Only show customers with non-zero balance
-      }
-    };
+    // Build where clause for customer_details.
+    //
+    // This endpoint used to filter on `balance`, a `customer` relation and a
+    // `name` field. None of the three exist on customer_details - the balance
+    // column is `account_balance`, and there is no self-relation - so Prisma
+    // rejected the query and EVERY request to this report returned 500 (F-45).
+    // It also passed `mode: 'insensitive'`, which the MySQL connector does not
+    // support. MySQL's default collation is already case-insensitive.
+    const where: any = {};
 
-    // Search filter
+    // Search filter - real columns on customer_details
     if (search) {
-      where.customer = {
-        OR: [
-          { billing_name: { contains: search as string, mode: 'insensitive' } },
-          { name: { contains: search as string, mode: 'insensitive' } }
-        ]
-      };
+      where.OR = [
+        { billing_name: { contains: search as string } },
+        { contact_no: { contains: search as string } },
+        { email: { contains: search as string } }
+      ];
     }
 
     // Customer filter
     if (customerFilter) {
-      where.customer_id = parseInt(customerFilter as string);
+      where.id = parseInt(customerFilter as string);
     }
 
-    // Amount filters
-    if (amountMin) {
-      where.balance = { ...where.balance, gte: parseFloat(amountMin as string) };
-    }
-    if (amountMax) {
-      where.balance = { ...where.balance, lte: parseFloat(amountMax as string) };
-    }
+    // Outstanding is an expression over four counter columns, not a stored
+    // column, so it cannot be filtered, sorted or paginated in SQL. The
+    // customer list is small (hundreds), so the rows are read once and the
+    // amount filter, sort and pagination are applied in memory below.
+    //
+    // NOTE: this preserves the definition of "outstanding" this endpoint
+    // already used - the payment-allocation counters. It is not the same
+    // definition the vendor report or the ledger uses; see F-47, which is where
+    // that gets settled. This fix restores the report, it does not pick the
+    // winner.
+    const candidates = await prisma.customer_details.findMany({
+      where,
+      select: {
+        id: true,
+        billing_name: true,
+        contact_no: true,
+        email: true,
+        billing_address: true,
+        billing_city: true,
+        billing_state: true,
+        billing_gstin: true,
+        total_paid: true,
+        total_allocated: true,
+        total_refunded: true,
+        total_refund_allocated: true
+      }
+    });
 
-    // Fetch outstanding customers
-    const [outstandingCustomers, total] = await Promise.all([
-      prisma.customer_details.findMany({
-        where,
-        skip,
-        take: limitNum,
-        orderBy: {
-          [sortBy as string]: sortOrder as 'asc' | 'desc'
-        },
-        select: {
-          id: true,
-          billing_name: true,
-          contact_no: true,
-          email: true,
-          billing_address: true,
-          billing_city: true,
-          billing_state: true,
-          billing_gstin: true,
-          total_paid: true,
-          total_allocated: true,
-          total_refunded: true,
-          total_refund_allocated: true
-        }
-      }),
-      prisma.customer_details.count({ where })
-    ]);
+    const withOutstanding = candidates
+      .map(detail => ({
+        detail,
+        outstanding:
+          Number(detail.total_allocated) -
+          Number(detail.total_paid) +
+          Number(detail.total_refunded) -
+          Number(detail.total_refund_allocated)
+      }))
+      .filter(row => row.outstanding !== 0);
+
+    const amountFiltered = withOutstanding.filter(row => {
+      if (amountMin && row.outstanding < parseFloat(amountMin as string)) return false;
+      if (amountMax && row.outstanding > parseFloat(amountMax as string)) return false;
+      return true;
+    });
+
+    const direction = sortOrder === 'asc' ? 1 : -1;
+    amountFiltered.sort((a, b) => {
+      if (sortBy === 'customer_name') {
+        return direction * (a.detail.billing_name || '').localeCompare(b.detail.billing_name || '');
+      }
+      // 'balance' (the page's default) and anything unrecognised sort by amount
+      return direction * (a.outstanding - b.outstanding);
+    });
+
+    const total = amountFiltered.length;
+    const outstandingCustomers = amountFiltered.slice(skip, skip + limitNum);
 
     // Get last transaction for each customer
     const formattedData = await Promise.all(
-      outstandingCustomers.map(async (detail) => {
+      outstandingCustomers.map(async ({ detail, outstanding }) => {
         // Find last transaction from customer_ledger
         const lastTransaction = await prisma.customer_ledger.findFirst({
           where: { customer_id: detail.id },
@@ -123,8 +147,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             referenceType = 'refund';
           }
         }
-
-        const outstanding = Number(detail.total_allocated) - Number(detail.total_paid) + Number(detail.total_refunded) - Number(detail.total_refund_allocated);
 
         return {
           id: detail.id,

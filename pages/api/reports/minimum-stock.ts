@@ -22,7 +22,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    // Build where clause - products where current stock is less than minimum stock
+    // Build where clause - products where current stock is less than minimum stock.
+    //
+    // This block used to reference five things that do not exist on `product`:
+    // `category_id` (it is `product_category_id`), `model_id` (car models live
+    // in the comma-joined `car_model_ids` string), `part` (it is `part_no`),
+    // `mode: 'insensitive'` (Postgres-only; MySQL collation is already
+    // case-insensitive), and a default sort on `current_stock` - which is the
+    // name of the RESPONSE field, not the column. The page never sends sortBy,
+    // so that default fired on every call and the report returned 500 every
+    // time it was opened (F-48).
     const where: any = {
       stock: { lt: prisma.product.fields.min_stock },
       min_stock: { not: null }
@@ -33,16 +42,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       where.AND = where.AND || [];
       where.AND.push({
         OR: [
-          { product_name: { contains: search as string, mode: 'insensitive' } },
-          { hsn: { contains: search as string, mode: 'insensitive' } },
-          { part: { contains: search as string, mode: 'insensitive' } }
+          { product_name: { contains: search as string } },
+          { hsn: { contains: search as string } },
+          { part_no: { contains: search as string } }
         ]
       });
     }
 
     // Category filter
     if (categoryFilter) {
-      where.category_id = parseInt(categoryFilter as string);
+      where.product_category_id = parseInt(categoryFilter as string);
     }
 
     // Company filter
@@ -50,10 +59,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       where.company_id = parseInt(companyFilter as string);
     }
 
-    // Model filter
+    // Model filter.
+    //
+    // `car_model_ids` is a comma-joined list, so a plain `contains` would match
+    // model 18 inside "180". The id has to be matched at one of four positions:
+    // middle, first, last, or as the only value.
     if (modelFilter) {
-      where.model_id = parseInt(modelFilter as string);
+      const modelId = (modelFilter as string).trim();
+      where.AND = where.AND || [];
+      where.AND.push({
+        OR: [
+          { car_model_ids: { contains: `,${modelId},` } },
+          { car_model_ids: { startsWith: `${modelId},` } },
+          { car_model_ids: { endsWith: `,${modelId}` } },
+          { car_model_ids: modelId }
+        ]
+      });
     }
+
+    // Sort. The response renames columns (`stock` -> `current_stock`), so the
+    // incoming sort key is translated back to a real column. `shortage` is
+    // computed per row and cannot be sorted in SQL; it falls through to the
+    // default, which puts the emptiest shelves first.
+    const SORT_COLUMNS: Record<string, string> = {
+      current_stock: 'stock',
+      stock: 'stock',
+      minimum_stock: 'min_stock',
+      min_stock: 'min_stock',
+      product_name: 'product_name',
+      part_no: 'part_no',
+      hsn: 'hsn'
+    };
+    const sortColumn = SORT_COLUMNS[sortBy as string] || 'stock';
+    const direction = sortOrder === 'desc' ? 'desc' : 'asc';
 
     // Fetch low stock products
     const [products, total] = await Promise.all([
@@ -62,7 +100,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         skip,
         take: limitNum,
         orderBy: {
-          [sortBy as string]: sortOrder as 'asc' | 'desc'
+          [sortColumn]: direction
         },
         include: {
           category_ref: {

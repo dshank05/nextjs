@@ -44,14 +44,53 @@ so the next session can start on real work rather than setup.
   reconciliation assertion in §7 is now meaningful. It was not before.
 - **Backup:** `backups/backup-u348217822_test_v3-2026-09-20T08-35-49.sql`, verified
   57/57 tables. Contains the pre-wipe state including the F-01 corruption sample.
-- **Auth:** `NEXTAUTH_SECRET` added to `.env`; `NODE_ENV` commented out (Next.js sets it).
-  That pair was causing `/api/auth/error?error=Configuration`.
+- **Auth:** working. Log in with `admin` / `admin123` (all five users are on seeded
+  defaults — F-26). Two separate problems were fixed here:
+  - **F-38, the real cause:** `PrismaAdapter(prisma)` was configured, but this schema has
+    no `Account`, `Session` or `VerificationToken` models — `prisma.account`,
+    `prisma.session` and `prisma.verificationToken` are all `undefined`. NextAuth
+    validates the adapter at init, failed, and returned `error=Configuration` on every
+    call. The adapter was never needed: sessions are JWTs and `authorize()` looks the
+    user up directly, and NextAuth does not support database sessions with
+    `CredentialsProvider` anyway. Removed.
+  - **F-42:** `NEXTAUTH_SECRET` was missing from `.env`, and `NODE_ENV` was set manually
+    (Next.js owns that variable). Both fixed.
+
+  Note for future debugging: `/api/auth/error?error=Configuration` returns HTTP 500 **by
+  design** — NextAuth classifies Configuration as a server error, so requesting that URL
+  directly always 500s whether or not anything is wrong. The only meaningful test is a
+  real sign-in POST: a healthy config returns `error=CredentialsSignin` for a bad
+  password, a broken one returns `error=Configuration`. Also, changing
+  `NEXTAUTH_SECRET` invalidates every existing session cookie, so clear site data for
+  localhost after touching it.
+
+### Live sweep, 2026-09-20
+
+Every API route was probed against the running dev server with a real session:
+65 static routes, 28 dynamic, plus every page. **Three hard failures were found and
+all three are fixed** — F-11 (product list), F-45 (customer outstanding), F-48
+(minimum stock). Everything else answers 200, or a correct 400/405.
+
+All three were the same shape: code written against field names the schema does not
+have, failing only at runtime because Prisma's `where`/`orderBy` are typed as `any`
+at the call sites. Worth remembering when reading any endpoint that has not been
+exercised yet — a clean read is not evidence it runs.
 
 ### Pick up with
 
-1. **Seed `gst_tax_rate`** — it is empty, so every test invoice comes out at zero tax and
-   F-04 / F-34 cannot be exercised. Needs rows at **0 / 5 / 18 / 40** (post-GST-2.0 slabs;
-   12% and 28% were withdrawn 22 Sep 2025), then wire a few products to them.
+1. ~~**Seed `gst_tax_rate`**~~ — **done.** Four slab rows exist: 0 (`0000`), 5 (`8714`),
+   18 (`8415`), 40 (`8703`), all Active. These are the post-GST-2.0 slabs; 12% and 28%
+   were withdrawn 22 Sep 2025.
+
+   **Products were deliberately not wired to them.** The 602 products are real data and
+   all still have `gst_rate_id = NULL` and `hsn = NULL`. Multi-slab test invoices are
+   built by editing the per-line **GST %** field in the sale/purchase grid
+   (`pages/sale/create.tsx:2139`), which is editable — so no product needs to be
+   mis-tagged to exercise the tax paths. Wiring products is a separate, real decision
+   about master data, not test setup.
+
+   Note that until products carry an `hsn`, the detail endpoint reports every product at
+   **0% tax** — see F-43, which this step uncovered.
 2. **Finish Phase 2** — 6 settings pages left: `business-details`, `bank-details`,
    `staff`, `mechanics`, `users`, `return-reasons`, `warehouse`, and `financial-years`
    itself.
@@ -555,7 +594,7 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-10 | Critical | [C] | Return | No over-return validation on any write path | `sale-returns/index.ts:488-510` | open |
 | F-03 | High | [C] | Reports | Ledger balance restarts at 0 per page / per date filter | `vendor-ledger-accounting.ts:65` | open |
 | F-04 | High | [C] | Sale | Client-supplied tax and totals trusted | `sales/index.ts:118,209` | open |
-| F-11 | High | [C] | Product | SQL injection + Postgres `ILIKE` on a MySQL database | `products/optimized.ts:252` | open |
+| F-11 | High | [C] | Product | SQL injection + Postgres `ILIKE` on a MySQL database — **broke the product list**: any search combined with a low-stock or car-model filter returned `Raw query failed` (500) | `products/optimized.ts:252` | **fixed** — `LIKE` + `?` parameters; verified live |
 | F-12 | High | [C] | Purchase | Duplicate product lines lose stock (`CASE` takes first match) | `purchases/index.ts:675-696` | open |
 | F-13 | High | [C] | Purchase | Invoice-number race: non-atomic `MAX+1`, no unique constraint | `lib/invoice-counter.ts:19` | open |
 | F-14 | High | [C] | Sale | Oversell: per-line stock check, not aggregate | `sales/index.ts:183` | open |
@@ -563,30 +602,36 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-28 | Critical | [C] | Settings/Sale | Sale unsaveable when state code is 0/null — compute and validate disagree | fixed in `lib/gst.ts`; 6 cases verified | **fixed** |
 | F-29 | High | [C] | Settings | `states.code` hardcoded to 0 on create, no update path; it is the GST state code | fixed in `states/index.ts` + `[id].ts` + settings UI | **fixed** (no backfill needed — all 37 rows already valid) |
 | F-30 | High | [C] | Settings/Sale | Business state code hardcoded in a component; `business_details` has no state column | `getBusinessStateCode()` added | **partial** — fallback remains until page fetches GSTIN |
-| F-31 | Medium | [C] | Settings | 0% GST rate cannot be created (falsy guard); create/update drifted in one file | `gst-rates/index.ts:103` vs `:171` | open |
-| F-32 | Low | [C] | Settings | Racks PUT resolves the rack by id without scoping to the URL's warehouse | `warehouses/[warehouseId]/racks.ts:185` | open |
+| F-31 | Low | [C] | Settings | 0% GST rate falsy guard (`!rate`) on create; create/update drifted in one file. The settings form posts `rate` as the string `"0"`, which is truthy, so only non-browser callers hit it. Downgraded Medium→Low | `gst-rates/index.ts:103` vs `:171` | **fixed** — matches handlePut's form, plus a NaN/negative check; verified: numeric `0` → 201, `"abc"` → 400 |
+| F-32 | Medium | [C] | Settings | Racks PUT resolved the rack by id without scoping to the URL's warehouse, so `PUT /warehouses/1/racks` with `{id: 5}` edited a rack owned by warehouse 4 — the URL segment was decorative. `handleDelete` in the same file already scoped correctly. Raised Low→Medium: it is a cross-tenant write, not cosmetic | `warehouses/[warehouseId]/racks.ts:185` | **fixed** — verified: cross-warehouse edit → 404, same-warehouse edit → 200 |
 | F-33 | Low | [C] | Settings | GST rates are mutated in place — no rate history for compliance | `gst-rates/index.ts:143` | open |
 | F-34 | High | [C] | Sale | GST never rounded; entry grid, DB and view page show three different numbers | `sale/create.tsx:166`, `:1693`, `sale/view/[id].tsx:301` | open |
 | F-35 | High | [C] | Return | No credit-note time limit (s.34(2), 30 Nov deadline) | `sale-returns/index.ts` | open |
 | F-36 | High | [C] | Return | `sale_return_items` has no tax split — cannot issue a compliant credit note (Rule 53) | `schema.prisma:730-747` | open |
 | F-37 | High | [C] | Ops | FY never rolled over — app stamped documents into a year closed since 2026-03-31 | `financial_year` had no 2026-2027 row | **fixed** — FY id=4 created and set current |
-| F-38 | Medium | [C] | Ops | `NEXTAUTH_SECRET` missing and `NODE_ENV` set manually -> `error=Configuration` on every auth call | `.env` | **fixed** |
-| F-39 | Medium | [C] | Ops | `gst_tax_rate` is empty — no tax rates configured, so no invoice can carry tax | `gst_tax_rate` 0 rows | open |
+| F-38 | High | [C] | Auth | `PrismaAdapter` configured but Account/Session/VerificationToken models do not exist -> NextAuth failed adapter validation at init, `error=Configuration` on every auth call | `pages/api/auth/[...nextauth].ts` | **fixed** — adapter removed |
+| F-42 | Low | [C] | Ops | `NEXTAUTH_SECRET` missing from `.env`; `NODE_ENV` set manually (Next.js owns it) | `.env` | **fixed** |
+| F-39 | Medium | [C] | Ops | `gst_tax_rate` is empty — no tax rates configured, so no invoice can carry tax | `gst_tax_rate` 0 rows | **fixed** — 4 slab rows seeded (0/5/18/40) |
 | F-40 | Medium | [C] | Product | `opening_stock` set on only 135 of 602 products — stock reconciliation had no valid baseline | reset at wipe | **fixed** |
 | F-41 | Low | [C] | Ops | Existing clear scripts miss 6 tables incl. `note_counters`, so note numbering never restarts | `scripts/clear-*.js` | **fixed** in `clear-all-data.js` |
+| F-43 | High | [C] | Product | A product's GST rate is resolved two different ways: the list endpoint follows the `gst_rate_id` FK, the detail endpoint matches `product.hsn` against `gst_tax_rate.hsn_code`. The two disagree, and with `hsn` NULL on all 602 products the detail path returns 0% | `products/index.ts:319` vs `products/[id].ts:170` | open |
+| F-45 | Critical | [C] | Reports | Customer outstanding report is **dead** — `where` filters `customer_details.balance`, `customer` and `name`, none of which exist on that model (the column is `account_balance`). Every request throws `PrismaClientValidationError`. Also uses `mode: 'insensitive'`, unsupported on MySQL | `reports/customer-outstanding.ts:29,51,54` | **fixed** — real columns, MySQL-safe; verified live 200 (empty: no customers seeded) |
+| F-46 | High | [C] | Reports | Vendor outstanding report lists ledger **rows**, not vendors — no grouping, so it returns every historical row whose stored running balance was > 0. A settled vendor still appears, once per such row, and `total` is a row count | `reports/vendor-outstanding.ts:81` | open |
+| F-48 | Critical | [C] | Reports | Minimum-stock report was **dead** — 500 on every call. `sortBy` defaulted to `current_stock`, the response field name rather than the column, and the page never sends `sortBy`. Also referenced `category_id`, `model_id`, `part` and `mode: 'insensitive'`, none of which exist on `product`/MySQL | `reports/minimum-stock.ts:17,25-55` | **fixed** — column map + Prisma-side car-model matching; verified live |
+| F-47 | High | [C] | Reports | Four different definitions of "what this party owes" coexist: party counters (`total_allocated - total_paid + ...`), the stored `*_ledger.balance` of the last row by id, `getAllOutstanding()`'s per-vendor max-id row, and `SUM(debit) - SUM(credit)` recomputed by the accounting reports. The vendor and customer reports do not even read the same table | `customer-outstanding.ts:126` vs `vendor-outstanding.ts:81` vs `ledger-service.ts:89,145` | open — decide the source of truth in Phase 7 |
 | F-05 | Medium | [C] | Cross | No role authorization despite documented roles | `grep role pages/api` → none | open |
-| F-06 | Medium | [C] | Purchase | `[id]-old.ts` is a reachable route mutating stock | `purchase-returns/[id]-old.ts:530` | open |
+| F-06 | Medium | [C] | Purchase | `[id]-old.ts` is a reachable route mutating stock | `purchase-returns/[id]-old.ts:530` | **deferred → G-04** — kept deliberately as the reference the new `[id].ts` was written against. Owner's call 2026-09-20: delete during cleanup, not now |
 | F-07 | Medium | [C] | Cross | 21 timezone-shifting `toISOString().split` sites | `sale/create.tsx:246` | open |
 | F-25 | High | [C] | Security | `.env.test` tracked in a public repo with live DB credentials | `.gitignore` had no `.env.test` rule | **fixed** — untracked + ignored; creds being rotated |
 | F-26 | Medium | [C] | Security | Seeded default passwords (`admin123`, `manager123`, …) | `scripts/create-user.js:60-64`, `lib/user-management.ts:168` | open |
 | F-27 | Low | [C] | Cross | `tsconfig.tsbuildinfo` (a build artifact) is tracked | repo root | open |
 | F-16 | Medium | [C] | Purchase | Two invoice-numbering schemes: per-FY server vs global UI | `last-invoice.ts:14` | open |
-| F-17 | Medium | [C] | Product | Missing parentheses in car-model SQL disjunction | `products/optimized.ts:264` | open |
+| F-17 | Medium | [C] | Product | Missing parentheses in car-model SQL disjunction — the ORs escaped the AND chain, so the filter returned the whole catalogue | `products/optimized.ts:264` | **fixed** — verified: model filter now narrows 602 → 9 |
 | F-18 | Medium | [C] | Return | `status` is `String` for sale returns, `Int` for purchase returns | `schema.prisma:710,758` | open |
 | F-19 | Medium | [C] | Return | `sale_return_items` has no cgst/sgst/igst split | `schema.prisma:730-747` | open |
 | F-20 | Medium | [C] | Reports | `*-ledger-details` endpoints orphaned; two ledger implementations disagree | no callers | open |
 | F-21 | Medium | [V] | Purchase | `Promise.all` over one interactive `tx` | `purchases/index.ts:667` | open |
-| F-22 | Low | [C] | Product | Two unconditional DEBUG queries per request | `products/optimized.ts:217-226` | open |
+| F-22 | Low | [C] | Product | Two unconditional DEBUG queries per request | `products/optimized.ts:217-226` | **fixed** — removed |
 | F-23 | Low | [C] | Reports | `openingclosing` is an `<Underworks />` stub | `reports/openingclosing.tsx` | open |
 | F-24 | Low | [C] | Cross | 246 `console.log` calls in production paths | repo-wide | open |
 
@@ -660,3 +705,25 @@ are untouched and still useful for clearing one side only.
 | `lib/gst.ts` | Single source of truth for CGST/SGST vs IGST (F-28), state-code validation (F-29), business state code from GSTIN (F-30) |
 
 ---
+
+---
+
+## 9. Good to have
+
+Engineering-quality work, **not defects**. None of this changes what the app computes,
+so none of it is scheduled until every issue above is closed. Listed here so it stops
+competing for attention with things that are actually broken.
+
+Ordered roughly by payoff.
+
+| # | Item | Why it matters |
+|---|---|---|
+| G-01 | **Use Prisma everywhere.** Raw `$queryRawUnsafe` string-building survives in the product endpoints and several scripts. Raw SQL is what let F-11 (injection), F-17 (missing parens) and the Postgres/MySQL `ILIKE` mismatch happen at all | Every raw query is a place the schema and the code can drift apart silently. Prisma would have refused all three at compile time |
+| G-02 | **Collapse the duplicated pairs.** `transaction-handler` ↔ `customer-transaction-handler`, `ledger-service` ↔ `customer-ledger-service`, sale ↔ salex, and the two outstanding reports are 71-96% identical after normalising names | This is the audit's central thesis: the copies are not the bug, the **divergence between them** is. Every pair is two chances to fix something once and miss the twin |
+| G-03 | **One place for shared types.** Interfaces are redeclared per file (`LedgerEntryData`, product shapes, report rows), so the same concept has several slightly different definitions | Scattered types let the API and the page disagree about a field's name or nullability without anything failing to compile |
+| G-04 | **Follow Next.js conventions.** Dead routes left in `pages/api`, no shared API-handler wrapper, inconsistent method dispatch, data fetching patterns that vary page to page. **Carries F-06**: `purchase-returns/[id]-old.ts` is the reference copy the rewritten `[id].ts` was worked against and is still serving traffic. Delete it once the rewrite is settled, together with the orphaned `*-ledger-details` endpoints (F-20) | In `pages/`, a file **is** a public route, so a reference copy left in the tree is a live endpoint. Safe to defer only because nothing links to it - not because it is inert |
+| G-05 | **Code cleanup.** 246 `console.log` calls in production paths (F-24), commented-out blocks, `tsconfig.tsbuildinfo` tracked (F-27), unused imports | Noise hides real signal. The debug queries removed in F-22 had been running on every product request |
+
+**Do these last.** The one exception is when a fix in an earlier phase naturally lands in
+the same file - taking the cleanup with it is cheaper than a second pass, and the diff is
+already under review.

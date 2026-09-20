@@ -99,10 +99,23 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { description, rate, hsn_code, applicable_for, status } = req.body
 
-    // Validation
-    if (!description || !rate || !hsn_code) {
+    // Validation.
+    //
+    // `!rate` rejected a rate of 0, so a nil-rated slab could not be created by
+    // any caller that sends rate as a number (F-31). The settings form happened
+    // to be unaffected because it posts the string "0", which is truthy - which
+    // is exactly why this survived: it only failed for non-browser callers.
+    // handlePut below already used the `=== undefined` form; this matches it.
+    if (!description || rate === undefined || rate === null || rate === '' || !hsn_code) {
       return res.status(400).json({
         message: 'Description, rate, and HSN code are required'
+      })
+    }
+
+    const parsedRate = parseFloat(rate)
+    if (!Number.isFinite(parsedRate) || parsedRate < 0) {
+      return res.status(400).json({
+        message: 'Rate must be a number of 0 or more'
       })
     }
 
@@ -120,7 +133,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const gstRate = await prisma.gst_tax_rate.create({
       data: {
         description,
-        rate: parseFloat(rate),
+        rate: parsedRate,
         hsn_code,
         applicable_for: applicable_for || '',
         status: status || 'Active'

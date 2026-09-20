@@ -46,6 +46,11 @@ function createSearchableText(productName: string, partNo: string): string {
   return `${normalizedProductName} ${normalizedPartNo}`.trim()
 }
 
+// Columns the search box may match against. A column name cannot be passed as a
+// SQL parameter, so the raw-SQL path whitelists it instead of interpolating
+// whatever key turns up in the `where` clause.
+const SEARCHABLE_COLUMNS = ['product_name', 'display_name', 'part_no'];
+
 async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -213,18 +218,6 @@ async function handler(
       selectedModelIds: model ? (model as string).split(',').map(id => id.trim()).filter(id => id !== '') : []
     });
 
-    // DEBUG: Check if there are any products at all
-    const totalProductsInDb = await prisma.product.count({ where: { is_active: true } });
-    console.log('[PRODUCTS OPTIMIZED API] DEBUG - Total active products in DB:', totalProductsInDb);
-
-    // DEBUG: Check products with car model data
-    const productsWithCarModels = await prisma.product.findMany({
-      where: { is_active: true, car_model_ids: { not: null } },
-      select: { id: true, car_model_ids: true, product_name: true },
-      take: 5
-    });
-    console.log('[PRODUCTS OPTIMIZED API] DEBUG - Sample products with car models:', productsWithCarModels);
-
     let products: any[];
     let total: number;
 
@@ -233,68 +226,94 @@ async function handler(
     if (needsSpecialHandling) {
       console.log('[PRODUCTS OPTIMIZED API] Using raw SQL query for complex filters');
       // For complex filters that require raw SQL, get all matching products
+      // Raw SQL is only needed for the filters Prisma cannot express: low-stock
+      // (a column-to-column comparison) and car-model matching against the
+      // comma-joined `car_model_ids` string.
+      //
+      // Every user-supplied value goes in as a `?` parameter. It used to be
+      // interpolated straight into the string, which was injectable through the
+      // search box (F-11).
+      const params: any[] = [];
       let rawQuery = `
         SELECT p.* FROM product p
         WHERE p.is_active = true
-        ${where.id ? `AND p.id = ${where.id}` : ''}
-        ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
-        ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
-        ${where.stock !== undefined ? `AND p.stock = ${where.stock}` : ''}
-        ${where.last_purchase_date?.gte ? `AND p.last_purchase_date >= ${where.last_purchase_date.gte}` : ''}
-        ${where.last_purchase_date?.lte ? `AND p.last_purchase_date <= ${where.last_purchase_date.lte}` : ''}
       `;
 
-      // Add search conditions
+      if (where.id) { rawQuery += ` AND p.id = ?`; params.push(where.id); }
+      if (where.product_category_id) { rawQuery += ` AND p.product_category_id = ?`; params.push(where.product_category_id); }
+      if (where.company_id) { rawQuery += ` AND p.company_id = ?`; params.push(where.company_id); }
+      if (where.stock !== undefined) { rawQuery += ` AND p.stock = ?`; params.push(where.stock); }
+      if (where.last_purchase_date?.gte) { rawQuery += ` AND p.last_purchase_date >= ?`; params.push(where.last_purchase_date.gte); }
+      if (where.last_purchase_date?.lte) { rawQuery += ` AND p.last_purchase_date <= ?`; params.push(where.last_purchase_date.lte); }
+
+      // Search conditions.
+      //
+      // LIKE, not ILIKE. ILIKE is Postgres-only and this database is MySQL, so
+      // the query threw `Raw query failed` on every search combined with a
+      // low-stock or car-model filter - the product list simply failed to load
+      // (F-11). MySQL's default collation is case-insensitive, so LIKE gives
+      // the case-insensitive match that was intended.
       if (where.OR) {
         const searchConditions = where.OR.map((condition: any) => {
           const field = Object.keys(condition)[0];
           const value = condition[field].contains;
-          return `p.${field} ILIKE '%${value}%'`;
-        }).join(' OR ');
-        rawQuery += ` AND (${searchConditions})`;
+          // The column name cannot be a parameter, so it is whitelisted instead.
+          if (!SEARCHABLE_COLUMNS.includes(field)) return null;
+          params.push(`%${value}%`);
+          return `p.\`${field}\` LIKE ?`;
+        }).filter(Boolean).join(' OR ');
+        if (searchConditions) rawQuery += ` AND (${searchConditions})`;
       }
 
-      // Add low stock condition
+      // Low stock condition
       if (lowStock === 'true') {
         rawQuery += ` AND (p.stock < p.min_stock OR p.stock < 2)`;
       }
 
-      // Add car model conditions
+      // Car model conditions.
+      //
+      // `car_model_ids` is a comma-joined list, so a match is any of four
+      // positions: middle, first, last, or the only value. The whole disjunction
+      // must be parenthesised - without the brackets the ORs broke out of the
+      // enclosing AND chain and the filter returned the entire catalogue (F-17).
+      const CAR_MODEL_CLAUSE =
+        '(p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids = ?)';
+      const carModelParams = (id: string | number) => [`%,${id},%`, `${id},%`, `%,${id}`, String(id)];
+
       if (carModelId) {
-        rawQuery += ` AND p.car_model_ids LIKE '%,${carModelId},%' OR p.car_model_ids LIKE '${carModelId},%' OR p.car_model_ids LIKE '%,${carModelId}' OR p.car_model_ids = '${carModelId}'`;
+        rawQuery += ` AND ${CAR_MODEL_CLAUSE}`;
+        params.push(...carModelParams(carModelId));
       }
 
       if (model && model !== '') {
         const selectedModelIds = (model as string).split(',').map(id => id.trim()).filter(id => id !== '');
-        const modelConditions = selectedModelIds.map(id =>
-          `p.car_model_ids LIKE '%,${id},%' OR p.car_model_ids LIKE '${id},%' OR p.car_model_ids LIKE '%,${id}' OR p.car_model_ids = '${id}'`
-        ).join(' OR ');
-        rawQuery += ` AND (${modelConditions})`;
+        if (selectedModelIds.length) {
+          rawQuery += ` AND (${selectedModelIds.map(() => CAR_MODEL_CLAUSE).join(' OR ')})`;
+          selectedModelIds.forEach(id => params.push(...carModelParams(id)));
+        }
       }
 
-      // Get total count
+      // Get total count - same WHERE, same parameters, before ORDER BY/LIMIT.
       const countQuery = `SELECT COUNT(*) as count FROM (${rawQuery}) as filtered_products`;
-      const totalResult = await prisma.$queryRawUnsafe(countQuery) as any[];
+      const totalResult = await prisma.$queryRawUnsafe(countQuery, ...params) as any[];
       total = parseInt(totalResult[0].count);
 
-      // Add sorting and pagination
+      // Add sorting and pagination. Sort field and direction are whitelisted
+      // above, so they are safe to interpolate; LIMIT/OFFSET are parameterised.
       let orderByClause = 'p.id DESC'; // default
       if (sortField === 'product_name') orderByClause = `p.product_name ${sortDirection}`;
       else if (sortField === 'part_no') orderByClause = `p.part_no ${sortDirection}`;
       else if (sortField === 'stock') orderByClause = `p.stock ${sortDirection}`;
       else if (sortField === 'lastPurchaseDate') orderByClause = `p.last_purchase_date ${sortDirection}`;
 
-      rawQuery += ` ORDER BY ${orderByClause}`
-      
-      // Add pagination only if not fetching all
-      if (!isFetchAll) {
-        rawQuery += ` LIMIT ${limitNum} OFFSET ${(pageNum - 1) * limitNum}`
-      };
+      rawQuery += ` ORDER BY ${orderByClause}`;
 
-      console.log('[PRODUCTS OPTIMIZED API] Executing raw SQL query:', rawQuery);
-      products = await prisma.$queryRawUnsafe(rawQuery) as any[];
-      console.log(`[PRODUCTS OPTIMIZED API] Raw SQL query completed. Found ${products.length} products, total: ${total}`);
-      console.log('[PRODUCTS OPTIMIZED API] Raw query results sample:', products.slice(0, 3));
+      if (!isFetchAll) {
+        rawQuery += ` LIMIT ? OFFSET ?`;
+        params.push(limitNum, (pageNum - 1) * limitNum);
+      }
+
+      products = await prisma.$queryRawUnsafe(rawQuery, ...params) as any[];
     } else {
       console.log('[PRODUCTS OPTIMIZED API] Using Prisma query for simple filters');
       // Simple case - use Prisma's efficient pagination

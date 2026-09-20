@@ -181,19 +181,33 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
     // Determine target warehouse (from body or URL)
     const targetWarehouseId = warehouse_id ? parseInt(warehouse_id) : warehouseId
 
-    // Check if rack exists (may belong to different warehouse if being moved)
-    const existingRack = await (prisma as any).warehouse_racks.findUnique({
-      where: { id: parseInt(id) }
+    // Check if rack exists AND belongs to the warehouse in the URL.
+    //
+    // This used to be a findUnique on the id alone, justified by the rack
+    // possibly being moved to another warehouse. That is backwards: the URL
+    // names the warehouse that currently owns the rack, and the body's
+    // `warehouse_id` is the destination. Looking up by id alone meant
+    // PUT /api/warehouses/5/racks with { id: 99 } edited rack 99 even when it
+    // lived in warehouse 7 - the URL segment was decorative (F-32). A move
+    // still works, because only the lookup is scoped, not the update.
+    // handleDelete below already did it this way.
+    const existingRack = await (prisma as any).warehouse_racks.findFirst({
+      where: {
+        id: parseInt(id),
+        warehouse_id: warehouseId
+      }
     })
 
     if (!existingRack) {
       return res.status(404).json({
-        message: 'Rack not found'
+        message: 'Rack not found in this warehouse'
       })
     }
 
-    // Check if target warehouse exists (if warehouse is being changed)
-    if (warehouse_id && warehouse_id !== warehouseId) {
+    // Check if target warehouse exists (if warehouse is being changed).
+    // Compare parsed numbers - `warehouse_id` arrives from JSON as a string, so
+    // comparing it directly against a number was always unequal.
+    if (warehouse_id && targetWarehouseId !== warehouseId) {
       const targetWarehouse = await prisma.warehouse.findUnique({
         where: { id: targetWarehouseId }
       })
@@ -208,7 +222,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
     const updateData: any = {}
 
     // Handle warehouse change
-    if (warehouse_id && warehouse_id !== existingRack.warehouse_id) {
+    if (warehouse_id && targetWarehouseId !== existingRack.warehouse_id) {
       updateData.warehouse_id = targetWarehouseId
     }
 
