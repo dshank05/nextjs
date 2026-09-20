@@ -36,6 +36,11 @@ with a real session. Nothing changed yet; this is the find pass.
 | F-64 | Low | Settings → product | The product form fetches `/api/warehouses` and `/api/gst-rates` with no `limit`, so both take the endpoints' default first page of 50. Same class as F-58, which was fixed for customers/vendors/staff/mechanics but not for these two | `products/create.tsx:166,177` | open — latent: 4 warehouses, 4 GST rates today |
 | F-65 | Low | FE / list | The products list persists filters and sort in **sessionStorage** (`use-storage-state`), but not search or page number — and it is a third mechanism, now that settings pages use the URL (F-49) and other pages use neither. Filters also cannot be shared or bookmarked, because they never reach the URL | `products/index.tsx:27,46,48` | open |
 | F-43 | High | Settings → product | *(carried from `AUDIT_PLAN.md`)* The list endpoint resolves a product's GST rate through the `gst_rate_id` FK; the detail endpoint matches `product.hsn` against `gst_tax_rate.hsn_code`. With `hsn` NULL on all 602 products, the detail path reports **0%** | `products/index.ts:319` vs `products/[id].ts:170` | open |
+| F-66 | **High** | Settings → product | **Deleting a category, subcategory or company silently strips it from every product that used it.** All three DELETE endpoints are unguarded hard deletes, and every one of those FKs is `ON DELETE SET NULL`. No count, no confirmation, no error — the products are simply un-categorised. The same app already does this correctly elsewhere: rack delete refuses with "Cannot delete rack. N product(s) are assigned to this rack", and warehouse delete is a soft delete. Five comparable resources, three different behaviours | `products/categories.ts`, `subcategories.ts`, `companies.ts` handleDelete; live FK catalogue shows SET NULL for all three | open |
+| F-67 | Medium | Settings → product | **`car_models` has no foreign key at all.** Products store `car_model_ids` as a comma-joined string, so deleting a car model leaves its id embedded in every product that referenced it. Nothing cleans up, and nothing can — the database cannot see the reference | `models.ts` handleDelete; `car_models` absent from the FK catalogue | open |
+| F-68 | Low | Ops | Deactivating a GST rate does not stop it applying. `status: 'Inactive'` removes it from the product form's dropdown, but products already pointing at it keep using its percentage, because the list endpoint reads the rate through the FK without checking status | `products/index.ts:319` | open — arguably correct for history, but it is not a decision anyone made |
+| F-69 | Low | Ops | 51 `console.log`/`warn` calls in the product paths alone — 29 in `index.ts`, 15 in `optimized.ts`, 7 in `[id].ts`. A subset of F-24, noted here because of the concentration | `pages/api/products/*` | open |
+| F-70 | Low | Duplication | `pages/products/lowstock.tsx` computes low stock client-side from `useProducts({ fetchAll: true })`, while `reports/minimum-stock` computes it server-side with a different rule. Two answers to "what is low on stock" that can disagree | `lowstock.tsx:7` vs `reports/minimum-stock.ts:25` | open — G-02 |
 
 ### Data flow — settings into product
 
@@ -44,7 +49,9 @@ with a real session. Nothing changed yet; this is the find pass.
 | Warehouse | `warehouse_id`, validated on create | works — but dropdown capped at 50 (F-64) |
 | Warehouse rack | `rack_id` | works |
 | GST rate | `gst_rate_id` | **two resolutions that disagree** (F-43); dropdown capped at 50 (F-64) |
-| Category / subcategory / company / car models | `product_category_id`, `product_subcategory_id`, `company_id`, `car_model_ids` | works, dropdowns complete |
+| Category / subcategory | `product_category_id`, `product_subcategory_id` | dropdowns complete, but **delete silently un-categorises products** (F-66) |
+| Company | `company_id` | same (F-66) |
+| Car models | `car_model_ids`, a comma-joined string | **no FK at all** — deleted models leave dangling ids (F-67) |
 
 ### Data flow — product into the journey
 
@@ -69,3 +76,19 @@ If it moves, something is reading through to the product where it should be read
 line — which would mean editing a product silently rewrites financial history. This cannot
 be checked by reading the code alone; it needs a real invoice, so it runs once Phase 4 has
 created one.
+
+### What happens when a setting is deleted
+
+Worth stating plainly, because the behaviour is inconsistent across five resources that
+look alike:
+
+| Resource | Delete behaviour | Effect on products |
+|---|---|---|
+| Warehouse | **soft delete** (status → Inactive) | none — safe |
+| Warehouse rack | **guarded** — refuses with a count of assigned products | none — safe |
+| GST rate | no DELETE endpoint exists | n/a |
+| Category / subcategory / company | **unguarded hard delete**, FK is SET NULL | silently un-categorised (F-66) |
+| Car model | **unguarded hard delete**, no FK exists | dangling ids left in `car_model_ids` (F-67) |
+
+The two safe patterns are already implemented in this codebase. F-66 and F-67 are not
+missing ideas, they are missing applications of a decision the team already made.
