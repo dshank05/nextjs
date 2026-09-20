@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { isValidIfsc } from '../../lib/bank';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
@@ -144,6 +145,14 @@ export default function BankDetails() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Same rule the API applies, so the form cannot accept a value the server
+    // will then reject. IFSC is optional; only its shape is checked when given.
+    if (formData.ifsc && !isValidIfsc(formData.ifsc)) {
+      showSnackbar('error', 'IFSC is not valid. Expected 11 characters, e.g. HDFC0001234.');
+      return;
+    }
+
     // Show confirmation modal before saving
     setPendingData(formData);
     setShowConfirmModal(true);

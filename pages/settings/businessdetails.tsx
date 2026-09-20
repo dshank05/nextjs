@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { isValidGstin } from '../../lib/gst';
 
 interface BusinessDetailsData {
   id: number;
@@ -80,22 +81,30 @@ export default function BusinessDetails() {
     }
   };
 
+  // Exactly ten DIGITS, trimmed - the same rule the API applies. Previously
+  // this checked `.length !== 10` against the untrimmed value, so it disagreed
+  // with the server twice over: it accepted "abcdefghij", and it accepted a
+  // ten-character value with a trailing space that the API then rejected.
+  const isTenDigits = (value?: string) => /^[0-9]{10}$/.test((value || '').trim());
+
   const validatePhoneNumbers = () => {
-    // If phone is present, it must be exactly 10 digits
-    if (editedData.phone && editedData.phone.length !== 10) {
+    if (editedData.phone && !isTenDigits(editedData.phone)) {
       showSnackbar('error', 'Phone number must be exactly 10 digits');
       return false;
     }
 
-    // If phone2 is present, it must be exactly 10 digits
-    if (editedData.phone2 && editedData.phone2.length !== 10) {
+    if (editedData.phone2 && !isTenDigits(editedData.phone2)) {
       showSnackbar('error', 'Phone 2 number must be exactly 10 digits');
       return false;
     }
 
-    // If landline is present, it must be exactly 10 digits
-    if (editedData.fax && editedData.fax.length !== 10) {
+    if (editedData.fax && !isTenDigits(editedData.fax)) {
       showSnackbar('error', 'Landline number must be exactly 10 digits');
+      return false;
+    }
+
+    if (!isValidGstin(editedData.gstin)) {
+      showSnackbar('error', 'GSTIN is not valid. Expected 15 characters, e.g. 09ABFPM3900M1ZI.');
       return false;
     }
 

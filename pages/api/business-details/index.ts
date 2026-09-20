@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { isValidGstin } from '../../../lib/gst'
 
 async function handler(
   req: NextApiRequest,
@@ -18,8 +19,13 @@ async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    // Get the first (and should be only) business details record
-    const businessDetails = await prisma.business_details.findFirst()
+    // Get the first (and should be only) business details record.
+    // Ordered explicitly: without it, "first" is whatever the database feels
+    // like returning, so a second row would make this endpoint answer
+    // inconsistently between calls.
+    const businessDetails = await prisma.business_details.findFirst({
+      orderBy: { id: 'asc' }
+    })
 
     // If no data exists, return an empty object
     if (!businessDetails) {
@@ -60,22 +66,33 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Phone number validation: if present, must be exactly 10 digits
-    if (phone && phone.trim().length !== 10) {
+    // GSTIN format. The first two digits are the supplier state code that
+    // decides CGST+SGST vs IGST on every invoice, so a malformed GSTIN saved
+    // here quietly mistaxes every document the business issues.
+    if (!isValidGstin(gstin)) {
+      return res.status(400).json({
+        message: 'GSTIN is not valid. Expected 15 characters, e.g. 09ABFPM3900M1ZI, starting with a state code of 01-38.'
+      })
+    }
+
+    // Phone validation: if present, exactly 10 DIGITS. This used to check
+    // `.length !== 10`, which accepted any ten characters - "abcdefghij" was a
+    // valid phone number.
+    const isTenDigits = (value: string) => /^[0-9]{10}$/.test(value.trim())
+
+    if (phone && !isTenDigits(phone)) {
       return res.status(400).json({
         message: 'Phone number must be exactly 10 digits'
       })
     }
 
-    // Phone2 number validation: if present, must be exactly 10 digits
-    if (phone2 && phone2.trim().length !== 10) {
+    if (phone2 && !isTenDigits(phone2)) {
       return res.status(400).json({
         message: 'Phone 2 number must be exactly 10 digits'
       })
     }
 
-    // Landline (fax) validation: if present, must be exactly 10 digits
-    if (fax && fax.trim().length !== 10) {
+    if (fax && !isTenDigits(fax)) {
       return res.status(400).json({
         message: 'Landline number must be exactly 10 digits'
       })
@@ -95,8 +112,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       terms: terms?.trim() || null
     }
 
-    // If id is 0 or not provided, create a new record
+    // If id is 0 or not provided, create a new record - but only if there is
+    // genuinely no record yet. business_details is a singleton: the whole app
+    // reads it with findFirst(), so a second row means some screens show one
+    // set of company details and some show the other. This used to create a
+    // new row on every id-less PUT.
     if (!id || id === 0) {
+      const existing = await prisma.business_details.findFirst({
+        orderBy: { id: 'asc' }
+      })
+
+      if (existing) {
+        const updated = await prisma.business_details.update({
+          where: { id: existing.id },
+          data
+        })
+
+        return res.status(200).json({
+          status: "success",
+          message: "Business details updated successfully",
+          data: updated
+        })
+      }
+
       const newDetails = await prisma.business_details.create({
         data
       })

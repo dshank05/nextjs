@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -146,6 +147,18 @@ export default function StaffDetails() {
 
     if (!formData.name.trim() || !formData.phone.trim()) {
       showSnackbar('warning', 'Name and phone are required');
+      return;
+    }
+
+    // Same rules the API applies, so the form cannot accept a value the server
+    // will reject (F-59).
+    if (!isTenDigitPhone(formData.phone)) {
+      showSnackbar('error', 'Phone number must be exactly 10 digits');
+      return;
+    }
+
+    if (formData.email && !isValidEmail(formData.email)) {
+      showSnackbar('error', 'Email address is not valid');
       return;
     }
 

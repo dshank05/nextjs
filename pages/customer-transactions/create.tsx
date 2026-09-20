@@ -6,7 +6,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
-import { useCustomers } from '../../hooks/useStaff'
+import { useCustomers } from '../../hooks/useCustomers'
 import { 
   useCurrentFY, 
   useCustomerPayment, 

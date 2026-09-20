@@ -11,20 +11,31 @@ import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import type { StaffDetails, MechanicDetails, Customer } from '../../types/staff';
 import type { Product, FilterOptions } from '../../types/products';
 import type { SaleInvoiceItem, SaleFormData } from '../../types/sales';
-import { useStaff, useMechanics, useCustomers } from '../../hooks/useStaff';
+import { useStaff } from '../../hooks/useStaff';
+import { useMechanics } from '../../hooks/useMechanics';
+import { useCustomers } from '../../hooks/useCustomers';
 import { useProducts, useFilterOptions } from '../../hooks/useProducts';
 import { useStates } from '../../hooks/useStates';
 import { calculateGstBreakdown, resolveSupplyType, getBusinessStateCode } from '../../lib/gst';
+import { useBusinessDetails } from '../../hooks/useBusinessDetails';
 import { useSale, useLastSaleInvoiceNumber, useCreateSale, useUpdateSale } from '../../hooks/useSales';
 
 export default function InvoiceCreate() {
   const router = useRouter();
   const { showSnackbar } = useSnackbar();
 
-  // Supplier state code. Properly this is the first two digits of the business
-  // GSTIN (see getBusinessStateCode); business_details is not fetched on this
-  // page yet, so the Uttar Pradesh default stands in until it is. F-30.
-  const BUSINESS_STATE_CODE = getBusinessStateCode(process.env.NEXT_PUBLIC_BUSINESS_GSTIN) ?? 9;
+  // Supplier state code: the first two digits of the business GSTIN, which is
+  // what decides CGST+SGST vs IGST on this invoice (see getBusinessStateCode).
+  //
+  // This used to read process.env.NEXT_PUBLIC_BUSINESS_GSTIN, which is set in
+  // no .env file in the repo - so it always fell through to the hardcoded 9.
+  // That happened to be right, because the configured GSTIN starts with 09,
+  // but it meant changing the GSTIN in Settings changed nothing here. F-30.
+  //
+  // The 9 is kept only as a last resort for the moment before the query
+  // resolves, or if the request fails outright.
+  const { data: businessDetails } = useBusinessDetails();
+  const BUSINESS_STATE_CODE = getBusinessStateCode(businessDetails?.gstin) ?? 9;
 
   // React Query Hooks
   const { data: staffData } = useStaff();

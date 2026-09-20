@@ -601,7 +601,7 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-15 | High | [C] | Return | `updateDebitNoteEntry` escapes the caller's transaction | `lib/ledger-service.ts:273` | open |
 | F-28 | Critical | [C] | Settings/Sale | Sale unsaveable when state code is 0/null — compute and validate disagree | fixed in `lib/gst.ts`; 6 cases verified | **fixed** |
 | F-29 | High | [C] | Settings | `states.code` hardcoded to 0 on create, no update path; it is the GST state code | fixed in `states/index.ts` + `[id].ts` + settings UI | **fixed** (no backfill needed — all 37 rows already valid) |
-| F-30 | High | [C] | Settings/Sale | Business state code hardcoded in a component; `business_details` has no state column | `getBusinessStateCode()` added | **partial** — fallback remains until page fetches GSTIN |
+| F-30 | High | [C] | Settings/Sale | Business state code hardcoded in a component; `business_details` has no state column | `getBusinessStateCode()` added | **fixed** — `hooks/useBusinessDetails.ts` added and `sale/create.tsx` now reads the real GSTIN. See F-53 |
 | F-31 | Low | [C] | Settings | 0% GST rate falsy guard (`!rate`) on create; create/update drifted in one file. The settings form posts `rate` as the string `"0"`, which is truthy, so only non-browser callers hit it. Downgraded Medium→Low | `gst-rates/index.ts:103` vs `:171` | **fixed** — matches handlePut's form, plus a NaN/negative check; verified: numeric `0` → 201, `"abc"` → 400 |
 | F-32 | Medium | [C] | Settings | Racks PUT resolved the rack by id without scoping to the URL's warehouse, so `PUT /warehouses/1/racks` with `{id: 5}` edited a rack owned by warehouse 4 — the URL segment was decorative. `handleDelete` in the same file already scoped correctly. Raised Low→Medium: it is a cross-tenant write, not cosmetic | `warehouses/[warehouseId]/racks.ts:185` | **fixed** — verified: cross-warehouse edit → 404, same-warehouse edit → 200 |
 | F-33 | Low | [C] | Settings | GST rates are mutated in place — no rate history for compliance | `gst-rates/index.ts:143` | open |
@@ -618,6 +618,17 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-45 | Critical | [C] | Reports | Customer outstanding report is **dead** — `where` filters `customer_details.balance`, `customer` and `name`, none of which exist on that model (the column is `account_balance`). Every request throws `PrismaClientValidationError`. Also uses `mode: 'insensitive'`, unsupported on MySQL | `reports/customer-outstanding.ts:29,51,54` | **fixed** — real columns, MySQL-safe; verified live 200 (empty: no customers seeded) |
 | F-46 | High | [C] | Reports | Vendor outstanding report lists ledger **rows**, not vendors — no grouping, so it returns every historical row whose stored running balance was > 0. A settled vendor still appears, once per such row, and `total` is a row count | `reports/vendor-outstanding.ts:81` | open |
 | F-48 | Critical | [C] | Reports | Minimum-stock report was **dead** — 500 on every call. `sortBy` defaulted to `current_stock`, the response field name rather than the column, and the page never sends `sortBy`. Also referenced `category_id`, `model_id`, `part` and `mode: 'insensitive'`, none of which exist on `product`/MySQL | `reports/minimum-stock.ts:17,25-55` | **fixed** — column map + Prisma-side car-model matching; verified live |
+| F-49 | Medium | [C] | Settings | **No settings page restores its list state.** Zero use of `router.query`, `useSearchParams` or `sessionStorage` across all 11 pages, so search, filter, sort and page number reset on every refresh and on every return from an edit. A filtered list also cannot be linked or bookmarked | all of `pages/settings/*.tsx` | open |
+| F-50 | Medium | [C] | Settings | `return_reasons` has a **GET-only API and no settings page** — reasons are consumed by the sale and purchase return flows but can only be changed by running `scripts/seed_return_reasons.js` against the database | `pages/api/return-reasons/` (no `pages/settings` counterpart) | open — owner's call whether this is wanted |
+| F-51 | High | [C] | Settings | Business GSTIN was never validated on save. Its first two digits are the supplier state code that picks CGST+SGST vs IGST on every document, so a typo silently mistaxes everything the business issues | `business-details/index.ts:57` | **fixed** — `isValidGstin()` in `lib/gst.ts`, enforced on the API and the page; verified: bad checksum length → 400, state code 99 → 400 |
+| F-52 | Medium | [C] | Settings | `business_details` is a singleton the whole app reads with `findFirst()`, but PUT created a **new row** whenever `id` was absent, and GET had no `orderBy` — so a second row made the app answer inconsistently between calls | `business-details/index.ts:22,97` | **fixed** — id-less PUT updates the existing row; GET ordered. Verified: id-less PUT kept 1 row |
+| F-53 | High | [C] | Settings/Sale | **Settings did not propagate.** `sale/create.tsx` took the supplier state code from `process.env.NEXT_PUBLIC_BUSINESS_GSTIN`, which is set in no `.env` file, so it always fell through to a hardcoded `9`. Correct only by luck — the real GSTIN starts `09`. Changing the GSTIN in Settings changed nothing on the page that depends on it most | `sale/create.tsx:27` | **fixed** — reads `useBusinessDetails()`; closes F-30 |
+| F-54 | Low | [C] | Settings | Phone/landline validation checked `.length !== 10`, not digits, so `abcdefghij` was a valid phone number. The page also checked the untrimmed value while the API trimmed, so a 10-character value with a trailing space passed the form and was rejected by the server | `business-details/index.ts:63`, `businessdetails.tsx:82` | **fixed** — `/^[0-9]{10}$/` on both sides |
+| F-55 | Medium | [C] | Settings | Bank IFSC was never validated. The live table already carries a bad one: row 2's IFSC is `5124142`, which is not an IFSC in any form | `bank-details/index.ts:128,219` | **fixed** — `lib/bank.ts`, enforced on API and page, stored uppercased. Verified: bad shapes → 400, lowercase normalised, omitted → null |
+| F-56 | Low | [C] | Settings | `bank_details` has no DELETE route and no `status` column, so a bank account can be added but never removed or deactivated | `pages/api/bank-details/` | **wontfix** — owner's decision 2026-09-20 |
+| F-57 | Low | [C] | Settings | `bank_details` is write-only: no invoice, PDF, export or screen reads it. The only reference in the app is the nav link | no consumers found | **wontfix** — owner's decision 2026-09-20, kept deliberately |
+| F-58 | High | [C] | Cross | **Every dropdown in the app showed only the first 50 rows.** `dropdown=true` filtered to Active but still paginated, and the hooks passed no `limit`, so past 50 active records the customer, vendor, staff or mechanic simply was not in the list - no error, no "showing 50 of 300", just absent | `customers/index.ts:127`, `vendors/index.ts:60`, `staff/index.ts:60`, `mechanics/index.ts:60` | **fixed** — `dropdown=true` now skips pagination. Verified: `limit=2` returns 2 normally, all 5 in dropdown mode |
+| F-59 | Low | [C] | Settings | Staff and mechanic phone/email never format-validated (`!name \|\| !phone` only), so `abcdefghij` was a valid phone. Left business-details enforcing a rule its twins did not | `staff/index.ts:99`, `mechanics/index.ts:100` | **fixed** — `lib/validators.ts` shared by both APIs and both pages; verified 400s |
 | F-47 | High | [C] | Reports | Four different definitions of "what this party owes" coexist: party counters (`total_allocated - total_paid + ...`), the stored `*_ledger.balance` of the last row by id, `getAllOutstanding()`'s per-vendor max-id row, and `SUM(debit) - SUM(credit)` recomputed by the accounting reports. The vendor and customer reports do not even read the same table | `customer-outstanding.ts:126` vs `vendor-outstanding.ts:81` vs `ledger-service.ts:89,145` | open — decide the source of truth in Phase 7 |
 | F-05 | Medium | [C] | Cross | No role authorization despite documented roles | `grep role pages/api` → none | open |
 | F-06 | Medium | [C] | Purchase | `[id]-old.ts` is a reachable route mutating stock | `purchase-returns/[id]-old.ts:530` | **deferred → G-04** — kept deliberately as the reference the new `[id].ts` was written against. Owner's call 2026-09-20: delete during cleanup, not now |
@@ -720,10 +731,53 @@ Ordered roughly by payoff.
 |---|---|---|
 | G-01 | **Use Prisma everywhere.** Raw `$queryRawUnsafe` string-building survives in the product endpoints and several scripts. Raw SQL is what let F-11 (injection), F-17 (missing parens) and the Postgres/MySQL `ILIKE` mismatch happen at all | Every raw query is a place the schema and the code can drift apart silently. Prisma would have refused all three at compile time |
 | G-02 | **Collapse the duplicated pairs.** `transaction-handler` ↔ `customer-transaction-handler`, `ledger-service` ↔ `customer-ledger-service`, sale ↔ salex, and the two outstanding reports are 71-96% identical after normalising names | This is the audit's central thesis: the copies are not the bug, the **divergence between them** is. Every pair is two chances to fix something once and miss the twin |
-| G-03 | **One place for shared types.** Interfaces are redeclared per file (`LedgerEntryData`, product shapes, report rows), so the same concept has several slightly different definitions | Scattered types let the API and the page disagree about a field's name or nullability without anything failing to compile |
+| G-03 | **One place for shared types, and hooks that live where their name says.** Interfaces are redeclared per file (`LedgerEntryData`, product shapes, report rows). **Partly done:** `hooks/useStaff.ts` also exported `useMechanics` and `useCustomers`, so three unrelated pages imported `useCustomers` from a file named after staff - now split into `useStaff`/`useMechanics`/`useCustomers`. Still misplaced: `useCurrentFY` lives in `hooks/useCustomers.ts` | Scattered types let the API and the page disagree about a field's name or nullability without anything failing to compile. Misfiled hooks hide duplicates - the split is what exposed that the dropdowns were all truncating (F-58) |
 | G-04 | **Follow Next.js conventions.** Dead routes left in `pages/api`, no shared API-handler wrapper, inconsistent method dispatch, data fetching patterns that vary page to page. **Carries F-06**: `purchase-returns/[id]-old.ts` is the reference copy the rewritten `[id].ts` was worked against and is still serving traffic. Delete it once the rewrite is settled, together with the orphaned `*-ledger-details` endpoints (F-20) | In `pages/`, a file **is** a public route, so a reference copy left in the tree is a live endpoint. Safe to defer only because nothing links to it - not because it is inert |
 | G-05 | **Code cleanup.** 246 `console.log` calls in production paths (F-24), commented-out blocks, `tsconfig.tsbuildinfo` tracked (F-27), unused imports | Noise hides real signal. The debug queries removed in F-22 had been running on every product request |
 
 **Do these last.** The one exception is when a fix in an earlier phase naturally lands in
 the same file - taking the cleanup with it is cheaper than a second pass, and the diff is
 already under review.
+
+---
+
+## 8. Phase 2 page-by-page log
+
+One row per settings page. The checks are the same each time: **CRUD** works end to
+end; **filters and sorting** work; **state survives a refresh**; and the values
+**propagate** to the screens that consume them. The last one is the point of the phase -
+a setting that cannot reach the rest of the app is not a working setting.
+
+| Page | CRUD | Filter/sort | Refresh restore | Propagation | Findings |
+|---|---|---|---|---|---|
+| `businessdetails` | read + upsert, no delete (correct for a singleton) | n/a - single record | n/a - refetches on mount | **was broken** | F-51, F-52, F-53, F-54 - all fixed |
+| `bankdetails` | create + update. No delete - **kept that way by decision** (F-56) | correct: sort fields whitelisted, search on real columns, pagination sound | **missing** (F-49) | none by design - write-only, **kept that way by decision** (F-57) | F-55 fixed; F-56/F-57 wontfix |
+| `staffdetails` | full, and **soft delete done properly** - status → Inactive, never a row removal | correct: whitelisted sort, search on real columns | **missing** (F-49) | correct - Active-only by default, so deactivated staff leave the dropdowns | F-58, F-59 - both fixed |
+| `mechanics` | identical to staff, soft delete too | correct | **missing** (F-49) | correct | F-58, F-59 - both fixed |
+
+Two systemic ones found before opening a single page, and they apply to every row above:
+**F-49** (no page restores its list state) and **F-50** (`return-reasons` has no page at
+all). F-49 is one shared fix, not eleven, so it is better done once at the end of the
+phase than patched page by page.
+
+**Live data already violated the rule F-55 now enforces.** Bank row id=2 (`SBI`) holds
+`5124142` in its IFSC column. That row can still be read and still appears in the list,
+but it can no longer be **saved** from the settings form until someone supplies the real
+IFSC - the API validates the field on update as well as create. That is the correct
+behaviour and it is worth knowing before someone hits it.
+
+### Where Phase 2 stands
+
+Four of eleven settings pages are done: `businessdetails`, `bankdetails`, `staffdetails`,
+`mechanics`. `states` and `gsttaxrate` were done in earlier sessions. Left: `users`,
+`warehouse`, `warehouse-racks`, `financialyear`, `inactive-products`.
+
+**F-49 (no page restores its list state) is the one item deliberately left open.** It is a
+single shared fix across every list page rather than eleven separate ones, so it is
+better done once, at the end of the phase, than patched page by page.
+
+The pattern worth carrying forward: on these four pages the *endpoints* were mostly
+sound - whitelisted sorts, real search columns, correct soft deletes. What was broken was
+at the seams. A setting that never reaches the screen using it (F-53), a dropdown that
+truncates silently (F-58), a validator on one page and not its twin (F-59). The audit's
+thesis holds: the copies are fine, the divergence between them is the bug.

@@ -9,7 +9,7 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import SessionStorageService from '../../lib/sessionStorage';
 import { getLocalDateString } from '../../lib/date-utils';
 import { useSaleReturn, useCreateSaleReturn, useUpdateSaleReturn, useSaleReturnReasons, useCustomerBills, useSale } from '../../hooks/useSales';
-import { useCustomers } from '../../hooks/useStaff';
+import { useCustomers } from '../../hooks/useCustomers';
 import type { SaleBill, SaleItemForReturn, ReturnReason, SelectedReturnItem } from '../../types/sales';
 import type { Customer } from '../../types/staff';
 

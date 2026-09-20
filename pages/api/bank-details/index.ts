@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { isValidIfsc, normaliseIfsc } from '../../../lib/bank'
 
 async function handler(
   req: NextApiRequest,
@@ -98,6 +99,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // IFSC is optional, but if given it must be well formed: a 4-letter bank
+    // code, a literal 0 reserved by RBI, then a 6-character branch code.
+    // A wrong IFSC is invisible until someone's payment fails.
+    if (ifsc && !isValidIfsc(ifsc)) {
+      return res.status(400).json({
+        message: 'IFSC is not valid. Expected 11 characters, e.g. HDFC0001234.'
+      })
+    }
+
     // Check if bank account already exists (case insensitive)
     const trimmedName = bank_name.trim()
     const trimmedAccount = account_number.trim()
@@ -125,7 +135,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         bank_name: trimmedName,
         account_number: trimmedAccount,
         bank_address: bank_address?.trim() || null,
-        ifsc: ifsc?.trim() || null
+        ifsc: normaliseIfsc(ifsc)
       },
       select: {
         id: true,
@@ -169,6 +179,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     if (!account_number || typeof account_number !== 'string' || !account_number.trim()) {
       return res.status(400).json({
         message: 'Account number is required and must be a non-empty string'
+      })
+    }
+
+    // IFSC is optional, but if given it must be well formed: a 4-letter bank
+    // code, a literal 0 reserved by RBI, then a 6-character branch code.
+    // A wrong IFSC is invisible until someone's payment fails.
+    if (ifsc && !isValidIfsc(ifsc)) {
+      return res.status(400).json({
+        message: 'IFSC is not valid. Expected 11 characters, e.g. HDFC0001234.'
       })
     }
 
@@ -216,7 +235,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         bank_name: trimmedName,
         account_number: trimmedAccount,
         bank_address: bank_address?.trim() || null,
-        ifsc: ifsc?.trim() || null
+        ifsc: normaliseIfsc(ifsc)
       }
     })
 

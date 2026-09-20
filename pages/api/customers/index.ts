@@ -123,6 +123,12 @@ async function handler(
       }
 
       // Get customers with pagination
+      // A dropdown needs every active row, not the first page of them.
+      // `dropdown=true` filtered by status but still paginated, so any list
+      // longer than the default 50 was silently truncated - the customer or
+      // vendor simply was not in the list, with no error (F-58).
+      const isDropdown = dropdown === 'true';
+
       const [customersData, total] = await Promise.all([
         prisma.customer_details.findMany({
           where,
@@ -152,8 +158,7 @@ async function handler(
             shipping_state_code: true,
             shipping_gstin: true
           },
-          skip,
-          take: limitNum,
+          ...(isDropdown ? {} : { skip, take: limitNum }),
           orderBy: { billing_name: 'asc' }
         }),
         prisma.customer_details.count({ where })

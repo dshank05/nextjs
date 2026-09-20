@@ -52,6 +52,30 @@ export function isValidGstStateCode(code: unknown): code is number {
  *
  * @returns the state code, or null if the GSTIN is missing or malformed
  */
+/**
+ * Validate the shape of a GSTIN.
+ *
+ * 15 characters: 2-digit state code, 10-character PAN (5 letters, 4 digits,
+ * 1 letter), 1 entity code, a literal Z, then 1 check character.
+ *
+ * This matters more than it looks. The first two digits ARE the supplier's
+ * state code, and that code decides CGST+SGST versus IGST on every document
+ * the business issues. A typo there does not fail loudly - it makes
+ * getBusinessStateCode() return null and the caller fall back to a default,
+ * so every invoice quietly carries the wrong kind of tax.
+ *
+ * The trailing check character is NOT verified. Deliberately: the checksum
+ * algorithm is easy to get subtly wrong, and a wrong implementation would
+ * reject valid GSTINs and block the business from saving its own details.
+ * Format plus a valid state code catches the typos that actually occur.
+ */
+export function isValidGstin(gstin?: string | null): boolean {
+  if (!gstin) return false;
+  const value = gstin.trim().toUpperCase();
+  if (!/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(value)) return false;
+  return isValidGstStateCode(parseInt(value.slice(0, 2), 10));
+}
+
 export function getBusinessStateCode(gstin?: string | null): number | null {
   if (!gstin) return null;
   const code = parseInt(gstin.trim().slice(0, 2), 10);

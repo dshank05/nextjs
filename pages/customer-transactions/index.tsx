@@ -7,7 +7,7 @@ import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
-import { useCustomers } from '../../hooks/useStaff'
+import { useCustomers } from '../../hooks/useCustomers'
 import { useCustomerTransactions, useDeleteCustomerTransaction } from '../../hooks/useCustomers'
 import type { CustomerTransaction, TransactionType, TransactionSortField } from '../../types/customer-transactions'
 

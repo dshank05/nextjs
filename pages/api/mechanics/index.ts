@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { isTenDigitPhone } from '../../../lib/validators'
 
 async function handler(
   req: NextApiRequest,
@@ -21,6 +22,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
     const {
       includeInactive = 'false',
+      dropdown = 'false',
       sortBy = 'name',
       sortOrder = 'asc',
       page = '1',
@@ -57,11 +59,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Get total count for pagination
     const total = await prisma.mechanic.count({ where })
 
+    // A dropdown needs every active row, not the first page of them.
+    // `dropdown=true` used to only filter by status while still paginating, so
+    // any list longer than the default 50 was silently truncated and the
+    // missing entry simply could not be selected - no error, just absent
+    // (F-58). Pagination is skipped entirely in dropdown mode.
+    const isDropdown = dropdown === 'true'
+
     const mechanics = await prisma.mechanic.findMany({
       where,
       orderBy,
-      skip: offset,
-      take: limitNum,
+      ...(isDropdown ? {} : { skip: offset, take: limitNum }),
     })
 
     const totalPages = Math.ceil(total / limitNum)
@@ -100,6 +108,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     if (!name || !phone) {
       return res.status(400).json({
         message: 'Name and phone are required'
+      })
+    }
+
+    if (!isTenDigitPhone(phone)) {
+      return res.status(400).json({
+        message: 'Phone number must be exactly 10 digits'
       })
     }
 
