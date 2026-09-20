@@ -275,22 +275,25 @@ export default function ProductCreate() {
       if (response.ok) {
         const product = await response.json();
 
-        // Find GST rate ID based on HSN code for proper form population
-        let gstRateId = '';
-        if (product.hsn && gstRates.length > 0) {
-          const matchingGstRate = gstRates.find(rate => rate.hsn_code === product.hsn);
-          if (matchingGstRate) {
-            gstRateId = matchingGstRate.id.toString();
-          } else {
-            // If no matching GST rate found, try to find one with the same rate percentage
-            const rateMatchingGstRate = gstRates.find(rate => rate.rate === product.gst_rate);
-            if (rateMatchingGstRate) {
-              gstRateId = rateMatchingGstRate.id.toString();
-              console.log(`Found GST rate by percentage: HSN "${product.hsn}" -> ${product.gst_rate}%`);
-            } else {
-              console.warn(`No GST rate found for HSN "${product.hsn}" or rate ${product.gst_rate}`);
-            }
-          }
+        // The product's own gst_rate_id is the answer. Use it.
+        //
+        // This used to re-derive the rate by matching product.hsn against
+        // gst_tax_rate.hsn_code, and only bothered at all if hsn was set. hsn is
+        // NULL on every product in the database, so the lookup always failed,
+        // the field stayed empty, and saving then wrote gst_rate_id: null -
+        // editing a product silently stripped its tax rate (F-76).
+        //
+        // HSN driving GST is the right interaction for data ENTRY, and it still
+        // is (see handleInputChange). It is the wrong way to reload a value the
+        // record already holds.
+        let gstRateId = product.gst_rate_id ? product.gst_rate_id.toString() : '';
+        let hsnValue = product.hsn || '';
+
+        // If the product carries a rate but no HSN, show the HSN that rate
+        // belongs to, so the two fields agree on screen.
+        if (gstRateId && !hsnValue && gstRates.length > 0) {
+          const currentRate = gstRates.find(rate => rate.id.toString() === gstRateId);
+          if (currentRate) hsnValue = currentRate.hsn_code || '';
         }
 
         // Populate form with product data
@@ -304,8 +307,8 @@ export default function ProductCreate() {
           min_stock: product.min_stock?.toString() || '',
           opening_stock: product.opening_stock?.toString() || '',
           opening_rate: product.opening_rate?.toString() || '',
-          hsn: product.hsn || '',
-          gst_rate: gstRateId, // Use found GST rate ID
+          hsn: hsnValue,
+          gst_rate: gstRateId, // the product's own gst_rate_id
           warehouse: product.warehouse_id?.toString() || '', // Use original FK ID directly
           rack_id: product.rack_id?.toString() || '', // Use original FK ID directly
           rack_number: product.rack_number || '', // Direct text value
@@ -409,13 +412,17 @@ export default function ProductCreate() {
       part_no: formData.part_no || null,
       min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
       opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
-      stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
+      // `stock` is NOT sent. It used to be, set to opening_stock, so saving an
+      // edit restored every unit that had been sold (F-75). Stock is derived
+      // from purchases, sales and returns; the server owns it and ignores any
+      // stock a client sends. On create the server sets it from opening_stock.
       opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
       hsn: formData.hsn || null,
       warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
       gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
       rack_id: formData.rack_id ? parseInt(formData.rack_id) : null,
-      rack_number: formData.rack_id ? racks.find(rack => rack.id.toString() === formData.rack_id)?.rack_number : null,
+      // rack_number is not sent either - the server derives it from rack_id
+      // rather than trusting a string the browser looked up (F-84).
       descriptions: formData.descriptions || null,
       notes: formData.notes || null,
       mrp: formData.mrp ? parseFloat(formData.mrp) : null,

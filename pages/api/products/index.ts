@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { validateProduct, findConflictingPartNo, buildProductData } from '../../../lib/product';
 import { withObservability } from '../../../lib/withObservability';
 import formidable from 'formidable';
 import fs from 'fs';
@@ -376,73 +377,30 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await Promise.all(uploadPromises);
     }
 
-    // Basic validation
-    if (!productData.product_name || productData.product_name.trim() === '') {
-      return res.status(400).json({ message: 'Product name is required' });
-    }
-    if (!productData.warehouse_id) {
-      return res.status(400).json({ message: 'Warehouse is required' });
-    }
-
-    // Check for duplicate part number (case-insensitive)
-    if (productData.part_no && productData.part_no.trim() !== '') {
-      const trimmedPartNo = productData.part_no.trim();
-      // Use raw SQL for case-insensitive comparison since Prisma doesn't support mode on nullable strings
-      const existingProduct = await prisma.$queryRaw`
-        SELECT id, part_no FROM product
-        WHERE LOWER(part_no) = LOWER(${trimmedPartNo})
-        AND is_active = true
-        LIMIT 1
-      ` as any[];
-
-      if (existingProduct.length > 0) {
-        return res.status(400).json({
-          message: `Part number "${trimmedPartNo}" is already in use by another product (ID: ${existingProduct[0].id}). Please use a different part number.`
-        });
-      }
+    // Same rules the update path applies, from the same module, so create and
+    // update cannot drift apart again - which is how edit came to accept an
+    // empty product name that create rejected (F-79).
+    const failure = await validateProduct(productData, { partial: false });
+    if (failure) {
+      return res.status(failure.status).json({ message: failure.message });
     }
 
-
-    // Optional FK validations
-    if (productData.company_id && !(await prisma.product_company.findUnique({ where: { id: parseInt(productData.company_id) } }))) {
-      return res.status(400).json({ message: 'Invalid company selected' });
+    const partNoConflict = await findConflictingPartNo(productData.part_no);
+    if (partNoConflict) {
+      return res.status(400).json({
+        message: `Part number "${String(productData.part_no).trim()}" is already in use by another product (ID: ${partNoConflict.id}). Please use a different part number.`
+      });
     }
 
-    if (!(await prisma.warehouse.findUnique({ where: { id: parseInt(productData.warehouse_id) } }))) {
-      return res.status(400).json({ message: 'Invalid warehouse selected' });
-    }
+    const finalProductData: any = await buildProductData(productData, { partial: false });
 
-    if (productData.gst_rate_id && !(await prisma.gst_tax_rate.findUnique({ where: { id: parseInt(productData.gst_rate_id) } }))) {
-      return res.status(400).json({ message: 'Invalid GST rate selected' });
-    }
-
-    // ===== IMPLEMENTATION: opening_stock = stock during product creation =====
-    const initialStock = productData.stock ? parseInt(productData.stock) : 0;
-
-    const finalProductData = {
-      product_name: productData.product_name,
-      product_category_id: productData.product_category_id ? parseInt(productData.product_category_id) : null,
-      product_subcategory_id: productData.product_subcategory_id ? parseInt(productData.product_subcategory_id) : null,
-      car_model_ids: productData.car_model_ids || null,
-      company_id: productData.company_id ? parseInt(productData.company_id) : null,
-      part_no: productData.part_no || null,
-      min_stock: productData.min_stock ? parseInt(productData.min_stock) : 0,
-      stock: initialStock,
-      opening_stock: initialStock,  // ✅ Always equals initial stock on creation
-      opening_rate: productData.opening_rate ? parseFloat(productData.opening_rate) : 0,
-      hsn: productData.hsn || null,
-      pic: imageUrl,
-      barcode: barcodeUrl,
-      descriptions: productData.descriptions || null,
-      mrp: productData.mrp ? parseFloat(productData.mrp) : null,
-      discount: productData.discount ? parseFloat(productData.discount) : null,
-      margin: productData.margin ? parseFloat(productData.margin) : null,
-      warehouse_id: productData.warehouse_id ? parseInt(productData.warehouse_id) : null,
-      gst_rate_id: productData.gst_rate_id ? parseInt(productData.gst_rate_id) : null,
-      rack_id: productData.rack_id ? parseInt(productData.rack_id) : null,
-      rack_number: productData.rack_number || null,
-      notes: productData.notes || null,
-    };
+    // Opening stock IS the starting stock - but only here, at creation. This is
+    // the one legitimate place the two are equal; repeating it on update was
+    // F-75. `stock` is not read from the payload: the client does not get to
+    // choose a stock level.
+    finalProductData.stock = finalProductData.opening_stock;
+    finalProductData.pic = imageUrl;
+    finalProductData.barcode = barcodeUrl;
 
 
     try {

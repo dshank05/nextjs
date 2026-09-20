@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { validateProduct, findConflictingPartNo, buildProductData } from '../../../lib/product'
 import formidable from 'formidable'
 import fs from 'fs'
 import path from 'path'
@@ -217,30 +218,43 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
         }
 
-        // Check for duplicate part number (case-insensitive, excluding current product)
-        if (productData.part_no && productData.part_no.trim() !== '') {
-          const trimmedPartNo = productData.part_no.trim();
-          // Use raw SQL for case-insensitive comparison since Prisma doesn't support mode on nullable strings
-          const existingProduct = await prisma.$queryRaw`
-            SELECT id, part_no FROM product
-            WHERE LOWER(part_no) = LOWER(${trimmedPartNo})
-            AND is_active = true
-            AND id != ${productId}
-            LIMIT 1
-          ` as any[];
+        // The product has to exist before anything else. Without this check the
+        // update fell through to prisma, which threw P2025, which surfaced as a
+        // generic 500 (F-80).
+        const existingProduct = await prisma.product.findUnique({
+          where: { id: productId },
+          select: { id: true }
+        });
+        if (!existingProduct) {
+          return res.status(404).json({ message: 'Product not found' });
+        }
 
-          if (existingProduct.length > 0) {
-            return res.status(400).json({
-              message: `Part number "${trimmedPartNo}" is already in use by another product (ID: ${existingProduct[0].id}). Please use a different part number.`
-            });
-          }
+        // Same validation create applies. This endpoint used to check nothing
+        // but the part number, so an edit accepted an empty product name and an
+        // invalid warehouse that create would have rejected (F-79, F-86).
+        const failure = await validateProduct(productData, { partial: true });
+        if (failure) {
+          return res.status(failure.status).json({ message: failure.message });
+        }
+
+        const partNoConflict = await findConflictingPartNo(productData.part_no, productId);
+        if (partNoConflict) {
+          return res.status(400).json({
+            message: `Part number "${String(productData.part_no).trim()}" is already in use by another product (ID: ${partNoConflict.id}). Please use a different part number.`
+          });
         }
 
         // Smart file handling - handle new uploads, existing files, and deletions
         const fileStates = productData.fileStates || {};
         const uploadPromises: Promise<void>[] = [];
-        let imageUrl: string | null = null;
-        let barcodeUrl: string | null = null;
+        // `undefined` means "the client said nothing about this file, leave the
+        // stored value alone". These were initialised to `null`, which is a real
+        // value meaning "no image" - so the `!== undefined` guard further down
+        // was always true and the documented no-change branch could never run.
+        // Any update that omitted fileStates wiped the product's image and
+        // barcode (F-87).
+        let imageUrl: string | null | undefined = undefined;
+        let barcodeUrl: string | null | undefined = undefined;
 
         // Handle image file
         if (fileStates.image?.hasNewFile && files.image && files.image[0]) {
@@ -321,31 +335,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           await Promise.all(uploadPromises);
         }
 
-        const finalData: any = {
-          product_name: productData.product_name,
-          product_category_id: productData.product_category_id ? parseInt(productData.product_category_id) : null,
-          product_subcategory_id: productData.product_subcategory_id ? parseInt(productData.product_subcategory_id) : null,
-          car_model_ids: productData.car_model_ids || null,
-          company_id: productData.company_id ? parseInt(productData.company_id) : null,
-          part_no: productData.part_no || null,
-          min_stock: productData.min_stock ? parseInt(productData.min_stock) : 0,
-          stock: productData.stock ? parseInt(productData.stock) : 0,
-          opening_stock: productData.opening_stock ? parseInt(productData.opening_stock) : 0,
-          opening_rate: productData.opening_rate ? parseFloat(productData.opening_rate) : 0,
-          hsn: productData.hsn || null,
-          // Handle file URLs - can be string, null, or undefined (for no change)
-          ...(imageUrl !== undefined && { pic: imageUrl }),
-          ...(barcodeUrl !== undefined && { barcode: barcodeUrl }),
-          descriptions: productData.descriptions || null,
-          mrp: productData.mrp ? parseFloat(productData.mrp) : null,
-          discount: productData.discount ? parseFloat(productData.discount) : null,
-          margin: productData.margin ? parseFloat(productData.margin) : null,
-          warehouse_id: productData.warehouse_id ? parseInt(productData.warehouse_id) : null,
-          gst_rate_id: productData.gst_rate_id ? parseInt(productData.gst_rate_id) : null,
-          rack_id: productData.rack_id ? parseInt(productData.rack_id) : null,
-          rack_number: productData.rack_number || null,
-          notes: productData.notes || null
-        };
+        // Only client-writable fields, and only the ones actually sent.
+        //
+        // `stock` is deliberately absent and is never accepted from a client.
+        // The form has no current-stock field, yet it was sending
+        // `stock: opening_stock` on every save - so editing a product to fix a
+        // typo restored every unit that had been sold (F-75). Stock is derived
+        // from purchases, sales and returns; correcting it is a stock movement,
+        // not a product edit. `rack_number` is likewise derived server-side
+        // from `rack_id` (F-84).
+        const finalData: any = await buildProductData(productData, { partial: true });
+
+        // File URLs stay outside buildProductData because they come from the
+        // upload handling above, not from the payload. Still undefined means
+        // the client said nothing, so the stored value is left alone.
+        if (imageUrl !== undefined) finalData.pic = imageUrl;
+        if (barcodeUrl !== undefined) finalData.barcode = barcodeUrl;
+
+        if (Object.keys(finalData).length === 0) {
+          return res.status(400).json({ message: 'No changes supplied' });
+        }
 
         const updatedProduct = await prisma.product.update({ where: { id: productId }, data: finalData });
         const enhancedProduct = await enhanceProduct(updatedProduct);
@@ -389,8 +398,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         res.setHeader('Allow', ['GET', 'PUT', 'DELETE']);
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('API error:', error);
-    return res.status(500).json({ message: 'Server error', error: error instanceof Error ? error.message : 'Unknown error' });
+
+    // Translate the database's own errors instead of forwarding them. The raw
+    // Prisma message names tables and constraints, which should not leave the
+    // server (F-81), and a missing row read as a 500 rather than a 404 (F-80).
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    if (error?.code === 'P2003') {
+      return res.status(400).json({ message: 'A selected category, company, warehouse, rack or GST rate does not exist' });
+    }
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ message: 'That value is already in use by another product' });
+    }
+
+    return res.status(500).json({ message: 'Server error' });
   }
 }
