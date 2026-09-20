@@ -1,10 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { hashPassword, isAcceptablePassword, MIN_PASSWORD_LENGTH } from '../../../lib/password'
 import { withObservability } from '../../../lib/withObservability'
 
 async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { id, username, email, phone, status } = req.body
+    const { id, username, email, phone, status, password } = req.body
 
     if (!id || !parseInt(id.toString())) {
       return res.status(400).json({
@@ -75,6 +76,18 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // A new password is optional on update: blank or absent means "leave it
+    // alone". Before this, `password` was not even read here, so there was no
+    // way to change a password anywhere in the app - the settings form hides
+    // the field when editing, and the API ignored it if sent (F-61).
+    const wantsPasswordChange = typeof password === 'string' && password !== ''
+
+    if (wantsPasswordChange && !isAcceptablePassword(password)) {
+      return res.status(400).json({
+        message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`
+      })
+    }
+
     // Update user
     await prisma.user.update({
       where: { id: userId },
@@ -83,6 +96,7 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
         email: trimmedEmail,
         phone: phone ? phone.trim() : null,
         status: parseInt(status.toString()) || 10,
+        ...(wantsPasswordChange ? { password_hash: await hashPassword(password) } : {}),
         updated_at: Math.floor(Date.now() / 1000)
       }
     })
@@ -204,9 +218,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    if (!password || typeof password !== 'string' || password.length < 6) {
+    if (!isAcceptablePassword(password)) {
       return res.status(400).json({
-        message: 'Password is required and must be at least 6 characters long'
+        message: `Password is required and must be at least ${MIN_PASSWORD_LENGTH} characters long`
       })
     }
 
@@ -238,9 +252,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Hash password - in a real app, you'd use bcrypt
-    // For now, using a simple hash approach
-    const simpleHash = require('crypto').createHash('sha256').update(password).digest('hex')
+    // bcrypt, because that is what NextAuth's authorize() verifies with.
+    // This used to be an unsalted SHA-256 digest, which bcrypt.compare() always
+    // rejects - so every account created here was unusable from birth (F-60).
+    const passwordHash = await hashPassword(password)
     const authKey = Math.random().toString(36).substring(2, 15)
 
     // Create new user
@@ -250,7 +265,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         email: trimmedEmail,
         phone: phone ? phone.trim() : null,
         auth_key: authKey,
-        password_hash: simpleHash,
+        password_hash: passwordHash,
         password_reset_token: null,
         status: parseInt(status.toString()) || 10,
         created_at: Math.floor(Date.now() / 1000),

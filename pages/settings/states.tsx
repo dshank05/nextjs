@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -25,15 +26,17 @@ export default function States() {
   const [states, setStates] = useState<Array<{id: number, state_name: string, code: number}>>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [editingState, setEditingState] = useState<{id: number, state_name: string, code: number} | null>(null);
   const [formData, setFormData] = useState({ id: 0, state_name: '', code: '' });
   const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string, code: string } | null>(null);
-  const [sortBy, setSortBy] = useState('state_name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'state_name');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 

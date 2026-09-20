@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
@@ -36,7 +37,9 @@ export default function WarehouseRacks() {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
   const [showModal, setShowModal] = useState(false);
   const [editingRack, setEditingRack] = useState<WarehouseRack | null>(null);
   const [formData, setFormData] = useState({ id: '', warehouse_id: '', rack_number: '', description: '' });
@@ -46,8 +49,8 @@ export default function WarehouseRacks() {
   const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
   const [toggleConfirmLoading, setToggleConfirmLoading] = useState(false);
   const [selectedRack, setSelectedRack] = useState<WarehouseRack | null>(null);
-  const [sortBy, setSortBy] = useState('rack_number');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'rack_number');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
   const [isFetching, setIsFetching] = useState(false);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);

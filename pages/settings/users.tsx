@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
@@ -27,12 +28,14 @@ export default function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({ id: 0, username: '', email: '', phone: '', password: '', status: '' });
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'created_at');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'desc');
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -353,18 +356,29 @@ export default function Users() {
                   <option value="0">Inactive</option>
                 </select>
               </div>
-              {!editingUser && (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
-                    className="input w-full"
-                    required
-                  />
-                </div>
-              )}
+              {/* Shown when editing too. It used to be hidden on edit, and the
+                  update endpoint ignored the field anyway, so there was no way
+                  to change anyone's password anywhere in the app (F-61).
+                  Blank on edit means "leave the current password alone". */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  {editingUser ? 'New password' : 'Password'}
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
+                  className="input w-full"
+                  required={!editingUser}
+                  autoComplete="new-password"
+                  placeholder={editingUser ? 'Leave blank to keep the current password' : ''}
+                />
+                {editingUser && (
+                  <p className="mt-2 text-xs text-slate-400">
+                    Leave blank to keep the current password.
+                  </p>
+                )}
+              </div>
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -31,9 +32,11 @@ export default function StaffDetails() {
     // status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
-  const [sortBy, setSortBy] = useState('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [searchTerm, setSearchTerm] = useState('')
+  // Mirrored in the URL so search, sort and page survive a refresh and a
+  // return from an edit, and so a filtered list can be linked (F-49).
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'name');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '')
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 

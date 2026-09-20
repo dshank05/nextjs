@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -26,9 +27,11 @@ export default function GSTTaxRate() {
   const [gstRates, setGstRates] = useState<GSTTaxRate[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<string>('description');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'description');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<GSTTaxRate | null>(null);
   const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' as 'Active' | 'Inactive' });

@@ -618,7 +618,7 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-45 | Critical | [C] | Reports | Customer outstanding report is **dead** — `where` filters `customer_details.balance`, `customer` and `name`, none of which exist on that model (the column is `account_balance`). Every request throws `PrismaClientValidationError`. Also uses `mode: 'insensitive'`, unsupported on MySQL | `reports/customer-outstanding.ts:29,51,54` | **fixed** — real columns, MySQL-safe; verified live 200 (empty: no customers seeded) |
 | F-46 | High | [C] | Reports | Vendor outstanding report lists ledger **rows**, not vendors — no grouping, so it returns every historical row whose stored running balance was > 0. A settled vendor still appears, once per such row, and `total` is a row count | `reports/vendor-outstanding.ts:81` | open |
 | F-48 | Critical | [C] | Reports | Minimum-stock report was **dead** — 500 on every call. `sortBy` defaulted to `current_stock`, the response field name rather than the column, and the page never sends `sortBy`. Also referenced `category_id`, `model_id`, `part` and `mode: 'insensitive'`, none of which exist on `product`/MySQL | `reports/minimum-stock.ts:17,25-55` | **fixed** — column map + Prisma-side car-model matching; verified live |
-| F-49 | Medium | [C] | Settings | **No settings page restores its list state.** Zero use of `router.query`, `useSearchParams` or `sessionStorage` across all 11 pages, so search, filter, sort and page number reset on every refresh and on every return from an edit. A filtered list also cannot be linked or bookmarked | all of `pages/settings/*.tsx` | open |
+| F-49 | Medium | [C] | Settings | **No settings page restored its list state.** Zero use of `router.query`, `useSearchParams` or `sessionStorage`, so search, sort and page reset on every refresh and every return from an edit, and a filtered list could not be linked | all of `pages/settings/*.tsx` | **mostly fixed** — `hooks/useUrlState.ts`, applied to search + sort on all 10 list pages. **Page number deliberately not synced** — see note below |
 | F-50 | Medium | [C] | Settings | `return_reasons` has a **GET-only API and no settings page** — reasons are consumed by the sale and purchase return flows but can only be changed by running `scripts/seed_return_reasons.js` against the database | `pages/api/return-reasons/` (no `pages/settings` counterpart) | open — owner's call whether this is wanted |
 | F-51 | High | [C] | Settings | Business GSTIN was never validated on save. Its first two digits are the supplier state code that picks CGST+SGST vs IGST on every document, so a typo silently mistaxes everything the business issues | `business-details/index.ts:57` | **fixed** — `isValidGstin()` in `lib/gst.ts`, enforced on the API and the page; verified: bad checksum length → 400, state code 99 → 400 |
 | F-52 | Medium | [C] | Settings | `business_details` is a singleton the whole app reads with `findFirst()`, but PUT created a **new row** whenever `id` was absent, and GET had no `orderBy` — so a second row made the app answer inconsistently between calls | `business-details/index.ts:22,97` | **fixed** — id-less PUT updates the existing row; GET ordered. Verified: id-less PUT kept 1 row |
@@ -629,6 +629,8 @@ Status: `open` · `in-progress` · `fixed` · `wontfix` · `invalid`
 | F-57 | Low | [C] | Settings | `bank_details` is write-only: no invoice, PDF, export or screen reads it. The only reference in the app is the nav link | no consumers found | **wontfix** — owner's decision 2026-09-20, kept deliberately |
 | F-58 | High | [C] | Cross | **Every dropdown in the app showed only the first 50 rows.** `dropdown=true` filtered to Active but still paginated, and the hooks passed no `limit`, so past 50 active records the customer, vendor, staff or mechanic simply was not in the list - no error, no "showing 50 of 300", just absent | `customers/index.ts:127`, `vendors/index.ts:60`, `staff/index.ts:60`, `mechanics/index.ts:60` | **fixed** — `dropdown=true` now skips pagination. Verified: `limit=2` returns 2 normally, all 5 in dropdown mode |
 | F-59 | Low | [C] | Settings | Staff and mechanic phone/email never format-validated (`!name \|\| !phone` only), so `abcdefghij` was a valid phone. Left business-details enforcing a rule its twins did not | `staff/index.ts:99`, `mechanics/index.ts:100` | **fixed** — `lib/validators.ts` shared by both APIs and both pages; verified 400s |
+| F-60 | Critical | [C] | Settings/Auth | **A user created through the Users page could never log in.** `users/index.ts:243` stored an unsalted SHA-256 digest — the comment `// Hash password - in a real app, you'd use bcrypt` was still in the file — while `authorize()` verifies with `bcrypt.compare()`, which rejects anything that is not a bcrypt hash. The correct helpers already existed in `lib/user-management.ts` and were simply not called | `users/index.ts:243` vs `[...nextauth].ts:50` | **fixed** — `lib/password.ts`; **verified end to end**: created a user through the API and signed in as them, which previously returned `CredentialsSignin` |
+| F-61 | High | [C] | Settings | **No way to change any password anywhere in the app.** The settings form hides the password field when editing (`{!editingUser && ...}`), and `handleUpdate` did not even destructure `password`, so a password sent to it was silently dropped | `users/index.ts` handleUpdate, `users.tsx:356` | **fixed** — field shown on edit as optional, update hashes it when supplied. Verified: change works, blank is a no-op, under 6 chars → 400 |
 | F-47 | High | [C] | Reports | Four different definitions of "what this party owes" coexist: party counters (`total_allocated - total_paid + ...`), the stored `*_ledger.balance` of the last row by id, `getAllOutstanding()`'s per-vendor max-id row, and `SUM(debit) - SUM(credit)` recomputed by the accounting reports. The vendor and customer reports do not even read the same table | `customer-outstanding.ts:126` vs `vendor-outstanding.ts:81` vs `ledger-service.ts:89,145` | open — decide the source of truth in Phase 7 |
 | F-05 | Medium | [C] | Cross | No role authorization despite documented roles | `grep role pages/api` → none | open |
 | F-06 | Medium | [C] | Purchase | `[id]-old.ts` is a reachable route mutating stock | `purchase-returns/[id]-old.ts:530` | **deferred → G-04** — kept deliberately as the reference the new `[id].ts` was written against. Owner's call 2026-09-20: delete during cleanup, not now |
@@ -751,9 +753,14 @@ a setting that cannot reach the rest of the app is not a working setting.
 | Page | CRUD | Filter/sort | Refresh restore | Propagation | Findings |
 |---|---|---|---|---|---|
 | `businessdetails` | read + upsert, no delete (correct for a singleton) | n/a - single record | n/a - refetches on mount | **was broken** | F-51, F-52, F-53, F-54 - all fixed |
-| `bankdetails` | create + update. No delete - **kept that way by decision** (F-56) | correct: sort fields whitelisted, search on real columns, pagination sound | **missing** (F-49) | none by design - write-only, **kept that way by decision** (F-57) | F-55 fixed; F-56/F-57 wontfix |
-| `staffdetails` | full, and **soft delete done properly** - status → Inactive, never a row removal | correct: whitelisted sort, search on real columns | **missing** (F-49) | correct - Active-only by default, so deactivated staff leave the dropdowns | F-58, F-59 - both fixed |
-| `mechanics` | identical to staff, soft delete too | correct | **missing** (F-49) | correct | F-58, F-59 - both fixed |
+| `bankdetails` | create + update. No delete - **kept that way by decision** (F-56) | correct: sort fields whitelisted, search on real columns, pagination sound | fixed (F-49) | none by design - write-only, **kept that way by decision** (F-57) | F-55 fixed; F-56/F-57 wontfix |
+| `staffdetails` | full, and **soft delete done properly** - status → Inactive, never a row removal | correct: whitelisted sort, search on real columns | fixed (F-49) | correct - Active-only by default, so deactivated staff leave the dropdowns | F-58, F-59 - both fixed |
+| `mechanics` | identical to staff, soft delete too | correct | fixed (F-49) | correct | F-58, F-59 - both fixed |
+| `users` | create + update; status field doubles as deactivate | correct: whitelisted sort, email/phone validated, uniqueness gives 409 | fixed (F-49) | **was broken** - new accounts could not authenticate at all | F-60, F-61 - both fixed. F-26 deferred |
+| `warehouse` | create + update, no delete; `includeInactive` + status covers deactivation | correct | fixed (F-49) | correct | none |
+| `warehouse-racks` | full, delete correctly scoped to its warehouse | correct | fixed (F-49) | correct | F-32 (fixed earlier this session) |
+| `financialyear` | create + update + set-current | correct | fixed (F-49) | correct - `settings.currentfy` is the single source, read by `lib/financial-year.ts` | **none** |
+| `inactive-products` | reactivate via PUT to products | correct | fixed (F-49) | inherits F-43 | none of its own |
 
 Two systemic ones found before opening a single page, and they apply to every row above:
 **F-49** (no page restores its list state) and **F-50** (`return-reasons` has no page at
@@ -781,3 +788,22 @@ sound - whitelisted sorts, real search columns, correct soft deletes. What was b
 at the seams. A setting that never reaches the screen using it (F-53), a dropdown that
 truncates silently (F-58), a validator on one page and not its twin (F-59). The audit's
 thesis holds: the copies are fine, the divergence between them is the bug.
+
+### Two corrections to earlier notes in this document
+
+**The financial-year overlap guard exists.** An earlier pass recorded that
+`financial-years` had no overlap check on create. It does, at `index.ts:203`, along with
+a duplicate check returning 409 and a strict Apr 1 → Mar 31 shape. The earlier grep
+window simply stopped short of it. No fix was needed and none was made.
+
+**F-49 is fixed for search and sort, not for page number.** `hooks/useUrlState.ts` mirrors
+a value in the URL query and is a drop-in for `useState`, so each page changed by one line
+per value. Page number was left alone on purpose: it lives inside a `pagination` object
+that is written from six or more call sites per page, so syncing it means rewriting all of
+them across ten files - a large, risky edit for a value that resets to 1 on nearly every
+other interaction anyway. Worth doing later, with the pagination state itself tidied up.
+
+What is verified: all eleven settings pages render cleanly with and without query
+parameters, and the whole project type-checks. What is **not** verified: the browser-level
+round trip - typing a search, refreshing, and seeing it restored. That needs a real
+browser, not an HTTP probe, because these lists are fetched client-side.

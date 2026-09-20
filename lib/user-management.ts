@@ -1,21 +1,12 @@
-import bcrypt from 'bcryptjs'
 import { PrismaClient } from '@prisma/client'
+import { hashPassword, verifyPassword } from './password'
 
 const prisma = new PrismaClient()
 
-/**
- * Hash a password using bcrypt
- */
-export async function hashPassword(password: string): Promise<string> {
-  return await bcrypt.hash(password, 12)
-}
-
-/**
- * Verify a password against a hash
- */
-export async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return await bcrypt.compare(password, hash)
-}
+// Re-exported so existing callers keep working. The implementations moved to
+// lib/password.ts so that code which only needs to hash a password does not
+// have to import this module and its PrismaClient with it.
+export { hashPassword, verifyPassword }
 
 /**
  * Create a new user in the database

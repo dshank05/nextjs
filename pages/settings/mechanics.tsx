@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isTenDigitPhone } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -31,9 +32,11 @@ export default function MechanicDetails() {
     status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
-  const [sortBy, setSortBy] = useState('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [searchTerm, setSearchTerm] = useState("")
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'name');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '')
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);

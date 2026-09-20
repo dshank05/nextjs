@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -23,9 +24,11 @@ export default function FinancialYear() {
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<string>('fy');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  // Mirrored in the URL so search and sort survive a refresh and a return
+  // from an edit, and so a filtered list can be linked (F-49).
+  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
+  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'fy');
+  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'desc');
   const [showModal, setShowModal] = useState(false);
   const [editingYear, setEditingYear] = useState<FinancialYear | null>(null);
   const [formData, setFormData] = useState({ id: 0, fy: '', start_date: '', end_date: '' });
