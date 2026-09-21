@@ -408,7 +408,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
-async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+/**
+ * `attempt` exists for the invoice-number race (F-13 / P4-05).
+ *
+ * UNIQUE(fy, invoice_no) makes a duplicate impossible to write, which is the
+ * part that actually matters - getNextInvoiceNumber reads MAX+1 inside a
+ * transaction that only READS, so it holds no lock and two concurrent creates
+ * can read the same maximum. The index turns that from silent duplication into
+ * a constraint error.
+ *
+ * But an auto-numbered create losing that race should take the next number, not
+ * fail in front of the user. So a P2002 on an auto-generated number re-reads the
+ * counter and tries again. A number the USER chose is not retried: there the
+ * collision is a real answer and they need to see it.
+ */
+const MAX_INVOICE_ATTEMPTS = 3;
+
+async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: number = 1) {
   const startTime = Date.now();
 
   try {
@@ -962,6 +978,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // clause, the financial year and the internal timestamps (P4-20, L-11).
     const totalTime = Date.now() - startTime;
     console.error(`Purchase creation failed after ${totalTime}ms:`, error);
+
+    // Auto-numbered and we lost the race: re-read the counter and try again.
+    const clientChoseNumber = req.body?.invoice_number !== undefined
+      && req.body?.invoice_number !== null
+      && req.body?.invoice_number !== '';
+    if (error?.code === 'P2002' && !clientChoseNumber && attempt < MAX_INVOICE_ATTEMPTS) {
+      console.warn(`Invoice number collision on attempt ${attempt}; retrying with a fresh number`);
+      return handlePost(req, res, attempt + 1);
+    }
 
     if (error?.code === 'P2002') {
       // Deliberately does not name the invoice number. The first version of

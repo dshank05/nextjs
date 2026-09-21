@@ -1325,6 +1325,18 @@ export class TransactionHandler {
       });
       
       const paymentIds = Array.from(new Set(allocations.map(a => a.payment_id)));
+
+      // Track the payments actually DELETED, separately from the amount
+      // deallocated.
+      //
+      // The two are not the same, and conflating them is what left a phantom
+      // advance behind (L-26). A BILL_SPECIFIC payment was created BY this
+      // purchase, so deleting the purchase deletes it and the money was never
+      // paid - total_paid has to come down with it. A DIRECT or MIXED payment
+      // is a real advance that existed before this purchase and still exists
+      // after it; only its ALLOCATION reverses, and total_paid must not move.
+      let paymentsRemoved = 0;
+
       for (const paymentId of paymentIds) {
         const remainingAllocs = await tx.payment_allocations.count({
           where: { payment_id: paymentId }
@@ -1337,6 +1349,7 @@ export class TransactionHandler {
           });
           
           if (payment?.payment_type === 'BILL_SPECIFIC') {
+            paymentsRemoved += Number(payment.payment_amount);
             await tx.vendor_payments.delete({ where: { id: paymentId } });
           } else if (payment?.payment_type === 'MIXED') {
             await tx.vendor_payments.update({
@@ -1349,6 +1362,8 @@ export class TransactionHandler {
       
       data.totalPaid = totalPaid;
       context.totalPaid = totalPaid;
+      data.paymentsRemoved = paymentsRemoved;
+      context.paymentsRemoved = paymentsRemoved;
       
     } else if (data.entityType === 'return') {
       const allocations = await tx.refund_allocations.findMany({
@@ -1635,18 +1650,36 @@ export class TransactionHandler {
       );
       
     } else if (context.totalPaid !== undefined) {
-      // ✅ Purchase deletion - use context.totalPaid shared from DELETE_ALLOCATIONS
+      // Purchase deletion - both columns move, not just one.
+      //
+      // This decremented total_allocated ALONE. Creating a paid purchase
+      // increments total_paid AND total_allocated, so deleting it left
+      // total_paid standing with total_allocated back at zero - which reads as
+      // an unallocated advance. Proven: create a paid purchase of 1180 and
+      // delete it, and the vendor was left holding total_paid 1180 and
+      // account_balance 1180 that had never been paid. The next purchase then
+      // "used" that phantom advance and skipped writing its PAYMENT ledger
+      // entry entirely (L-26).
+      //
+      // total_paid comes down only by the payments actually DELETED - those
+      // created by this purchase. A pre-existing advance stays paid; only its
+      // allocation reverses.
+      const paymentsRemoved = Number(context.paymentsRemoved || 0);
+
       await balanceHandler.incrementBalanceInTransaction(
         tx, 
         data.vendorId, 
         {
-          total_allocated: -context.totalPaid
+          total_allocated: -context.totalPaid,
+          ...(paymentsRemoved > 0 ? { total_paid: -paymentsRemoved } : {})
         },
         {
           type: 'purchase_delete',
           id: data.purchaseId || 0,
           reference_no: `INV-${data.invoiceNo || '?'}`,
-          notes: `Purchase deleted: deallocated ₹${context.totalPaid}`
+          notes: paymentsRemoved > 0
+            ? `Purchase deleted: deallocated ₹${context.totalPaid}, removed ₹${paymentsRemoved} of payments created with it`
+            : `Purchase deleted: deallocated ₹${context.totalPaid} (advance payments left intact)`
         }
       );
       

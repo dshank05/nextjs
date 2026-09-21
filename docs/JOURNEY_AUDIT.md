@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-20 — batches 1 and 2 done: P4-02/03/04/05/07/09/20 plus L-4, L-15, L-16, L-19. **F-02 reproduced.** Harness at baseline |
+| **Last updated** | 2026-09-21 — P4-02–14, P4-16, P4-19, P4-20, P4-24, P4-25 done. Round-trip, tax and flow suites all clean; assertions at baseline |
 | **Branch / HEAD** | `dev_akaash` / see latest `audit P4-*` commit |
-| **Next action** | Finish **R-5** (`purchases/[id].ts`, read to ~690 of 1115) to complete **P4-10** and audit the edit path's own stock arithmetic. **P4-05's retry loop** still to write. Then **P4-12** (server-side tax) |
+| **Next action** | **P4-26** (twin reconciliation harness), then the remaining read queue R-7–R-18. Owner decisions outstanding: P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -812,6 +812,87 @@ so the aggregated increment is rounded before it is applied. The old raw SQL tru
 too; this makes the rounding explicit rather than incidental. The mismatch itself is a
 modelling question for the owner.
 
+### Batches 3-5 complete — 2026-09-21
+
+Three suites now guard this phase, all passing:
+
+| Script | What it proves |
+|---|---|
+| `scripts/audit-assert.js` | The six standing reconciliation assertions (A1–A6) |
+| `scripts/audit-p4-roundtrip.js` | Create → edit (quantity change + line removed + line added in ONE submit) → delete, with stock checked as a delta at each step |
+| `scripts/audit-p4-tax.js` | The server computes tax and ignores the payload, for both intra-state and inter-state vendors |
+| `scripts/audit-p4-flow.js` | Every table a purchase writes, every table it must NOT write, the four reports it should move, and full reversal on delete |
+
+**Fixed in these batches:** P4-10 (F-08 at all three `[id].ts` join sites), the edit path's
+own copies of F-12 / F-21 / L-4 / G-01, P4-06 (`last-invoice.ts` now per-FY), P4-05's retry
+loop, P4-12/13/14 (`lib/purchase.ts`: one validator and one totals computation shared by
+create and update, server-side tax and CGST/SGST-vs-IGST split), P4-16 (the missing `0→2`
+transition, added to **both** twins), P4-19 (the "Other" vendor path works), P4-20, and
+P4-24/P4-25.
+
+### L-26 — deleting a paid purchase invented money
+
+Found by the flow suite, and the most serious defect of the phase after L-1.
+
+Creating a paid purchase increments **both** `vendor_details.total_paid` and
+`total_allocated`. Deleting it decremented **only `total_allocated`**. So a vendor was left
+holding `total_paid = 1180` and `account_balance = 1180` for a payment that no longer
+existed anywhere — a phantom advance.
+
+It then did further damage silently. The create path treats
+`total_paid − total_allocated` as an available advance, so the *next* purchase for that
+vendor "spent" the phantom 1180, concluded no new money was needed, and **skipped writing
+its PAYMENT ledger entry altogether**. That is how it was caught: `vendor_ledger` grew by 1
+instead of 2 on a paid purchase, with no error anywhere.
+
+The fix distinguishes two things the old code conflated. A `BILL_SPECIFIC` payment was
+created *by* this purchase, so deleting the purchase deletes it and `total_paid` must come
+down with it. A `DIRECT` or `MIXED` payment is a real advance that existed before and still
+exists after; only its **allocation** reverses. `total_paid` now moves by the payments
+actually removed, never by the amount deallocated.
+
+**Why it hid for so long:** the round-trip suite asserted `total_allocated` returned to its
+starting value and never checked `total_paid`. Half a check passes quietly. Both are
+asserted now.
+
+### L-24 — duplicate product lines cannot be edited
+
+A purchase may legitimately carry the same product on two lines — the same part bought at
+two rates on one bill — and `createMany` has always written them as separate rows. But the
+edit reconciliation keys everything by `product_id`, so a second line overwrote the first
+in the map: its row id was lost, so it was never updated and never deleted, and its
+quantity vanished from the stock arithmetic.
+
+Reworking the reconciliation to key on the item **row id** is the real fix and is a larger
+change. Until then the edit **refuses**, naming the problem and what to do about it, rather
+than silently corrupting stock. Recorded as open.
+
+### L-25 — `vendor-outstanding` reports paid purchases as outstanding
+
+`/api/reports/vendor-outstanding` queries individual `vendor_ledger` **rows** for
+`balance > 0` rather than each vendor's latest balance. A fully paid purchase leaves its
+`PURCHASE` row at the full amount, with a later `PAYMENT` row bringing the vendor to zero
+— so the paid purchase still reads as outstanding. **F-02 compounds it**: that stored
+`balance` column is insertion-ordered and unreliable the moment anything is backdated.
+
+This is a **reports** defect and belongs to Phase 7, so the flow suite reports it as a
+NOTE rather than asserting it. Recorded here because the purchase journey is what exposed
+it.
+
+### Two assertions of mine were wrong, and are corrected
+
+Worth recording, because in both cases the code was right and the check was not.
+
+- **A6** joined `purchase_items` to `purchase` on `invoice_no` alone, so the legitimate
+  reuse of a bill number in a later financial year read as a fault. It pairs on
+  `(invoice_no, fy)` now.
+- **The flow suite** expected `vendor_balance_logs` to return to its starting count after a
+  delete. It is an **append-only audit trail**: deleting a purchase writes a
+  `purchase_delete` row recording the reversal rather than erasing the history. Confirmed
+  by reading one back (`source_type: 'purchase_delete'`, `change_amount: -1180`). It also
+  read every report with a guessed response shape, which made four working reports look
+  broken; each is now read with the parameters it requires and the key it returns.
+
 ### Step 1 — the read queue
 
 "Leave no issue, however small" means every file below is read **in full** before its
@@ -855,12 +936,12 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **REPRODUCED** — see Reproductions above | L-1 | **done — verified** |
 | **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY. **REPRODUCED** | L-2 | **done — verified**, plus L-19 |
 | **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert. **REPRODUCED — it is a 500** | L-3 | **done — verified** |
-| **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | **index done — retry loop still to write** |
+| **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | **done** — index plus a retry on P2002 for auto-numbered creates |
 | **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | todo |
 | **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | **done — verified** |
 | **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | **done — verified** |
 | **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | **done** |
-| **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | **in progress** — 2 sites fixed, file read to ~690 of 1115 |
+| **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | **done** — all three sites in `[id].ts`, plus the list endpoint |
 | **P4-11** | **Critical** | **Migrate `purchase_items` to reference `purchase.id`** with a real FK, retiring the `invoice_no` join. Larger change and it aligns purchase with sale, which stores the header id in the same column name. **Do before Phase 5** so the reports can be written once. Needs an owner decision on migration timing | F-08 | owner |
 | **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | todo |
 | **P4-13** | High | **Create and edit disagree on `payment_status`.** Create validates against `[0, 1]` only; the ledger case table is built on 0/1/2. This is the F-79 shape — one rule, both paths. Resolve which statuses a create may set and enforce it in one shared validator | L-5 | todo |

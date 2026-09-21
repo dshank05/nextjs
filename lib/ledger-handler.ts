@@ -272,6 +272,65 @@ export class LedgerHandler {
         }
         break;
         
+      case '0→2': // Unpaid → Partial
+        // The ninth case. Both this handler and its customer twin documented
+        // themselves as handling "all 9 cases" and implemented EIGHT - this one
+        // was missing from both, while the RETURN handlers in the same files do
+        // implement it. So an unpaid purchase that became partially paid
+        // produced NO ledger operation at all: no PAYMENT entry for the money
+        // that moved, and - because the amountChanged branch lives inside each
+        // case - no update to the PURCHASE debit either, even when the amount
+        // had changed too.
+        //
+        // Worth noting how this stayed hidden: both twins were wrong in exactly
+        // the same way, so comparing them against each other could never reveal
+        // it. Only enumerating the state space does (P4-16, lead L-7).
+        if (changes.amountChanged) {
+          updates.push({
+            description: 'Update purchase amount (unpaid to partial)',
+            where: {
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              transaction_type: 'PURCHASE'
+            },
+            data: {
+              debit: changes.newTotal,
+              notes: `Purchase ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            }
+          });
+        }
+
+        // A PAYMENT for what has actually been allocated, not for the full
+        // total - that is what makes the status partial rather than paid.
+        const allocated02 = changes.totalAllocated || 0;
+        const breakdown02 = this.calculateAdvanceBreakdown(allocated02, changes.currentBalance);
+
+        if (breakdown02.newPayment > 0) {
+          creates.push({
+            entry: {
+              vendor_id: changes.vendorId,
+              transaction_date: changes.paymentDate || timestamp,
+              transaction_type: 'PAYMENT',
+              reference_type: 'purchase',
+              reference_id: changes.purchaseId!,
+              reference_no: changes.invoiceNo!,
+              debit: 0,
+              credit: breakdown02.newPayment,
+              payment_mode: changes.paymentMode,
+              payment_status: 2,
+              payment_date: changes.paymentDate || timestamp,
+              notes: this.generatePaymentNotes(changes.invoiceNo!, allocated02, changes.currentBalance),
+              fy: changes.fy
+            },
+            description: 'Partial payment on a previously unpaid purchase',
+            checkExisting: {
+              transactionType: 'PAYMENT',
+              useAdjustmentIfExists: true
+            }
+          });
+        }
+        break;
+
       case '2→0': // Partial → Unpaid
         // DELETE PAYMENT entries (was PAYMENT_REVERSAL)
         if (changes.hasPaymentLedger) {
