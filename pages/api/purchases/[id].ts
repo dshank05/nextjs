@@ -3,6 +3,7 @@ import { prisma } from '../../../lib/db'
 import { transactionHandler } from '../../../lib/transaction-handler'
 import { ledgerService } from '../../../lib/ledger-service'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
+import { validatePurchase, computePurchaseTotals, getBusinessGstin } from '../../../lib/purchase'
 
 /**
  * One numeric coercion for every amount that reaches the database, so a missing
@@ -486,9 +487,18 @@ export default async function handler(
           })
         }
 
-        // Validation
-        const validPaymentStatuses = [0, 1, 2]
-        const validPaymentModes = [0, 1]
+        // Validation - the SAME validator create uses, so the two cannot drift.
+        //
+        // This accepted payment_status 2 (Partial) from the client while create
+        // accepted only 0 and 1 (L-5). Partial is a DERIVED state: it is what
+        // the server concludes when allocations cover part of the total, and it
+        // is still computed that way below. Letting a client assert it directly
+        // is how payment_status and payment_allocations come to disagree, which
+        // assertion A3 exists to catch.
+        const failure = await validatePurchase(req.body, { partial: true });
+        if (failure) {
+          return res.status(failure.status).json({ message: failure.message });
+        }
 
         const parsedPaymentStatus = payment_status !== undefined && payment_status !== null
           ? parseInt(payment_status.toString())
@@ -497,18 +507,6 @@ export default async function handler(
         const parsedPaymentMode = payment_mode !== undefined && payment_mode !== null
           ? parseInt(payment_mode.toString())
           : 1
-
-        if (!validPaymentStatuses.includes(parsedPaymentStatus)) {
-          return res.status(400).json({
-            message: 'Invalid payment_status: must be 0 (Unpaid), 1 (Paid), or 2 (Partially Paid)'
-          })
-        }
-
-        if (!validPaymentModes.includes(parsedPaymentMode)) {
-          return res.status(400).json({
-            message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
-          })
-        }
 
         // Check if Type A (has payment allocations) or Type B (marked as paid during creation)
         const existingAllocations = await prisma.payment_allocations.findMany({
@@ -588,26 +586,65 @@ export default async function handler(
           }
         }
 
+        // ===== Money: computed from the lines, never from the payload =====
+        //
+        // Same module as create, so the two paths cannot produce different
+        // totals for the same input again. Three things were wrong here:
+        //
+        //   L-21  all three totals were computed INSIDE
+        //         `if (items && Array.isArray(items))`, so an edit that omitted
+        //         items left them at 0 and wrote total = 0 over a real purchase.
+        //   L-20  packing was recomputed from qty x rate here while create
+        //         stored the client's figure, so they disagreed.
+        //   L-22  total_tax was taken straight from the payload, with nothing
+        //         checking it against the CGST/SGST/IGST components stored
+        //         beside it. A purchase was observed with total_tax = 0 and
+        //         components summing to 36.
+        //
+        // An edit that sends no items keeps the stored lines, so the totals are
+        // recomputed from those rather than collapsing to zero.
+        const vendorForTax = existingPurchase.vendor_id !== null
+          ? await prisma.vendor_details.findUnique({ where: { id: existingPurchase.vendor_id } })
+          : null;
+        const businessGstin = await getBusinessGstin();
+
+        const linesForTotals = (items && Array.isArray(items))
+          ? items
+          : (await prisma.purchaseitems.findMany({
+              where: { invoice_no: existingPurchase.invoice_no, fy: existingPurchase.fy }
+            })).map(row => ({
+              product_id: row.product_id,
+              qty: row.qty,
+              rate: row.rate,
+              gst_percentage: row.gst_percentage
+            }));
+
+        const totals = computePurchaseTotals({
+          items: linesForTotals,
+          packingQty: req.body.packing_forwarding_qty,
+          packingRate: req.body.packing_forwarding_rate,
+          packingTotal: req.body.packing_forwarding_total,
+          vendorStateCode: vendorForTax?.state_code ?? null,
+          businessGstin,
+          hasVendorState: vendorForTax?.state_code != null
+        });
+
+        if (totals.supplyType === null) {
+          return res.status(400).json({
+            message:
+              'Cannot determine the tax type for this purchase. Check that the vendor has a valid state ' +
+              'and that the business GSTIN in Settings is correct.',
+            error_code: 'SUPPLY_TYPE_UNRESOLVED'
+          })
+        }
+
+        const calculatedItemsTotal = totals.itemsTotal
+        const calculatedPackingTotal = totals.packingTotal
+        const calculatedTotalTax = totals.totalTax
+        const newTotal = totals.grandTotal
+
         // Start transaction
         const result = await prisma.$transaction(async (tx) => {
-          // Calculate totals first
-          let calculatedItemsTotal = 0
-          let calculatedPackingTotal = 0
-          let calculatedTotalTax = 0
-
-          if (items && Array.isArray(items)) {
-            calculatedItemsTotal = items.reduce((sum: number, item: any) => {
-              return sum + (parseFloat(item.qty || 0) * parseFloat(item.rate || 0))
-            }, 0)
-
-            const packingQty = req.body.packing_forwarding_qty ? parseFloat(req.body.packing_forwarding_qty.toString()) : 0
-            const packingRate = req.body.packing_forwarding_rate ? parseFloat(req.body.packing_forwarding_rate.toString()) : 0
-            calculatedPackingTotal = packingQty * packingRate
-
-            calculatedTotalTax = total_tax ? parseFloat(total_tax.toString()) : 0
-          }
-
-          const newTotal = calculatedItemsTotal + calculatedPackingTotal + calculatedTotalTax
 
           // ✅ Calculate total allocated from existing allocations
           const totalAllocated = existingAllocations.reduce(
@@ -708,14 +745,15 @@ export default async function handler(
             transport: transport_name || null,
             transport_name: transport_name || null,
             vehicle_number: vehicle_number || null,
-            packing_forwarding_qty: packing_forwarding_qty ? parseFloat(packing_forwarding_qty.toString()) : 0,
-            packing_forwarding_rate: packing_forwarding_rate ? parseFloat(packing_forwarding_rate.toString()) : 0,
-            packing_forwarding_total: packing_forwarding_total ? parseFloat(packing_forwarding_total.toString()) : 0,
+            packing_forwarding_qty: num(packing_forwarding_qty),
+            packing_forwarding_rate: num(packing_forwarding_rate),
+            packing_forwarding_total: calculatedPackingTotal,
             items_total: calculatedItemsTotal,
             total_taxable_value: calculatedItemsTotal,
-            total_cgst: total_cgst ? parseFloat(total_cgst.toString()) : 0,
-            total_sgst: total_sgst ? parseFloat(total_sgst.toString()) : 0,
-            total_igst: total_igst ? parseFloat(total_igst.toString()) : 0,
+            // The server's split, not the client's (P4-12).
+            total_cgst: totals.totalCgst,
+            total_sgst: totals.totalSgst,
+            total_igst: totals.totalIgst,
             total_tax: calculatedTotalTax,
             total: newTotal,
             freight: transport_cost ? parseFloat(transport_cost.toString()) : 0
@@ -845,6 +883,21 @@ export default async function handler(
               }
             }
 
+            // The server's per-line tax, looked up by product. computePurchaseTotals
+            // produced these from qty, rate, GST% and the supply type; nothing here
+            // reads cgst/sgst/igst/tax from the payload any more (P4-12).
+            const lineTaxByProduct = new Map<number, { cgst: number; sgst: number; igst: number; tax: number }>()
+            totals.lines.forEach(l => {
+              const prev = lineTaxByProduct.get(l.product_id)
+              if (prev) {
+                prev.cgst += l.cgst; prev.sgst += l.sgst; prev.igst += l.igst; prev.tax += l.tax
+              } else {
+                lineTaxByProduct.set(l.product_id, { cgst: l.cgst, sgst: l.sgst, igst: l.igst, tax: l.tax })
+              }
+            })
+            const lineTaxFor = (productId: number) =>
+              lineTaxByProduct.get(productId) || { cgst: 0, sgst: 0, igst: 0, tax: 0 }
+
             // ===== Stock, as one net delta per product =====
             //
             // Everything below used to be three separate hand-built
@@ -925,10 +978,8 @@ export default async function handler(
                   rate: num(newData.rate),
                   subtotal: num(newData.qty) * num(newData.rate),
                   gst_percentage: num(newData.gst_percentage),
-                  cgst: num(newData.cgst),
-                  sgst: num(newData.sgst),
-                  igst: num(newData.igst),
-                  tax: num(newData.tax),
+                  // Server-computed split for this line (P4-12).
+                  ...lineTaxFor(item.productId),
                   fy: updatedPurchase.fy,
                   invoice_date: updatedPurchase.invoice_date
                 }
@@ -948,10 +999,8 @@ export default async function handler(
                   name_of_product: item.data.name_of_product,
                   car_model: item.data.car_model,
                   gst_percentage: num(item.data.gst_percentage),
-                  cgst: num(item.data.cgst),
-                  sgst: num(item.data.sgst),
-                  igst: num(item.data.igst),
-                  tax: num(item.data.tax)
+                  // Server-computed split for this line (P4-12).
+                  ...lineTaxFor(item.productId)
                 }
               })
             }

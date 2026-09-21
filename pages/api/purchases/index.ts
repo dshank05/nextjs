@@ -5,6 +5,7 @@ import { getNextInvoiceNumber } from '../../../lib/invoice-counter'
 import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
 import { getLocalDateString, convertDateToTimestamp } from '../../../lib/date-utils'
+import { validatePurchase, computePurchaseTotals, getBusinessGstin, num } from '../../../lib/purchase'
 
 async function handler(
   req: NextApiRequest,
@@ -471,10 +472,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // ===== STEP 2: VALIDATION =====
-    if (vendor_id === undefined || vendor_id === null || !items || items.length === 0) {
-      return res.status(400).json({
-        message: 'Missing required fields: vendor_id, or items'
-      })
+    //
+    // One validator, shared with the update path, so the two cannot drift
+    // apart again. They already had: create accepted payment_status 0 or 1
+    // while update accepted 0, 1 or 2 (L-5).
+    const failure = await validatePurchase(req.body, { partial: false });
+    if (failure) {
+      return res.status(failure.status).json({ message: failure.message });
     }
 
     if (parseInt(vendor_id) === 0) {
@@ -485,41 +489,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Removed rate validation to allow 0 or empty rates
-
-    const validPaymentStatuses = [0, 1];
-    const validPaymentModes = [0, 1];
-
-    if (!validPaymentStatuses.includes(payment_status)) {
-      return res.status(400).json({
-        message: 'Invalid payment_status: must be 0 (Unpaid) or 1 (Paid)'
-      })
-    }
-
-    if (payment_status === 1 && (payment_mode === undefined || payment_mode === null)) {
-      return res.status(400).json({
-        message: 'Payment mode (Cash/Bank) is required for paid purchases'
-      })
-    }
-
-    if (payment_mode !== undefined && payment_mode !== null && !validPaymentModes.includes(payment_mode)) {
-      return res.status(400).json({
-        message: 'Invalid payment_mode: must be 0 (Cash) or 1 (Bank)'
-      })
-    }
-
-    let existingVendor = null;
-    if (parseInt(vendor_id) !== 0) {
-      existingVendor = await prisma.vendor_details.findUnique({
-        where: { id: parseInt(vendor_id) }
-      })
-
-      if (!existingVendor) {
-        return res.status(400).json({
-          message: 'Invalid vendor selected - vendor does not exist'
-        })
-      }
-    }
+    const existingVendor = await prisma.vendor_details.findUnique({
+      where: { id: parseInt(vendor_id) }
+    })
 
     // ===== STEP 3: DATA PREPARATION ===== 
     // ✅ TIMEZONE SAFE: Use convertDateToTimestamp for consistent midnight local time
@@ -527,29 +499,46 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const invoiceDate = date
       ? convertDateToTimestamp(date)
       : Math.floor(Date.now() / 1000);
-    // Every number that reaches the total goes through this, so a missing or
-    // unparseable field becomes 0 rather than NaN.
+    // ===== Money: computed here, never taken from the payload =====
     //
-    // The grand total used to be `itemsTotal + parseFloat(x?.toString()) +
-    // parseFloat(y?.toString())` with no fallback on either term, while the
-    // columns stored beside it did have `|| 0`. So a payload omitting
-    // packing_forwarding_total or total_tax stored total_tax as 0 and made
-    // `total` NaN - and Prisma rejects NaN, so the whole create died with
-    // "Argument `total` is missing" as a 500 (P4-04, lead L-3).
-    const money = (v: any): number => {
-      const n = parseFloat(String(v ?? '').trim());
-      return Number.isFinite(n) ? n : 0;
-    };
+    // Every total, and the whole CGST/SGST/IGST split, is derived from the
+    // lines and the two state codes. The client's own total_cgst, total_sgst,
+    // total_igst and total_tax are now ignored entirely (P4-12, F-04, and the
+    // statutory requirement in AUDIT_PLAN 4a).
+    //
+    // This also removes the NaN route that made P4-04 a 500: `num()` coerces
+    // every term, so a missing field is 0.
+    //
+    // The vendor is the SUPPLIER on a purchase and we are the recipient, so the
+    // comparison is the vendor's state against ours - ours coming from
+    // business_details.gstin, which is the only place it exists (F-30).
+    const businessGstin = await getBusinessGstin();
+    const totals = computePurchaseTotals({
+      items,
+      packingQty: packing_forwarding_qty,
+      packingRate: packing_forwarding_rate,
+      packingTotal: packing_forwarding_total,
+      vendorStateCode: existingVendor?.state_code ?? null,
+      businessGstin,
+      hasVendorState: existingVendor?.state_code != null
+    });
 
-    const itemsTotal = items.reduce(
-      (sum: number, item: any) => sum + money(item.qty) * money(item.rate), 0
-    )
-    const calculatedGrandTotal = itemsTotal + money(packing_forwarding_total) + money(total_tax)
+    // A supply type we cannot resolve is a configuration error, not something
+    // to guess at. Charging CGST+SGST on what might be an inter-state purchase
+    // understates IGST, which is a real tax error - so say so instead.
+    if (totals.supplyType === null) {
+      return res.status(400).json({
+        message:
+          'Cannot determine the tax type for this purchase. Check that the vendor has a valid state ' +
+          'and that the business GSTIN in Settings is correct.',
+        error_code: 'SUPPLY_TYPE_UNRESOLVED'
+      })
+    }
+
+    const itemsTotal = totals.itemsTotal;
+    const calculatedGrandTotal = totals.grandTotal;
     // Note: Freight (transport_cost) is stored separately but NOT included in total
 
-    // A total that is not a finite number is a bad request, not a 500. This
-    // cannot trigger now that every term is coerced, which is the point: it is
-    // the guard that keeps it that way if another term is added later.
     if (!Number.isFinite(calculatedGrandTotal)) {
       return res.status(400).json({
         message: 'Could not compute a valid total from the supplied amounts'
@@ -565,18 +554,21 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         bill_reference: bill_reference,
         bill_reference_date: bill_reference_date ? new Date(bill_reference_date).toISOString() : null,
         items_total: itemsTotal,
-        freight: parseFloat(req.body.transport_cost?.toString()) || 0,
+        freight: num(req.body.transport_cost),
         total_taxable_value: itemsTotal,
-        total_cgst: parseFloat(total_cgst?.toString()) || 0,
-        total_sgst: parseFloat(total_sgst?.toString()) || 0,
-        total_igst: parseFloat(total_igst?.toString()) || 0,
-        total_tax: parseFloat(total_tax?.toString()) || 0,
+        total_cgst: totals.totalCgst,
+        total_sgst: totals.totalSgst,
+        total_igst: totals.totalIgst,
+        total_tax: totals.totalTax,
         total: calculatedGrandTotal,
         notes: notes || '',
         descriptions: descriptions,
-        packing_forwarding_qty: parseFloat(packing_forwarding_qty?.toString()) || 0,
-        packing_forwarding_rate: parseFloat(packing_forwarding_rate?.toString()) || 0,
-        packing_forwarding_total: parseFloat(packing_forwarding_total?.toString()) || 0,
+        packing_forwarding_qty: num(packing_forwarding_qty),
+        packing_forwarding_rate: num(packing_forwarding_rate),
+        // Derived from qty x rate, the way the update path always did it. Create
+        // used to store whatever total the client sent, so the same input gave
+        // different answers on the two paths (L-20).
+        packing_forwarding_total: totals.packingTotal,
         invoice_date: Math.floor(invoiceDate),
         updated_at: getLocalDateString(),
         payment_status: payment_status || 0,
@@ -657,9 +649,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // ===== OPTIMIZED DB OPERATION 5: Bulk insert purchase items =====
-      const bulkInsertData = items.map(item => {
+      const bulkInsertData = items.map((item, lineIndex) => {
         const productId = parseInt(item.product_id);
         const product = productMap.get(productId)!;
+        // The server's figures for this line, positionally matched to `items`.
+        const lineTotals = totals.lines[lineIndex];
 
         const modelId = item.model_id ? parseInt(item.model_id) : null;
         const companyId = item.company_id ? parseInt(item.company_id) : null;
@@ -675,14 +669,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           car_model: item.car_model || '',
           vendor_id: parseInt(vendor_id),
           part: item.part || '',
-          qty: parseFloat(item.qty),
-          rate: parseFloat(item.rate),
-          subtotal: parseFloat(item.total),
-          gst_percentage: parseFloat(item.gst_percentage) || 0,
-          cgst: parseFloat(item.cgst) || 0,
-          sgst: parseFloat(item.sgst) || 0,
-          igst: parseFloat(item.igst) || 0,
-          tax: parseFloat(item.tax) || 0,
+          qty: lineTotals.qty,
+          rate: lineTotals.rate,
+          // subtotal is qty x rate computed here, not the client's `total`.
+          subtotal: lineTotals.taxable,
+          gst_percentage: lineTotals.gst_percentage,
+          cgst: lineTotals.cgst,
+          sgst: lineTotals.sgst,
+          igst: lineTotals.igst,
+          tax: lineTotals.tax,
           fy: currentFy,
           invoice_date: invoiceDate
         };
@@ -754,10 +749,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         if (existing) {
           // Same product on another line: quantities ADD, and the later line's
           // rate is the one that stands as "latest".
-          existing.qty += money(item.qty);
-          existing.rate = money(item.rate);
+          existing.qty += num(item.qty);
+          existing.rate = num(item.rate);
         } else {
-          perProduct.set(productId, { qty: money(item.qty), rate: money(item.rate) });
+          perProduct.set(productId, { qty: num(item.qty), rate: num(item.rate) });
         }
       }
 
