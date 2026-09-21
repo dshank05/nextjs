@@ -551,3 +551,205 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 - `purchase_items` referencing `purchase.id` with a foreign key, or a written decision not
   to, with the reason.
 - Every Critical and High finding has a written reproduction, per AUDIT_PLAN §2.
+---
+
+## Phase 4 — Purchase · the fix plan
+
+> **This section is the working state of Phase 4. It is written to be picked up cold.**
+> If you are starting a fresh session: read **Resume here** immediately below, then the
+> task table. Do not re-derive anything already recorded here. Update this section after
+> every batch, not at the end.
+
+### Resume here
+
+| | |
+|---|---|
+| **Last updated** | 2026-09-20, plan written, no code changed yet |
+| **Branch / HEAD** | `dev_akaash` / `3ad8141` |
+| **Next action** | **P4-00** — seed two test vendors (see Step 0) |
+| **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
+| **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
+
+**Environment facts confirmed 2026-09-20** (do not re-check these):
+
+- `vendor_details` = **0 rows**. `staff` = 5. `mechanic` = 0. `states` = 37. `product` = 602.
+- All transactional tables are empty: `purchase`, `purchase_items`, `invoice`, `invoicex`,
+  all returns, both ledgers, `note_counters`.
+- `settings.currentfy` = **4** → FY `2026-2027`, 2026-04-01 → 2027-03-31. FY id 3 is
+  `2025-2026`, closed.
+- `business_details` id 1, GSTIN **`09ABFPM3900M1ZI`** → state code **09, Uttar Pradesh**.
+  So **intra-state = UP (9) → CGST+SGST; any other state → IGST.**
+  `business_details` has no state column; `getBusinessStateCode(gstin)` in `lib/gst.ts`
+  derives it from the GSTIN (F-30, partial fix).
+- `gst_tax_rate`: id 1 = 0% (`0000`), id 2 = 5% (`8714`), id 3 = 18% (`8415`),
+  id 4 = 40% (`8703`). All Active.
+- Products carry `gst_rate_id = NULL` and `hsn = NULL` deliberately — real master data.
+  Set the per-line GST % in the grid instead of tagging products.
+
+### Step 0 — seed data (P4-00)
+
+Two vendors, chosen so both tax paths can be exercised. Minimum needed to test; the real
+vendor master is the owner's.
+
+| Field | Vendor A (intra-state) | Vendor B (inter-state) |
+|---|---|---|
+| `vendor_name` | `AUDIT TEST VENDOR UP` | `AUDIT TEST VENDOR PB` |
+| `state` / `state_code` | Uttar Pradesh / **9** | Punjab / **3** |
+| `tax_id` (GSTIN) | `09AAACT2727Q1ZW` | `03AAACT2727Q1ZS` |
+| `city` / `pin_code` | Agra / 282004 | Ludhiana / 141001 |
+| `contact_no` | 9000000001 | 9000000002 |
+| `status` | Active | Active |
+| balances | all 0 | all 0 |
+
+Vendor A gives CGST+SGST (same state as the business), Vendor B gives IGST. Record the
+assigned ids in the table below once created, because every later step references them.
+
+| | id | notes |
+|---|---|---|
+| Vendor A (UP) | _to fill_ | |
+| Vendor B (PB) | _to fill_ | |
+
+**Cleanup:** these two rows, plus every document created against them, are test data and
+must be removed or left clearly marked before the phase closes. Name-prefixed
+`AUDIT TEST` so they are easy to find. **Never touch the 602 real products** beyond
+`stock` moving as a natural consequence of a purchase — and record which products were
+used so their stock can be checked back.
+
+### Step 1 — the read queue
+
+"Leave no issue, however small" means every file below is read **in full** before its
+findings are considered complete. Grep has produced a wrong answer at every stage of this
+audit. Tick each off and record findings against it.
+
+| # | File | Lines | Read? | Findings recorded |
+|---|---|---|---|---|
+| R-1 | `pages/api/purchases/index.ts` — `handlePost` onward | 380-880 | **done** | L-1…L-6, L-9…L-11, F-12, F-21 confirmed |
+| R-2 | `lib/invoice-counter.ts` | 85 | **done** | F-13 confirmed |
+| R-3 | `lib/ledger-handler.ts` — `getPurchaseLedgerOps` + helpers | 80-379 | **partial** | L-7 |
+| R-4 | `pages/api/purchases/index.ts` — `handleGet` | 1-380 | no | |
+| R-5 | `pages/api/purchases/[id].ts` | 1115 | no | |
+| R-6 | `pages/api/purchases/last-invoice.ts` | 31 | no | |
+| R-7 | `lib/ledger-handler.ts` — remainder | 1-80, 379-507 | no | |
+| R-8 | `lib/transaction-handler.ts` | 1673 | no | |
+| R-9 | `lib/balance-handler.ts` | 588 | no | |
+| R-10 | `lib/ledger-service.ts` | 319 | no | |
+| R-11 | `lib/vendor-balance-service.ts` | 331 | no | |
+| R-12 | `lib/payment-allocation-service.ts` | 366 | no | |
+| R-13 | `lib/balance-log-service.ts` | 60 | no | |
+| R-14 | `lib/rate-utils.ts` | 225 | no | |
+| R-15 | `pages/purchases/create.tsx` | 3075 | no | |
+| R-16 | `pages/purchases/view/[id].tsx` | 811 | no | |
+| R-17 | `pages/purchases/index.tsx` | 172 | no | |
+| R-18 | `hooks/usePurchases.ts` | 484 | no | |
+| R-19 | `pages/api/reports/bill-reference-purchase.ts` | 85 | no | |
+| R-20 | `pages/api/reports/vendor-ledger-accounting.ts` | 116 | no | |
+| R-21 | `pages/api/reports/vendor-outstanding.ts` | 189 | no | |
+| R-22 | `pages/api/reports/vendor-balance-logs.ts` | 137 | no | |
+
+### Step 2 — the fix tasks
+
+Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · `done` ·
+`blocked` · `owner`. Update the status column as you go — this table is the resume state.
+
+| # | Sev | Task | Source | Status |
+|---|---|---|---|---|
+| **P4-00** | — | Seed vendors A and B (Step 0) | setup | todo |
+| **P4-01** | — | Build `scripts/audit-assert.js` — the five reconciliation assertions, runnable after every step. This is the harness everything else is checked with; write it before fixing anything | method | todo |
+| **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **Reproduce first** by inserting a purchase into FY 3 and one into FY 4 with the same number | L-1 | todo |
+| **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY | L-2 | todo |
+| **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert | L-3 | todo |
+| **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | todo |
+| **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | todo |
+| **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | todo |
+| **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | todo |
+| **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | todo |
+| **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | todo |
+| **P4-11** | **Critical** | **Migrate `purchase_items` to reference `purchase.id`** with a real FK, retiring the `invoice_no` join. Larger change and it aligns purchase with sale, which stores the header id in the same column name. **Do before Phase 5** so the reports can be written once. Needs an owner decision on migration timing | F-08 | owner |
+| **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | todo |
+| **P4-13** | High | **Create and edit disagree on `payment_status`.** Create validates against `[0, 1]` only; the ledger case table is built on 0/1/2. This is the F-79 shape — one rule, both paths. Resolve which statuses a create may set and enforce it in one shared validator | L-5 | todo |
+| **P4-14** | High | **`lib/purchase.ts`, the §11 module.** Mirror `lib/product.ts`: `SERVER_OWNED_FIELDS` (every computed total, the tax split, the document number, stock effects), one `validatePurchase()` with a `partial` flag used by create **and** update, one `buildPurchaseData()`, and Prisma errors translated at the boundary (P2025→404, P2003→400, P2002→409) | §11 | todo |
+| **P4-15** | High | **§11 sweep on the edit path.** All five questions, field by field, across `create.tsx` and `[id].ts`: does every field load, does every field save, does the save write anything untouched, does every parameter do what its name says, **is the state space complete** | §11, 3c | todo |
+| **P4-16** | Medium | **Add the missing `0→2` transition.** `getPurchaseLedgerOps` documents "all 9 cases" and implements eight; Unpaid→Partial is absent. The return handler implements it, so the shape to copy exists. Do the same for `getSaleLedgerOps` or log it explicitly for Phase 5 — **note both twins are wrong identically, so a twin-diff will not catch it** | L-7 | todo |
+| **P4-17** | High | **Exercise all nine transitions** against a real purchase, running the P4-01 assertions after each | method | todo |
+| **P4-18** | Medium | **Deduplicate the advance-balance calculation.** `handlePost` computes the breakdown twice and queries `vendor_details` twice within one function | L-9 | todo |
+| **P4-19** | Medium | **`vendor_id = 0` magic value.** `purchase.vendor_id` has an FK to `vendor_details`, so writing 0 needs a row with id 0. It then flows into `vendor_payments`, `payment_allocations` and the ledger. Test it explicitly; if it works only because the FK is unenforced, that is the finding | L-10 | todo |
+| **P4-20** | Low | **Error leakage.** GET and POST both return `error.message`. Same class as F-81/F-98, already fixed twice elsewhere — translate and log | L-11 | todo |
+| **P4-21** | Low | **Purchase has no per-item discount** while sale and salex do. Confirm with the owner whether that is intended before changing anything | L-12 | owner |
+| **P4-22** | Low | **Transport modelled twice.** Purchase denormalises `transport`/`transport_name`/`vehicle_number` onto the header; sale and salex use satellite tables. Note it, and check the `transport-cost` report reads both | L-13 | todo |
+| **P4-23** | Medium | **`purchase-returns/[id]-old.ts` is a live route** mutating stock (F-06, deferred to G-04). Now that the rewrite is settled, delete it — or confirm the deferral still stands | F-06 | todo |
+| **P4-24** | High | **Transaction flow verification** — Step 3 below | method | todo |
+| **P4-25** | High | **Reporting verification** — Step 4 below | method | todo |
+| **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match. This would have caught L-8 the day it appeared and is what makes the eventual collapse of the pairs safe | G-02 | todo |
+
+### Step 3 — transaction flow verification (P4-24)
+
+For each operation, confirm every table below is written, **and that nothing else is**.
+Snapshot before, act, diff after. Record actual vs expected in this table as you go.
+
+| Table | Purchase **create** | Purchase **edit** | Purchase **delete** |
+|---|---|---|---|
+| `purchase` | 1 row | same row updated | removed / reversed |
+| `purchase_items` | one per line | lines reconciled, not blindly replaced | removed |
+| `bill_to` | 1 row, keyed correctly (P4-03) | updated if vendor changed | removed |
+| `product.stock` | **up** by qty, aggregated per product | net delta only, old effect reversed first | **down** by qty |
+| `product.latest_purchase_rate` / `last_purchase_date` | set only if newer (P4-08) | same | recomputed from remaining purchases |
+| `vendor_ledger` | `PURCHASE` debit; `PAYMENT` credit if paid | per the nine-case table | reversed or deleted, consistently |
+| `vendor_details` balance columns | `total_paid` / `total_allocated` move | move by the delta | returned to prior values |
+| `vendor_payments` | 1 per advance portion + 1 per new payment | adjusted | removed |
+| `payment_allocations` | 1 per payment, summing to the paid amount | adjusted | removed |
+| `vendor_balance_logs` | 1 audit row | 1 audit row | 1 audit row |
+| `Incexp` | only if the flow writes it — **confirm whether purchase touches it at all** | | |
+
+**The delete test is the strongest single check in this phase:** create a purchase, note
+stock and vendor balance, delete it, and both must return exactly to their starting values.
+Anything left behind is a finding.
+
+### Step 4 — reporting verification (P4-25)
+
+From AUDIT_PLAN §10, a purchase should move these and only these. After creating one
+purchase, check each report reflects it; after deleting it, check each report forgets it.
+
+| Report endpoint | Page | Expected to move | Verified |
+|---|---|---|---|
+| `bill-reference-purchase` | `billreferencepurchase` | yes | |
+| `vendor-ledger-accounting` | `vendor-ledger` | yes | |
+| `vendor-outstanding` | `vendor-reports` | yes | |
+| `vendor-balance-logs` | `vendor-balance-logs` | yes | |
+| `packing-forwarding` | `packing` | yes, if packing values set | |
+| `transport-cost` | `transport` | yes, if transport set | |
+| `notes-mentioned` | `notes` | yes, if notes set | |
+| `staff-sales` | `staff` | yes, if `staff_id` set | |
+| `minimum-stock` | `minimumstock` | **only** via `product.stock` | |
+| any sale/customer report | — | **must not move** | |
+
+The last row matters: a purchase moving a customer-side report means the ledger
+`reference_type` is wrong, which is the shape of L-8 on the sale side.
+
+### The five reconciliation assertions (P4-01)
+
+Run after **every** step. These are the definition of "the step was clean".
+
+1. `product.stock` = `opening_stock` + purchases − sales − consumption + returns, per
+   product touched.
+2. `vendor_ledger` running balance, recomputed **date-ordered**, equals `vendor_details`'s
+   stored balance columns. (Recomputing date-ordered rather than insertion-ordered is the
+   point — F-02.)
+3. `SUM(payment_allocations.allocated_amount)` per purchase equals what `payment_status`
+   claims.
+4. Per purchase: `total` = `items_total + packing_forwarding_total + total_tax`, and
+   `total_cgst + total_sgst + total_igst` = `total_tax`. Holds by construction only once
+   P4-12 lands; before that it is the test that catches client-supplied arithmetic.
+5. No purchase has a `total` that is NaN, NULL or negative (P4-04).
+
+### Working agreement for this phase
+
+- **Agree the batch before each fix loop.** Propose the next 1-3 tasks and wait. Diagnosis
+  and verification need no approval; changing code does.
+- **Update this section after every batch**, not at the end — status column, Resume here,
+  and any new findings into the read queue. Assume the session ends without warning.
+- **Read whole files.** No grep for understanding or for claims.
+- **Do not mass-modify real data.** The 602 products are the owner's.
+- Line endings: this repo is mixed CRLF/LF and the Edit tool normalises them. After
+  editing, repair terminators and check `git diff --stat` against
+  `git diff --stat --ignore-cr-at-eol`. Never run `prisma db push` — use
+  `prisma migrate diff` then `prisma db execute`.
