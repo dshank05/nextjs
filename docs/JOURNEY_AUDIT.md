@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-20 — P4-00, P4-01 done; L-1, L-2, L-3, L-11 reproduced. No app code changed yet |
-| **Branch / HEAD** | `dev_akaash` / `372328e` |
-| **Next action** | **P4-02** — reproduced, now fix it. Batch proposed: P4-02, P4-03, P4-04 (all in `purchases/index.ts` create path) |
+| **Last updated** | 2026-09-20 — P4-02, P4-03, P4-04, P4-20 **fixed and verified**; P4-10 part done. Harness back to baseline |
+| **Branch / HEAD** | `dev_akaash` / see latest `audit P4-*` commit |
+| **Next action** | Finish reading `pages/api/purchases/[id].ts` (R-5, read to ~690 of 1115), completing **P4-10**. Then **P4-05** (UNIQUE(fy, invoice_no)) and **P4-07** (F-12 duplicate lines) |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -704,6 +704,70 @@ assertion A2 is asserting the wrong thing, or an unpaid purchase never reaches t
 balance at all. **Do not fix until the service is read** — A2 may need correcting rather
 than the code.
 
+### Batch 1 complete — 2026-09-20
+
+**Fixed and verified against the running server.** Test data created, observed, removed;
+the harness is back to its exact baseline (A5's one pre-existing F-73 row).
+
+| Task | Before | After |
+|---|---|---|
+| **P4-02** (L-1) | FY3 holds invoice 1 → auto-numbered create in FY4 returns `400` | `201`, invoice 1 created in FY4 |
+| **P4-03** (L-2) | `invoice_number: 500` → purchase 500, `bill_to` **1** | purchase 500, `bill_to` **500** |
+| **P4-04** (L-3) | omit `packing_forwarding_total`/`total_tax` → `500 Argument total is missing` | `201`, total computed with missing terms as 0 |
+| **P4-20** (L-11) | 500 returned the whole Prisma invocation | bare message, P2002/P2003 translated |
+| **P4-10** (F-08) | items fetched by `invoice_no` alone | `+ fy` at `[id].ts` GET and the return-validation lookup. **More sites remain** |
+
+**L-19 (new, High) — found by fixing L-1, and it would have silently undone it.**
+`bill_to.invoice_no` carried a **global** UNIQUE index, but the whole point of P4-02 is
+that an invoice number may repeat in a later financial year. So the purchase insert
+started succeeding and the billing snapshot then failed instead — the same number in two
+FYs returned a constraint error from `bill_to`, not from `purchase`. Reproduced, then
+fixed: `bill_to` gains an `fy` column and the key becomes `@@unique([invoice_no, fy])`,
+matching how `purchase_items` already identifies a document. Re-verified: invoice 500 now
+exists in FY3 and FY4 together.
+
+> **Deployment note.** The migration adds `bill_to.fy` as NULL. Every existing `bill_to`
+> row will therefore stop matching its purchase until `fy` is backfilled from
+> `purchase.fy` on `invoice_no`. This database's `bill_to` was empty so nothing needed it
+> here; **a production deploy does.** The A6 assertion detects the un-backfilled state.
+
+**The first version of the P2002 handler was wrong and is worth remembering.** It said
+"that invoice number is already in use in this financial year" — but the constraint that
+actually fired was `bill_to`'s, across financial years. A confident error message that
+names the wrong cause sends someone looking in the wrong place. It now describes the
+conflict without claiming which key produced it.
+
+**Also fixed while in the file:**
+
+- **L-15 (Medium).** `staff_id` was read on the purchase list (`staffIds`, `staffMap`) but
+  never included in either `select`, so it was always `undefined` and **every purchase
+  showed blank staff name, phone and email**. Added to both select blocks.
+- **L-16 (Medium).** Item counts were `groupBy(['invoice_no'])` with no `fy`, so a
+  purchase's item count included the lines of every same-numbered purchase from every
+  year. Now grouped and keyed on `invoice_no + fy`. The `bill_to` lookup on the same
+  endpoint had the same flaw and was fixed with it.
+
+**Still open, found while reading the edit path:**
+
+- **L-5 → CONFIRMED.** Create validates `payment_status` against `[0, 1]`; edit validates
+  against `[0, 1, 2]` and the server can even promote 1 → 2 itself. Create and edit
+  disagree about what a valid purchase is — the F-79 shape. P4-13.
+- **L-20 (new, Medium).** Create stores the client's `packing_forwarding_total` as sent;
+  edit **recomputes** it as `qty × rate`. The same input therefore produces a different
+  total depending on which path wrote it.
+- **L-21 (new, Medium).** The edit path computes all three totals inside
+  `if (items && Array.isArray(items))`. An edit that omits `items` leaves items, packing
+  and tax at 0 and writes `total = 0` — the F-78 blanket-overwrite shape.
+- **L-22 (new, Medium).** A4 caught this live: a purchase stored `total_tax = 0` while
+  `total_cgst + total_sgst` came to 36, because the payload sent the components and
+  omitted the total. Nothing cross-checks them. Folded into P4-12.
+
+**One assertion was wrong and has been corrected.** A6 joined `purchase_items` to
+`purchase` on `invoice_no` alone, so once the same number legitimately existed in two
+financial years it reported that as a fault. It now pairs on `(invoice_no, fy)`, which is
+the real F-08 condition: two purchases sharing a number *within one* financial year.
+Worth noting that the harness needed the same fix as the code it checks.
+
 ### Step 1 — the read queue
 
 "Leave no issue, however small" means every file below is read **in full** before its
@@ -715,8 +779,8 @@ audit. Tick each off and record findings against it.
 | R-1 | `pages/api/purchases/index.ts` — `handlePost` onward | 380-880 | **done** | L-1…L-6, L-9…L-11, F-12, F-21 confirmed |
 | R-2 | `lib/invoice-counter.ts` | 85 | **done** | F-13 confirmed |
 | R-3 | `lib/ledger-handler.ts` — `getPurchaseLedgerOps` + helpers | 80-379 | **partial** | L-7 |
-| R-4 | `pages/api/purchases/index.ts` — `handleGet` | 1-380 | no | |
-| R-5 | `pages/api/purchases/[id].ts` | 1115 | no | |
+| R-4 | `pages/api/purchases/index.ts` — `handleGet` | 1-380 | **done** | L-15, L-16 |
+| R-5 | `pages/api/purchases/[id].ts` | 1115 | **partial** (to ~690) | L-5 confirmed, L-20, L-21; two F-08 sites fixed |
 | R-6 | `pages/api/purchases/last-invoice.ts` | 31 | no | |
 | R-7 | `lib/ledger-handler.ts` — remainder | 1-80, 379-507 | no | |
 | R-8 | `lib/transaction-handler.ts` | 1673 | no | |
@@ -744,15 +808,15 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 |---|---|---|---|---|
 | **P4-00** | — | Seed vendors A and B (Step 0) | setup | **done** — `scripts/audit-seed-vendors.js`; ids 0 / 2 / 3 |
 | **P4-01** | — | Build `scripts/audit-assert.js` — the five reconciliation assertions, runnable after every step. This is the harness everything else is checked with; write it before fixing anything | method | **done** — `scripts/audit-assert.js`, six assertions A1–A6 |
-| **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **REPRODUCED** — see Reproductions above | L-1 | **ready to fix** |
-| **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY. **REPRODUCED** | L-2 | **ready to fix** |
-| **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert. **REPRODUCED — it is a 500** | L-3 | **ready to fix** |
+| **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **REPRODUCED** — see Reproductions above | L-1 | **done — verified** |
+| **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY. **REPRODUCED** | L-2 | **done — verified**, plus L-19 |
+| **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert. **REPRODUCED — it is a 500** | L-3 | **done — verified** |
 | **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | todo |
 | **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | todo |
 | **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | todo |
 | **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | todo |
 | **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | todo |
-| **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | todo |
+| **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | **in progress** — 2 sites fixed, file read to ~690 of 1115 |
 | **P4-11** | **Critical** | **Migrate `purchase_items` to reference `purchase.id`** with a real FK, retiring the `invoice_no` join. Larger change and it aligns purchase with sale, which stores the header id in the same column name. **Do before Phase 5** so the reports can be written once. Needs an owner decision on migration timing | F-08 | owner |
 | **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | todo |
 | **P4-13** | High | **Create and edit disagree on `payment_status`.** Create validates against `[0, 1]` only; the ledger case table is built on 0/1/2. This is the F-79 shape — one rule, both paths. Resolve which statuses a create may set and enforce it in one shared validator | L-5 | todo |
@@ -762,7 +826,7 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-17** | High | **Exercise all nine transitions** against a real purchase, running the P4-01 assertions after each | method | todo |
 | **P4-18** | Medium | **Deduplicate the advance-balance calculation.** `handlePost` computes the breakdown twice and queries `vendor_details` twice within one function | L-9 | todo |
 | **P4-19** | Medium | **`vendor_id = 0` magic value.** `purchase.vendor_id` has an FK to `vendor_details`, so writing 0 needs a row with id 0. It then flows into `vendor_payments`, `payment_allocations` and the ledger. Test it explicitly; if it works only because the FK is unenforced, that is the finding | L-10 | todo |
-| **P4-20** | Low | **Error leakage.** GET and POST both return `error.message`. Same class as F-81/F-98. **REPRODUCED** — a 500 returned the entire Prisma invocation, not just a message. Raise to **Medium** | L-11 | **ready to fix** |
+| **P4-20** | Low | **Error leakage.** GET and POST both return `error.message`. Same class as F-81/F-98. **REPRODUCED** — a 500 returned the entire Prisma invocation, not just a message. Raise to **Medium** | L-11 | **done — verified** |
 | **P4-21** | Low | **Purchase has no per-item discount** while sale and salex do. Confirm with the owner whether that is intended before changing anything | L-12 | owner |
 | **P4-22** | Low | **Transport modelled twice.** Purchase denormalises `transport`/`transport_name`/`vehicle_number` onto the header; sale and salex use satellite tables. Note it, and check the `transport-cost` report reads both | L-13 | todo |
 | **P4-23** | Medium | **`purchase-returns/[id]-old.ts` is a live route** mutating stock (F-06, deferred to G-04). Now that the rewrite is settled, delete it — or confirm the deferral still stands | F-06 | todo |

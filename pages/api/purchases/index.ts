@@ -174,6 +174,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             fy: true,
             transport: true,
             vendor_id: true,
+            // staff_id is read below (staffIds, staffMap) but was never selected, so it
+            // was always undefined and every purchase showed blank staff details (L-15).
+            staff_id: true,
             return_status: true // Include return status for client-side indicators
           }
         }),
@@ -210,6 +213,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             fy: true,
             transport: true,
             vendor_id: true,
+            // staff_id is read below (staffIds, staffMap) but was never selected, so it
+            // was always undefined and every purchase showed blank staff details (L-15).
+            staff_id: true,
             return_status: true // Include return status for client-side indicators
           }
         }),
@@ -229,8 +235,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     const [itemCounts, vendorData, staffData, billToData, paymentAllocations] = await Promise.all([
       // Get all item counts in one query
+      // Grouped by invoice_no AND fy. purchase_items.invoice_no holds the
+      // human bill number, which is only unique within a financial year, so
+      // grouping on it alone counted the items of every same-numbered purchase
+      // from every year into one figure (L-16, the F-08 family).
       prisma.purchaseitems.groupBy({
-        by: ['invoice_no'],
+        by: ['invoice_no', 'fy'],
         where: { invoice_no: { in: invoiceNos } },
         _count: { id: true }
       }),
@@ -245,9 +255,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         select: { id: true, name: true, phone: true, email: true }
       }) : Promise.resolve([]),
       // Get bill_to data for "Other" vendors
+      // Selected with fy, and matched on the pair below. invoice_no alone is
+      // not unique across financial years, so an "Other" vendor's billing
+      // details could be read off a same-numbered purchase from another year
+      // (L-19, the F-08 family).
       otherVendorInvoices.length > 0 ? prisma.bill_to.findMany({
         where: { invoice_no: { in: otherVendorInvoices } },
-        select: { invoice_no: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
+        select: { invoice_no: true, fy: true, vendor_name: true, contact_no: true, email: true, address: true, address2: true, city: true, state: true, gstin: true }
       }) : Promise.resolve([]),
       // Get payment allocations for all purchases
       purchaseIds.length > 0 ? prisma.payment_allocations.groupBy({
@@ -258,10 +272,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     ])
 
     // Create lookup maps for fast access
-    const itemCountMap = new Map(itemCounts.map((item: any) => [item.invoice_no, item._count.id]))
+    // Keyed on invoice_no + fy, because that pair is what identifies a purchase (L-16).
+    const itemCountMap = new Map(itemCounts.map((item: any) => [`${item.invoice_no}:${item.fy}`, item._count.id]))
     const vendorMap = new Map(vendorData.map(vendor => [vendor.id, vendor]))
     const staffMap = new Map(staffData.map(staff => [staff.id, staff]))
-    const billToMap = new Map(billToData.map(billTo => [billTo.invoice_no, billTo]))
+    const billToMap = new Map(billToData.map(billTo => [`${billTo.invoice_no}:${billTo.fy}`, billTo]))
     const paymentMap = new Map(paymentAllocations.map((payment: any) => [payment.purchase_id, Number(payment._sum.allocated_amount || 0)]))
 
     // Enhanced purchase invoices using maps
@@ -296,7 +311,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
 
       const vendorInfo = vendorMap.get(invoice.vendor_id)
-      const billToInfo = billToMap.get(invoice.invoice_no)
+      const billToInfo = billToMap.get(`${invoice.invoice_no}:${invoice.fy}`)
       const staffInfo = staffMap.get(invoice.staff_id)
       // ✅ Calculate taxrate as total_tax/total_taxable_value (invoice level)
       const calculatedTaxrate = invoice.total_taxable_value > 0 ? invoice.total_tax / invoice.total_taxable_value : 0;
@@ -330,7 +345,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         payment_status: invoice.payment_status || 0,
         payment_mode: invoice.payment_mode || 0,
         fy: invoice.fy,
-        item_count: itemCountMap.get(invoice.invoice_no) || 0,
+        item_count: itemCountMap.get(`${invoice.invoice_no}:${invoice.fy}`) || 0,
         return_status: invoice.return_status || 0, // ✅ Include return status
         // Payment allocation summary
         total_paid: paymentMap.get(invoice.id) || 0,
@@ -386,11 +401,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       },
     })
   } catch (error) {
+    // Logged in full, returned as a bare message (P4-20, lead L-11).
     console.error('Purchases fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch purchases data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    res.status(500).json({ message: 'Failed to fetch purchases data' })
   }
 }
 
@@ -426,15 +439,33 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const invoiceNumberToUse = invoice_number ? parseInt(invoice_number) : nextInvoiceNo;
 
     // ===== DUPLICATE INVOICE NUMBER VALIDATION =====
+    //
+    // Scoped to the financial year, because the COUNTER is scoped to the
+    // financial year. getNextInvoiceNumber('purchase') returns
+    // MAX(invoice_no) + 1 WHERE fy = currentFy, so a new FY restarts near 1 -
+    // but this check used to look at invoice_no across ALL years, find last
+    // year's row, and refuse.
+    //
+    // That is not a rare race. It is every 1 April: the counter restarts, and
+    // every number up to the previous year's maximum is blocked, so
+    // auto-numbered purchase creation stops working until someone manually
+    // types a number above the all-time maximum. Reproduced: a FY 3 purchase
+    // numbered 501 made the FY 4 counter's 501 fail with
+    // "Invoice number 501 already exists" (P4-02, lead L-1).
+    //
+    // An invoice number is only ever unique WITHIN a financial year - that is
+    // what the counter means by it, what the documents mean by it, and what
+    // the UNIQUE(fy, invoice_no) index enforces.
     const existingPurchase = await prisma.purchase.findFirst({
       where: {
-        invoice_no: invoiceNumberToUse
+        invoice_no: invoiceNumberToUse,
+        fy: currentFy
       }
     });
 
     if (existingPurchase) {
       return res.status(400).json({
-        message: `Invoice number ${invoiceNumberToUse} already exists`,
+        message: `Invoice number ${invoiceNumberToUse} already exists in this financial year`,
         error_code: 'DUPLICATE_INVOICE_NO'
       });
     }
@@ -496,11 +527,34 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const invoiceDate = date
       ? convertDateToTimestamp(date)
       : Math.floor(Date.now() / 1000);
-    const itemsTotal = items.reduce((sum: number, item: any) => sum + (item.qty * item.rate), 0)
-    const calculatedGrandTotal = itemsTotal +
-      parseFloat(packing_forwarding_total?.toString()) +
-      parseFloat(total_tax?.toString())
+    // Every number that reaches the total goes through this, so a missing or
+    // unparseable field becomes 0 rather than NaN.
+    //
+    // The grand total used to be `itemsTotal + parseFloat(x?.toString()) +
+    // parseFloat(y?.toString())` with no fallback on either term, while the
+    // columns stored beside it did have `|| 0`. So a payload omitting
+    // packing_forwarding_total or total_tax stored total_tax as 0 and made
+    // `total` NaN - and Prisma rejects NaN, so the whole create died with
+    // "Argument `total` is missing" as a 500 (P4-04, lead L-3).
+    const money = (v: any): number => {
+      const n = parseFloat(String(v ?? '').trim());
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const itemsTotal = items.reduce(
+      (sum: number, item: any) => sum + money(item.qty) * money(item.rate), 0
+    )
+    const calculatedGrandTotal = itemsTotal + money(packing_forwarding_total) + money(total_tax)
     // Note: Freight (transport_cost) is stored separately but NOT included in total
+
+    // A total that is not a finite number is a bad request, not a 500. This
+    // cannot trigger now that every term is coerced, which is the point: it is
+    // the guard that keeps it that way if another term is added later.
+    if (!Number.isFinite(calculatedGrandTotal)) {
+      return res.status(400).json({
+        message: 'Could not compute a valid total from the supplied amounts'
+      })
+    }
 
     // ===== STEP 4: OPTIMIZED DATABASE TRANSACTION =====
     const purchase = await prisma.$transaction(async (tx) => {
@@ -551,9 +605,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       });
 
       // ===== DB OPERATION 2: Create bill_to record =====
+      //
+      // invoiceNumberToUse, the same number the purchase and its items carry.
+      //
+      // This used `nextInvoiceNo` - always the auto-generated number, even when
+      // the user supplied their own. Supplying `invoice_number: 500` wrote the
+      // purchase and its items at 500 and the billing snapshot at 1, leaving it
+      // attached to a number no purchase had. And because bill_to.invoice_no is
+      // UNIQUE, the next purchase legitimately numbered 1 then collided with it
+      // (P4-03, lead L-2).
       await tx.bill_to.create({
         data: {
-          invoice_no: nextInvoiceNo,
+          invoice_no: invoiceNumberToUse,
+          fy: currentFy,
           vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
           contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
           email: req.body.email_id ?? existingVendor?.email ?? '',
@@ -863,13 +927,33 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-  } catch (error) {
+  } catch (error: any) {
+    // Translated at the boundary, and logged in full rather than returned.
+    //
+    // This returned `error.message`, which for a Prisma failure is not a
+    // sentence - it is the whole invocation. The L-3 reproduction came back
+    // with every field and value in the create call, the vendor connect
+    // clause, the financial year and the internal timestamps (P4-20, L-11).
     const totalTime = Date.now() - startTime;
     console.error(`Purchase creation failed after ${totalTime}ms:`, error);
-    res.status(500).json({
-      message: 'Failed to create purchase',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+
+    if (error?.code === 'P2002') {
+      // Deliberately does not name the invoice number. The first version of
+      // this handler said "already in use in this financial year", which was
+      // wrong: the constraint that actually fired was bill_to's, colliding
+      // across financial years, and the message sent someone looking in the
+      // wrong place (L-19).
+      return res.status(409).json({
+        message: 'That purchase conflicts with an existing record. Check the invoice number for this financial year.',
+        error_code: 'DUPLICATE_RECORD'
+      })
+    }
+    if (error?.code === 'P2003') {
+      return res.status(400).json({
+        message: 'A selected vendor, staff member or product does not exist'
+      })
+    }
+    res.status(500).json({ message: 'Failed to create purchase' })
   }
 }
 

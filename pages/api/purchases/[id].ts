@@ -28,8 +28,12 @@ export default async function handler(
         }
 
         // Get the purchase items for this invoice
+        // Scoped to the financial year. purchase_items.invoice_no holds the
+        // human bill number, which is only unique within an FY, so filtering on
+        // it alone pulled in the line items of every same-numbered purchase
+        // from every year and merged them into this one (F-08 / P4-10).
         const purchaseItems = await prisma.purchaseitems.findMany({
-          where: { invoice_no: purchase.invoice_no }
+          where: { invoice_no: purchase.invoice_no, fy: purchase.fy }
         })
 
         // Get display_name for each product
@@ -98,8 +102,10 @@ export default async function handler(
         // ✅ CRITICAL FIX: Always fetch bill_to data first (contains inline-edited vendor details)
         let billToData = null;
         if (purchase.invoice_no) {
-          billToData = await prisma.bill_to.findUnique({
-            where: { invoice_no: purchase.invoice_no }
+          // Matched on (invoice_no, fy) - see the bill_to note in schema.prisma.
+          // invoice_no alone is not unique across financial years (L-19).
+          billToData = await prisma.bill_to.findFirst({
+            where: { invoice_no: purchase.invoice_no, fy: purchase.fy }
           });
         }
 
@@ -513,7 +519,7 @@ export default async function handler(
         // Validate item-level changes for partial returns
         if (existingPurchase.return_status === 1 && items && Array.isArray(items)) {
           const purchaseItems = await prisma.purchaseitems.findMany({
-            where: { invoice_no: existingPurchase.invoice_no },
+            where: { invoice_no: existingPurchase.invoice_no, fy: existingPurchase.fy },
             select: { id: true, product_id: true, qty: true, name_of_product: true }
           })
 
@@ -644,7 +650,12 @@ export default async function handler(
           }
 
           await tx.bill_to.upsert({
-            where: { invoice_no: existingPurchase.invoice_no },
+            where: {
+              invoice_no_fy: {
+                invoice_no: existingPurchase.invoice_no,
+                fy: existingPurchase.fy
+              }
+            },
             update: {
               vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
               contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
@@ -659,6 +670,7 @@ export default async function handler(
             },
             create: {
               invoice_no: existingPurchase.invoice_no,
+              fy: existingPurchase.fy,
               vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? 'Other',
               contact_no: req.body.contact_number ?? existingVendor?.contact_no ?? '',
               email: req.body.email_id ?? existingVendor?.email ?? '',

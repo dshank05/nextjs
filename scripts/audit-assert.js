@@ -213,16 +213,20 @@ async function A6() {
   }
 
   const orphanBillTo = await prisma.$queryRaw`
-    SELECT b.id, b.invoice_no, b.vendor_name FROM bill_to b
+    SELECT b.id, b.invoice_no, b.fy, b.vendor_name FROM bill_to b
     WHERE b.invoice_no IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM purchase p WHERE p.invoice_no = b.invoice_no)`;
+      AND NOT EXISTS (SELECT 1 FROM purchase p WHERE p.invoice_no = b.invoice_no AND p.fy <=> b.fy)`;
   for (const r of orphanBillTo) {
-    failures.push(`bill_to ${r.id}: invoice_no ${r.invoice_no} ("${r.vendor_name}") matches no purchase — L-2`);
+    failures.push(`bill_to ${r.id}: invoice_no ${r.invoice_no} fy ${r.fy} ("${r.vendor_name}") matches no purchase — L-2/L-19`);
   }
 
+  // Joined on invoice_no AND fy. Joining on the number alone reported the
+  // legitimate case - the same bill number reused in a later financial year -
+  // as a fault. The real F-08 condition is two purchases sharing a number
+  // WITHIN one financial year, which is what the fixed lookups now scope to.
   const sharedItems = await prisma.$queryRaw`
     SELECT pi.invoice_no, pi.fy, COUNT(DISTINCT p.id) c
-    FROM purchase_items pi JOIN purchase p ON p.invoice_no = pi.invoice_no
+    FROM purchase_items pi JOIN purchase p ON p.invoice_no = pi.invoice_no AND p.fy = pi.fy
     GROUP BY pi.invoice_no, pi.fy HAVING c > 1`;
   for (const r of sharedItems) {
     failures.push(`invoice_no ${r.invoice_no} fy ${r.fy}: items reachable from ${r.c} purchases — F-08`);

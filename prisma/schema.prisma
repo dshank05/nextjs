@@ -298,7 +298,21 @@ model bank_details {
 
 model bill_to {
   id          Int     @id @default(autoincrement())
-  invoice_no  Int?    @unique
+  invoice_no  Int?
+  // Added 2026-09-20. bill_to is the billing snapshot for ONE purchase, joined
+  // by the purchase's invoice_no - and an invoice number is only unique within
+  // a financial year. invoice_no alone carried a UNIQUE index, so once a number
+  // had been used in any year it could never be used again: fixing the FY-scoped
+  // duplicate check (P4-02) let the purchase itself be created, and the insert
+  // then died on this index instead. Reproduced - the same number in two
+  // financial years returned a constraint error from here, not from `purchase`
+  // (L-19).
+  //
+  // Scoping the key to (invoice_no, fy) matches how purchase_items already
+  // identifies a document. The deeper fix is to reference purchase.id directly,
+  // the way the sale family's satellites do (shipto, transport_details); that
+  // goes with P4-11, which migrates purchase_items the same way.
+  fy          Int?
   vendor_name String  @db.VarChar(255)
   contact_no  String? @db.VarChar(20)
   email       String? @db.VarChar(100)
@@ -309,6 +323,8 @@ model bill_to {
   state_code  Int?
   pin_code    String? @db.VarChar(20)
   gstin       String? @db.VarChar(50)
+
+  @@unique([invoice_no, fy], map: "bill_to_invoice_no_fy")
 }
 
 model bill_tosales {
