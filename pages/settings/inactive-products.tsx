@@ -148,8 +148,11 @@ export default function InactiveProducts() {
     setConfirmLoading(true);
 
     try {
-      const response = await fetch(`/api/products/${selectedProduct.id}`, {
-        method: 'PUT',
+      // The status route, not PUT /api/products/[id] - see F-91. This screen is
+      // the one the deactivate message points people at ("can be restored from
+      // Inactive Products"), and until now the button here always failed.
+      const response = await fetch(`/api/products/${selectedProduct.id}/status`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },

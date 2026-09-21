@@ -89,12 +89,15 @@ export default function ProductCreate() {
   const [existingBarcodeUrl, setExistingBarcodeUrl] = useState<string>('');
   const [isNewImage, setIsNewImage] = useState<boolean>(false);
   const [isNewBarcode, setIsNewBarcode] = useState<boolean>(false);
-  const [loading, setLoading] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  // The `updated_at` this form loaded, sent back on save so the server can tell
+  // whether someone else changed the product in the meantime (F-83). null is a
+  // real value here - it is what the 602 products that predate the column carry.
+  const [loadedUpdatedAt, setLoadedUpdatedAt] = useState<string | null | undefined>(undefined);
 
   // State for dynamic subcategories
   const [subcategories, setSubcategories] = useState<any[]>([]);
@@ -109,7 +112,13 @@ export default function ProductCreate() {
     fetchGstRates();
   }, []);
 
-  // Check for edit mode and load product data
+  // Check for edit mode and load product data.
+  //
+  // Keyed on the edit id alone. This also depended on `filterOptions`, which
+  // arrives from its own fetch after mount, so the effect ran a second time and
+  // re-fetched the product - discarding anything already typed into the form and
+  // making a duplicate request every time (F-102). It is also half of F-88: see
+  // the cascade note below.
   useEffect(() => {
     const editId = router.query.edit;
     if (editId && typeof editId === 'string') {
@@ -118,39 +127,56 @@ export default function ProductCreate() {
       // Load product data immediately without waiting for GST rates
       loadProductForEdit(parseInt(editId));
     }
-  }, [router.query.edit, filterOptions]);
+  }, [router.query.edit]);
 
-  // Fetch subcategories when category changes
+  // Fetch subcategories when the category changes.
+  //
+  // Fetch only. Clearing the dependent field moved to handleInputChange, where
+  // the user actually picks a category.
+  //
+  // This effect used to clear product_subcategory unconditionally, and it does
+  // not know why the category changed. Loading a product for edit sets the
+  // category, so the effect fired and wiped the subcategory that had been loaded
+  // one line earlier - whether it survived came down to which render won, which
+  // is why the live data showed some edited products keeping a subcategory and
+  // most losing it (F-88). Same shape for warehouse -> rack below.
+  //
+  // The rule the rest of this audit runs on applies here too: the browser
+  // decides what the USER TYPED. A programmatic load is not typing.
   useEffect(() => {
     if (formData.product_category) {
       fetchSubcategories(formData.product_category);
-      // Clear subcategory selection when category changes
-      setFormData(prev => ({ ...prev, product_subcategory: '' }));
     } else {
       setSubcategories([]);
     }
   }, [formData.product_category]);
 
-  // Fetch racks when warehouse changes
+  // Fetch racks when the warehouse changes. Fetch only - see above (F-88).
   useEffect(() => {
     if (formData.warehouse) {
       fetchRacks(formData.warehouse);
-      // Clear rack selection when warehouse changes
-      setFormData(prev => ({ ...prev, rack_id: '' }));
     } else {
       setRacks([]);
     }
   }, [formData.warehouse]);
 
-  // Populate GST rate when GST rates are loaded and HSN is set
+  // Show the HSN that the product's own GST rate belongs to, once the rates
+  // have loaded.
+  //
+  // This ran the other way round - it derived gst_rate by matching the HSN
+  // string against gst_tax_rate.hsn_code. That is the resolution F-43 removed
+  // from the backend and F-76 removed from the load path, and leaving it here
+  // meant it could still win a race and re-derive a rate the record already
+  // knows. The record's gst_rate_id is the answer; HSN is the field displayed
+  // alongside it.
   useEffect(() => {
-    if (isEditing && gstRates.length > 0 && formData.hsn && !formData.gst_rate) {
-      const matchingGstRate = gstRates.find(rate => rate.hsn_code === formData.hsn);
-      if (matchingGstRate) {
-        setFormData(prev => ({ ...prev, gst_rate: matchingGstRate.id.toString() }));
+    if (isEditing && gstRates.length > 0 && formData.gst_rate && !formData.hsn) {
+      const currentRate = gstRates.find(rate => rate.id.toString() === formData.gst_rate);
+      if (currentRate?.hsn_code) {
+        setFormData(prev => ({ ...prev, hsn: currentRate.hsn_code }));
       }
     }
-  }, [gstRates, isEditing, formData.hsn, formData.gst_rate]);
+  }, [gstRates, isEditing, formData.gst_rate, formData.hsn]);
 
 
 
@@ -230,7 +256,19 @@ export default function ProductCreate() {
   };
 
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+      const next = { ...prev, [field]: value };
+      // Clearing a dependent selection belongs here, on the user's own change,
+      // not in an effect that cannot tell a user's pick from a programmatic
+      // load and so wiped the value an edit had just loaded (F-88).
+      if (field === 'product_category' && value !== prev.product_category) {
+        next.product_subcategory = '';
+      }
+      if (field === 'warehouse' && value !== prev.warehouse) {
+        next.rack_id = '';
+      }
+      return next;
+    });
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
@@ -261,12 +299,11 @@ export default function ProductCreate() {
     return stock * openingRate;
   };
 
-  const calculateSellingPrice = () => {
-    const mrp = parseFloat(formData.mrp) || 0;
-    const discount = parseFloat(formData.discount) || 0;
-    const margin = parseFloat(formData.margin) || 0;
-    return mrp - discount + margin; // SP = MRP - Discount + Margin
-  };
+  // calculateSellingPrice() was here. Removed with the commented-out Selling
+  // Price panel that was its only caller (F-90). It also disagreed with the
+  // server: it computed MRP - discount + margin, while the API derives
+  // sale_price from the latest purchase rate (or opening_rate) + margin -
+  // discount. Two formulas for one number, one of them unreachable.
 
   const loadProductForEdit = async (productId: number) => {
     setEditLoading(true);
@@ -286,6 +323,9 @@ export default function ProductCreate() {
         // HSN driving GST is the right interaction for data ENTRY, and it still
         // is (see handleInputChange). It is the wrong way to reload a value the
         // record already holds.
+        // Remember what this form loaded, for the conflict check on save (F-83).
+        setLoadedUpdatedAt(product.updated_at ?? null);
+
         let gstRateId = product.gst_rate_id ? product.gst_rate_id.toString() : '';
         let hsnValue = product.hsn || '';
 
@@ -385,6 +425,13 @@ export default function ProductCreate() {
     return Object.keys(newErrors).length === 0;
   };
 
+  // The real in-flight state, from the mutation hooks.
+  //
+  // This was a `loading` useState that nothing ever set, so the submit button's
+  // disabled attribute and its "Creating.../Updating..." label could never fire
+  // and the form's only double-submit guard did nothing (F-103).
+  const isSaving = createProduct.isPending || updateProduct.isPending;
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -428,6 +475,10 @@ export default function ProductCreate() {
       mrp: formData.mrp ? parseFloat(formData.mrp) : null,
       discount: formData.discount ? parseFloat(formData.discount) : null,
       margin: formData.margin ? parseFloat(formData.margin) : null,
+      // The version this edit started from. The server refuses the write with a
+      // 409 if the stored row has moved on since (F-83). Only sent when editing,
+      // and only when a load actually happened.
+      ...(isEditing && loadedUpdatedAt !== undefined ? { updated_at: loadedUpdatedAt } : {}),
       fileStates: {
         image: {
           hasNewFile: isNewImage && !!imageFile,
@@ -704,25 +755,6 @@ export default function ProductCreate() {
               </div>
             </div>
 
-            {/* Selling Price Display */}
-            {/* <div className="bg-blue-900/20 border border-blue-700/50 rounded p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-blue-300 font-medium">SELLING PRICE</span>
-                <div className="text-xs text-blue-400 mt-1">
-                  Auto-calculated: MRP - Discount + Margin
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-bold text-blue-300">
-                  ₹{calculateSellingPrice().toFixed(2)}
-                </span>
-                <div className="text-xs text-blue-400 mt-1">
-                  Taxable Value
-                </div>
-              </div>
-            </div>
-          </div> */}
           </div>
 
           {/* Row 5: Location & Tax */}
@@ -886,10 +918,10 @@ export default function ProductCreate() {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={isSaving}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Product' : 'Create Product')}
+              {isSaving ? (isEditing ? 'Updating...' : 'Creating...') : (isEditing ? 'Update Product' : 'Create Product')}
             </button>
           </div>
         </form>

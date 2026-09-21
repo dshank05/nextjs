@@ -98,8 +98,12 @@ export default function ProductView() {
     const action = newStatus ? 'reactivate' : 'deactivate';
 
     try {
-      const response = await fetch(`/api/products/${id}`, {
-        method: 'PUT',
+      // The status route, not PUT /api/products/[id]. That endpoint parses
+      // multipart form data for the product form and rejects a JSON body, so
+      // this toggle answered 400 every time it was pressed and a deactivated
+      // product could never be brought back (F-91).
+      const response = await fetch(`/api/products/${id}/status`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },

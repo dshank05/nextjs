@@ -2,15 +2,15 @@
 
 **Branch:** `dev_akaash` · **Started:** 2026-09-20 · **Last updated:** 2026-09-20
 
-**Status:** Phase 1 done (bar one deferred item) · Phase 2 mostly done · environment ready
+**Status:** Phase 1 done (bar one deferred item) · Phase 2 mostly done · **Phase 3 Products done, including a full second pass** · Phase 4 Purchase is next
 
 | Phase | State |
 |---|---|
 | 0 · Recon | done |
 | 1 · Foundations | **done** — F-01 code unified, data repair no longer needed (see below), F-25 fixed. F-06/F-07 still open |
 | 2 · Settings | **mostly done** — F-28 fixed, F-29 fixed, F-30 partial. 6 pages left |
-| 3 · Products | next |
-| 4 · Purchase | not started |
+| 3 · Products | **done** — 3a, 3b and a second pass (3c) over list/view/add/edit. F-101, F-107, F-111, F-112 left open; F-73/F-74 need the owner |
+| 4 · Purchase | **next** — apply `JOURNEY_AUDIT.md` §11, plus the fourth question 3c added |
 | 5 · Sale & Salex | not started |
 | 6 · Returns | not started |
 | 7 · Reports | not started — runs last, needs journey data |
@@ -650,6 +650,20 @@ owner. It is not a deferred fix and should not be revisited as one.
 | F-22 | Low | [C] | Product | Two unconditional DEBUG queries per request | `products/optimized.ts:217-226` | **fixed** — removed |
 | F-23 | Low | [C] | Reports | `openingclosing` is an `<Underworks />` stub | `reports/openingclosing.tsx` | open |
 | F-24 | Low | [C] | Cross | 246 `console.log` calls in production paths | repo-wide | open |
+| F-91 | Critical | [C] | Product | Deactivation is a one-way door — both restore paths PUT JSON at a multipart-only endpoint | `view/[id].tsx`, `settings/inactive-products.tsx` | **fixed** — `PATCH /api/products/[id]/status`; verified |
+| F-92 | High | [C] | Product | `stockFilter=low_stock` is a hard 500 — SQL fragments bound as parameters by a tagged template | `products/index.ts` low-stock branch | **fixed** — bound parameters; verified |
+| F-93 | High | [C] | Product | Date-range filter is a hard 500 — `where.created_at` on a column that did not exist | `products/index.ts` date filter | **fixed** — filters `last_purchase_date`; verified |
+| F-94 | High | [C] | Product | Batch purchase-rate lookup matches only product 1 — `IN (?)` bound as one string | `products/index.ts`, `optimized.ts` | **fixed** — one placeholder per id; verified |
+| F-108 | High | [C] | Cross | Schema did not declare `onDelete: Restrict` on `Purchaseitems.product`; next `db push` would revert F-63 to `SET NULL` | `schema.prisma` vs live `information_schema` | **fixed** |
+| F-111 | High | [C] | Product | Inactive Products fetches page 1 of all products and filters client-side; near-empty list, meaningless pagination | `settings/inactive-products.tsx` | open |
+| F-96 | Medium | [C] | Product | Subcategory filter filters nothing — parameter read as a car-model name | `optimized.ts` vs `useProducts.ts` | **fixed** |
+| F-98 | Medium | [C] | Product | F-81 half-fixed — create/list returned raw Prisma messages and a stack trace | `products/index.ts`, `optimized.ts` | **fixed** |
+| F-99 | Medium | [C] | Product | Partial update can attach a rack from another warehouse | `lib/product.ts` | **fixed** |
+| F-100 | Medium | [C] | Product | Part-no check covered only active rows; the DB unique index covers all | `lib/product.ts` | **fixed** |
+| F-101 | Medium | [C] | Product | `barcode` column holds an image URL and a scanned code interchangeably | `[id].ts`, `create.tsx`, `view/[id].tsx` | open |
+| F-110 | Medium | [C] | Product | No non-negative validation on quantities or money — the likely route to F-73 | `lib/product.ts`, `create.tsx` | **fixed** |
+| F-112 | Medium | [C] | Product | Inactive Products sends `sortBy`/`sortOrder` to an endpoint that ignores them | `settings/inactive-products.tsx` | open |
+| F-107 | Low | [C] | Product | `optimized.ts` hardcodes `is_active: true`; `index.ts` supports `includeInactive` | `optimized.ts` | open |
 
 ---
 

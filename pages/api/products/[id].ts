@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
-import { validateProduct, findConflictingPartNo, buildProductData } from '../../../lib/product'
+import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage } from '../../../lib/product'
+import { withObservability } from '../../../lib/withObservability'
 import formidable from 'formidable'
 import fs from 'fs'
 import path from 'path'
@@ -183,7 +184,7 @@ async function enhanceProduct(product: any) {
 // ==================== API Handler ====================
 export const config = { api: { bodyParser: false } };
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { id } = req.query;
   const productId = parseInt(id as string);
 
@@ -232,7 +233,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Same validation create applies. This endpoint used to check nothing
         // but the part number, so an edit accepted an empty product name and an
         // invalid warehouse that create would have rejected (F-79, F-86).
-        const failure = await validateProduct(productData, { partial: true });
+        // productId is passed so the rack check can fall back to the warehouse
+        // already stored on the product when a payload carries rack_id without
+        // warehouse_id (F-99).
+        const failure = await validateProduct(productData, { partial: true, productId });
         if (failure) {
           return res.status(failure.status).json({ message: failure.message });
         }
@@ -240,7 +244,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const partNoConflict = await findConflictingPartNo(productData.part_no, productId);
         if (partNoConflict) {
           return res.status(400).json({
-            message: `Part number "${String(productData.part_no).trim()}" is already in use by another product (ID: ${partNoConflict.id}). Please use a different part number.`
+            message: partNoConflictMessage(productData.part_no, partNoConflict)
           });
         }
 
@@ -356,6 +360,37 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           return res.status(400).json({ message: 'No changes supplied' });
         }
 
+        // Optimistic concurrency, when the client tells us what it loaded.
+        //
+        // Two people editing the same product used to overwrite each other in
+        // silence, and no check was even possible because Product carried no
+        // timestamp to compare (F-82, F-83). It does now, so a client that
+        // sends back the `updated_at` it read gets a 409 instead of quietly
+        // discarding the other person's work.
+        //
+        // Clients that send nothing keep the old behaviour rather than being
+        // broken by this; the form sends it.
+        if (productData.updated_at !== undefined) {
+          const seen = productData.updated_at === null ? null : new Date(productData.updated_at);
+          if (seen !== null && isNaN(seen.getTime())) {
+            return res.status(400).json({ message: 'Invalid updated_at value' });
+          }
+
+          const { count } = await prisma.product.updateMany({
+            where: { id: productId, updated_at: seen },
+            data: finalData
+          });
+
+          if (count === 0) {
+            return res.status(409).json({
+              message: 'This product was changed by someone else while you were editing it. Reload the product and reapply your changes.'
+            });
+          }
+
+          const reloaded = await prisma.product.findUnique({ where: { id: productId } });
+          return res.status(200).json(await enhanceProduct(reloaded));
+        }
+
         const updatedProduct = await prisma.product.update({ where: { id: productId }, data: finalData });
         const enhancedProduct = await enhanceProduct(updatedProduct);
         return res.status(200).json(enhancedProduct);
@@ -417,3 +452,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ message: 'Server error' });
   }
 }
+// Wrapped like its siblings. Six of the eight product API files had this and
+// these two did not, so the busiest route in the module - the one that reads,
+// edits and deactivates a product - was the one with no request logging (F-89).
+export default withObservability(handler);

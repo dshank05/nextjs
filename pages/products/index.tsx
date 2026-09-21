@@ -101,14 +101,22 @@ export default function Products() {
     return unsubscribe;
   }, [refetch]);
 
-  // Clear sessionStorage on unmount
+  // No unmount cleanup.
+  //
+  // There was one, and it cleared 'products-page-filters' only. Once F-65 made
+  // the search term and the page number persist too, that left the three out of
+  // step: navigating into a product and back restored your search and put you
+  // on page 5, with every filter silently wiped. Either all of it survives or
+  // none of it does, and surviving is the point of F-65 - you came back from a
+  // product you had found by filtering. "Clear Filters" is how you clear them.
+  //
+  // A persisted page number can outlive the result set it was valid for, so it
+  // is corrected below rather than left pointing past the end.
   useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('products-page-filters');
-      }
-    };
-  }, []);
+    if (!isLoading && pagination.totalPages > 0 && page > pagination.totalPages) {
+      setPage(1);
+    }
+  }, [isLoading, pagination.totalPages, page, setPage]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage > 0 && newPage <= pagination.totalPages) {

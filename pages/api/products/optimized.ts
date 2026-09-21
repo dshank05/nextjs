@@ -3,22 +3,11 @@ import { format } from 'date-fns'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 
-// Simple in-memory cache for lookup data (resets on server restart)
-const lookupCache = new Map<string, { data: any; timestamp: number }>()
-const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
-
-async function getCachedLookupData(key: string, fetcher: () => Promise<any>) {
-  const cached = lookupCache.get(key)
-  const now = Date.now()
-
-  if (cached && (now - cached.timestamp) < CACHE_TTL) {
-    return cached.data
-  }
-
-  const data = await fetcher()
-  lookupCache.set(key, { data, timestamp: now })
-  return data
-}
+// Removed: lookupCache / getCachedLookupData, and createSearchableText below.
+// Neither was ever called - a module-level Map that nothing read or wrote, and
+// a search-normalising helper with no caller (F-106). Dead code in a file this
+// size hides the live code; the caching idea is worth revisiting deliberately
+// if the lookup queries ever show up in a profile.
 
 // Search normalization function
 function normalizeSearchText(text: string): string {
@@ -27,23 +16,6 @@ function normalizeSearchText(text: string): string {
     .trim()
     .replace(/\s+/g, '') // Remove all whitespace
     .replace(/[^a-z0-9]/g, '') // Remove special characters except alphanumeric
-}
-
-function createSearchableText(productName: string, partNo: string): string {
-  const normalizedProductName = productName
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, '') // Keep letters, numbers, spaces, and hyphens
-    .replace(/\s+/g, '') // Remove spaces
-    .replace(/-/g, '') // Remove hyphens for searching
-
-  const normalizedPartNo = partNo
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '') // Remove all whitespace
-    .replace(/[^a-z0-9]/g, '') // Remove special characters
-
-  return `${normalizedProductName} ${normalizedPartNo}`.trim()
 }
 
 // Columns the search box may match against. A column name cannot be passed as a
@@ -72,6 +44,7 @@ async function handler(
       company_id = '',
       quantity = '', // NEW: Filter by exact quantity/stock
       lowStock = 'false',
+      stockFilter = 'all', // in_stock | out_of_stock | low_stock | all
       startDate = '',
       endDate = '',
       uid = '', // NEW: Filter by product ID
@@ -165,6 +138,21 @@ async function handler(
       }
     }
 
+    // Handle stock status. in_stock and out_of_stock are plain column
+    // comparisons; low_stock is a column-to-column comparison and is handled on
+    // the raw path below.
+    //
+    // This endpoint understood none of them - it only ever looked at `lowStock`
+    // - so selecting In Stock or Out of Stock changed nothing (F-95). An exact
+    // `quantity` is the more specific request, so it wins if both arrive.
+    if (where.stock === undefined) {
+      if (stockFilter === 'in_stock') {
+        where.stock = { gt: 0 };
+      } else if (stockFilter === 'out_of_stock') {
+        where.stock = { lte: 0 };
+      }
+    }
+
     // Handle date filtering at database level
     if (startDateTimestamp) {
       where.last_purchase_date = { gte: startDateTimestamp }
@@ -175,14 +163,21 @@ async function handler(
         { lte: endDateTimestamp }
     }
 
-    // Handle car model filtering (convert name to ID first)
-    let carModelId: number | undefined;
+    // Handle subcategory filtering.
+    //
+    // `subcategory` is a product_subcategory id, which is what the list page
+    // sends. It used to be looked up as a CAR MODEL NAME against
+    // car_models.model_name - a parameter named after one thing that filtered
+    // another - so a subcategory id never matched anything, `carModelId` stayed
+    // undefined, the request fell through to the Prisma path and the filter was
+    // silently dropped (F-96). Car models have their own `model` parameter and
+    // always did. product_subcategory_id was never filtered on here at all,
+    // even though subcategoryName is both returned and sortable.
     if (subcategory && subcategory !== '') {
-      const carModelRecord = await prisma.car_models.findFirst({
-        where: { model_name: subcategory as string },
-        select: { id: true }
-      });
-      carModelId = carModelRecord?.id;
+      const subcategoryId = parseInt(subcategory as string, 10);
+      if (!isNaN(subcategoryId)) {
+        where.product_subcategory_id = subcategoryId;
+      }
     }
 
     // Handle single car model selection
@@ -194,8 +189,13 @@ async function handler(
       }
     }
 
-    // Determine if we need special handling for complex filters
-    const needsSpecialHandling = lowStock === 'true' || carModelId || hasModelFilter;
+    // Determine if we need special handling for complex filters.
+    //
+    // Only two filters actually need raw SQL: low stock, which compares two
+    // columns, and car models, which match inside a comma-joined string.
+    // Subcategory is an ordinary column and now goes through Prisma with the
+    // rest (F-96).
+    const needsSpecialHandling = lowStock === 'true' || stockFilter === 'low_stock' || hasModelFilter;
 
 
     let products: any[];
@@ -225,8 +225,19 @@ async function handler(
 
       if (where.id) { rawQuery += ` AND p.id = ?`; params.push(where.id); }
       if (where.product_category_id) { rawQuery += ` AND p.product_category_id = ?`; params.push(where.product_category_id); }
+      // The raw path has to apply every filter the Prisma path applies, or the
+      // filter silently disappears whenever a low-stock or car-model filter is
+      // combined with it - the same trap as F-62.
+      if (where.product_subcategory_id) { rawQuery += ` AND p.product_subcategory_id = ?`; params.push(where.product_subcategory_id); }
       if (where.company_id) { rawQuery += ` AND p.company_id = ?`; params.push(where.company_id); }
-      if (where.stock !== undefined) { rawQuery += ` AND p.stock = ?`; params.push(where.stock); }
+      // where.stock is either an exact quantity or a range object, now that
+      // in_stock/out_of_stock are honoured (F-95).
+      if (typeof where.stock === 'number') {
+        rawQuery += ` AND p.stock = ?`; params.push(where.stock);
+      } else if (where.stock && typeof where.stock === 'object') {
+        if (where.stock.gt !== undefined) { rawQuery += ` AND p.stock > ?`; params.push(where.stock.gt); }
+        if (where.stock.lte !== undefined) { rawQuery += ` AND p.stock <= ?`; params.push(where.stock.lte); }
+      }
       if (where.last_purchase_date?.gte) { rawQuery += ` AND p.last_purchase_date >= ?`; params.push(where.last_purchase_date.gte); }
       if (where.last_purchase_date?.lte) { rawQuery += ` AND p.last_purchase_date <= ?`; params.push(where.last_purchase_date.lte); }
 
@@ -250,7 +261,7 @@ async function handler(
       }
 
       // Low stock condition
-      if (lowStock === 'true') {
+      if (lowStock === 'true' || stockFilter === 'low_stock') {
         // "Low stock" means below the minimum someone actually set for the
         // product. A min_stock of 0 or NULL means no minimum was defined, so
         // the product cannot be below it.
@@ -274,11 +285,6 @@ async function handler(
       const CAR_MODEL_CLAUSE =
         '(p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids = ?)';
       const carModelParams = (id: string | number) => [`%,${id},%`, `${id},%`, `%,${id}`, String(id)];
-
-      if (carModelId) {
-        rawQuery += ` AND ${CAR_MODEL_CLAUSE}`;
-        params.push(...carModelParams(carModelId));
-      }
 
       if (model && model !== '') {
         const selectedModelIds = (model as string).split(',').map(id => id.trim()).filter(id => id !== '');
@@ -468,10 +474,9 @@ async function handler(
       query: req.query,
       timestamp: new Date().toISOString()
     });
-    res.status(500).json({
-      message: 'Failed to fetch optimized products',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    // Logged above in full; the client gets a bare message. The raw Prisma text
+    // names tables and constraints and should not leave the server (F-81).
+    res.status(500).json({ message: 'Failed to fetch optimized products' })
   }
 }
 
@@ -487,9 +492,15 @@ async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<stri
 
     if (numericIds.length === 0) return new Map();
 
-    // 🔥 SINGLE EFFICIENT QUERY: Get latest purchase rates for all products at once
-    // Uses window function approach with ROW_NUMBER() to get the latest record per product
-    const latestPurchases = await prisma.$queryRaw`
+    // One placeholder per id, not one placeholder for the whole list.
+    //
+    // The second copy of the same defect as pages/api/products/index.ts:
+    // `IN (${numericIds.join(',')})` inside a $queryRaw TAGGED TEMPLATE binds
+    // the joined string as one parameter, MySQL coerces '1,2,3' to 1, and the
+    // query matches only product_id 1. Every other product silently fell back
+    // to `latest_purchase_rate` or `opening_rate` with nothing thrown (F-94).
+    const placeholders = numericIds.map(() => '?').join(',');
+    const latestPurchases = await prisma.$queryRawUnsafe(`
       SELECT DISTINCT
         pi.product_id,
         pi.rate
@@ -499,11 +510,11 @@ async function getPurchaseRatesOptimized(productIds: string[]): Promise<Map<stri
           rate,
           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY invoice_date DESC, rate DESC) as rn
         FROM purchase_items
-        WHERE product_id IN (${numericIds.join(',')})
+        WHERE product_id IN (${placeholders})
           AND rate > 0
       ) pi
       WHERE pi.rn = 1
-    ` as any[];
+    `, ...numericIds) as any[];
 
     // Build result map from single query results
     const resultMap = new Map<string, number>();

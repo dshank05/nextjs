@@ -1,7 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 export function withObservability(
-  handler: (req: NextApiRequest, res: NextApiResponse) => Promise<void>
+  // Promise<unknown>, not Promise<void>. Handlers in this codebase are written
+  // both ways - some end with `res.json(...)`, some `return res.json(...)` -
+  // and the narrower type rejected every handler of the second kind, which is
+  // why the busiest product route could not be wrapped (F-89). The return value
+  // is ignored either way; Next.js takes the response from `res`.
+  handler: (req: NextApiRequest, res: NextApiResponse) => Promise<unknown>
 ) {
   return async (req: NextApiRequest, res: NextApiResponse) => {
     const start = performance.now();

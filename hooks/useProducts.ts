@@ -18,7 +18,18 @@ async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Pro
   }
   if (filters.companyFilter) params.append('company_id', filters.companyFilter);
   if (filters.quantityFilter) params.append('quantity', filters.quantityFilter);
-  if (filters.stockFilter === 'low') params.append('lowStock', 'true');
+  // Stock status.
+  //
+  // This compared against 'low'. Nothing in the app produces 'low' - the list
+  // page defaults to 'all' and the only other values anywhere are 'low_stock',
+  // 'in_stock' and 'out_of_stock' - so the low-stock filter never once reached
+  // the server, and in_stock/out_of_stock were not forwarded at all (F-95).
+  if (filters.stockFilter && filters.stockFilter !== 'all') {
+    params.append('stockFilter', filters.stockFilter);
+    if (filters.stockFilter === 'low_stock' || filters.stockFilter === 'low') {
+      params.append('lowStock', 'true');
+    }
+  }
   if (filters.startDate) params.append('startDate', filters.startDate);
   if (filters.endDate) params.append('endDate', filters.endDate);
   if (filters.uidFilter) params.append('uid', filters.uidFilter);

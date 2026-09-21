@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
-import { validateProduct, findConflictingPartNo, buildProductData } from '../../../lib/product';
+import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage } from '../../../lib/product';
 import { withObservability } from '../../../lib/withObservability';
 import formidable from 'formidable';
 import fs from 'fs';
@@ -177,7 +177,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           where.stock = { gt: 0 };
           break;
         case 'out_of_stock':
-          where.stock = { equals: 0 };
+          // <= 0, not = 0. Stock can be negative - product 211 sits at -1
+          // today (F-73) - and a product you cannot sell is out of stock
+          // whether it reads 0 or -1. /api/products/optimized uses the same
+          // rule so the two endpoints agree.
+          where.stock = { lte: 0 };
           break;
         case 'low_stock':
           // Low stock: stock > 0 AND stock <= min_stock
@@ -209,11 +213,30 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Handle date range filters
+    // Handle date range filters.
+    //
+    // This filtered on `created_at`, a column the Product model did not have,
+    // so any request carrying startDate or endDate died inside Prisma with an
+    // "unknown argument" error - a hard 500 on the main list endpoint (F-93).
+    //
+    // Product does have created_at now (F-82), but the range is applied to
+    // `last_purchase_date` because that is what /api/products/optimized has
+    // always filtered on, and what the list page's Date Range control means
+    // sitting next to its Last Purchase Date column. Two endpoints answering
+    // the same question differently is exactly how F-43 and F-70 happened.
+    const toUnixSeconds = (value: string, endOfDay = false): number | undefined => {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return undefined;
+      if (endOfDay) date.setHours(23, 59, 59, 999);
+      return Math.floor(date.getTime() / 1000);
+    };
     if (startDate || endDate) {
-      where.created_at = {};
-      if (startDate) where.created_at.gte = new Date(startDate as string);
-      if (endDate) where.created_at.lte = new Date(endDate as string);
+      const range: any = {};
+      const gte = startDate ? toUnixSeconds(startDate as string) : undefined;
+      const lte = endDate ? toUnixSeconds(endDate as string, true) : undefined;
+      if (gte !== undefined) range.gte = gte;
+      if (lte !== undefined) range.lte = lte;
+      if (Object.keys(range).length > 0) where.last_purchase_date = range;
     }
 
     let products: any[];
@@ -221,56 +244,67 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Handle low stock filter with raw SQL since Prisma doesn't support field-to-field comparisons
     if (stockFilter === 'low_stock') {
-      // Build search conditions for raw SQL
-      let searchConditions = '';
-      if (search) {
-        const term = (search as string).trim();
-        searchConditions = `AND (p.display_name LIKE '%${term}%' OR p.product_name LIKE '%${term}%' OR p.part_no LIKE '%${term}%')`;
-      }
-
-      // Build car model conditions for raw SQL
-      let modelConditions = '';
-      if (modelFilter && (modelFilter as string).trim()) {
-        const modelId = (modelFilter as string).trim();
-        modelConditions = `AND (p.car_model_ids LIKE '%,${modelId},%' OR p.car_model_ids LIKE '${modelId},%' OR p.car_model_ids LIKE '%,${modelId}' OR p.car_model_ids = '${modelId}')`;
-      }
-
-      // Use raw SQL only for low stock filter
-      const limitClause = isFetchAll ? '' : `LIMIT ${limitNum} OFFSET ${skip}`;
-      const lowStockProducts = await prisma.$queryRaw`
+      // Parameterised, and assembled the same way /api/products/optimized does
+      // it. Two things were wrong here.
+      //
+      // First, this used prisma.$queryRaw - a TAGGED TEMPLATE - with SQL
+      // FRAGMENTS in the interpolations. A tagged template binds every `${}` as
+      // a value, not as SQL, so what reached MySQL was `WHERE ? ? ? ? ? ? ? ?`
+      // and it answered with syntax error 1064. Requesting stockFilter=low_stock
+      // was a guaranteed 500 (F-92). Had those fragments been interpolated as
+      // text, the search term went in unescaped and it would have been an
+      // injection instead.
+      //
+      // Second, the rule itself was a third variant: `stock > 0 AND stock <=
+      // min_stock`. F-70 unified the Low Stock page and the minimum-stock report
+      // but missed this endpoint, so "what is low on stock" still had two
+      // answers. It now uses the same rule as everywhere else: a min_stock of 0
+      // or NULL means no minimum was ever set, so the product cannot be below it.
+      const params: any[] = [];
+      let lowStockSql = `
         SELECT p.*, g.rate as gst_rate_value
         FROM product p
         LEFT JOIN gst_tax_rate g ON p.gst_rate_id = g.id
-        WHERE ${where.is_active !== undefined ? `p.is_active = ${where.is_active}` : '1=1'}
-          ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
-          ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
-          ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
-          ${where.part_no ? `AND p.part_no LIKE '%${where.part_no?.contains}%'` : ''}
-          ${where.id ? `AND p.id = ${where.id}` : ''}
-          ${searchConditions}
-          ${modelConditions}
-          ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
-        ORDER BY p.id DESC
-        ${limitClause}
-      ` as any[];
+        WHERE 1=1
+      `;
 
-      // Get total count for low stock
-      const totalResult = await prisma.$queryRaw`
-        SELECT COUNT(*) as count
-        FROM product p
-        WHERE ${where.is_active !== undefined ? `p.is_active = ${where.is_active}` : '1=1'}
-          ${where.product_category_id ? `AND p.product_category_id = ${where.product_category_id}` : ''}
-          ${where.product_subcategory_id ? `AND p.product_subcategory_id = ${where.product_subcategory_id}` : ''}
-          ${where.company_id ? `AND p.company_id = ${where.company_id}` : ''}
-          ${where.part_no ? `AND p.part_no LIKE '%${where.part_no?.contains}%'` : ''}
-          ${where.id ? `AND p.id = ${where.id}` : ''}
-          ${searchConditions}
-          ${modelConditions}
-          ${stockFilter === 'low_stock' ? 'AND p.stock > 0 AND p.stock <= p.min_stock' : ''}
-      ` as any[];
+      if (where.is_active !== undefined) { lowStockSql += ` AND p.is_active = ?`; params.push(where.is_active); }
+      if (where.product_category_id) { lowStockSql += ` AND p.product_category_id = ?`; params.push(where.product_category_id); }
+      if (where.product_subcategory_id) { lowStockSql += ` AND p.product_subcategory_id = ?`; params.push(where.product_subcategory_id); }
+      if (where.company_id) { lowStockSql += ` AND p.company_id = ?`; params.push(where.company_id); }
+      if (where.part_no?.contains) { lowStockSql += ` AND p.part_no LIKE ?`; params.push(`%${where.part_no.contains}%`); }
+      if (where.id) { lowStockSql += ` AND p.id = ?`; params.push(where.id); }
+      if (where.last_purchase_date?.gte) { lowStockSql += ` AND p.last_purchase_date >= ?`; params.push(where.last_purchase_date.gte); }
+      if (where.last_purchase_date?.lte) { lowStockSql += ` AND p.last_purchase_date <= ?`; params.push(where.last_purchase_date.lte); }
 
-      products = lowStockProducts;
-      total = parseInt(totalResult[0].count);
+      if (search) {
+        const term = `%${(search as string).trim()}%`;
+        lowStockSql += ` AND (p.display_name LIKE ? OR p.product_name LIKE ? OR p.part_no LIKE ?)`;
+        params.push(term, term, term);
+      }
+
+      if (modelFilter && (modelFilter as string).trim()) {
+        const modelId = (modelFilter as string).trim();
+        lowStockSql += ` AND (p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids LIKE ? OR p.car_model_ids = ?)`;
+        params.push(`%,${modelId},%`, `${modelId},%`, `%,${modelId}`, modelId);
+      }
+
+      lowStockSql += ` AND p.min_stock IS NOT NULL AND p.min_stock > 0 AND p.stock < p.min_stock`;
+
+      const totalResult = await prisma.$queryRawUnsafe(
+        `SELECT COUNT(*) as count FROM (${lowStockSql}) as filtered_products`,
+        ...params
+      ) as any[];
+      total = Number(totalResult[0].count);
+
+      let pagedSql = lowStockSql + ` ORDER BY p.id DESC`;
+      const pagedParams = [...params];
+      if (!isFetchAll) {
+        pagedSql += ` LIMIT ? OFFSET ?`;
+        pagedParams.push(limitNum, skip);
+      }
+
+      products = await prisma.$queryRawUnsafe(pagedSql, ...pagedParams) as any[];
     } else {
       // Normal Prisma query for all other cases (including model filter)
       const queryOptions: any = {
@@ -318,8 +352,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum), hasMore: pageNum * limitNum < total },
     });
   } catch (error) {
+    // Logged in full, returned as a bare message. The raw Prisma text names
+    // tables, columns and constraints and should not leave the server - F-81
+    // was fixed in [id].ts and missed here, which is how the F-92 and F-93
+    // probes came back with the query and the schema in the response body.
     console.error('GET /products error:', error);
-    res.status(500).json({ message: 'Failed to fetch products', error: error instanceof Error ? error.message : 'Unknown' });
+    res.status(500).json({ message: 'Failed to fetch products' });
   }
 }
 
@@ -335,9 +373,39 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     const productDataStr = Array.isArray(fields.productData) ? fields.productData[0] : fields.productData;
     if (!productDataStr) return res.status(400).json({ message: 'Product data is required' });
-    const productData = JSON.parse(productDataStr);
 
+    // Guarded, the way the update path guards it. A malformed payload used to
+    // throw straight past this into the outer catch and answer 500, when the
+    // client is the one that got it wrong (F-109).
+    let productData;
+    try {
+      productData = JSON.parse(productDataStr);
+    } catch (parseError) {
+      console.error('POST /products: JSON parse error:', parseError);
+      return res.status(400).json({ message: 'Invalid JSON in product data' });
+    }
 
+    // Validate BEFORE uploading anything.
+    //
+    // The uploads used to run first, so a product rejected for a missing
+    // warehouse or a duplicate part number had already pushed its image and
+    // barcode to the FTP server, where nothing would ever reference or remove
+    // them (F-104).
+    //
+    // Same rules the update path applies, from the same module, so create and
+    // update cannot drift apart again - which is how edit came to accept an
+    // empty product name that create rejected (F-79).
+    const failure = await validateProduct(productData, { partial: false });
+    if (failure) {
+      return res.status(failure.status).json({ message: failure.message });
+    }
+
+    const partNoConflict = await findConflictingPartNo(productData.part_no);
+    if (partNoConflict) {
+      return res.status(400).json({
+        message: partNoConflictMessage(productData.part_no, partNoConflict)
+      });
+    }
 
     // Smart file handling for new products (all files are new)
     const uploadPromises: Promise<void>[] = [];
@@ -377,21 +445,6 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await Promise.all(uploadPromises);
     }
 
-    // Same rules the update path applies, from the same module, so create and
-    // update cannot drift apart again - which is how edit came to accept an
-    // empty product name that create rejected (F-79).
-    const failure = await validateProduct(productData, { partial: false });
-    if (failure) {
-      return res.status(failure.status).json({ message: failure.message });
-    }
-
-    const partNoConflict = await findConflictingPartNo(productData.part_no);
-    if (partNoConflict) {
-      return res.status(400).json({
-        message: `Part number "${String(productData.part_no).trim()}" is already in use by another product (ID: ${partNoConflict.id}). Please use a different part number.`
-      });
-    }
-
     const finalProductData: any = await buildProductData(productData, { partial: false });
 
     // Opening stock IS the starting stock - but only here, at creation. This is
@@ -406,14 +459,17 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     try {
       const product = await prisma.product.create({ data: finalProductData });
 
-      // ===== BACKGROUND: Update display_name with UID =====
-      // Fire background update - don't wait for it to complete
-      prisma.product.update({
+      // display_name needs the id, which only exists after the insert, so it is
+      // a second statement - but an AWAITED one.
+      //
+      // It used to be fired and forgotten with a .catch() that only logged. If
+      // it lost the race or failed, the product kept display_name NULL, and
+      // display_name is the FIRST field both list endpoints search on - so the
+      // product was effectively unfindable by name and nothing reported why
+      // (F-105).
+      await prisma.product.update({
         where: { id: product.id },
         data: { display_name: `${product.id} ${product.product_name}` }
-      }).catch(error => {
-        console.error('Background display_name update failed:', error);
-        // Don't fail the main request if background update fails
       });
 
       res.status(201).json({
@@ -424,18 +480,32 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           part_no: product.part_no
         }
       });
-    } catch (dbError) {
+    } catch (dbError: any) {
+      // Translated at the boundary, the same way [id].ts does it. This used to
+      // return the raw Prisma message AND the stack trace to the client, which
+      // is F-81 with an extra step - the fix landed on the update path and not
+      // on create.
       console.error('POST /products: Database error:', dbError);
-      return res.status(500).json({
-        status: 'failure',
-        message: 'Failed to create product',
-        error: dbError instanceof Error ? dbError.message : 'Database error',
-        details: dbError instanceof Error ? dbError.stack : 'Unknown database error'
-      });
+      if (dbError?.code === 'P2002') {
+        // part_no carries a database-level unique index across ALL products,
+        // active or not, which is wider than the check findConflictingPartNo
+        // makes (F-100).
+        return res.status(409).json({
+          status: 'failure',
+          message: 'That part number is already in use, including by a deactivated product'
+        });
+      }
+      if (dbError?.code === 'P2003') {
+        return res.status(400).json({
+          status: 'failure',
+          message: 'A selected category, company, warehouse, rack or GST rate does not exist'
+        });
+      }
+      return res.status(500).json({ status: 'failure', message: 'Failed to create product' });
     }
   } catch (error) {
     console.error('POST /products error:', error);
-    res.status(500).json({ status: 'failure', message: 'Failed to create product', error: error instanceof Error ? error.message : 'Unknown' });
+    res.status(500).json({ status: 'failure', message: 'Failed to create product' });
   }
 }
 
@@ -448,9 +518,18 @@ async function getPurchaseRatesOptimized(productIds: number[]): Promise<Map<numb
   if (!productIds.length) return new Map();
 
   try {
-    // 🔥 SINGLE EFFICIENT QUERY: Get latest purchase rates for all products at once
-    // Uses window function approach with ROW_NUMBER() to get the latest record per product
-    const latestPurchases = await prisma.$queryRaw`
+    // One placeholder per id, not one placeholder for the whole list.
+    //
+    // This read `IN (${productIds.join(',')})` inside a $queryRaw TAGGED
+    // TEMPLATE, so the joined string went in as a single bound parameter:
+    // `IN (?)` with the value '1,2,3'. MySQL coerces that string to the number
+    // 1, so the query only ever matched product_id 1 and every other product
+    // silently fell back to its opening rate. Nothing threw, so the catch below
+    // never ran either (F-94). Invisible today only because purchase_items is
+    // empty; it would have quietly mispriced the whole list once Phase 4 wrote
+    // the first purchase.
+    const placeholders = productIds.map(() => '?').join(',');
+    const latestPurchases = await prisma.$queryRawUnsafe(`
       SELECT DISTINCT
         pi.product_id,
         pi.rate,
@@ -462,11 +541,11 @@ async function getPurchaseRatesOptimized(productIds: number[]): Promise<Map<numb
           invoice_date,
           ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY invoice_date DESC, rate DESC) as rn
         FROM purchase_items
-        WHERE product_id IN (${productIds.join(',')})
+        WHERE product_id IN (${placeholders})
           AND rate > 0
       ) pi
       WHERE pi.rn = 1
-    ` as any[];
+    `, ...productIds) as any[];
 
     // Build result map from single query results
     const resultMap = new Map<number, { rate: number; date: number }>();

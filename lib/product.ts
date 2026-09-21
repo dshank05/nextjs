@@ -63,7 +63,7 @@ const toFloat = (v: any): number | null => {
  */
 export async function validateProduct(
   input: ProductInput,
-  options: { partial?: boolean } = {}
+  options: { partial?: boolean; productId?: number } = {}
 ): Promise<ValidationFailure | null> {
   const partial = options.partial === true;
   const supplied = (field: string) => input[field] !== undefined;
@@ -119,6 +119,31 @@ export async function validateProduct(
     }
   }
 
+  // Quantities and money cannot be negative.
+  //
+  // Nothing checked this anywhere - not the form, which uses <input
+  // type="number"> with no `min`, and not the server. Product 211 currently
+  // holds `stock = -1` with `opening_stock = -1` behind it, and a negative
+  // opening stock is the only way in through this endpoint, so this is very
+  // likely how it got there (F-73, F-110). A negative opening stock also
+  // becomes the starting `stock` on create, and `opening_stock` is the baseline
+  // the stock reconciliation assertion measures against.
+  const NON_NEGATIVE: Array<[string, string]> = [
+    ['opening_stock', 'Opening stock'],
+    ['min_stock', 'Minimum stock'],
+    ['opening_rate', 'Opening rate'],
+    ['mrp', 'MRP'],
+    ['discount', 'Discount'],
+    ['margin', 'Margin']
+  ];
+  for (const [field, label] of NON_NEGATIVE) {
+    if (!supplied(field)) continue;
+    const value = toFloat(input[field]);
+    if (value !== null && value < 0) {
+      return { status: 400, message: `${label} cannot be negative` };
+    }
+  }
+
   if (supplied('rack_id')) {
     const rackId = toInt(input.rack_id);
     if (rackId) {
@@ -126,7 +151,25 @@ export async function validateProduct(
       if (!rack) {
         return { status: 400, message: 'Invalid rack selected' };
       }
-      const warehouseId = toInt(input.warehouse_id);
+
+      // Which warehouse to check the rack against: the one in this payload if
+      // it was sent, otherwise the one already stored on the product.
+      //
+      // The stored fallback is the point. This only compared against
+      // `input.warehouse_id`, so on a partial update carrying `rack_id` alone
+      // the check was skipped entirely and a product could be moved to a rack
+      // in a completely different warehouse (F-99). The form always sends both,
+      // which is why nothing noticed - but the whole reason the rules moved to
+      // the server is that the form is not the only caller.
+      let warehouseId = toInt(input.warehouse_id);
+      if (!warehouseId && partial && options.productId) {
+        const current = await prisma.product.findUnique({
+          where: { id: options.productId },
+          select: { warehouse_id: true }
+        });
+        warehouseId = current?.warehouse_id ?? null;
+      }
+
       if (warehouseId && rack.warehouse_id !== warehouseId) {
         return { status: 400, message: 'That rack belongs to a different warehouse' };
       }
@@ -136,25 +179,49 @@ export async function validateProduct(
   return null;
 }
 
-/** Part numbers are unique among active products, case-insensitively. */
+/**
+ * Part numbers are unique across ALL products, case-insensitively.
+ *
+ * Across all of them, not just the active ones. `part_no` carries a database
+ * level UNIQUE index that does not care about `is_active`, and since F-63 made
+ * delete a deactivation rather than a delete, inactive rows stay in the table
+ * holding their part numbers. Checking only active products meant the app said
+ * yes and the database then said no, surfacing as a confusing constraint error
+ * against a product the user could not see anywhere in the UI (F-100).
+ *
+ * `is_active` comes back so the caller can say which case it is.
+ */
 export async function findConflictingPartNo(
   partNo: string | null | undefined,
   excludeProductId?: number
-): Promise<{ id: number } | null> {
+): Promise<{ id: number; is_active: boolean } | null> {
   if (!partNo || partNo.trim() === '') return null;
   const trimmed = partNo.trim();
 
   const rows = excludeProductId
     ? (await prisma.$queryRaw`
-        SELECT id FROM product
-        WHERE LOWER(part_no) = LOWER(${trimmed}) AND is_active = true AND id != ${excludeProductId}
+        SELECT id, is_active FROM product
+        WHERE LOWER(part_no) = LOWER(${trimmed}) AND id != ${excludeProductId}
         LIMIT 1` as any[])
     : (await prisma.$queryRaw`
-        SELECT id FROM product
-        WHERE LOWER(part_no) = LOWER(${trimmed}) AND is_active = true
+        SELECT id, is_active FROM product
+        WHERE LOWER(part_no) = LOWER(${trimmed})
         LIMIT 1` as any[]);
 
-  return rows.length > 0 ? { id: rows[0].id } : null;
+  return rows.length > 0
+    ? { id: rows[0].id, is_active: Boolean(rows[0].is_active) }
+    : null;
+}
+
+/** The message both create and update give for a part-number clash. */
+export function partNoConflictMessage(
+  partNo: string,
+  conflict: { id: number; is_active: boolean }
+): string {
+  const where = conflict.is_active
+    ? `another product (ID: ${conflict.id})`
+    : `a deactivated product (ID: ${conflict.id}), which still holds it`;
+  return `Part number "${String(partNo).trim()}" is already in use by ${where}. Please use a different part number.`;
 }
 
 /**

@@ -1,11 +1,12 @@
 import { prisma } from '../../../lib/db';
 import { NextApiRequest, NextApiResponse } from 'next';
+import { withObservability } from '../../../lib/withObservability';
 
 // Uses the shared client from lib/db. This file used to construct its own
 // PrismaClient and disconnect it per request, which opens a second connection
 // pool and, under dev HMR, leaks one per reload (F-72).
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
       const { page = 1, limit = 50, search = '', sortBy = 'company_name', sortOrder = 'asc' } = req.query;
@@ -104,3 +105,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(500).json({ message: 'Internal server error' });
   }
 }
+// Wrapped like its siblings (F-89).
+export default withObservability(handler);

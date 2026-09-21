@@ -71,6 +71,13 @@ model Product {
   company_id             Int?
   last_purchase_date     Int?
   latest_purchase_rate   Float?
+  // Nullable on purpose. 21 other models carry these; Product did not, so there
+  // was no record of when a product last changed and no way to detect two people
+  // editing the same one (F-82, F-83). The 602 products that already existed when
+  // these columns were added keep NULL, which honestly means "not known", rather
+  // than being backfilled with the time of the migration.
+  created_at             DateTime?            @default(now())
+  updated_at             DateTime?            @updatedAt
   invoice_items          Invoiceitems[]
   purchase_items         Purchaseitems[]
   invoice_itemsx         invoice_itemsx[]
@@ -247,7 +254,13 @@ model Purchaseitems {
   // constraint, so a product could be deleted out from under its purchase
   // history while the sale side was protected by RESTRICT. Applied while the
   // table was still empty; later it would have needed a data-repair pass first.
-  product               Product?                @relation(fields: [product_id], references: [id], map: "purchase_items_product_fkey")
+  //
+  // onDelete is stated explicitly. The constraint was applied to the database as
+  // RESTRICT, but this relation is optional, and Prisma's default for an optional
+  // relation is SET NULL - so the schema disagreed with the database and the next
+  // `prisma db push` would have dropped the constraint and recreated it as SET
+  // NULL, silently undoing the protection F-63 added (F-108).
+  product               Product?                @relation(fields: [product_id], references: [id], onDelete: Restrict, map: "purchase_items_product_fkey")
 
   @@index([name_of_product, invoice_date(sort: Desc)], map: "idx_purchase_items_product_date")
   @@index([invoice_no, product_id], map: "idx_purchase_items_invoice_product")
