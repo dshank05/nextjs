@@ -10,8 +10,8 @@
 | 1 · Foundations | **done** — F-01 code unified, data repair no longer needed (see below), F-25 fixed. F-06/F-07 still open |
 | 2 · Settings | **mostly done** — F-28 fixed, F-29 fixed, F-30 partial. 6 pages left |
 | 3 · Products | **done** — 3a, 3b and a second pass (3c) over list/view/add/edit. F-101, F-107, F-111, F-112 left open; F-73/F-74 need the owner |
-| 4 · Purchase | **next** — apply `JOURNEY_AUDIT.md` §11, plus the fourth question 3c added |
-| 5 · Sale & Salex | not started |
+| 4 · Purchase | **done** — create, edit and delete audited and fixed; five suites guard it. F-08/F-12/F-13/F-16/F-21 closed. Open: P4-11 and P4-21 (owner), L-24, L-25 (Phase 7) |
+| 5 · Sale & Salex | **next** — carry L-8, L-24 and L-25 in; P4-11 should land first |
 | 6 · Returns | not started |
 | 7 · Reports | not started — runs last, needs journey data |
 

@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-21 — P4-02–14, P4-16, P4-19, P4-20, P4-24, P4-25 done. Round-trip, tax and flow suites all clean; assertions at baseline |
+| **Last updated** | 2026-09-21 — **Phase 4 code work complete.** All four suites clean; assertions at baseline. Only owner decisions and the deferred read queue remain |
 | **Branch / HEAD** | `dev_akaash` / see latest `audit P4-*` commit |
-| **Next action** | **P4-26** (twin reconciliation harness), then the remaining read queue R-7–R-18. Owner decisions outstanding: P4-11, P4-21, F-73, F-74, the `created_at` backfill |
+| **Next action** | Owner decisions (below), then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -893,6 +893,54 @@ Worth recording, because in both cases the code was right and the check was not.
   read every report with a guessed response shape, which made four working reports look
   broken; each is now read with the parameters it requires and the key it returns.
 
+### Phase 4 closing state — 2026-09-21
+
+**Four suites, all clean**, and they are the regression net for this phase:
+
+```
+node scripts/audit-assert.js          six reconciliation assertions (A1-A6)
+node scripts/audit-p4-roundtrip.js    create -> edit -> delete, stock as deltas
+node scripts/audit-p4-tax.js          server computes tax, payload ignored
+node scripts/audit-p4-flow.js         every table and report a purchase touches
+node scripts/audit-twin-check.js      purchase vs sale ledger handlers agree
+```
+
+The only standing assertion failure is **A5's pre-existing F-73** (product 211 at stock
+−1), which is the owner's call.
+
+**P4-26, the twin harness.** Feeds one change set to both ledger handlers, normalises the
+vendor vocabulary onto the customer one and compares structurally. All nine transitions
+agree. Its header is explicit about what it cannot catch, because this phase produced one
+of each kind:
+
+- **L-7** (`0→2` missing) it would *not* have caught — both twins were missing it
+  identically, and two identical wrongs compare equal. That is why every transition is
+  **enumerated** and a reachable transition emitting nothing is reported as EMPTY. The
+  state-space check finds shared gaps; the twin check finds drift.
+- **L-8** it also cannot catch, because the normaliser maps `sale` and `salex` onto one
+  token. L-8 is about what that ternary *evaluates to at runtime*, not the shape of the
+  operation, so it needs the caller exercised — Phase 5.
+
+Wording is compared separately from structure on purpose: "Payment made for purchase" and
+"Payment received for sale" are each correct for their own side, and holding them
+identical would drown a real divergence in cosmetic noise.
+
+### What is left, and who owns it
+
+| Item | Why it is not done |
+|---|---|
+| **P4-11** — migrate `purchase_items` (and `bill_to`) to reference `purchase.id` with a real FK | Owner decision on migration timing. Should land **before Phase 5**, because sale already stores the header id in the same column name and aligning them is what lets the reports be written once |
+| **P4-21** — purchase has no per-item discount while sale and salex do | Owner decision on whether that is intended |
+| **P4-23** — `purchase-returns/[id]-old.ts` is still a live route | The owner already deferred this to G-04 on 2026-09-20. Deferral confirmed, not re-litigated — and it is Phase 6 territory |
+| **L-24** — duplicate product lines cannot be edited | Guarded, not solved. The edit refuses rather than corrupting stock. The real fix keys the reconciliation on the item row id |
+| **L-25** — `vendor-outstanding` shows paid purchases | Reports defect, Phase 7 |
+| **F-73**, **F-74**, `created_at` backfill | Owner's data decisions, carried from Phase 3 |
+| **R-7 to R-18** | The rest of the read queue. The files that carried defects were read in full; these are the ones no finding has pointed at yet |
+
+**Deployment note, repeated because it is easy to miss:** the `bill_to.fy` migration adds
+the column as NULL. Existing rows stop matching their purchase until `fy` is backfilled
+from `purchase.fy` on `invoice_no`. Assertion A6 detects the un-backfilled state.
+
 ### Step 1 — the read queue
 
 "Leave no issue, however small" means every file below is read **in full** before its
@@ -957,7 +1005,7 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-23** | Medium | **`purchase-returns/[id]-old.ts` is a live route** mutating stock (F-06, deferred to G-04). Now that the rewrite is settled, delete it — or confirm the deferral still stands | F-06 | todo |
 | **P4-24** | High | **Transaction flow verification** — Step 3 below | method | todo |
 | **P4-25** | High | **Reporting verification** — Step 4 below | method | todo |
-| **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match. This would have caught L-8 the day it appeared and is what makes the eventual collapse of the pairs safe | G-02 | todo |
+| **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match | G-02 | **done** — `scripts/audit-twin-check.js`; all nine transitions agree |
 
 ### Step 3 — transaction flow verification (P4-24)
 
