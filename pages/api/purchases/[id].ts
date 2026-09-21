@@ -4,6 +4,16 @@ import { transactionHandler } from '../../../lib/transaction-handler'
 import { ledgerService } from '../../../lib/ledger-service'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 
+/**
+ * One numeric coercion for every amount that reaches the database, so a missing
+ * or unparseable field becomes 0 rather than NaN. The create path has the same
+ * helper; NaN reaching a Float column is what made P4-04 a 500.
+ */
+const num = (v: any): number => {
+  const n = parseFloat(String(v ?? '').trim())
+  return Number.isFinite(n) ? n : 0
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -725,9 +735,40 @@ export default async function handler(
 
           // Handle item updates
           if (items && Array.isArray(items)) {
+            // Scoped to the financial year (F-08 / P4-10).
             const existingItems = await tx.purchaseitems.findMany({
-              where: { invoice_no: updatedPurchase.invoice_no }
+              where: { invoice_no: updatedPurchase.invoice_no, fy: updatedPurchase.fy }
             })
+
+            // A purchase may legitimately carry the same product on more than
+            // one line - the same part bought at two rates on one bill - and
+            // `createMany` has always written those as separate rows.
+            //
+            // This reconciliation keys everything by product_id, so a second
+            // line for a product overwrote the first in the map: its row id was
+            // lost, so it was never updated and never deleted, and its quantity
+            // vanished from the stock arithmetic. Rather than silently corrupt
+            // stock, refuse the edit and say why (L-24). Reworking the
+            // reconciliation to key on the item ROW id is the real fix and is a
+            // larger change; it is recorded in the plan.
+            const seenProducts = new Set<number>()
+            const duplicateProducts = new Set<number>()
+            for (const item of existingItems) {
+              if (item.product_id === null) continue
+              if (seenProducts.has(item.product_id)) duplicateProducts.add(item.product_id)
+              seenProducts.add(item.product_id)
+            }
+            if (duplicateProducts.size > 0) {
+              throw Object.assign(
+                new Error('DUPLICATE_PRODUCT_LINES'),
+                {
+                  httpStatus: 400,
+                  clientMessage:
+                    'This purchase has the same product on more than one line, which cannot be edited safely yet. ' +
+                    'Delete and re-enter the purchase, or combine those lines.'
+                }
+              )
+            }
 
             const existingItemsMap = new Map<number, any>()
             const newItemsMap = new Map<number, any>()
@@ -762,7 +803,6 @@ export default async function handler(
               })
             })
 
-            // ✅ OPTIMIZATION 1: Collect deletions, additions, and updates
             const itemsToDelete: Array<{ id: number; productId: number; qty: number }> = []
             const itemsToAdd: Array<{ productId: number; data: any }> = []
             const itemsToUpdate: Array<{ id: number; productId: number; data: any; qtyDiff: number; rateChanged: boolean }> = []
@@ -783,13 +823,11 @@ export default async function handler(
               const existingData = existingItemsMap.get(productId)
 
               if (!existingData) {
-                // New item
                 itemsToAdd.push({ productId, data: newData })
               } else {
-                // Check if update needed
-                const qtyDifference = newData.qty - existingData.qty
-                const rateChanged = Math.abs(newData.rate - existingData.item.rate) > 0.001
-                const subtotalChanged = Math.abs(newData.total - existingData.item.subtotal) > 0.001
+                const qtyDifference = num(newData.qty) - num(existingData.qty)
+                const rateChanged = Math.abs(num(newData.rate) - num(existingData.item.rate)) > 0.001
+                const subtotalChanged = Math.abs(num(newData.total) - num(existingData.item.subtotal)) > 0.001
                 const nameChanged = newData.name_of_product !== existingData.item.name_of_product
                 const carModelChanged = newData.car_model !== existingData.item.car_model
 
@@ -807,33 +845,43 @@ export default async function handler(
               }
             }
 
-            // ===== OPTIMIZED: Batch stock updates for deletions =====
-            if (itemsToDelete.length > 0) {
-              const productIds = itemsToDelete.map(item => item.productId);
-              
-              // Build CASE statement for stock decrements
-              const stockCases = itemsToDelete
-                .filter(item => item.qty > 0)
-                .map(item => `WHEN ${item.productId} THEN stock - ${item.qty}`)
-                .join(' ');
-
-              await Promise.all([
-                // Delete all items at once
-                tx.purchaseitems.deleteMany({
-                  where: { id: { in: itemsToDelete.map(item => item.id) } }
-                }),
-                // Single query for all stock decrements
-                stockCases.length > 0
-                  ? tx.$executeRawUnsafe(`
-                      UPDATE product 
-                      SET stock = CASE id ${stockCases} ELSE stock END
-                      WHERE id IN (${productIds.join(',')})
-                    `)
-                  : Promise.resolve()
-              ]);
+            // ===== Stock, as one net delta per product =====
+            //
+            // Everything below used to be three separate hand-built
+            // `CASE id WHEN ... THEN stock + ...` statements run through
+            // $executeRawUnsafe inside Promise.all over the same interactive
+            // transaction client. That carried every defect the create path had:
+            //
+            //   F-12  SQL CASE takes the FIRST matching WHEN, so any product
+            //         appearing twice in one statement lost all but one entry.
+            //   F-21  Promise.all over a single interactive `tx` issues
+            //         concurrent queries on one session.
+            //   L-4   last_purchase_date and latest_purchase_rate were written
+            //         unconditionally, so editing an old bill rewrote the
+            //         product's current rate.
+            //   G-01  hand-built SQL with ids and quantities interpolated in.
+            //
+            // Collecting a single net delta per product removes the whole class:
+            // a product cannot appear twice in a Map, so there is no first-match
+            // to lose.
+            const stockDelta = new Map<number, number>()
+            const bump = (productId: number, delta: number) => {
+              if (!Number.isFinite(delta) || delta === 0) return
+              stockDelta.set(productId, (stockDelta.get(productId) || 0) + delta)
             }
 
-            // ✅ OPTIMIZATION 3: Batch load products for new items
+            itemsToDelete.forEach(item => bump(item.productId, -num(item.qty)))
+            itemsToAdd.forEach(item => bump(item.productId, num(item.data.qty)))
+            itemsToUpdate.forEach(item => bump(item.productId, num(item.qtyDiff)))
+
+            // Deletions
+            if (itemsToDelete.length > 0) {
+              await tx.purchaseitems.deleteMany({
+                where: { id: { in: itemsToDelete.map(item => item.id) } }
+              })
+            }
+
+            // Additions
             if (itemsToAdd.length > 0) {
               const newProductIds = itemsToAdd.map(item => item.productId)
               const products = await tx.product.findMany({
@@ -849,14 +897,12 @@ export default async function handler(
 
               const productMap = new Map(products.map(p => [p.id, p]))
 
-              // Validate all products exist
               for (const item of itemsToAdd) {
                 if (!productMap.has(item.productId)) {
                   throw new Error(`Product with ID ${item.productId} not found`)
                 }
               }
 
-              // ✅ OPTIMIZATION 4: Bulk insert new items
               const bulkInsertData = itemsToAdd.map(item => {
                 const product = productMap.get(item.productId)!
                 const newData = item.data
@@ -875,99 +921,70 @@ export default async function handler(
                   vendor_id: updatedPurchase.vendor_id,
                   hsn: product.hsn || '',
                   part: newData.part || '',
-                  qty: parseFloat(newData.qty),
-                  rate: parseFloat(newData.rate),
-                  subtotal: parseFloat(newData.qty) * parseFloat(newData.rate),
-                  gst_percentage: parseFloat(newData.gst_percentage) || 0,
-                  cgst: parseFloat(newData.cgst) || 0,
-                  sgst: parseFloat(newData.sgst) || 0,
-                  igst: parseFloat(newData.igst) || 0,
-                  tax: parseFloat(newData.tax) || 0,
+                  qty: num(newData.qty),
+                  rate: num(newData.rate),
+                  subtotal: num(newData.qty) * num(newData.rate),
+                  gst_percentage: num(newData.gst_percentage),
+                  cgst: num(newData.cgst),
+                  sgst: num(newData.sgst),
+                  igst: num(newData.igst),
+                  tax: num(newData.tax),
                   fy: updatedPurchase.fy,
                   invoice_date: updatedPurchase.invoice_date
                 }
               })
 
-              // ===== OPTIMIZED: Batch stock updates for additions =====
-              const addProductIds = itemsToAdd.map(item => item.productId);
-              
-              // Build CASE statements for stock increments
-              const stockCases = itemsToAdd.map(item => 
-                `WHEN ${item.productId} THEN stock + ${parseFloat(item.data.qty.toString())}`
-              ).join(' ');
-              
-              const rateCases = itemsToAdd.map(item => 
-                `WHEN ${item.productId} THEN ${parseFloat(item.data.rate.toString())}`
-              ).join(' ');
-
-              // Parallel: Bulk insert + single stock update query
-              await Promise.all([
-                tx.purchaseitems.createMany({ data: bulkInsertData }),
-                tx.$executeRawUnsafe(`
-                  UPDATE product 
-                  SET 
-                    stock = CASE id ${stockCases} ELSE stock END,
-                    latest_purchase_rate = CASE id ${rateCases} ELSE latest_purchase_rate END,
-                    last_purchase_date = ${updatedPurchase.invoice_date}
-                  WHERE id IN (${addProductIds.join(',')})
-                `)
-              ]);
+              await tx.purchaseitems.createMany({ data: bulkInsertData })
             }
 
-            // ===== OPTIMIZED: Batch stock updates for modifications =====
-            if (itemsToUpdate.length > 0) {
-              // Separate items that need stock updates vs rate updates
-              const itemsWithStockChanges = itemsToUpdate.filter(item => Math.abs(item.qtyDiff) > 0.001);
-              const itemsWithRateChanges = itemsToUpdate.filter(item => item.rateChanged);
-              
-              await Promise.all([
-                // Parallel item updates
-                ...itemsToUpdate.map(item =>
-                  tx.purchaseitems.update({
-                    where: { id: item.id },
-                    data: {
-                      qty: parseFloat(item.data.qty),
-                      rate: parseFloat(item.data.rate),
-                      subtotal: parseFloat(item.data.qty) * parseFloat(item.data.rate),
-                      name_of_product: item.data.name_of_product,
-                      car_model: item.data.car_model,
-                      gst_percentage: parseFloat(item.data.gst_percentage) || 0,
-                      cgst: parseFloat(item.data.cgst) || 0,
-                      sgst: parseFloat(item.data.sgst) || 0,
-                      igst: parseFloat(item.data.igst) || 0,
-                      tax: parseFloat(item.data.tax) || 0
-                    }
-                  })
-                ),
-                // Single query for stock increments
-                itemsWithStockChanges.length > 0
-                  ? tx.$executeRawUnsafe(`
-                      UPDATE product 
-                      SET stock = CASE id 
-                        ${itemsWithStockChanges.map(item => 
-                          `WHEN ${item.productId} THEN stock + ${item.qtyDiff}`
-                        ).join(' ')}
-                        ELSE stock 
-                      END
-                      WHERE id IN (${itemsWithStockChanges.map(item => item.productId).join(',')})
-                    `)
-                  : Promise.resolve(),
-                // Single query for rate updates
-                itemsWithRateChanges.length > 0
-                  ? tx.$executeRawUnsafe(`
-                      UPDATE product 
-                      SET 
-                        latest_purchase_rate = CASE id 
-                          ${itemsWithRateChanges.map(item => 
-                            `WHEN ${item.productId} THEN ${parseFloat(item.data.rate.toString())}`
-                          ).join(' ')}
-                          ELSE latest_purchase_rate 
-                        END,
-                        last_purchase_date = ${updatedPurchase.invoice_date}
-                      WHERE id IN (${itemsWithRateChanges.map(item => item.productId).join(',')})
-                    `)
-                  : Promise.resolve()
-              ]);
+            // Modifications
+            for (const item of itemsToUpdate) {
+              await tx.purchaseitems.update({
+                where: { id: item.id },
+                data: {
+                  qty: num(item.data.qty),
+                  rate: num(item.data.rate),
+                  subtotal: num(item.data.qty) * num(item.data.rate),
+                  name_of_product: item.data.name_of_product,
+                  car_model: item.data.car_model,
+                  gst_percentage: num(item.data.gst_percentage),
+                  cgst: num(item.data.cgst),
+                  sgst: num(item.data.sgst),
+                  igst: num(item.data.igst),
+                  tax: num(item.data.tax)
+                }
+              })
+            }
+
+            // Apply the net stock movement, one product at a time, serialised.
+            for (const [productId, delta] of Array.from(stockDelta.entries())) {
+              await tx.product.update({
+                where: { id: productId },
+                data: { stock: { increment: Math.round(delta) } }
+              })
+            }
+
+            // Rate and date: only when this document is actually the latest, and
+            // only for products whose rate this edit changed or added (L-4).
+            const rateByProduct = new Map<number, number>()
+            itemsToAdd.forEach(item => rateByProduct.set(item.productId, num(item.data.rate)))
+            itemsToUpdate.filter(item => item.rateChanged)
+              .forEach(item => rateByProduct.set(item.productId, num(item.data.rate)))
+
+            for (const [productId, rate] of Array.from(rateByProduct.entries())) {
+              await tx.product.updateMany({
+                where: {
+                  id: productId,
+                  OR: [
+                    { last_purchase_date: null },
+                    { last_purchase_date: { lte: updatedPurchase.invoice_date } }
+                  ]
+                },
+                data: {
+                  latest_purchase_rate: rate,
+                  last_purchase_date: updatedPurchase.invoice_date
+                }
+              })
             }
           }
 
@@ -1051,13 +1068,36 @@ export default async function handler(
           message: "Purchase updated successfully"
         })
 
-      } catch (error) {
+      } catch (error: any) {
+        // Logged in full, returned as a bare message, with the database's own
+        // codes translated. Returning error.message here meant returning the
+        // whole Prisma invocation (P4-20 / L-11).
         console.error('Update purchase error:', error)
-        res.status(500).json({
-          status: "failure",
-          message: 'Failed to update purchase',
-          error: error instanceof Error ? error.message : 'Unknown error'
-        })
+
+        // Errors raised deliberately above carry their own status and wording.
+        if (error?.httpStatus && error?.clientMessage) {
+          return res.status(error.httpStatus).json({
+            status: "failure",
+            message: error.clientMessage,
+            error_code: error.message
+          })
+        }
+        if (error?.code === 'P2025') {
+          return res.status(404).json({ status: "failure", message: 'Purchase not found' })
+        }
+        if (error?.code === 'P2002') {
+          return res.status(409).json({
+            status: "failure",
+            message: 'That purchase conflicts with an existing record. Check the invoice number for this financial year.'
+          })
+        }
+        if (error?.code === 'P2003') {
+          return res.status(400).json({
+            status: "failure",
+            message: 'A selected vendor, staff member or product does not exist'
+          })
+        }
+        res.status(500).json({ status: "failure", message: 'Failed to update purchase' })
       }
       break
 
@@ -1113,10 +1153,10 @@ export default async function handler(
         })
 
       } catch (error) {
+        // Logged in full, returned as a bare message (P4-20 / L-11).
         console.error('Delete purchase error:', error)
         res.status(500).json({ 
-          message: 'Failed to delete purchase', 
-          error: error instanceof Error ? error.message : 'Unknown error' 
+          message: 'Failed to delete purchase' 
         })
       }
       break
