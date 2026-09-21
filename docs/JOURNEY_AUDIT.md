@@ -564,10 +564,10 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-21 — **Phase 4 code work complete.** All four suites clean; assertions at baseline. Only owner decisions and the deferred read queue remain |
-| **Branch / HEAD** | `dev_akaash` / see latest `audit P4-*` commit |
+| **Last updated** | 2026-09-21 — **Phase 4 code work complete.** All five suites clean; assertions at baseline (only A5's pre-existing F-73). Only owner decisions and the deferred read queue remain |
+| **Branch / HEAD** | `dev_akaash` / **`efba4df`** — working tree clean, database at baseline |
 | **Next action** | Owner decisions (below), then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
-| **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
+| **Server** | `npm run dev` on :3000, log in `admin` / `admin123`. Kill stray node processes first — a second server silently takes :3001 and you end up testing stale code |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
 **Environment facts confirmed 2026-09-20** (do not re-check these):
