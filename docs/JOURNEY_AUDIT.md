@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-20 — P4-02, P4-03, P4-04, P4-20 **fixed and verified**; P4-10 part done. Harness back to baseline |
+| **Last updated** | 2026-09-20 — batches 1 and 2 done: P4-02/03/04/05/07/09/20 plus L-4, L-15, L-16, L-19. **F-02 reproduced.** Harness at baseline |
 | **Branch / HEAD** | `dev_akaash` / see latest `audit P4-*` commit |
-| **Next action** | Finish reading `pages/api/purchases/[id].ts` (R-5, read to ~690 of 1115), completing **P4-10**. Then **P4-05** (UNIQUE(fy, invoice_no)) and **P4-07** (F-12 duplicate lines) |
+| **Next action** | Finish **R-5** (`purchases/[id].ts`, read to ~690 of 1115) to complete **P4-10** and audit the edit path's own stock arithmetic. **P4-05's retry loop** still to write. Then **P4-12** (server-side tax) |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -768,6 +768,50 @@ financial years it reported that as a fault. It now pairs on `(invoice_no, fy)`,
 the real F-08 condition: two purchases sharing a number *within one* financial year.
 Worth noting that the harness needed the same fix as the code it checks.
 
+### Batch 2 complete — 2026-09-20
+
+| Task | Verification |
+|---|---|
+| **P4-05** (F-13) | `@@unique([fy, invoice_no])` applied to `purchase`. **The retry loop is still to write** — the index makes a collision impossible, but an auto-numbered create that loses the race currently surfaces as a 409 rather than taking the next number |
+| **P4-07** (F-12) | Same product on two lines, qty 2 and 3 → **stock rose by 5**, and `latest_purchase_rate` took the **later** line's 150. Before: stock rose by 2, rate 100 |
+| **L-4** | Backdated bill (2026-05-01, rate 999) entered after a 2026-09-20 bill at 150 → stock 5 → 6, `latest_purchase_rate` **stayed 150**, `last_purchase_date` **stayed 2026-09-20** |
+| **P4-09** (F-21) | Stock update and ledger write serialised; no `Promise.all` over one interactive `tx` |
+| **G-01** | That statement is now Prisma rather than `$executeRawUnsafe` with interpolated ids and quantities |
+
+F-12, L-4 and G-01 were one edit on purpose. **F-12 existed because the statement was
+hand-built SQL** — a `CASE` with a duplicate `WHEN` is not a mistake the query builder
+lets you make. Fixing the instance without fixing the class would have left the next
+person to rebuild the same trap.
+
+### F-02 reproduced — 2026-09-20
+
+The backdated-purchase test did something this audit had not managed before: it
+**reproduced F-02**, the Critical cross-cutting ledger defect, live.
+
+Two purchases for one vendor — ₹650 dated 2026-09-20, then ₹999 entered afterwards but
+dated 2026-05-01:
+
+| Ledger row | Stored `balance` | Recomputed date-ordered |
+|---|---|---|
+| row 6 — Sept, ₹650 | **650** | 1649 |
+| row 7 — May, ₹999 (backdated) | **1649** | 999 |
+
+The stored column is computed from the previous row **by id**, so it is insertion-ordered
+— while the ledger is **displayed** date-ordered. Every intermediate balance is therefore
+wrong the moment anything is backdated. The closing figure still agrees only because
+addition is commutative; the statement a vendor would be shown does not add up line by
+line.
+
+This is exactly what assertion A2 was written for, and it fired on the second purchase of
+the phase. F-02 is not a Phase 4 fix — it is cross-cutting ledger work (AUDIT_PLAN §4) —
+but it now has the **written reproduction** AUDIT_PLAN §2 requires of every Critical
+finding, and did not have before.
+
+**L-23 (new, Low).** `purchase_items.qty` is a `Float` while `product.stock` is an `Int`,
+so the aggregated increment is rounded before it is applied. The old raw SQL truncated it
+too; this makes the rounding explicit rather than incidental. The mismatch itself is a
+modelling question for the owner.
+
 ### Step 1 — the read queue
 
 "Leave no issue, however small" means every file below is read **in full** before its
@@ -811,11 +855,11 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **REPRODUCED** — see Reproductions above | L-1 | **done — verified** |
 | **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY. **REPRODUCED** | L-2 | **done — verified**, plus L-19 |
 | **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert. **REPRODUCED — it is a 500** | L-3 | **done — verified** |
-| **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | todo |
+| **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | **index done — retry loop still to write** |
 | **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | todo |
-| **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | todo |
-| **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | todo |
-| **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | todo |
+| **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | **done — verified** |
+| **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | **done — verified** |
+| **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | **done** |
 | **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | **in progress** — 2 sites fixed, file read to ~690 of 1115 |
 | **P4-11** | **Critical** | **Migrate `purchase_items` to reference `purchase.id`** with a real FK, retiring the `invoice_no` join. Larger change and it aligns purchase with sale, which stores the header id in the same column name. **Do before Phase 5** so the reports can be written once. Needs an owner decision on migration timing | F-08 | owner |
 | **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | todo |

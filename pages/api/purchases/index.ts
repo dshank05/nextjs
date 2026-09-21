@@ -728,49 +728,80 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         }
       }
 
-      await Promise.all([
-        // ===== OPTIMIZED: Batch stock updates in single query =====
-        (async () => {
-          if (items.length === 0) return;
+      // ===== Stock and rate, aggregated per product =====
+      //
+      // Three problems lived in the statement this replaces.
+      //
+      // F-12: it built `stock = CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3
+      // END`. SQL CASE takes the FIRST matching WHEN, so putting the same
+      // product on two lines silently discarded every line after the first. The
+      // rate CASE had the identical flaw, so latest_purchase_rate took the
+      // first line's rate rather than the last.
+      //
+      // L-4: `last_purchase_date` and `latest_purchase_rate` were written
+      // unconditionally, so entering a forgotten older bill rewrote the
+      // product's current rate with a stale one.
+      //
+      // G-01: it was hand-built SQL with ids and quantities interpolated into
+      // the string. F-12 exists BECAUSE it was hand-built - a CASE with a
+      // duplicate WHEN is not a mistake Prisma would let you make. Rewriting it
+      // through the query builder fixes the class, not just this instance.
+      const perProduct = new Map<number, { qty: number; rate: number }>();
+      for (const item of items) {
+        const productId = parseInt(item.product_id);
+        if (isNaN(productId)) continue;
+        const existing = perProduct.get(productId);
+        if (existing) {
+          // Same product on another line: quantities ADD, and the later line's
+          // rate is the one that stands as "latest".
+          existing.qty += money(item.qty);
+          existing.rate = money(item.rate);
+        } else {
+          perProduct.set(productId, { qty: money(item.qty), rate: money(item.rate) });
+        }
+      }
 
-          const productIds = items.map(item => parseInt(item.product_id));
+      // Array.from because this project's tsconfig target predates direct Map
+      // iteration.
+      for (const [productId, agg] of Array.from(perProduct.entries())) {
+        await tx.product.update({
+          where: { id: productId },
+          data: { stock: { increment: Math.round(agg.qty) } }
+        });
 
-          // Build CASE statements for stock increment
-          const stockCases = items.map(item => {
-            const productId = parseInt(item.product_id);
-            const qty = Number(item.qty) || 0;
-            return `WHEN ${productId} THEN stock + ${qty}`;
-          }).join(' ');
+        // Only advance the "latest purchase" fields when this document really is
+        // the latest. `lte` rather than `lt` so a correction entered on the same
+        // day still takes effect (L-4).
+        await tx.product.updateMany({
+          where: {
+            id: productId,
+            OR: [
+              { last_purchase_date: null },
+              { last_purchase_date: { lte: Math.floor(invoiceDate) } }
+            ]
+          },
+          data: {
+            latest_purchase_rate: agg.rate,
+            last_purchase_date: Math.floor(invoiceDate)
+          }
+        });
+      }
 
-          // Build CASE statements for latest_purchase_rate
-          const rateCases = items.map(item => {
-            const productId = parseInt(item.product_id);
-            const rate = parseFloat(item.rate) || 0;
-            return `WHEN ${productId} THEN ${rate}`;
-          }).join(' ');
-
-
-          // Single UPDATE query for all products
-          await tx.$executeRawUnsafe(`
-            UPDATE product 
-            SET 
-              stock = CASE id ${stockCases} ELSE stock END,
-              latest_purchase_rate = CASE id ${rateCases} ELSE latest_purchase_rate END,
-              last_purchase_date = ${invoiceDate}
-            WHERE id IN (${productIds.join(',')})
-          `);
-        })(),
-        // Ledger entry (parallel with stock updates)
-        ledgerService.createPurchaseEntry({
-          id: purchase.id,
-          vendor_id: parseInt(vendor_id),
-          invoice_no: purchase.invoice_no,
-          invoice_date: Math.floor(invoiceDate),
-          total: calculatedGrandTotal,
-          fy: currentFy,
-          notes: purchaseNotes
-        }, tx)
-      ]);
+      // Serialised, not Promise.all.
+      //
+      // The stock update and this ledger write used to run concurrently through
+      // Promise.all over the SAME interactive transaction client. Prisma's
+      // interactive transactions are a single session; issuing queries on one
+      // concurrently is not supported and interleaves unpredictably (F-21).
+      await ledgerService.createPurchaseEntry({
+        id: purchase.id,
+        vendor_id: parseInt(vendor_id),
+        invoice_no: purchase.invoice_no,
+        invoice_date: Math.floor(invoiceDate),
+        total: calculatedGrandTotal,
+        fy: currentFy,
+        notes: purchaseNotes
+      }, tx);
 
 
 
