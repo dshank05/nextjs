@@ -325,3 +325,229 @@ a pair, checked against each other as much as against the rule. Returns last.
 **Do not trust a grep on these.** F-87 was invisible to one, and the two false negatives
 earlier in this audit (a guard that already existed, an overlap check that already existed)
 were both grep artefacts. Read the file.
+---
+
+## Phase 4 — Purchase · the plan
+
+Written 2026-09-20, before any Phase 4 fix. Purchase is the first phase that moves **stock
+and money at the same time**, and the first that routes through the shared service layer.
+It is also the phase the whole journey depends on: `purchase_items` is empty today, so
+nothing downstream — sale, salex, returns, most reports — can be round-tripped until this
+phase produces data.
+
+### What this plan is based on
+
+Read in full before writing it: `lib/invoice-counter.ts`, `lib/customer-ledger-handler.ts`,
+`prisma/schema.prisma` for the Purchase/Sale/Salex families and their satellites,
+`pages/api/purchases/index.ts` from `handlePost` onward, and `lib/ledger-handler.ts`
+`getPurchaseLedgerOps`. Everything those reads turned up is listed under **Leads** below
+and is marked as a lead, not a finding — none of it has been reproduced yet.
+
+**Not yet read**, and therefore step 1 of the work: `pages/api/purchases/[id].ts` (1115),
+`pages/purchases/create.tsx` (3075), `pages/purchases/view/[id].ts` (811),
+`pages/purchases/index.tsx` (172), `hooks/usePurchases.ts` (484),
+`lib/transaction-handler.ts` (1673), `lib/balance-handler.ts` (588),
+`lib/ledger-service.ts` (319), `lib/vendor-balance-service.ts` (331),
+`lib/payment-allocation-service.ts` (366), `lib/rate-utils.ts` (225), and the GET half of
+`pages/api/purchases/index.ts`.
+
+### The surface
+
+| Layer | Files | Lines |
+|---|---|---|
+| **FE pages** | `purchases/index.tsx`, `purchases/create.tsx`, `purchases/view/[id].tsx` | 172 · 3075 · 811 |
+| **FE data** | `hooks/usePurchases.ts`, `hooks/useVendors.ts`, `hooks/useVendorTransactions.ts` | 484 · 23 · 351 |
+| **BE routes** | `api/purchases/index.ts`, `api/purchases/[id].ts`, `api/purchases/last-invoice.ts` | 880 · 1115 · 31 |
+| **Numbering** | `lib/invoice-counter.ts` | 85 |
+| **Orchestration** | `lib/transaction-handler.ts` | 1673 |
+| **Ledger** | `lib/ledger-handler.ts`, `lib/ledger-service.ts` | 507 · 319 |
+| **Balance** | `lib/balance-handler.ts`, `lib/vendor-balance-service.ts`, `lib/balance-log-service.ts` | 588 · 331 · 60 |
+| **Allocation** | `lib/payment-allocation-service.ts` | 366 |
+| **Money helpers** | `lib/rate-utils.ts`, `lib/gst.ts`, `lib/financial-year.ts` | 225 · 160 · 107 |
+
+About 6,600 lines of pages and routes over about 4,300 lines of shared service. The
+service layer is the part Phase 3 never touched, and it is shared with sale, salex and all
+four return paths — so a fix here pays four more times, and a mistake here breaks five
+modules at once.
+
+### The convention, and where purchase sits in it
+
+Same **list → add / view / edit** shape as products, so JOURNEY_AUDIT §11 applies
+unchanged. The data flow:
+
+```
+settings (vendor, staff, GST rate, FY, warehouse)
+product (name, hsn, rates)
+        |
+        v
+  PURCHASE created  ---> product.stock  GOES UP
+        |                product.latest_purchase_rate, last_purchase_date overwritten
+        |
+        +--> purchase_items       (the captured lines)
+        +--> bill_to              (billing snapshot)
+        +--> vendor_ledger        (PURCHASE debit, PAYMENT credit)
+        +--> vendor_details       (running balance columns)
+        +--> vendor_payments + payment_allocations   (if paid)
+        +--> vendor_balance_logs  (audit of the balance move)
+        |
+        v
+  reports: bill-reference-purchase, vendor-ledger-accounting, vendor-outstanding,
+           packing-forwarding, transport-cost, notes-mentioned, staff-sales
+```
+
+Stock goes **up** on purchase and **down** on sale. Worth stating because the two families
+are easy to mix up: the sale tables are called `invoice`/`invoicex`, while `purchase` has a
+*column* called `invoice_no`. Same word, two meanings, and that collision is F-08.
+
+### The service layer: what "the cases" actually are
+
+Purchase does not write the ledger directly. It hands a **change set** to a handler that
+returns a list of operations, and a separate executor applies them:
+
+```
+api/purchases/[id].ts
+   -> transactionHandler.handlePurchaseEdit({ oldStatus, newStatus, oldTotal, newTotal, ... })
+        -> ledgerHandler.getPurchaseLedgerOps(changes)   -> { creates, updates, deletes }
+        -> balanceHandler.getPurchaseBalanceOps(changes) -> BalanceOperation
+        -> getPurchaseAllocationChanges(changes)         -> AllocationChange[]
+   -> executes them inside one transaction
+```
+
+`getPurchaseLedgerOps` switches on `"oldStatus→newStatus"` where **0 = Unpaid, 1 = Paid,
+2 = Partial**. That is the 3x3 = **9 transitions** the code comment refers to. This is the
+heart of the phase and the thing to audit hardest, because every purchase edit lands in
+exactly one of these branches and a missing branch is silent.
+
+### Method
+
+The four passes from AUDIT_PLAN §2 (schema, API, UI, round-trip), plus §11's three
+questions, plus the question Phase 3c added, plus one more this phase needs:
+
+1. Does every field **load**?
+2. Does every field **save**?
+3. Does the save write anything the user **did not touch**?
+4. *(3c)* Does every parameter a page can send **do what its name says** at the other end?
+5. *(new)* **Is the state space complete?** Enumerate every transition the code switches
+   on and check each one is implemented, not just the ones someone hit.
+
+Question 5 exists because of what the pre-read already found. Both
+`getPurchaseLedgerOps` and `getSaleLedgerOps` document themselves as handling "all 9
+cases" and both implement **eight** — `0→2`, Unpaid → Partial, is absent from both. The
+return handlers *do* implement `0→2`, so the transition was known about. **Because both
+twins are wrong in the same way, diffing them cannot find it.** Twin-diffing finds
+divergence; only enumerating the state space finds a shared gap.
+
+So the twin comparison is still worth running — it is how the mirrored pairs get
+reconciled (G-02) — but it must not be the only check.
+
+### Leads from the pre-read
+
+Not findings. Each needs reproducing before it earns an F-number.
+
+| # | Sev guess | Lead | Where |
+|---|---|---|---|
+| L-1 | **Critical** | **The first purchase of every new financial year may be impossible to create.** The counter is per-FY (`MAX(invoice_no) WHERE fy = currentFy`), so a new FY starts back at 1 — but the duplicate check queries `invoice_no` with **no `fy` filter**, so it finds last year's invoice 1 and returns 400. If so, purchase creation dies at every FY rollover until someone manually enters a number above the all-time max. Note the interaction: F-16's "wrong" global UI prefill may be the only thing masking this | `purchases/index.ts` counter call vs duplicate check |
+| L-2 | **High** | **`bill_to` is keyed to the wrong invoice number.** The purchase is written with `invoiceNumberToUse` (the UI's number if supplied, else the generated one) but `bill_to` is written with `nextInvoiceNo` — always the generated one. Supply your own number and the billing snapshot attaches to a number no purchase has. `bill_to.invoice_no` is `@unique`, so the next auto-numbered purchase then collides | `purchases/index.ts` create block |
+| L-3 | **High** | **`total` can be written as NaN.** `calculatedGrandTotal = itemsTotal + parseFloat(packing_forwarding_total?.toString()) + parseFloat(total_tax?.toString())`. Both use optional chaining with no `|| 0`, so a payload omitting either yields `parseFloat(undefined)` = NaN. The stored columns beside it *do* have `|| 0` fallbacks, so `total_tax` saves 0 while `total` goes bad | `purchases/index.ts` totals |
+| L-4 | **High** | **A backdated purchase overwrites newer product state.** The stock UPDATE sets `last_purchase_date = <this invoice date>` and `latest_purchase_rate = <this rate>` unconditionally, with no `GREATEST()` and no date comparison. Entering a forgotten older bill rewrites the product's current rate | `purchases/index.ts` stock UPDATE |
+| L-5 | **High** | **Create cannot produce a partial payment; edit presumably can.** Create validates `payment_status` against `[0, 1]` only, while the ledger case table is built on 0/1/2. Create and update disagreeing about what is valid is exactly F-79 | `purchases/index.ts` validation vs `ledger-handler.ts` |
+| L-6 | **High** | **All money is client-supplied.** `total_cgst`, `total_sgst`, `total_igst`, `total_tax` and every per-item `cgst`/`sgst`/`igst`/`tax`/`gst_percentage` are taken from the request body and stored unverified. No server-side recomputation, and no CGST/SGST-vs-IGST determination from state codes. This is F-04 and the §4a statutory requirement, on the purchase path | `purchases/index.ts` |
+| L-7 | Medium | **`0→2` is missing from the case table** — see Method above. Applies to purchase *and* sale | `ledger-handler.ts`, `customer-ledger-handler.ts` |
+| L-8 | Medium | **The customer twin mislabels every salex ledger row.** The vendor handler hardcodes `reference_type: 'purchase'`; the customer handler derives it as `changes.invoiceId ? 'sale' : 'salex'`, and `handleSaleEdit` sets `invoiceId` for both types — so the ternary always picks `'sale'` and salex rows are written as sale. Same shape in the return handler with `returnId`. A real divergence between the twins, against the customer side. Phase 5's problem, found here | `customer-ledger-handler.ts` |
+| L-9 | Medium | **The advance-balance calculation is duplicated within one function.** `handlePost` computes the advance breakdown once for the notes string and again for the payment records, querying `vendor_details` twice. Two copies of one rule, free to drift | `purchases/index.ts` |
+| L-10 | Medium | **`vendor_id = 0` is a magic "Other" value written into an FK column.** `purchase.vendor_id` has a foreign key to `vendor_details`, so `0` requires a row with id 0 to exist. It then flows into `vendor_payments`, `payment_allocations` and the ledger. Needs an explicit test | `purchases/index.ts` |
+| L-11 | Low | Error responses return `error.message` on both the GET and POST paths — the F-81 / F-98 class, already fixed twice elsewhere | `purchases/index.ts` |
+| L-12 | Low | **Purchase has no per-item discount**, while sale and salex both do. Already noted in AUDIT_PLAN §9 as a product decision, not a defect. Confirm with the owner rather than assume | `schema.prisma` |
+| L-13 | Low | **Transport is modelled twice.** Purchase denormalises `transport`, `transport_name`, `vehicle_number` onto the header; sale and salex use satellite `transport_details` / `transport_detailsx` tables. The `transport-cost` report has to read both shapes | `schema.prisma` |
+
+### Already in the register
+
+F-08 (Critical, items joined by non-unique `invoice_no` with no `fy` filter), F-12 (High,
+duplicate product lines lose stock — `CASE id WHEN 5 ... WHEN 5 ...` takes the first
+match, and the pre-read confirms `rateCases` has the identical flaw), F-13 (High,
+invoice-number race — the counter reads `MAX+1` in a **read-only** transaction that holds
+no lock, the duplicate check is a separate read, the insert is a third transaction, and
+there is no `UNIQUE(fy, invoice_no)`), F-16 (Medium, two numbering schemes), F-21 (Medium,
+`Promise.all` over one interactive `tx` — confirmed, the raw stock UPDATE and the ledger
+write run concurrently on the same transaction client), F-06 (Medium, deferred to G-04).
+
+### Order of work
+
+**Step 0 — test data.** `vendor_details` is **empty**. Seed one realistic vendor with a
+valid GSTIN and state code, and one with a different state code, so CGST/SGST vs IGST can
+both be exercised. Minimum needed to test; the real vendor master is the owner's.
+
+**Step 1 — read the unread.** In this order: `api/purchases/[id].ts`, then
+`lib/transaction-handler.ts`, `lib/balance-handler.ts`, `lib/ledger-service.ts`, then
+`purchases/create.tsx`, `view/[id].tsx`, `index.tsx`, `hooks/usePurchases.ts`. Whole
+files. Grep has produced a wrong answer at every stage of this audit; in Phase 3c it both
+inflated one finding and hid two others.
+
+**Step 2 — the broken-before-wrong fixes.** L-1, L-2, L-3 first if they reproduce: each is
+a create that fails or writes bad data. Then F-12 and F-13, which are the register's own
+"broken" items. Then F-21.
+
+**Step 3 — the item join, F-08.** Add `fy` to every purchase-item query as the immediate
+fix, then migrate `purchase_items` to reference `purchase.id` with a real foreign key.
+Do this *before* Phase 5, because sale already stores the header id in the same column
+name and aligning them is what lets the reports be written once instead of twice.
+
+**Step 4 — the §11 sweep on the edit path.** All five questions, field by field, on
+create.tsx and `[id].ts`.
+
+**Step 5 — the state-space sweep.** All nine transitions for purchase, each exercised for
+real, with the ledger and balance checked after every one.
+
+**Step 6 — the mutation pass.** Backdated entry (L-4), duplicate lines (F-12), quantity
+change, line removal, line addition in one submit, delete-and-reversal.
+
+### Reconciliation, run after every step
+
+From AUDIT_PLAN §7, these are the assertions that say whether the step was clean:
+
+1. `product.stock` equals `opening_stock` + purchases − sales − consumption + returns, for
+   every product the step touched.
+2. `vendor_ledger` running balance recomputed date-ordered equals `vendor_details`'s stored
+   balance columns.
+3. `SUM(payment_allocations.allocated_amount)` per purchase equals what `payment_status`
+   claims.
+4. Every purchase's `total` equals `items_total + packing_forwarding_total + total_tax`,
+   and `total_cgst + total_sgst + total_igst` equals `total_tax`.
+5. No purchase row has a `total` that is NaN or NULL (L-3).
+
+Assertion 4 is new and is the one that catches L-6: if the server recomputed the tax it
+would hold by construction; today it only holds if the client did its arithmetic right.
+
+### Good to have, pulled forward on purpose
+
+§9 says engineering quality goes last. Two exceptions earn their place in this phase
+because the fix lands in the same file either way:
+
+- **G-01, raw SQL.** The stock update is `$executeRawUnsafe` with product ids and
+  quantities interpolated into the string. The values are numeric-parsed so injection is
+  unlikely, but F-12 exists *because* it is hand-built SQL — a `CASE` with a duplicate
+  `WHEN`. Fixing F-12 means rewriting that statement anyway; rewriting it as an aggregated
+  Prisma `updateMany` per product, or a single grouped statement with bound parameters,
+  fixes the class rather than the instance.
+- **G-02, the mirrored pairs.** Not the whole collapse — that is a large piece of work —
+  but this phase reads both `ledger-handler.ts` and `customer-ledger-handler.ts` anyway,
+  and L-7 and L-8 are both products of the duplication. Write the reconciliation harness
+  the memory calls for: a test that feeds the same change set to both handlers with names
+  normalised and asserts the operation lists match. That test would have caught L-8 on the
+  day it was introduced, and it is the thing that makes the eventual collapse safe.
+
+Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
+
+### Exit criteria
+
+- Every one of the nine status transitions exercised against a real purchase, with the
+  five reconciliation assertions passing after each.
+- A purchase created, edited (quantity up, quantity down, line added, line removed,
+  backdated), and deleted, with stock and vendor balance returning to their starting
+  values after the delete.
+- Two purchases deliberately given the same invoice number in different financial years,
+  proving F-08 and L-1 are closed.
+- A purchase with the same product on two lines, proving F-12 is closed.
+- `purchase_items` referencing `purchase.id` with a foreign key, or a written decision not
+  to, with the reason.
+- Every Critical and High finding has a written reproduction, per AUDIT_PLAN §2.

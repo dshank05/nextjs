@@ -481,6 +481,16 @@ Small surface, no money math, but high blast radius: FY and GST rates feed every
 
 First phase that moves stock and money. Expect the item-join problem (§3) to dominate.
 
+> **The detailed plan for this phase is `docs/JOURNEY_AUDIT.md` § "Phase 4 — Purchase · the plan"**,
+> written 2026-09-20 from a full read of the counter, the create path, the schema and both
+> ledger handlers. It carries the file inventory, the service routing, thirteen leads (L-1…L-13)
+> not yet reproduced, the order of work, the reconciliation assertions and the exit criteria.
+> The checklist below is the index into it.
+
+> Two things to know before starting: **`vendor_details` is empty**, so step 0 is seeding a test
+> vendor; and both ledger case tables claim "all 9 cases" while implementing **eight** — `0→2`
+> (Unpaid → Partial) is missing from purchase *and* sale, so a twin-diff cannot find it.
+
 - [ ] **Duplicate product lines lose stock** — `pages/api/purchases/index.ts:675-696` builds `stock = CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3 END`. SQL `CASE` takes the **first** match, so the second line's quantity is discarded. Severity **High** [C]. Aggregate quantities by `product_id` before building the statement
 - [ ] **Item lookups ignore `fy`** — `pages/api/purchases/[id].ts:31`, `:516`, `:647`. Combined with the per-FY counter, two purchases can share `invoice_no` and merge their items. Severity **Critical** [C]. Add `fy` to every purchase-item query, then migrate `purchase_items` to reference `purchase.id` and add a real FK
 - [ ] **Invoice-number race** — `getNextInvoiceNumber` reads `MAX+1` in its own transaction (`lib/invoice-counter.ts:19`), the duplicate check is a separate non-atomic read (`pages/api/purchases/index.ts:429`), and there is no unique constraint. Two concurrent creates get the same number. Severity **High** [C]. Use a counter table with an atomic increment, plus a `UNIQUE(fy, invoice_no)` index
