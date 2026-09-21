@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-20, plan written, no code changed yet |
-| **Branch / HEAD** | `dev_akaash` / `3ad8141` |
-| **Next action** | **P4-00** — seed two test vendors (see Step 0) |
+| **Last updated** | 2026-09-20 — P4-00 and P4-01 done, no app code changed yet |
+| **Branch / HEAD** | `dev_akaash` / `88b323a` |
+| **Next action** | **P4-02** — reproduce then fix the FY-scoped duplicate check (Critical) |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123` |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -606,14 +606,42 @@ assigned ids in the table below once created, because every later step reference
 
 | | id | notes |
 |---|---|---|
-| Vendor A (UP) | _to fill_ | |
-| Vendor B (PB) | _to fill_ | |
+| **Other** | **0** | Not test data — the FK target the "Other vendor" option needs. Restored by the seed; see L-14 |
+| **Vendor A (UP)** | **2** | state_code 9, GSTIN `09AAACT2727Q1ZW` — intra-state, expect CGST+SGST |
+| **Vendor B (PB)** | **3** | state_code 3, GSTIN `03AAACT2727Q1ZS` — inter-state, expect IGST |
+
+Seeded by `scripts/audit-seed-vendors.js` (idempotent, safe to re-run).
 
 **Cleanup:** these two rows, plus every document created against them, are test data and
 must be removed or left clearly marked before the phase closes. Name-prefixed
 `AUDIT TEST` so they are easy to find. **Never touch the 602 real products** beyond
 `stock` moving as a natural consequence of a purchase — and record which products were
 used so their stock can be checked back.
+
+### Baseline, recorded 2026-09-20 after P4-00 and P4-01
+
+`node scripts/audit-assert.js` on the seeded-but-empty database:
+
+| | Result |
+|---|---|
+| A1 stock reconciles | **PASS**, 602 products |
+| A2 vendor ledger | PASS (nothing to check yet) |
+| A3 allocations vs status | PASS (nothing to check yet) |
+| A4 purchase totals | PASS (nothing to check yet) |
+| A5 sanity | **FAIL — 1**: product 211 negative stock −1 (F-73, owner's decision, pre-existing) |
+| A6 orphans | PASS |
+
+That one failure is the expected pre-existing one. **Any new failure from here is
+something this phase caused.** A1 passing across all 602 products is what makes the stock
+assertion meaningful — it was not true before the 2026-09-20 wipe.
+
+**L-14 (new, Low).** `scripts/fix_vendor_other_and_cascade.sql` inserts the "Other" vendor
+with an explicit `id = 0`, but MySQL replaces an explicit 0 with the next AUTO_INCREMENT
+value unless the session sets `NO_AUTO_VALUE_ON_ZERO`. Confirmed while seeding: the insert
+landed at **id 1** and had to be moved to 0 explicitly. So that script never reliably did
+what it claims, and the row it was meant to create is a hard dependency of the "Other
+vendor" purchase path (L-10) — `purchase.vendor_id` has a foreign key, so without a row at
+id 0 that path cannot insert at all. The seed script restores it and verifies the id.
 
 ### Step 1 — the read queue
 
@@ -653,8 +681,8 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 
 | # | Sev | Task | Source | Status |
 |---|---|---|---|---|
-| **P4-00** | — | Seed vendors A and B (Step 0) | setup | todo |
-| **P4-01** | — | Build `scripts/audit-assert.js` — the five reconciliation assertions, runnable after every step. This is the harness everything else is checked with; write it before fixing anything | method | todo |
+| **P4-00** | — | Seed vendors A and B (Step 0) | setup | **done** — `scripts/audit-seed-vendors.js`; ids 0 / 2 / 3 |
+| **P4-01** | — | Build `scripts/audit-assert.js` — the five reconciliation assertions, runnable after every step. This is the harness everything else is checked with; write it before fixing anything | method | **done** — `scripts/audit-assert.js`, six assertions A1–A6 |
 | **P4-02** | **Critical** | **FY-scoped duplicate check.** The counter is per-FY but the duplicate check has no `fy` filter, so the first purchase of a new FY collides with last year's number 1. Add `fy: currentFy` to the check. **Reproduce first** by inserting a purchase into FY 3 and one into FY 4 with the same number | L-1 | todo |
 | **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY | L-2 | todo |
 | **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert | L-3 | todo |
