@@ -565,8 +565,8 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 | | |
 |---|---|
 | **Last updated** | 2026-09-23 — **completion pass: Phase 4 was NOT complete.** The status column was stale and 16 of 22 read-queue files were unread. The service layer is now read and carries one reproduced **Critical** (L-36). See "Phase 4 — the completion pass" at the end of this document. Previously 2026-09-21 — **Phase 4 code work complete.** All five suites clean; assertions at baseline (only A5's pre-existing F-73). Only owner decisions and the deferred read queue remain |
-| **Branch / HEAD** | `dev_akaash` / **`efba4df`** — working tree clean, database at baseline |
-| **Next action** | **P4-27** (L-36, Critical, reproduced), then P4-28/29 (L-29, L-30), then P4-30 (the harness), then **P4-15** — the §11 edit sweep, the largest unfinished item. Phase 5 should not open until these land: L-29, L-30, L-33 and L-36 all have customer twins. Owner decisions (below) still stand, then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
+| **Branch / HEAD** | **`audit/phase-4-completion`** (forked from `dev_akaash`, which is preserved untouched for reference) / **`0c61ea0`**. Previously `dev_akaash` / `efba4df` — working tree clean, database at baseline |
+| **Next action** | **P4-15** — the §11 edit sweep — then **P4-17** (nine transitions exercised live). P4-27 through P4-32 are done. Previously: P4-27 (L-36, Critical, reproduced), then P4-28/29 (L-29, L-30), then P4-30 (the harness), then **P4-15** — the §11 edit sweep, the largest unfinished item. Phase 5 should not open until these land: L-29, L-30, L-33 and L-36 all have customer twins. Owner decisions (below) still stand, then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123`. Kill stray node processes first — a second server silently takes :3001 and you end up testing stale code |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -1006,12 +1006,12 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-24** | High | **Transaction flow verification** — Step 3 below | method | **done** — `scripts/audit-p4-flow.js` |
 | **P4-25** | High | **Reporting verification** — Step 4 below | method | **done** — `scripts/audit-p4-flow.js` |
 | **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match | G-02 | **done** — `scripts/audit-twin-check.js`; all nine transitions agree |
-| **P4-27** | **Critical** | **Purchase edit corrupts the vendor ledger (L-36).** `executeLedgerUpdates` reseeds `recalculateBalancesAfter` from the row it just updated, whose own `balance` the `updateMany` could not touch. Pass the id BEFORE the earliest updated row, or rebuild from 0 as `executeLedgerDeletes` already does. Also give the `findMany` at `:356` an `orderBy: { id: asc }`. **REPRODUCED** — `scripts/audit-p4-ledger-edit.js` | L-36 | todo |
-| **P4-28** | High | **Add `0→2` to all four BALANCE case tables (L-29).** P4-16 fixed only the ledger handlers. `getPurchaseBalanceOps`, `getReturnBalanceOps` and both customer twins fall through to `default: return null`, so Unpaid→Partial writes ledger rows but never moves the balance columns | L-29 | todo |
-| **P4-29** | High | **Edit-path balance asymmetry (L-30, L-31).** `1→0` and `2→0` decrement `total_paid` by amounts an advance-funded create never added — L-26 on the edit path. `2→2` is near-dead and carries the same flaw when it fires. Fix in both twins | L-30, L-31 | todo |
-| **P4-30** | Medium | **Fix the harness (L-37, L-38).** Drop or correct A2's `account_balance` comparison — it is unallocated advance, not outstanding payable — and KEEP its per-row half, which is what catches L-36. Make a zero-sample assertion report **EMPTY**, not PASS: A2/A3/A4 currently examine nothing at baseline | L-37, L-38 | todo |
-| **P4-31** | Medium | **Transaction-safety sweep of the service layer (L-27, L-32, L-33).** `ledger-service.createEntry` does its `bill_to` lookup on the global client and without `fy`; `logMultipleChanges` runs `Promise.all` over one interactive `tx`; `calculatePaymentStatus`/`calculateRefundStatus` ignore `tx` while their vendor twins honour it | L-27, L-32, L-33 | todo |
-| **P4-32** | Low | **Delete the dead money-layer modules (L-40).** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have zero callers; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a stub returning 0. They read as authoritative and one defines a third selling-price formula | L-40 | todo |
+| **P4-27** | **Critical** | **Purchase edit corrupts the vendor ledger (L-36).** `executeLedgerUpdates` reseeds `recalculateBalancesAfter` from the row it just updated, whose own `balance` the `updateMany` could not touch. Pass the id BEFORE the earliest updated row, or rebuild from 0 as `executeLedgerDeletes` already does. Also give the `findMany` at `:356` an `orderBy: { id: asc }`. **REPRODUCED** — `scripts/audit-p4-ledger-edit.js` | L-36 | **done — verified**. Rebuilds from 0, as `executeLedgerDeletes` always did, and the `findMany` is ordered. `scripts/audit-p4-ledger-edit.js` reproduced it before and passes after |
+| **P4-28** | High | **Add `0→2` to all four BALANCE case tables (L-29).** P4-16 fixed only the ledger handlers. `getPurchaseBalanceOps`, `getReturnBalanceOps` and both customer twins fall through to `default: return null`, so Unpaid→Partial writes ledger rows but never moves the balance columns | L-29 | **done**. `0→2` added to all four balance case tables, both twins |
+| **P4-29** | High | **Edit-path balance asymmetry (L-30, L-31).** `1→0` and `2→0` decrement `total_paid` by amounts an advance-funded create never added — L-26 on the edit path. `2→2` is near-dead and carries the same flaw when it fires. Fix in both twins | L-30, L-31 | **done**. Callers pass `paidByThisDocument` (the BILL_SPECIFIC sum); `2→2` moves only the allocation. Falls back to the old behaviour for Type B, which has no allocations to measure |
+| **P4-30** | Medium | **Fix the harness (L-37, L-38).** Drop or correct A2's `account_balance` comparison — it is unallocated advance, not outstanding payable — and KEEP its per-row half, which is what catches L-36. Make a zero-sample assertion report **EMPTY**, not PASS: A2/A3/A4 currently examine nothing at baseline | L-37, L-38 | **done**. A2 now checks `account_balance` against its own component columns and keeps its per-row half; a zero-sample assertion reports **EMPTY** |
+| **P4-31** | Medium | **Transaction-safety sweep of the service layer (L-27, L-32, L-33).** `ledger-service.createEntry` does its `bill_to` lookup on the global client and without `fy`; `logMultipleChanges` runs `Promise.all` over one interactive `tx`; `calculatePaymentStatus`/`calculateRefundStatus` ignore `tx` while their vendor twins honour it | L-27, L-32, L-33 | **done** for L-27, L-32, L-33 (and F-15, found with them). L-34 taken at the same time |
+| **P4-32** | Low | **Delete the dead money-layer modules (L-40).** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have zero callers; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a stub returning 0. They read as authoritative and one defines a third selling-price formula | L-40 | **done**. Both modules deleted, both dead `updateBalanceInTransaction` methods spliced out, `getOutstandingAmount` stub removed. `tsc` clean afterwards is the proof |
 
 ### Step 3 — transaction flow verification (P4-24)
 
@@ -1103,7 +1103,7 @@ done; the Step 2 table still said `todo`. Checked against the code, the prose wa
 ledger handlers. The status column has been corrected below. **The table is the resume
 state — a stale one costs a session.**
 
-### L-36 · Editing a purchase corrupts the vendor ledger · **Critical** · REPRODUCED
+### L-36 · Editing a purchase corrupts the vendor ledger · **Critical** · REPRODUCED · **FIXED**
 
 `LedgerUpdateOperation.data` (`ledger-handler.ts:54-58`) can carry only `debit`, `credit`
 and `notes` — it **cannot set `balance`**. So `updateMany` changes a row's debit and
@@ -1133,7 +1133,7 @@ Two smaller things in the same function: the `findMany` at `:356` has no `orderB
 `entries[0]` is not guaranteed to be the lowest id; and `:84` dumps the entire financial
 payload through `console.log(JSON.stringify(params))` on every purchase edit.
 
-### L-37 · Half of A2 compares two different quantities · Medium
+### L-37 · Half of A2 compares two different quantities · Medium · **FIXED**
 
 This settles the open question recorded under "Reproductions, 2026-09-20" — *does
 `account_balance` mean outstanding payable, or does an unpaid purchase never reach the
@@ -1154,7 +1154,7 @@ L-36. Only its final comparison (`audit-assert.js:101`) is wrong: the ledger's c
 balance is outstanding payable, `account_balance` is unallocated advance, and the two
 agree only at zero.
 
-### L-38 · The assertions report PASS on a zero sample · Medium
+### L-38 · The assertions report PASS on a zero sample · Medium · **FIXED**
 
 `A2` skips any vendor with no ledger rows (`audit-assert.js:88`) and then reports PASS.
 Every Phase 4 suite cleans up after itself, so the baseline holds **zero ledger rows** and
@@ -1167,7 +1167,7 @@ transitions — a reachable transition emitting nothing is reported as EMPTY, no
 agreement. The assertion runner needs the same rule: **PASS with a zero sample is not a
 pass.**
 
-### L-29 · `0→2` is missing from all four *balance* case tables · High
+### L-29 · `0→2` is missing from all four *balance* case tables · High · **FIXED**
 
 P4-16 added Unpaid→Partial to the two **ledger** handlers and stopped there. The
 **balance** layer never got it:
@@ -1186,7 +1186,7 @@ disagree by construction. The customer twin carries it straight into Phase 5.
 This is the same shared-gap shape as L-7, one layer down, and the twin harness cannot see
 it for the same reason: both sides are missing it identically.
 
-### L-30 · Paid→Unpaid destroys money that was never added · High
+### L-30 · Paid→Unpaid destroys money that was never added · High · **FIXED**
 
 `getCreateBalanceOps` scenario 1 (`balance-handler.ts:66-73`) funds a purchase entirely
 from an existing advance by incrementing **only `total_allocated`**. But `1→0`
@@ -1198,7 +1198,7 @@ This is L-26 exactly — which was found and fixed on the **delete** path and le
 on the **edit** path. Same asymmetry, same cause. Present in the customer twin at `:194`
 and `:203`, so it is Phase 5's problem too.
 
-### L-31 · `2→2` is near-dead, and wrong when it does fire · Medium
+### L-31 · `2→2` is near-dead, and wrong when it does fire · Medium · **FIXED**
 
 `balance-handler.ts:226-241`: `oldAllocated = totalAllocated`, then
 `newAllocated = Math.min(newTotal, totalAllocated)`. Whenever `newTotal >= totalAllocated`
@@ -1211,14 +1211,31 @@ twins (`:233`, `:372`).
 
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
-| L-27 | High | `createEntry` does its `bill_to` lookup on the **global** `prisma` inside a function that otherwise uses the passed client, so for `vendor_id = 0` it cannot see the `bill_to` row the same transaction just wrote and the ledger note falls back. The same lookup filters `invoice_no` with **no `fy`** — F-08's shape surviving in the ledger service, now that `bill_to` has an `fy` column (L-19) | `ledger-service.ts:46` | open |
+| L-27 | High | `createEntry` does its `bill_to` lookup on the **global** `prisma` inside a function that otherwise uses the passed client, so for `vendor_id = 0` it cannot see the `bill_to` row the same transaction just wrote and the ledger note falls back. The same lookup filters `invoice_no` with **no `fy`** — F-08's shape surviving in the ledger service, now that `bill_to` has an `fy` column (L-19) | `ledger-service.ts:46` | **fixed** — reads through the caller's client, with the `fy` filter |
 | L-28 | High | `createDebitNoteEntry` credits `total_amount + total_tax + packing_forwarding_amount + freight_amount`; `updateDebitNoteEntry` credits only `new_total_amount + new_total_tax`. Editing a purchase return silently drops packing and freight from the credit. The F-79 shape inside the ledger service | `ledger-service.ts:217-221` vs `:263` | open — Phase 6 |
-| L-32 | Medium | `logMultipleChanges` runs `Promise.all` over one interactive `tx` — F-21 / P4-09 exactly. P4-09 fixed the instance in `purchases/index.ts`; the class survives here, on the live path of every paid purchase create, edit and delete. Both twins | `balance-log-service.ts:50-57` | open |
-| L-33 | High | `calculatePaymentStatus` and `calculateRefundStatus` take no `tx` and use the global `prisma`, while `calculatePurchasePaymentStatus` and `calculatePurchaseReturnRefundStatus` in the same file correctly do `db = tx || prisma`. The **vendor** pair is transaction-aware; the **sale/salex** pair is not | `payment-allocation-service.ts:12,43` vs `:160,192` | open — Phase 5 |
-| L-34 | Medium | Tolerance drift in one file: purchase uses `totalPaid >= totalAmount - 0.01`, sale/salex uses `totalPaid >= totalAmount` with none. A sale paid to the paisa with float error sticks at "Partially Paid" | `payment-allocation-service.ts:184,220` vs `:35,66` | open |
+| L-32 | Medium | `logMultipleChanges` runs `Promise.all` over one interactive `tx` — F-21 / P4-09 exactly. P4-09 fixed the instance in `purchases/index.ts`; the class survives here, on the live path of every paid purchase create, edit and delete. Both twins | `balance-log-service.ts:50-57` | **fixed** — serialised in both twins |
+| L-33 | High | `calculatePaymentStatus` and `calculateRefundStatus` take no `tx` and use the global `prisma`, while `calculatePurchasePaymentStatus` and `calculatePurchaseReturnRefundStatus` in the same file correctly do `db = tx || prisma`. The **vendor** pair is transaction-aware; the **sale/salex** pair is not | `payment-allocation-service.ts:12,43` vs `:160,192` | **fixed** — both take `tx`, and L-34 taken with it |
+| L-34 | Medium | Tolerance drift in one file: purchase uses `totalPaid >= totalAmount - 0.01`, sale/salex uses `totalPaid >= totalAmount` with none. A sale paid to the paisa with float error sticks at "Partially Paid" | `payment-allocation-service.ts:184,220` vs `:35,66` | **fixed** — same 0.01 tolerance on both sides |
 | L-35 | High | `validateRefundAllocation`'s customer branch resolves a return id by probing `sale_returns` then `salex_returns`. The two tables have independent auto-increment ids, so id 5 exists in both; sale wins, and a salex return is validated against the wrong document's refund amount | `payment-allocation-service.ts:326-336` | open — Phase 6 |
 | L-39 | High | `getReturnLedgerOps` `1→0` and `2→0` push a DELETE whose `where` says `transaction_type: 'DEBIT_NOTE'` while the comment on the same line says *"Actually targeting REFUND_REVERSAL"*. It deletes the debit note itself, then pushes an UPDATE against the row it just deleted. Flagged in a comment and left | `ledger-handler.ts:482-489, 511-518` | open — Phase 6 |
-| L-40 | Low | **Three dead modules in the money layer, ~600 lines.** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have **zero callers**; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a `return Promise.resolve(0)` stub. They read as authoritative — `rate-utils` defines a third selling-price formula (F-90 found a second, dead, in the product form) | verified by call-site search | open |
+| L-40 | Low | **Three dead modules in the money layer, ~600 lines.** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have **zero callers**; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a `return Promise.resolve(0)` stub. They read as authoritative — `rate-utils` defines a third selling-price formula (F-90 found a second, dead, in the product form) | verified by call-site search | **fixed** — deleted; `tsc` clean afterwards |
+
+### What this pass fixed, and what it deliberately did not
+
+**Fixed and verified** (`tsc --noEmit` clean, `npm run build` clean, all five suites
+clean, and the L-36 reproduction inverted from CONFIRMED to NOT REPRODUCED):
+L-36, L-29, L-30, L-31, L-27, F-15, L-32, L-33, L-34, L-37, L-38, plus P4-18 and P4-32.
+
+**Deliberately not fixed**, and the reason matters: **L-28**, **L-35** and **L-39** are
+all real, and all three live in the **returns** module, which has not been audited and has
+no round-trip harness. Changing money code that nothing can verify is how this codebase
+acquired its half-fixes in the first place. They are Phase 6's, recorded with
+reproductions ready.
+
+**P4-15 is the largest item still open** — the §11 edit sweep across `purchases/create.tsx`
+(3075), `view/[id].tsx` (811), `index.tsx` (172) and `hooks/usePurchases.ts` (484), plus
+the four report endpoints. In Phase 3 that same sweep produced F-75 and F-91, the two worst
+findings of the audit. Phase 4 should not be called closed until it runs.
 
 ### Read queue — where it now stands
 
