@@ -708,11 +708,27 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
       });
 
       // ===== OPTIMIZED: Parallel stock updates and ledger creation =====
-      // ✅ Issue 3 FIX: Generate PURCHASE notes showing advance usage
+      // ===== Advance breakdown, computed ONCE (L-9 / P4-18) =====
+      //
+      // This used to be worked out twice inside this one function - here for the
+      // ledger note, and again in the payment block below - each with its own
+      // vendor_details read. Two copies of one rule are free to drift, and if
+      // they ever did, the note attached to the ledger entry would describe a
+      // different split from the payment rows actually written.
+      let advanceUsed = 0;
+      let newPayment = 0;
       let purchaseNotes: string | undefined;
+      // Hoisted with the breakdown: the balance handler below needs the same
+      // vendor row, and re-reading it was half of what P4-18 removed.
+      let vendor: {
+        total_paid: any;
+        total_allocated: any;
+        total_refunded: any;
+        total_refund_allocated: any;
+      } | null = null;
+
       if (payment_status === 1) {
-        // Fetch vendor balance
-        const vendor = await tx.vendor_details.findUnique({
+        vendor = await tx.vendor_details.findUnique({
           where: { id: parseInt(vendor_id) },
           select: {
             total_paid: true,
@@ -722,16 +738,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
           }
         });
 
-        // Calculate advance balance
+        // Unallocated payments AND unallocated refunds both count as advance.
         const advanceBalance = vendor
           ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) +
           (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
           : 0;
 
-        const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
-        const newPayment = calculatedGrandTotal - advanceUsed;
+        advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
+        newPayment = calculatedGrandTotal - advanceUsed;
 
-        // Generate notes based on payment breakdown
         if (advanceUsed >= calculatedGrandTotal) {
           purchaseNotes = `Paid using ₹${advanceUsed.toFixed(2)} from advance balance`;
         } else if (advanceUsed > 0) {
@@ -818,26 +833,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
 
       // ===== PAYMENT OPERATIONS (if paid) =====
       if (payment_status === 1) {
-        // ✅ FETCH VENDOR BALANCE FOR SMART ADVANCE ALLOCATION
-        const vendor = await tx.vendor_details.findUnique({
-          where: { id: parseInt(vendor_id) },
-          select: {
-            total_paid: true,
-            total_allocated: true,
-            total_refunded: true,
-            total_refund_allocated: true
-          }
-        });
-
-        // ✅ Calculate advance balance and determine new payment needed
-        // Include both unallocated payments AND unallocated refunds
-        const advanceBalance = vendor
-          ? (Number(vendor.total_paid) - Number(vendor.total_allocated)) +
-          (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
-          : 0;
-
-        const advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
-        const newPayment = calculatedGrandTotal - advanceUsed;
+        // advanceUsed and newPayment were computed once above (P4-18); the
+        // second vendor_details read and the duplicate arithmetic that used to
+        // sit here are gone.
 
         // ✅ CREATE PAYMENT/ALLOCATION RECORDS FOR ADVANCE PORTION (CREATE FIRST!)
         let advancePaymentId: number | undefined;

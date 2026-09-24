@@ -53,9 +53,13 @@ export class CustomerBalanceLogService {
     tx: any,
     entries: BalanceLogEntry[]
   ): Promise<void> {
-    await Promise.all(
-      entries.map(entry => this.logChange(tx, entry))
-    );
+    // Serialised, not Promise.all (L-32). An interactive transaction client
+    // carries one connection; firing concurrent queries down it is exactly the
+    // antipattern F-21 / P4-09 fixed in the purchase route, and this sits on
+    // the live path of every paid purchase create, edit and delete.
+    for (const entry of entries) {
+      await this.logChange(tx, entry);
+    }
   }
 }
 

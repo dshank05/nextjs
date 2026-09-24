@@ -71,6 +71,8 @@ export class TransactionHandler {
     paymentDate?: number;
     fy: number;
     totalAllocated?: number;
+    /** Sum of BILL_SPECIFIC payments this purchase itself created (L-30). */
+    paidByThisDocument?: number;
     isTypeA?: boolean;
     hasPaymentLedger?: boolean;  // ✅ NEW: Indicates if PAYMENT/PAYMENT_ADJUSTMENT exists (real payment vs advance)
     currentBalance?: {
@@ -95,6 +97,7 @@ export class TransactionHandler {
       paymentDate: params.paymentDate,
       fy: params.fy,
       totalAllocated: params.totalAllocated,
+      paidByThisDocument: params.paidByThisDocument,
       isTypeA: params.isTypeA,
       hasPaymentLedger: params.hasPaymentLedger,  // ✅ NEW: Pass to ledger handler
       amountChanged: params.oldTotal !== params.newTotal,
@@ -352,9 +355,12 @@ export class TransactionHandler {
     for (const update of updates) {
       console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
       
-      // Get entries before update for balance recalculation
+      // Get entries before update for balance recalculation.
+      // orderBy is required: entries[0] must be the LOWEST id, and findMany
+      // gives no ordering guarantee without it.
       const entries = await tx.vendor_ledger.findMany({
         where: update.where,
+        orderBy: { id: "asc" },
         select: { id: true, vendor_id: true }
       });
       
@@ -369,11 +375,20 @@ export class TransactionHandler {
         data: update.data
       });
       
-      // Recalculate balances after update
-      const firstEntry = entries[0];
+      // Recalculate balances from the START (L-36).
+      //
+      // This used to pass the id of the row it had just updated. That is wrong:
+      // recalculateBalancesAfter SEEDS its running total from that row stored
+      // balance and only rewrites rows AFTER it - but LedgerUpdateOperation.data
+      // carries only debit/credit/notes and cannot touch balance, so the seed is
+      // precisely the value the update just invalidated. The edited row kept its
+      // old balance and every later row was rebuilt from the stale seed, leaving
+      // the vendor CLOSING balance wrong by the delta.
+      //
+      // Rebuilding from 0 is what executeLedgerDeletes below has always done.
       await ledgerService.recalculateBalancesAfter(
-        firstEntry.vendor_id,
-        firstEntry.id,
+        entries[0].vendor_id,
+        0,
         tx
       );
       

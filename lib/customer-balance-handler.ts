@@ -33,6 +33,14 @@ export interface ChangeSet {
   returnDate?: number;
   fy: number;
   totalAllocated?: number;
+  /**
+   * Money this document itself brought in, as opposed to the amount it
+   * ALLOCATED. The two differ whenever a sale was settled from an existing
+   * customer advance; conflating them is L-26 / L-30.
+   */
+  paidByThisDocument?: number;
+  /** The return-side equivalent. */
+  refundedByThisDocument?: number;
   isTypeA?: boolean;
   hasPaymentLedger?: boolean;
   amountChanged: boolean;
@@ -158,6 +166,29 @@ export class CustomerBalanceHandler {
           };
         }
         
+      case '0→2': // Unpaid → Partial
+        // P4-16 added this transition to the LEDGER handler and stopped there,
+        // so the balance columns never moved for it (L-29). Same advance logic
+        // as 0→1, over the amount actually allocated rather than the full bill.
+        {
+          const allocated = changes.totalAllocated || 0;
+          if (allocated <= 0) return null;
+
+          if (advanceBalance >= allocated) {
+            return { customerId: changes.customerId, update: { total_allocated: allocated } };
+          } else if (advanceBalance > 0) {
+            return {
+              customerId: changes.customerId,
+              update: { total_paid: allocated - advanceBalance, total_allocated: allocated }
+            };
+          } else {
+            return {
+              customerId: changes.customerId,
+              update: { total_paid: allocated, total_allocated: allocated }
+            };
+          }
+        }
+
       case '2→1': // Partial → Paid
         const remaining = changes.newTotal - (changes.totalAllocated || 0);
         
@@ -195,7 +226,9 @@ export class CustomerBalanceHandler {
         return {
           customerId: changes.customerId,
           update: {
-            total_paid: -changes.oldTotal,
+            // See the vendor twin (L-30): the allocation reverses in full, the
+            // payment only by what this document actually brought in.
+            total_paid: -(changes.paidByThisDocument ?? changes.oldTotal),
             total_allocated: -changes.oldTotal
           }
         };
@@ -204,7 +237,7 @@ export class CustomerBalanceHandler {
         return {
           customerId: changes.customerId,
           update: {
-            total_paid: -(changes.totalAllocated || 0),
+            total_paid: -(changes.paidByThisDocument ?? (changes.totalAllocated || 0)),
             total_allocated: -(changes.totalAllocated || 0)
           }
         };
@@ -239,8 +272,9 @@ export class CustomerBalanceHandler {
           if (allocDiff !== 0) {
             return {
               customerId: changes.customerId,
+              // Only the allocation moves (L-31); the excess becomes an
+              // unallocated advance rather than money that ceased to exist.
               update: {
-                total_paid: allocDiff,
                 total_allocated: allocDiff
               }
             };
@@ -297,6 +331,27 @@ export class CustomerBalanceHandler {
           };
         }
         
+      case '0→2': // Incomplete → Partial
+        // Missing for the same reason as the sale twin (L-29).
+        {
+          const allocatedR = changes.totalAllocated || 0;
+          if (allocatedR <= 0) return null;
+
+          if (advanceRefundBalance >= allocatedR) {
+            return { customerId: changes.customerId, update: { total_refund_allocated: allocatedR } };
+          } else if (advanceRefundBalance > 0) {
+            return {
+              customerId: changes.customerId,
+              update: { total_refunded: allocatedR - advanceRefundBalance, total_refund_allocated: allocatedR }
+            };
+          } else {
+            return {
+              customerId: changes.customerId,
+              update: { total_refunded: allocatedR, total_refund_allocated: allocatedR }
+            };
+          }
+        }
+
       case '2→1': // Partial → Refunded
         const remaining = changes.newTotal - (changes.totalAllocated || 0);
         
@@ -334,7 +389,7 @@ export class CustomerBalanceHandler {
         return {
           customerId: changes.customerId,
           update: {
-            total_refunded: -changes.oldTotal,
+            total_refunded: -(changes.refundedByThisDocument ?? changes.oldTotal),
             total_refund_allocated: -changes.oldTotal
           }
         };
@@ -343,7 +398,7 @@ export class CustomerBalanceHandler {
         return {
           customerId: changes.customerId,
           update: {
-            total_refunded: -(changes.totalAllocated || 0),
+            total_refunded: -(changes.refundedByThisDocument ?? (changes.totalAllocated || 0)),
             total_refund_allocated: -(changes.totalAllocated || 0)
           }
         };
@@ -378,8 +433,8 @@ export class CustomerBalanceHandler {
           if (allocDiff !== 0) {
             return {
               customerId: changes.customerId,
+              // See the sale twin (L-31).
               update: {
-                total_refunded: allocDiff,
                 total_refund_allocated: allocDiff
               }
             };
@@ -390,59 +445,6 @@ export class CustomerBalanceHandler {
       default:
         return null;
     }
-  }
-  
-  /**
-   * Update customer balance INSIDE transaction
-   * Transaction-safe method that uses the provided transaction client
-   * 
-   * @param tx - Prisma transaction client
-   * @param customerId - Customer ID
-   * @param updates - Balance updates (positive = add, negative = subtract)
-   */
-  async updateBalanceInTransaction(
-    tx: any,
-    customerId: number,
-    updates: BalanceUpdate
-  ): Promise<void> {
-    // Get current values
-    const customer = await tx.customer_details.findUnique({
-      where: { id: customerId },
-      select: {
-        total_paid: true,
-        total_allocated: true,
-        total_refunded: true,
-        total_refund_allocated: true
-      }
-    });
-
-    if (!customer) {
-      throw new Error(`Customer ${customerId} not found`);
-    }
-
-    // Calculate new values
-    const newTotalPaid = Number(customer.total_paid) + (updates.total_paid || 0);
-    const newTotalAllocated = Number(customer.total_allocated) + (updates.total_allocated || 0);
-    const newTotalRefunded = Number(customer.total_refunded) + (updates.total_refunded || 0);
-    const newTotalRefundAllocated = Number(customer.total_refund_allocated) + (updates.total_refund_allocated || 0);
-
-    // Calculate balance
-    // Balance = Money In - Money Out
-    // Money In: Payments (customer pays us)
-    // Money Out: Allocations (applied to bills) + Refunds (we return money) - Refund Allocations (applied to returns)
-    const newBalance = newTotalPaid - newTotalAllocated - newTotalRefunded + newTotalRefundAllocated;
-
-    // Update customer USING TRANSACTION CLIENT
-    await tx.customer_details.update({
-      where: { id: customerId },
-      data: {
-        total_paid: newTotalPaid,
-        total_allocated: newTotalAllocated,
-        total_refunded: newTotalRefunded,
-        total_refund_allocated: newTotalRefundAllocated,
-        account_balance: newBalance
-      }
-    });
   }
   
   /**

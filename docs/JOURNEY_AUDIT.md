@@ -564,9 +564,9 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-21 — **Phase 4 code work complete.** All five suites clean; assertions at baseline (only A5's pre-existing F-73). Only owner decisions and the deferred read queue remain |
+| **Last updated** | 2026-09-23 — **completion pass: Phase 4 was NOT complete.** The status column was stale and 16 of 22 read-queue files were unread. The service layer is now read and carries one reproduced **Critical** (L-36). See "Phase 4 — the completion pass" at the end of this document. Previously 2026-09-21 — **Phase 4 code work complete.** All five suites clean; assertions at baseline (only A5's pre-existing F-73). Only owner decisions and the deferred read queue remain |
 | **Branch / HEAD** | `dev_akaash` / **`efba4df`** — working tree clean, database at baseline |
-| **Next action** | Owner decisions (below), then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
+| **Next action** | **P4-27** (L-36, Critical, reproduced), then P4-28/29 (L-29, L-30), then P4-30 (the harness), then **P4-15** — the §11 edit sweep, the largest unfinished item. Phase 5 should not open until these land: L-29, L-30, L-33 and L-36 all have customer twins. Owner decisions (below) still stand, then Phase 5 Sale & Salex. Carry **L-8**, **L-24** and **L-25** into it — all three are sale-side or reports work this phase surfaced |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123`. Kill stray node processes first — a second server silently takes :3001 and you end up testing stale code |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 
@@ -985,27 +985,33 @@ Ordered **broken before wrong, easy before hard**. Status: `todo` · `doing` · 
 | **P4-03** | High | **`bill_to` keyed to the wrong number.** Purchase writes `invoiceNumberToUse`, `bill_to` writes `nextInvoiceNo`. Use one value. Also decide whether `bill_to` should key on `purchase.id` instead — it is a satellite of one purchase and `invoice_no` is not unique per FY. **REPRODUCED** | L-2 | **done — verified**, plus L-19 |
 | **P4-04** | High | **`total` can be NaN.** `calculatedGrandTotal` adds two `parseFloat(x?.toString())` with no `|| 0`. Give them fallbacks, and add a server-side assertion that the total is finite before the insert. **REPRODUCED — it is a 500** | L-3 | **done — verified** |
 | **P4-05** | High | **Invoice-number race (F-13).** The counter reads `MAX+1` inside a transaction that only READS, so it holds no lock; the duplicate check is a second read; the insert is a third transaction. Fix: `UNIQUE(fy, invoice_no)` on `purchase`, allocate inside the same transaction as the insert, and retry on P2002. The unique index is the part that actually makes it safe | F-13 | **done** — index plus a retry on P2002 for auto-numbered creates |
-| **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | todo |
+| **P4-06** | Medium | **Two numbering schemes (F-16).** Server counter is per-FY; `last-invoice.ts` is a global max with no FY filter. Make `last-invoice.ts` per-FY. **Note the interaction:** the global prefill may be the only thing currently masking P4-02, so do P4-02 first and verify together | F-16 | **done** — verified 2026-09-23: `last-invoice.ts:35` filters `fy` |
 | **P4-07** | High | **Duplicate product lines lose stock (F-12).** `CASE id WHEN 5 THEN stock+2 WHEN 5 THEN stock+3` takes the first match. `rateCases` has the identical flaw, so `latest_purchase_rate` takes the first line's rate too. Fix by aggregating quantities per `product_id` before building the statement — and take **G-01** with it: replace the hand-built `$executeRawUnsafe` with bound parameters or per-product Prisma updates, because the hand-built SQL is *why* this bug exists | F-12, G-01 | **done — verified** |
 | **P4-08** | High | **Backdated purchase overwrites newer product state.** `last_purchase_date` and `latest_purchase_rate` are set unconditionally. Only overwrite when this invoice date is newer than the stored one | L-4 | **done — verified** |
 | **P4-09** | Medium | **`Promise.all` over one interactive `tx` (F-21).** The raw stock UPDATE and the ledger write run concurrently on the same transaction client. Serialise them | F-21 | **done** |
 | **P4-10** | **Critical** | **Item join ignores `fy` (F-08).** Every purchase-item query filters on `invoice_no` alone. Add `fy` to all of them as the immediate fix. Find them by reading `[id].ts` in full, not by grep | F-08 | **done** — all three sites in `[id].ts`, plus the list endpoint |
 | **P4-11** | **Critical** | **Migrate `purchase_items` to reference `purchase.id`** with a real FK, retiring the `invoice_no` join. Larger change and it aligns purchase with sale, which stores the header id in the same column name. **Do before Phase 5** so the reports can be written once. Needs an owner decision on migration timing | F-08 | owner |
-| **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | todo |
-| **P4-13** | High | **Create and edit disagree on `payment_status`.** Create validates against `[0, 1]` only; the ledger case table is built on 0/1/2. This is the F-79 shape — one rule, both paths. Resolve which statuses a create may set and enforce it in one shared validator | L-5 | todo |
-| **P4-14** | High | **`lib/purchase.ts`, the §11 module.** Mirror `lib/product.ts`: `SERVER_OWNED_FIELDS` (every computed total, the tax split, the document number, stock effects), one `validatePurchase()` with a `partial` flag used by create **and** update, one `buildPurchaseData()`, and Prisma errors translated at the boundary (P2025→404, P2003→400, P2002→409) | §11 | todo |
+| **P4-12** | High | **Server-side tax (L-6, F-04, §4a).** All of `total_cgst/sgst/igst/total_tax` and every per-item tax figure is client-supplied and stored unverified, with no CGST/SGST-vs-IGST determination. Recompute server-side from line qty/rate/GST% and decide the split from the vendor's `state_code` against `getBusinessStateCode(business_details.gstin)` = 9. Reject or correct a client total that disagrees beyond a rounding tolerance | L-6 | **done** — `lib/purchase.ts` computes tax server-side |
+| **P4-13** | High | **Create and edit disagree on `payment_status`.** Create validates against `[0, 1]` only; the ledger case table is built on 0/1/2. This is the F-79 shape — one rule, both paths. Resolve which statuses a create may set and enforce it in one shared validator | L-5 | **done** — one shared validator in `lib/purchase.ts` |
+| **P4-14** | High | **`lib/purchase.ts`, the §11 module.** Mirror `lib/product.ts`: `SERVER_OWNED_FIELDS` (every computed total, the tax split, the document number, stock effects), one `validatePurchase()` with a `partial` flag used by create **and** update, one `buildPurchaseData()`, and Prisma errors translated at the boundary (P2025→404, P2003→400, P2002→409) | §11 | **done** — verified 2026-09-23: `lib/purchase.ts` exists |
 | **P4-15** | High | **§11 sweep on the edit path.** All five questions, field by field, across `create.tsx` and `[id].ts`: does every field load, does every field save, does the save write anything untouched, does every parameter do what its name says, **is the state space complete** | §11, 3c | todo |
-| **P4-16** | Medium | **Add the missing `0→2` transition.** `getPurchaseLedgerOps` documents "all 9 cases" and implements eight; Unpaid→Partial is absent. The return handler implements it, so the shape to copy exists. Do the same for `getSaleLedgerOps` or log it explicitly for Phase 5 — **note both twins are wrong identically, so a twin-diff will not catch it** | L-7 | todo |
+| **P4-16** | Medium | **Add the missing `0→2` transition.** `getPurchaseLedgerOps` documents "all 9 cases" and implements eight; Unpaid→Partial is absent. The return handler implements it, so the shape to copy exists. Do the same for `getSaleLedgerOps` or log it explicitly for Phase 5 — **note both twins are wrong identically, so a twin-diff will not catch it** | L-7 | **done for the LEDGER handlers only** — verified 2026-09-23 at `ledger-handler.ts:275` and `customer-ledger-handler.ts:265`. The BALANCE handlers never got it — see **L-29** |
 | **P4-17** | High | **Exercise all nine transitions** against a real purchase, running the P4-01 assertions after each | method | todo |
 | **P4-18** | Medium | **Deduplicate the advance-balance calculation.** `handlePost` computes the breakdown twice and queries `vendor_details` twice within one function | L-9 | todo |
-| **P4-19** | Medium | **`vendor_id = 0` magic value.** `purchase.vendor_id` has an FK to `vendor_details`, so writing 0 needs a row with id 0. It then flows into `vendor_payments`, `payment_allocations` and the ledger. Test it explicitly; if it works only because the FK is unenforced, that is the finding | L-10 | todo |
+| **P4-19** | Medium | **`vendor_id = 0` magic value.** `purchase.vendor_id` has an FK to `vendor_details`, so writing 0 needs a row with id 0. It then flows into `vendor_payments`, `payment_allocations` and the ledger. Test it explicitly; if it works only because the FK is unenforced, that is the finding | L-10 | **done** — the "Other" vendor path works |
 | **P4-20** | Low | **Error leakage.** GET and POST both return `error.message`. Same class as F-81/F-98. **REPRODUCED** — a 500 returned the entire Prisma invocation, not just a message. Raise to **Medium** | L-11 | **done — verified** |
 | **P4-21** | Low | **Purchase has no per-item discount** while sale and salex do. Confirm with the owner whether that is intended before changing anything | L-12 | owner |
 | **P4-22** | Low | **Transport modelled twice.** Purchase denormalises `transport`/`transport_name`/`vehicle_number` onto the header; sale and salex use satellite tables. Note it, and check the `transport-cost` report reads both | L-13 | todo |
 | **P4-23** | Medium | **`purchase-returns/[id]-old.ts` is a live route** mutating stock (F-06, deferred to G-04). Now that the rewrite is settled, delete it — or confirm the deferral still stands | F-06 | todo |
-| **P4-24** | High | **Transaction flow verification** — Step 3 below | method | todo |
-| **P4-25** | High | **Reporting verification** — Step 4 below | method | todo |
-| **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match | G-02 | **done** — `scripts/audit-twin-check.js`; all nine transitions agree |
+| **P4-24** | High | **Transaction flow verification** — Step 3 below | method | **done** — `scripts/audit-p4-flow.js` |
+| **P4-25** | High | **Reporting verification** — Step 4 below | method | **done** — `scripts/audit-p4-flow.js` |
+| **P4-26** | Medium | **G-02 reconciliation harness.** A test feeding one change set to both `ledgerHandler` and `customerLedgerHandler` with names normalised, asserting the operation lists match | G-02 | **done** — `scripts/audit-twin-check.js`; all nine transitions agree |
+| **P4-27** | **Critical** | **Purchase edit corrupts the vendor ledger (L-36).** `executeLedgerUpdates` reseeds `recalculateBalancesAfter` from the row it just updated, whose own `balance` the `updateMany` could not touch. Pass the id BEFORE the earliest updated row, or rebuild from 0 as `executeLedgerDeletes` already does. Also give the `findMany` at `:356` an `orderBy: { id: asc }`. **REPRODUCED** — `scripts/audit-p4-ledger-edit.js` | L-36 | todo |
+| **P4-28** | High | **Add `0→2` to all four BALANCE case tables (L-29).** P4-16 fixed only the ledger handlers. `getPurchaseBalanceOps`, `getReturnBalanceOps` and both customer twins fall through to `default: return null`, so Unpaid→Partial writes ledger rows but never moves the balance columns | L-29 | todo |
+| **P4-29** | High | **Edit-path balance asymmetry (L-30, L-31).** `1→0` and `2→0` decrement `total_paid` by amounts an advance-funded create never added — L-26 on the edit path. `2→2` is near-dead and carries the same flaw when it fires. Fix in both twins | L-30, L-31 | todo |
+| **P4-30** | Medium | **Fix the harness (L-37, L-38).** Drop or correct A2's `account_balance` comparison — it is unallocated advance, not outstanding payable — and KEEP its per-row half, which is what catches L-36. Make a zero-sample assertion report **EMPTY**, not PASS: A2/A3/A4 currently examine nothing at baseline | L-37, L-38 | todo |
+| **P4-31** | Medium | **Transaction-safety sweep of the service layer (L-27, L-32, L-33).** `ledger-service.createEntry` does its `bill_to` lookup on the global client and without `fy`; `logMultipleChanges` runs `Promise.all` over one interactive `tx`; `calculatePaymentStatus`/`calculateRefundStatus` ignore `tx` while their vendor twins honour it | L-27, L-32, L-33 | todo |
+| **P4-32** | Low | **Delete the dead money-layer modules (L-40).** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have zero callers; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a stub returning 0. They read as authoritative and one defines a third selling-price formula | L-40 | todo |
 
 ### Step 3 — transaction flow verification (P4-24)
 
@@ -1079,3 +1085,165 @@ Run after **every** step. These are the definition of "the step was clean".
   editing, repair terminators and check `git diff --stat` against
   `git diff --stat --ignore-cr-at-eol`. Never run `prisma db push` — use
   `prisma migrate diff` then `prisma db execute`.
+
+---
+
+## Phase 4 — the completion pass · 2026-09-23
+
+Phase 4 was recorded as "code work complete" on 2026-09-21. It was not: the **Step 2
+status column was stale**, and **16 of the 22 read-queue files had never been opened**,
+including the whole shared service layer. This pass read them. It found one **Critical,
+reproduced**, and it explains why the existing harness could not have caught it.
+
+### First, the docs disagreed with the code
+
+The Batches 3-5 prose said P4-06, P4-12, P4-13, P4-14, P4-16, P4-19, P4-24 and P4-25 were
+done; the Step 2 table still said `todo`. Checked against the code, the prose was right:
+`last-invoice.ts:35` filters `fy`, `lib/purchase.ts` exists, and `0→2` is present in both
+ledger handlers. The status column has been corrected below. **The table is the resume
+state — a stale one costs a session.**
+
+### L-36 · Editing a purchase corrupts the vendor ledger · **Critical** · REPRODUCED
+
+`LedgerUpdateOperation.data` (`ledger-handler.ts:54-58`) can carry only `debit`, `credit`
+and `notes` — it **cannot set `balance`**. So `updateMany` changes a row's debit and
+leaves that row's own stored balance untouched. `executeLedgerUpdates`
+(`transaction-handler.ts:372-378`) then calls
+`recalculateBalancesAfter(vendorId, firstEntry.id)` — seeding the running balance from
+**the stored balance of the row it just updated**, which is exactly the value that is now
+stale, and walking only rows *after* it.
+
+Reproduced against the running server with `scripts/audit-p4-ledger-edit.js`: two unpaid
+purchases for vendor 2, ₹500 then ₹100, then the first edited to ₹900.
+
+| Ledger row | Debit after edit | Stored `balance` | Correct |
+|---|---|---|---|
+| 28 — purchase A | 900 | **500** | 900 |
+| 29 — purchase B | 100 | **600** | 1000 |
+
+**This is worse than F-02.** F-02 scrambles the intermediate balances but the closing
+figure still ties out, because addition is commutative. Here the **closing balance is
+wrong by the full delta** — the vendor's statement understates what is owed, and stays
+wrong until something else rewrites the column.
+
+`executeLedgerDeletes` (`:414`) does the same job correctly, passing `0` for a full
+rebuild. The two sit forty lines apart.
+
+Two smaller things in the same function: the `findMany` at `:356` has no `orderBy`, so
+`entries[0]` is not guaranteed to be the lowest id; and `:84` dumps the entire financial
+payload through `console.log(JSON.stringify(params))` on every purchase edit.
+
+### L-37 · Half of A2 compares two different quantities · Medium
+
+This settles the open question recorded under "Reproductions, 2026-09-20" — *does
+`account_balance` mean outstanding payable, or does an unpaid purchase never reach the
+vendor balance?* Reading `vendor-balance-service.ts:62` and `balance-handler.ts:428,561`
+settles it: both compute
+
+```
+account_balance = total_paid - total_allocated - total_refunded + total_refund_allocated
+```
+
+That is the **unallocated advance** position — money paid but not yet applied to a bill.
+Purchases never enter it. So an unpaid purchase leaving `vendor_ledger` at 236 while
+`account_balance` stays 0 is **correct behaviour**, and it was the assertion that needed
+fixing, not the code.
+
+A2's **per-row half is right** and must be kept — it is precisely the check that catches
+L-36. Only its final comparison (`audit-assert.js:101`) is wrong: the ledger's closing
+balance is outstanding payable, `account_balance` is unallocated advance, and the two
+agree only at zero.
+
+### L-38 · The assertions report PASS on a zero sample · Medium
+
+`A2` skips any vendor with no ledger rows (`audit-assert.js:88`) and then reports PASS.
+Every Phase 4 suite cleans up after itself, so the baseline holds **zero ledger rows** and
+A2 examines nothing while printing `PASS … (0 checked)`. A3 and A4 are vacuous at baseline
+for the same reason. The 2026-09-20 baseline table recorded this as "PASS (nothing to
+check yet)" and nobody revisited it.
+
+**That is why L-36 survived four suites.** P4-26's own header already drew this lesson for
+transitions — a reachable transition emitting nothing is reported as EMPTY, not as
+agreement. The assertion runner needs the same rule: **PASS with a zero sample is not a
+pass.**
+
+### L-29 · `0→2` is missing from all four *balance* case tables · High
+
+P4-16 added Unpaid→Partial to the two **ledger** handlers and stopped there. The
+**balance** layer never got it:
+
+| File | Function | `0→2` |
+|---|---|---|
+| `balance-handler.ts` | `getPurchaseBalanceOps` | absent |
+| `balance-handler.ts` | `getReturnBalanceOps` | absent |
+| `customer-balance-handler.ts` | sale twin | absent |
+| `customer-balance-handler.ts` | return twin | absent |
+
+All four fall through to `default: return null`. So Unpaid→Partial now writes ledger rows
+but never moves `total_paid` / `total_allocated` — the ledger and the balance columns
+disagree by construction. The customer twin carries it straight into Phase 5.
+
+This is the same shared-gap shape as L-7, one layer down, and the twin harness cannot see
+it for the same reason: both sides are missing it identically.
+
+### L-30 · Paid→Unpaid destroys money that was never added · High
+
+`getCreateBalanceOps` scenario 1 (`balance-handler.ts:66-73`) funds a purchase entirely
+from an existing advance by incrementing **only `total_allocated`**. But `1→0`
+(`:183-190`) decrements **both** `total_paid` and `total_allocated` by `oldTotal`, and
+`2→0` (`:192-199`) does the same by `totalAllocated`. Edit such a purchase back to Unpaid
+and `total_paid` drops by money it never gained.
+
+This is L-26 exactly — which was found and fixed on the **delete** path and left standing
+on the **edit** path. Same asymmetry, same cause. Present in the customer twin at `:194`
+and `:203`, so it is Phase 5's problem too.
+
+### L-31 · `2→2` is near-dead, and wrong when it does fire · Medium
+
+`balance-handler.ts:226-241`: `oldAllocated = totalAllocated`, then
+`newAllocated = Math.min(newTotal, totalAllocated)`. Whenever `newTotal >= totalAllocated`
+the difference is 0 and it returns null, so the branch only fires when the new total drops
+**below** what is already allocated — and then it reduces `total_paid`, which is L-30's
+flaw again. Duplicated verbatim in `getReturnBalanceOps:368-382` and in both customer
+twins (`:233`, `:372`).
+
+### Findings from the service-layer read
+
+| ID | Sev | Finding | Evidence | Status |
+|---|---|---|---|---|
+| L-27 | High | `createEntry` does its `bill_to` lookup on the **global** `prisma` inside a function that otherwise uses the passed client, so for `vendor_id = 0` it cannot see the `bill_to` row the same transaction just wrote and the ledger note falls back. The same lookup filters `invoice_no` with **no `fy`** — F-08's shape surviving in the ledger service, now that `bill_to` has an `fy` column (L-19) | `ledger-service.ts:46` | open |
+| L-28 | High | `createDebitNoteEntry` credits `total_amount + total_tax + packing_forwarding_amount + freight_amount`; `updateDebitNoteEntry` credits only `new_total_amount + new_total_tax`. Editing a purchase return silently drops packing and freight from the credit. The F-79 shape inside the ledger service | `ledger-service.ts:217-221` vs `:263` | open — Phase 6 |
+| L-32 | Medium | `logMultipleChanges` runs `Promise.all` over one interactive `tx` — F-21 / P4-09 exactly. P4-09 fixed the instance in `purchases/index.ts`; the class survives here, on the live path of every paid purchase create, edit and delete. Both twins | `balance-log-service.ts:50-57` | open |
+| L-33 | High | `calculatePaymentStatus` and `calculateRefundStatus` take no `tx` and use the global `prisma`, while `calculatePurchasePaymentStatus` and `calculatePurchaseReturnRefundStatus` in the same file correctly do `db = tx || prisma`. The **vendor** pair is transaction-aware; the **sale/salex** pair is not | `payment-allocation-service.ts:12,43` vs `:160,192` | open — Phase 5 |
+| L-34 | Medium | Tolerance drift in one file: purchase uses `totalPaid >= totalAmount - 0.01`, sale/salex uses `totalPaid >= totalAmount` with none. A sale paid to the paisa with float error sticks at "Partially Paid" | `payment-allocation-service.ts:184,220` vs `:35,66` | open |
+| L-35 | High | `validateRefundAllocation`'s customer branch resolves a return id by probing `sale_returns` then `salex_returns`. The two tables have independent auto-increment ids, so id 5 exists in both; sale wins, and a salex return is validated against the wrong document's refund amount | `payment-allocation-service.ts:326-336` | open — Phase 6 |
+| L-39 | High | `getReturnLedgerOps` `1→0` and `2→0` push a DELETE whose `where` says `transaction_type: 'DEBIT_NOTE'` while the comment on the same line says *"Actually targeting REFUND_REVERSAL"*. It deletes the debit note itself, then pushes an UPDATE against the row it just deleted. Flagged in a comment and left | `ledger-handler.ts:482-489, 511-518` | open — Phase 6 |
+| L-40 | Low | **Three dead modules in the money layer, ~600 lines.** `lib/vendor-balance-service.ts` (331) and `lib/rate-utils.ts` (225) have **zero callers**; `updateBalanceInTransaction` is dead in both balance handlers; `getOutstandingAmount` is a `return Promise.resolve(0)` stub. They read as authoritative — `rate-utils` defines a third selling-price formula (F-90 found a second, dead, in the product form) | verified by call-site search | open |
+
+### Read queue — where it now stands
+
+R-3, R-9, R-10, R-11, R-12, R-13 and R-14 are now **read in full**; R-6 too. R-8 is read
+through the executor path (`1-120`, `348-430`, plus a full method map) — the delete and
+allocation halves remain. Unchanged and still unread: **R-5 remainder** (`purchases/[id].ts`
+from ~690), **R-15** `create.tsx` (3075), **R-16** `view/[id].tsx` (811), **R-17**
+`index.tsx` (172), **R-18** `usePurchases.ts` (484), and **R-19…R-22**, the four report
+endpoints.
+
+Those remaining files are **P4-15 territory** — the §11 edit sweep, which is the single
+largest unfinished item in the phase and the pass that produced F-75 and F-91 in Phase 3.
+
+### What this pass says about the method
+
+Every finding above came from reading a file the phase had already declared complete. The
+shape repeats:
+
+- **L-36** is a fix (`recalculateBalancesAfter`) applied correctly in one function and
+  incorrectly in its neighbour, forty lines apart.
+- **L-29** is a fix (P4-16) applied to one layer and not the layer beneath it.
+- **L-30** is a fix (L-26) applied to the delete path and not the edit path.
+- **L-32** is a fix (P4-09) applied to the instance and not the class.
+
+Four fixes that each landed on one side of a seam. That is the same thesis the audit
+started with, now turned on the audit's own repairs: **a fix is not done until its twin,
+its layer and its class are checked.** And L-38 is why none of it showed — the harness was
+green because it was measuring nothing.

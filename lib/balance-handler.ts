@@ -25,6 +25,16 @@ export interface ChangeSet {
   newTotal: number;
   vendorId: number;
   totalAllocated?: number;
+  /**
+   * Money this document itself brought in, as opposed to the amount it
+   * ALLOCATED. The two differ whenever a purchase was funded from an existing
+   * advance, and conflating them is L-26 / L-30: reversing total_paid by the
+   * allocated amount destroys money the document never added.
+   * Sum of BILL_SPECIFIC vendor_payments allocated to this document.
+   */
+  paidByThisDocument?: number;
+  /** The return-side equivalent, over BILL_SPECIFIC vendor_refunds. */
+  refundedByThisDocument?: number;
   amountChanged: boolean;
   currentBalance?: {
     total_paid: number;
@@ -147,6 +157,35 @@ export class BalanceHandler {
           };
         }
         
+      case '0→2': // Unpaid → Partial
+        // P4-16 added this transition to the LEDGER handler and stopped there,
+        // so the balance columns never moved for it (L-29). Same advance logic
+        // as 0→1, over the amount actually allocated rather than the full bill.
+        {
+          const allocated = changes.totalAllocated || 0;
+          if (allocated <= 0) return null;
+
+          if (advanceBalance >= allocated) {
+            return {
+              vendorId: changes.vendorId,
+              update: { total_allocated: allocated }
+            };
+          } else if (advanceBalance > 0) {
+            return {
+              vendorId: changes.vendorId,
+              update: {
+                total_paid: allocated - advanceBalance,
+                total_allocated: allocated
+              }
+            };
+          } else {
+            return {
+              vendorId: changes.vendorId,
+              update: { total_paid: allocated, total_allocated: allocated }
+            };
+          }
+        }
+
       case '2→1': // Partial → Paid
         const remaining = changes.newTotal - (changes.totalAllocated || 0);
         
@@ -184,7 +223,13 @@ export class BalanceHandler {
         return {
           vendorId: changes.vendorId,
           update: {
-            total_paid: -changes.oldTotal,
+            // total_allocated always reverses in full - the allocation is undone.
+            // total_paid reverses only by what THIS document actually paid in: a
+            // purchase funded from an existing advance incremented total_allocated
+            // alone, so reversing total_paid by oldTotal destroyed money that was
+            // never added (L-30 - L-26 on the edit path). The fallback is the
+            // Type B case, which has no allocations to tell us otherwise.
+            total_paid: -(changes.paidByThisDocument ?? changes.oldTotal),
             total_allocated: -changes.oldTotal
           }
         };
@@ -193,7 +238,7 @@ export class BalanceHandler {
         return {
           vendorId: changes.vendorId,
           update: {
-            total_paid: -(changes.totalAllocated || 0),
+            total_paid: -(changes.paidByThisDocument ?? (changes.totalAllocated || 0)),
             total_allocated: -(changes.totalAllocated || 0)
           }
         };
@@ -232,8 +277,12 @@ export class BalanceHandler {
           if (allocDiff !== 0) {
             return {
               vendorId: changes.vendorId,
+              // Only the allocation moves. This branch can fire only when the new
+              // total drops BELOW what is already allocated (Math.min makes the
+              // difference 0 otherwise); the excess stops being allocated to this
+              // bill and becomes an unallocated advance - the money is still
+              // there, so total_paid must not come down with it (L-31).
               update: {
-                total_paid: allocDiff,
                 total_allocated: allocDiff
               }
             };
@@ -290,6 +339,33 @@ export class BalanceHandler {
           };
         }
         
+      case '0→2': // Incomplete → Partial
+        // Missing for the same reason as the purchase twin (L-29).
+        {
+          const allocatedR = changes.totalAllocated || 0;
+          if (allocatedR <= 0) return null;
+
+          if (advanceRefundBalance >= allocatedR) {
+            return {
+              vendorId: changes.vendorId,
+              update: { total_refund_allocated: allocatedR }
+            };
+          } else if (advanceRefundBalance > 0) {
+            return {
+              vendorId: changes.vendorId,
+              update: {
+                total_refunded: allocatedR - advanceRefundBalance,
+                total_refund_allocated: allocatedR
+              }
+            };
+          } else {
+            return {
+              vendorId: changes.vendorId,
+              update: { total_refunded: allocatedR, total_refund_allocated: allocatedR }
+            };
+          }
+        }
+
       case '2→1': // Partial → Refunded
         const remaining = changes.newTotal - (changes.totalAllocated || 0);
         
@@ -327,7 +403,8 @@ export class BalanceHandler {
         return {
           vendorId: changes.vendorId,
           update: {
-            total_refunded: -changes.oldTotal,
+            // Mirrors the purchase side (L-30).
+            total_refunded: -(changes.refundedByThisDocument ?? changes.oldTotal),
             total_refund_allocated: -changes.oldTotal
           }
         };
@@ -336,7 +413,7 @@ export class BalanceHandler {
         return {
           vendorId: changes.vendorId,
           update: {
-            total_refunded: -(changes.totalAllocated || 0),
+            total_refunded: -(changes.refundedByThisDocument ?? (changes.totalAllocated || 0)),
             total_refund_allocated: -(changes.totalAllocated || 0)
           }
         };
@@ -373,8 +450,8 @@ export class BalanceHandler {
           if (allocDiff !== 0) {
             return {
               vendorId: changes.vendorId,
+              // See the purchase twin (L-31): only the allocation moves.
               update: {
-                total_refunded: allocDiff,
                 total_refund_allocated: allocDiff
               }
             };
@@ -385,59 +462,6 @@ export class BalanceHandler {
       default:
         return null;
     }
-  }
-  
-  /**
-   * Update vendor balance INSIDE transaction
-   * Transaction-safe method that uses the provided transaction client
-   * 
-   * @param tx - Prisma transaction client
-   * @param vendorId - Vendor ID
-   * @param updates - Balance updates (positive = add, negative = subtract)
-   */
-  async updateBalanceInTransaction(
-    tx: any,
-    vendorId: number,
-    updates: BalanceUpdate
-  ): Promise<void> {
-    // Get current values
-    const vendor = await tx.vendor_details.findUnique({
-      where: { id: vendorId },
-      select: {
-        total_paid: true,
-        total_allocated: true,
-        total_refunded: true,
-        total_refund_allocated: true
-      }
-    });
-
-    if (!vendor) {
-      throw new Error(`Vendor ${vendorId} not found`);
-    }
-
-    // Calculate new values
-    const newTotalPaid = Number(vendor.total_paid) + (updates.total_paid || 0);
-    const newTotalAllocated = Number(vendor.total_allocated) + (updates.total_allocated || 0);
-    const newTotalRefunded = Number(vendor.total_refunded) + (updates.total_refunded || 0);
-    const newTotalRefundAllocated = Number(vendor.total_refund_allocated) + (updates.total_refund_allocated || 0);
-
-    // Calculate balance
-    // Balance = Money In - Money Out
-    // Money In: Payments (we pay vendor)
-    // Money Out: Allocations (applied to bills) + Refunds (vendor returns money) - Refund Allocations (applied to returns)
-    const newBalance = newTotalPaid - newTotalAllocated - newTotalRefunded + newTotalRefundAllocated;
-
-    // Update vendor USING TRANSACTION CLIENT
-    await tx.vendor_details.update({
-      where: { id: vendorId },
-      data: {
-        total_paid: newTotalPaid,
-        total_allocated: newTotalAllocated,
-        total_refunded: newTotalRefunded,
-        total_refund_allocated: newTotalRefundAllocated,
-        account_balance: newBalance
-      }
-    });
   }
   
   /**

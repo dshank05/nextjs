@@ -43,8 +43,14 @@ export class LedgerService {
     // Get vendor name for "other" vendors (vendor_id = 0)
     let entryNotes = data.notes || ''
     if (data.vendor_id === 0 && data.reference_no) {
-      const billToRecord = await prisma.bill_to.findFirst({
-        where: { invoice_no: parseInt(data.reference_no) },
+      // Must read through the CALLER'S client, not the global one (L-27). For
+      // an "Other" vendor this bill_to row was written by the same transaction,
+      // and a read from outside it cannot see the row yet - the note silently
+      // fell back to blank. And bill_to has been keyed on (invoice_no, fy)
+      // since L-19, so without the fy filter this matches another year's
+      // document, which is F-08's shape surviving in the ledger service.
+      const billToRecord = await client.bill_to.findFirst({
+        where: { invoice_no: parseInt(data.reference_no), fy: data.fy },
         select: { vendor_name: true }
       })
       if (billToRecord) {
@@ -243,9 +249,19 @@ export class LedgerService {
     new_total_amount: number
     new_total_tax: number
     fy: number
-  }) {
-    // Find the existing DEBIT_NOTE entry
-    const existingEntry = await prisma.vendor_ledger.findFirst({
+  }, client: any = prisma) {
+    // F-15: this used the global client throughout, so its writes survived a
+    // rollback of the enclosing transaction. It now takes the caller's client
+    // like every other method here, defaulting to the global one so existing
+    // callers keep working until they are updated to pass tx.
+    //
+    // NOTE (L-28, Phase 6): the credit computed below is
+    // new_total_amount + new_total_tax, while createDebitNoteEntry above also
+    // adds packing_forwarding_amount and freight_amount. Editing a purchase
+    // return therefore drops packing and freight from the credit. Fixing that
+    // needs the caller to supply both figures and belongs with the returns
+    // audit, which has no round-trip harness yet.
+    const existingEntry = await client.vendor_ledger.findFirst({
       where: {
         vendor_id: params.vendor_id,
         transaction_type: 'DEBIT_NOTE',
@@ -270,7 +286,7 @@ export class LedgerService {
 
     // Update the DEBIT_NOTE entry with new credit
     const newBalance = existingEntry.balance - creditDifference
-    await prisma.vendor_ledger.update({
+    await client.vendor_ledger.update({
       where: { id: existingEntry.id },
       data: {
         credit: newCredit,
@@ -279,7 +295,7 @@ export class LedgerService {
     })
 
     // Recalculate balances for all subsequent entries
-    await this.recalculateBalancesAfter(params.vendor_id, existingEntry.id, prisma)
+    await this.recalculateBalancesAfter(params.vendor_id, existingEntry.id, client)
   }
 
   /**

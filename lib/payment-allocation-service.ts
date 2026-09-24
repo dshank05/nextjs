@@ -9,21 +9,27 @@ import { prisma } from './db'
  * Calculate payment status for sales/invoices (0/1/2)
  * 0 = Unpaid, 1 = Paid, 2 = Partially Paid
  */
-export async function calculatePaymentStatus(invoiceId: number, type: 'sale'|'salex'): Promise<number> {
+export async function calculatePaymentStatus(invoiceId: number, type: 'sale'|'salex', tx?: any): Promise<number> {
+  // L-33: this ignored any transaction and read through the global client,
+  // while calculatePurchasePaymentStatus below - same file, same job - honours
+  // tx. A status computed outside the transaction that is about to write it
+  // cannot see that transaction's own rows.
+  const db = tx || prisma;
+
   // Get invoice total
   const invoice = type === 'sale'
-    ? await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { total: true } })
-    : await prisma.invoicex.findUnique({ where: { id: invoiceId }, select: { total: true } });
+    ? await db.invoice.findUnique({ where: { id: invoiceId }, select: { total: true } })
+    : await db.invoicex.findUnique({ where: { id: invoiceId }, select: { total: true } });
 
   if (!invoice) return 0;
 
   // Get total allocated payments
   const allocations = type === 'sale'
-    ? await prisma.customer_payment_allocations.aggregate({
+    ? await db.customer_payment_allocations.aggregate({
         where: { invoice_id: invoiceId },
         _sum: { allocated_amount: true }
       })
-    : await prisma.customer_payment_allocations.aggregate({
+    : await db.customer_payment_allocations.aggregate({
         where: { invoicex_id: invoiceId },
         _sum: { allocated_amount: true }
       });
@@ -32,7 +38,10 @@ export async function calculatePaymentStatus(invoiceId: number, type: 'sale'|'sa
   const totalAmount = Number(invoice.total);
 
   if (totalPaid === 0) return 0;        // Unpaid
-  if (totalPaid >= totalAmount) return 1; // Fully Paid
+  // Same 0.01 tolerance the purchase twin has always used (L-34). Without it a
+  // sale settled to the last paisa sticks at "Partially Paid" forever on a
+  // float rounding error.
+  if (totalPaid >= totalAmount - 0.01) return 1; // Fully Paid
   return 2;                             // Partially Paid
 }
 
@@ -40,21 +49,24 @@ export async function calculatePaymentStatus(invoiceId: number, type: 'sale'|'sa
  * Calculate refund status for returns (0/1/2)
  * 0 = Unpaid, 1 = Refunded, 2 = Partially Refunded
  */
-export async function calculateRefundStatus(returnId: number, type: 'sale'|'salex'): Promise<number> {
+export async function calculateRefundStatus(returnId: number, type: 'sale'|'salex', tx?: any): Promise<number> {
+  // L-33, as above.
+  const db = tx || prisma;
+
   // Get return refund amount
   const returnRecord = type === 'sale'
-    ? await prisma.sale_returns.findUnique({ where: { id: returnId }, select: { refund_amount: true } })
-    : await prisma.salex_returns.findUnique({ where: { id: returnId }, select: { refund_amount: true } });
+    ? await db.sale_returns.findUnique({ where: { id: returnId }, select: { refund_amount: true } })
+    : await db.salex_returns.findUnique({ where: { id: returnId }, select: { refund_amount: true } });
 
   if (!returnRecord) return 0;
 
   // Get total allocated refunds
   const allocations = type === 'sale'
-    ? await prisma.customer_refund_allocations.aggregate({
+    ? await db.customer_refund_allocations.aggregate({
         where: { sale_return_id: returnId },
         _sum: { allocated_amount: true }
       })
-    : await prisma.customer_refund_allocations.aggregate({
+    : await db.customer_refund_allocations.aggregate({
         where: { salex_return_id: returnId },
         _sum: { allocated_amount: true }
       });
@@ -63,16 +75,9 @@ export async function calculateRefundStatus(returnId: number, type: 'sale'|'sale
   const totalRefund = Number(returnRecord.refund_amount);
 
   if (totalRefunded === 0) return 0;        // Unpaid
-  if (totalRefunded >= totalRefund) return 1; // Fully Refunded
+  // Tolerance, matching the purchase twin (L-34).
+  if (totalRefunded >= totalRefund - 0.01) return 1; // Fully Refunded
   return 2;                                 // Partially Refunded
-}
-
-/**
- * Get outstanding amount for an invoice
- */
-export function getOutstandingAmount(invoiceId: number, type: 'sale'|'salex'): Promise<number> {
-  // This will be implemented when we add the allocation queries
-  return Promise.resolve(0);
 }
 
 /**

@@ -21,6 +21,14 @@ export interface ChangeSet {
   returnDate?: number;
   fy: number;
   totalAllocated?: number;
+  /**
+   * Money this document itself brought in, as opposed to the amount it
+   * ALLOCATED. They differ whenever the document was settled from an existing
+   * advance; conflating them is L-26 / L-30.
+   */
+  paidByThisDocument?: number;
+  /** The return-side equivalent. */
+  refundedByThisDocument?: number;
   isTypeA?: boolean;
   hasPaymentLedger?: boolean;
   amountChanged: boolean;

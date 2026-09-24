@@ -2,7 +2,7 @@
 
 **Branch:** `dev_akaash` · **Started:** 2026-09-20 · **Last updated:** 2026-09-20
 
-**Status:** Phase 1 done (bar one deferred item) · Phase 2 mostly done · **Phase 3 Products done, including a full second pass** · Phase 4 Purchase is next
+**Status:** Phase 1 done (bar one deferred item) · Phase 2 mostly done · **Phase 3 Products done, including a full second pass** · **Phase 4 Purchase is NOT complete** — the 2026-09-23 completion pass read the service layer and found a reproduced **Critical** (L-36). See `JOURNEY_AUDIT.md` § "Phase 4 — the completion pass"
 
 | Phase | State |
 |---|---|
@@ -10,8 +10,8 @@
 | 1 · Foundations | **done** — F-01 code unified, data repair no longer needed (see below), F-25 fixed. F-06/F-07 still open |
 | 2 · Settings | **mostly done** — F-28 fixed, F-29 fixed, F-30 partial. 6 pages left |
 | 3 · Products | **done** — 3a, 3b and a second pass (3c) over list/view/add/edit. F-101, F-107, F-111, F-112 left open; F-73/F-74 need the owner |
-| 4 · Purchase | **done** — create, edit and delete audited and fixed; five suites guard it. F-08/F-12/F-13/F-16/F-21 closed. Open: P4-11 and P4-21 (owner), L-24, L-25 (Phase 7) |
-| 5 · Sale & Salex | **next** — carry L-8, L-24 and L-25 in; P4-11 should land first |
+| 4 · Purchase | **in progress** — create/edit/delete fixed and guarded by five suites, but the 2026-09-23 pass found the status table stale, 16 of 22 read-queue files unread, and **L-36 (Critical, reproduced): a purchase edit corrupts the vendor ledger balance**. Open: P4-15 (the §11 sweep), P4-17, P4-27–P4-32, P4-11/P4-21 (owner), L-24, L-25 (Phase 7) |
+| 5 · Sale & Salex | **blocked** — carry L-8, L-24 and L-25 in; P4-11 should land first. Also blocked on P4-28/29/31: **L-29, L-30, L-33 and L-36 all have customer twins**, so opening Phase 5 first means fixing each of them twice |
 | 6 · Returns | not started |
 | 7 · Reports | not started — runs last, needs journey data |
 

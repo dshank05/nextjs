@@ -21,6 +21,14 @@ export interface ChangeSet {
   returnDate?: number;  // ✅ NEW: Return date for DEBIT_NOTE entries
   fy: number;
   totalAllocated?: number;
+  /**
+   * Money this document itself brought in, as opposed to the amount it
+   * ALLOCATED. They differ whenever the document was settled from an existing
+   * advance; conflating them is L-26 / L-30.
+   */
+  paidByThisDocument?: number;
+  /** The return-side equivalent. */
+  refundedByThisDocument?: number;
   isTypeA?: boolean; // Has existing allocations
   hasPaymentLedger?: boolean; // ✅ NEW: Indicates if PAYMENT/PAYMENT_ADJUSTMENT exists (real payment vs advance)
   amountChanged: boolean;

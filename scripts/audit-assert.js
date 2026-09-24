@@ -21,7 +21,13 @@ const near = (a, b) => Math.abs(num(a) - num(b)) <= TOL;
 const results = [];
 function report(id, title, failures, checked) {
   results.push({ id, title, failures, checked });
-  const head = failures.length === 0 ? 'PASS' : 'FAIL';
+  // An assertion that examined nothing has not passed - it has abstained (L-38).
+  // Every Phase 4 suite cleans up after itself, so the baseline holds zero
+  // ledger rows and A2/A3/A4 were quietly reporting PASS over an empty set.
+  // That is why L-36 - a purchase edit corrupting the ledger balance - survived
+  // four green suites. The twin harness already draws this distinction for a
+  // transition that emits nothing; the assertions need it too.
+  const head = failures.length > 0 ? 'FAIL' : checked === 0 ? 'EMPTY' : 'PASS';
   console.log(`\n[${head}] ${id} — ${title}   (${checked} checked, ${failures.length} failing)`);
   for (const f of failures.slice(0, 15)) console.log('        ' + f);
   if (failures.length > 15) console.log(`        ... and ${failures.length - 15} more`);
@@ -66,7 +72,8 @@ async function A1() {
 /* ------------------------------------------------------------------ A2 */
 /**
  * The vendor ledger's stored running balance must match a DATE-ORDERED
- * recomputation, and the final balance must match vendor_details.
+ * recomputation, and vendor_details.account_balance must agree with its own
+ * component columns.
  *
  * Date-ordered rather than insertion-ordered is the whole point: the stored
  * balance is computed from the previous row by id (F-02), so a backdated entry
@@ -74,7 +81,11 @@ async function A1() {
  */
 async function A2() {
   const vendors = await prisma.vendor_details.findMany({
-    select: { id: true, vendor_name: true, account_balance: true }
+    select: {
+      id: true, vendor_name: true, account_balance: true,
+      total_paid: true, total_allocated: true,
+      total_refunded: true, total_refund_allocated: true
+    }
   });
   const failures = [];
   let checked = 0;
@@ -98,9 +109,29 @@ async function A2() {
         );
       }
     }
-    if (!near(v.account_balance, running)) {
+    // NOTE (L-37). This used to compare account_balance against the ledger's
+    // closing balance. They are different quantities and agree only at zero:
+    //
+    //   vendor_ledger closing  = purchases - debit notes - payments + refunds
+    //                          = OUTSTANDING PAYABLE
+    //   account_balance        = total_paid - total_allocated
+    //                            - total_refunded + total_refund_allocated
+    //                          = UNALLOCATED ADVANCE
+    //
+    // Purchases never enter account_balance, which is why an unpaid purchase
+    // left the ledger at 236 while account_balance stayed 0 - correct
+    // behaviour, wrongly asserted. What IS worth asserting is that the stored
+    // account_balance agrees with its own component columns, since every writer
+    // maintains it by increment and a missed increment would show up here.
+    const components =
+      num(v.total_paid) - num(v.total_allocated) -
+      num(v.total_refunded) + num(v.total_refund_allocated);
+    if (!near(v.account_balance, components)) {
       failures.push(
-        `vendor ${v.id} "${v.vendor_name}": account_balance=${money(v.account_balance)} ledger ends at ${money(running)}`
+        `vendor ${v.id} "${v.vendor_name}": account_balance=${money(v.account_balance)} ` +
+        `but its components give ${money(components)} ` +
+        `(paid ${money(v.total_paid)} - allocated ${money(v.total_allocated)} ` +
+        `- refunded ${money(v.total_refunded)} + refundAllocated ${money(v.total_refund_allocated)})`
       );
     }
   }
@@ -253,11 +284,19 @@ const ALL = { A1, A2, A3, A4, A5, A6 };
   for (const id of chosen) await ALL[id]();
 
   const failed = results.filter((r) => r.failures.length > 0);
+  const empty = results.filter((r) => r.failures.length === 0 && r.checked === 0);
   console.log('\n' + '='.repeat(72));
   if (failed.length === 0) {
-    console.log(`ALL CLEAN — ${chosen.length} assertions passed.\n`);
+    console.log(`ALL CLEAN — ${chosen.length - empty.length} of ${chosen.length} assertions passed.\n`);
   } else {
     console.log(`${failed.length} of ${chosen.length} assertions FAILING: ${failed.map((f) => f.id).join(', ')}\n`);
+  }
+  if (empty.length) {
+    console.log(
+      `${empty.length} assertion(s) examined NOTHING and prove nothing: ` +
+      `${empty.map((e) => e.id).join(', ')}.\n` +
+      `  Seed the relevant data before trusting a green run (L-38).\n`
+    );
   }
 
   await prisma.$disconnect();

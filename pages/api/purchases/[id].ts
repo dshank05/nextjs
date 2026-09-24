@@ -1064,6 +1064,32 @@ export default async function handler(
             }
           });
 
+          // What THIS purchase actually paid in, as opposed to what it
+          // ALLOCATED (L-30). A BILL_SPECIFIC payment was created by this
+          // purchase, so unwinding the purchase unwinds the payment and
+          // total_paid must come down with it. A DIRECT or MIXED payment is a
+          // pre-existing advance that survives: only its allocation reverses.
+          // This is the same distinction L-26 drew on the delete path.
+          //
+          // Left undefined for Type B (no allocations at all), where there is
+          // nothing to measure and the handler falls back to its old behaviour.
+          const billSpecificAllocations = isTypeA
+            ? await tx.payment_allocations.findMany({
+                where: {
+                  purchase_id: purchaseId,
+                  payment: { payment_type: 'BILL_SPECIFIC' }
+                },
+                select: { allocated_amount: true }
+              })
+            : null;
+
+          const paidByThisDocument = billSpecificAllocations
+            ? billSpecificAllocations.reduce(
+                (sum: number, a: any) => sum + Number(a.allocated_amount),
+                0
+              )
+            : undefined;
+
           // Get all operations from handler
           const handlerResult = await transactionHandler.handlePurchaseEdit({
             oldStatus: oldPaymentStatus,
@@ -1077,6 +1103,7 @@ export default async function handler(
             paymentDate: finalInvoiceDate,  // ✅ Use finalInvoiceDate (user's date or existing)
             fy: existingPurchase.fy,
             totalAllocated: totalAllocated,
+            paidByThisDocument: paidByThisDocument,
             isTypeA: isTypeA,
             hasPaymentLedger: hasPaymentLedger !== null,  // ✅ NEW: Pass payment ledger detection
             currentBalance: vendor ? {
