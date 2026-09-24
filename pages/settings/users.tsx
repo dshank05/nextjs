@@ -5,6 +5,7 @@ import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { ConfirmationModal } from '../../components/ConfirmationModal';
 
 import type { UserRow } from '../../types/settings';
 import { USER_STATUS_ACTIVE, userStatusLabel } from '../../types/settings';
@@ -30,6 +31,10 @@ export default function Users() {
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [formData, setFormData] = useState({ id: 0, username: '', email: '', phone: '', password: '', status: '' });
+  // S-28: this page had no deactivate action at all - status could only be
+  // changed by opening the edit modal, and until S-25 that silently did nothing.
+  const [changingUser, setChangingUser] = useState<User | null>(null);
+  const [changingLoading, setChangingLoading] = useState(false);
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'created_at');
   const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'desc');
 
@@ -167,6 +172,34 @@ export default function Users() {
   // S-30: the bare 10 used to appear in four places with nothing naming it.
   const getStatusText = userStatusLabel;
 
+  const confirmStatusChange = async () => {
+    if (!changingUser) return;
+    setChangingLoading(true);
+
+    const next = changingUser.status === USER_STATUS_ACTIVE ? 'Inactive' : 'Active';
+    try {
+      const response = await fetch(`/api/users/${changingUser.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+
+      if (response.ok) {
+        fetchUsers();
+        showSnackbar('success', `User ${next === 'Active' ? 'activated' : 'deactivated'}`);
+      } else {
+        const body = await response.json();
+        showSnackbar('error', body.message || 'Could not change the user status');
+      }
+    } catch (error) {
+      console.error('Error changing user status:', error);
+      showSnackbar('error', 'Network error while changing the user status');
+    } finally {
+      setChangingLoading(false);
+      setChangingUser(null);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString('en-IN');
   };
@@ -202,13 +235,23 @@ export default function Users() {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={users}
+              // S-89: export every matching row, not just the page on screen.
+              fetchAll={async () => {
+                const r = await fetch('/api/users?dropdown=true');
+                if (!r.ok) throw new Error('Could not load the full list');
+                const d = await r.json();
+                return d.data || d.users || [];
+              }}
               columns={[
                 { key: 'id', label: 'ID', enabled: true },
                 { key: 'username', label: 'Username', enabled: true },
                 { key: 'email', label: 'Email', enabled: true },
                 { key: 'phone', label: 'Phone', enabled: true },
-                { key: 'status', label: 'Status', enabled: true },
-                { key: 'created_at', label: 'Created Date', enabled: true },
+                // S-08: the export used to emit the raw 10 / 0 and a Unix
+                // integer, while the table beside it showed "Active" and a
+                // formatted date - the same row, read two ways.
+                { key: 'status', label: 'Status', enabled: true, format: (u) => getStatusText(u.status) },
+                { key: 'created_at', label: 'Created Date', enabled: true, format: (u) => formatDate(u.created_at) },
               ]}
               config={{
                 title: 'Users Report',
@@ -274,6 +317,13 @@ export default function Users() {
                       <td className="text-slate-300 text-sm">{formatDate(user.created_at)}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(user)}>Edit</button>
+                        <button
+                          className={user.status === USER_STATUS_ACTIVE ? 'btn-danger' : 'btn-primary px-6'}
+                          onClick={() => setChangingUser(user)}
+                          title={user.status === USER_STATUS_ACTIVE ? 'Deactivate user' : 'Activate user'}
+                        >
+                          {user.status === USER_STATUS_ACTIVE ? 'Deactivate' : 'Activate'}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -295,6 +345,21 @@ export default function Users() {
           </>
         )}
       </div>
+
+      <ConfirmationModal
+        isOpen={changingUser !== null}
+        title={changingUser?.status === USER_STATUS_ACTIVE ? 'Deactivate User' : 'Activate User'}
+        message={
+          changingUser
+            ? `Are you sure you want to ${changingUser.status === USER_STATUS_ACTIVE ? 'deactivate' : 'activate'} "${changingUser.username}"?`
+            : ''
+        }
+        confirmText={changingUser?.status === USER_STATUS_ACTIVE ? 'Deactivate' : 'Activate'}
+        cancelText="Cancel"
+        showLoading={changingLoading}
+        onConfirm={confirmStatusChange}
+        onCancel={() => { if (!changingLoading) setChangingUser(null); }}
+      />
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 !mt-0">
@@ -335,7 +400,9 @@ export default function Users() {
                 <ClearableInput
                   type="tel"
                   value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  // S-67: digits only, matching the other three pages. The
+                  // HTML `pattern` this relied on is a browser-side hint only.
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
                   placeholder="Enter 10-digit phone number"
                   pattern="[0-9]{10}"
                   title="Phone number must be exactly 10 digits"

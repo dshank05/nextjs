@@ -308,6 +308,13 @@ export default function GSTTaxRate() {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={gstRates}
+              // S-89: export every matching row, not just the page on screen.
+              fetchAll={async () => {
+                const r = await fetch('/api/gst-rates?dropdown=true&includeInactive=true');
+                if (!r.ok) throw new Error('Could not load the full list');
+                const d = await r.json();
+                return d.data || d.gstRates || [];
+              }}
               columns={[
                 { key: 'id', label: 'ID', enabled: true },
                 { key: 'hsn_code', label: 'HSN Code', enabled: true },

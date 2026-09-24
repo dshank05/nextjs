@@ -10,6 +10,21 @@ interface Column {
   key: string;
   label: string;
   enabled: boolean;
+  /**
+   * How this column should read in the export.
+   *
+   * S-06: this component carries a seventeen-case switch over `invoice_no`,
+   * `customer_name`, `payment_status`, `stock_quantity` and friends - domain
+   * knowledge about sales, purchases and products, inside a component that eight
+   * unrelated settings pages also mount. A page that knows how to render a value
+   * can now say so, instead of the shared component being taught about it.
+   *
+   * S-08: it is also the fix for exports that disagreed with the screen. The
+   * Users export emitted `status` as a raw 10 or 0 and `created_at` as a Unix
+   * integer, while the table beside it showed "Active" and a formatted date,
+   * because the table had formatters and the export did not.
+   */
+  format?: (row: any) => string | number;
 }
 
 interface ExportConfig {
@@ -19,7 +34,19 @@ interface ExportConfig {
 }
 
 interface ExportMenuProps {
+  /** The rows currently on screen. Used as-is when `fetchAll` is not given. */
   data: any[];
+  /**
+   * Fetch every row, not just the page being shown.
+   *
+   * S-89 / S-03: `data` is the current page, so an export from a 50-row page of
+   * a 600-row table quietly produced 50 rows under a heading that said
+   * "Warehouses Report". Every settings list endpoint now accepts
+   * `dropdown=true` and returns the unpaginated set, so a page can hand that
+   * over here. If it fails, the export falls back to the visible rows rather
+   * than producing nothing.
+   */
+  fetchAll?: () => Promise<any[]>;
   columns: Column[];
   config: ExportConfig;
   onExport?: (exportType: 'excel' | 'pdf' | 'print') => void;
@@ -35,6 +62,7 @@ interface ExportMenuProps {
 
 export const ExportMenu: React.FC<ExportMenuProps> = ({
   data,
+  fetchAll,
   columns,
   config,
   onExport,
@@ -353,15 +381,37 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
     }
   };
 
-  const handleColumnSelection = (selectedColumnKeys: string[]) => {
+  const handleColumnSelection = async (selectedColumnKeys: string[]) => {
     setShowColumnSelector(false);
 
-    const exportData = data.map(item => {
+    let rows = data;
+    if (fetchAll) {
+      try {
+        rows = await fetchAll();
+      } catch (error) {
+        // Better a partial export than none - but say so, rather than silently
+        // producing a "full report" that is one page long.
+        console.error('Full export failed; falling back to the visible rows:', error);
+        alert('Could not load every row. Exporting the rows currently shown instead.');
+      }
+    }
+
+    const exportData = rows.map(item => {
       const row: any = {};
       selectedColumnKeys.forEach(key => {
         // Find the column definition to get the proper label
         const columnDef = columns.find(col => col.key === key);
         const label = columnDef ? columnDef.label : key;
+
+        // A formatter on the column wins. Everything below it is the legacy
+        // switch (S-06): domain-specific mappings that predate this hook and
+        // that the sale, purchase and product exports still rely on. New call
+        // sites should pass `format` rather than adding a case here.
+        const columnFormat = columnDef?.format;
+        if (columnFormat) {
+          row[label] = columnFormat(item);
+          return;
+        }
 
         // Map the data based on column key
         switch (key) {
@@ -710,8 +760,10 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
                   a title that said otherwise. Saying the count is the honest
                   minimum; exporting the full set needs the endpoint. */}
               <div className="mt-2 text-xs text-slate-400">
-                All {columns.filter(c => c.enabled).length} columns will be exported,
-                for the {Array.isArray(data) ? data.length : 0} row(s) currently listed.
+                All {columns.filter(c => c.enabled).length} columns will be exported
+                {fetchAll
+                  ? ', for every matching row.'
+                  : `, for the ${Array.isArray(data) ? data.length : 0} row(s) currently listed.`}
               </div>
             </div>
 

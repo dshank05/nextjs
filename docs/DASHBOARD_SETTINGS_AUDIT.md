@@ -93,7 +93,7 @@ That is roughly **1712 ms of API time, of which about 854 ms is waste** (D-01, D
 | D-10 | Low | **Non-OK responses are swallowed.** All three fetchers do `if (response.ok)` with no `else`, so a 500 leaves the dashboard showing zeros with no error state and no retry | `index.tsx:93,108,138` | **fixed** — an error banner with a Retry button |
 | D-11 | Low | `trends.ts:54` computes `formattedDateString` and never uses it. `stats.ts` selects `taxrate` and never reads it | read of both files | **fixed** — removed with the endpoints |
 | D-12 | Low | **N+1 by construction in trends**: five day-buckets each issuing three queries, where two grouped queries over a date range would do | `trends.ts:35-103` | **fixed** — the five day-buckets are gone; the merged endpoint issues one `Promise.all` |
-| D-17 | Medium | **`parseDateRange()` carries the bug its own file warns about.** `new Date("YYYY-MM-DD")` parses as UTC midnight and `.setHours(0,0,0,0)` then applies local hours, so in any timezone behind UTC the range starts a day early. `convertDateToTimestamp()` in the same file parses the parts by hand and is correct. Harmless in IST, and it has callers outside this audit | `lib/date-utils.ts:185-197` | open |
+| D-17 | Medium | **`parseDateRange()` carries the bug its own file warns about.** `new Date("YYYY-MM-DD")` parses as UTC midnight and `.setHours(0,0,0,0)` then applies local hours, so in any timezone behind UTC the range starts a day early. `convertDateToTimestamp()` in the same file parses the parts by hand and is correct. Harmless in IST, and it has callers outside this audit | `lib/date-utils.ts:185-197` | **fixed** — `parseDateRange` parses the parts by hand via `convertDateToTimestamp`, like the rest of the file. Unchanged in IST; correct everywhere else |
 
 ---
 
@@ -122,9 +122,9 @@ client-side, over whatever rows are currently in the page's state.
 | S-03 | Medium | **Exported rows are only the current page.** `data` is the page's state array, so an export from a 50-row page of a 600-row table silently produces 50 rows, titled as a full report | every call site, e.g. `warehouse.tsx:270` | **partly fixed** — the dialog now states how many rows and columns will actually go. Exporting beyond the current page needs the endpoint to serve it, which is S-89 |
 | S-04 | Medium | **The column selector is a decoration.** Every checkbox is `checked={true}` and `readOnly`, and the helper text says "All available columns will be exported". The modal offers a choice that does not exist | `ExportMenu.tsx:663-678` | **fixed** — the fake checkboxes are a plain list; a modal no longer offers a choice it cannot honour |
 | S-05 | Medium | **Every page that mounts the menu fetches `/api/business-details` on mount**, whether or not the user ever opens Export — an extra request on eleven settings pages plus products, sales and purchases. `hooks/useBusinessDetails.ts` already exists (added for F-53), so this is a second, duplicate data path for the same record | `ExportMenu.tsx:51-65` | **fixed** — business details load when the menu is opened, not on every page mount |
-| S-06 | Medium | **A generic component hardcodes domain knowledge.** `handleColumnSelection` is a 17-case switch over `invoice_no`, `customer_name`, `vendor_name`, `payment_status`, `payment_mode`, `stock_quantity`, `selling_price`… and `exportViewPageToExcel` is written **entirely for purchases** — "PURCHASE ITEMS", "Vendor GSTIN", `config.title \|\| 'Purchase Details'`. Settings pages fall through to the `default` branch | `ExportMenu.tsx:342-424`, `:433-612` | open |
+| S-06 | Medium | **A generic component hardcodes domain knowledge.** `handleColumnSelection` is a 17-case switch over `invoice_no`, `customer_name`, `vendor_name`, `payment_status`, `payment_mode`, `stock_quantity`, `selling_price`… and `exportViewPageToExcel` is written **entirely for purchases** — "PURCHASE ITEMS", "Vendor GSTIN", `config.title \|\| 'Purchase Details'`. Settings pages fall through to the `default` branch | `ExportMenu.tsx:342-424`, `:433-612` | **fixed** — a column may carry a `format` function, which wins over the legacy switch. The switch stays for the sale/purchase/product exports that rely on it, marked as legacy |
 | S-07 | Medium | **`0` exports as blank.** The `default` branch is `item[key] \|\| ''`, so a 0% GST rate, a stock of 0 or a status of 0 exports as an empty cell. The same falsy-guard class as F-31 | `ExportMenu.tsx:423` | **fixed** — `?? ''` instead of `|| ''`, so a real 0 exports as 0 |
-| S-08 | Low | **Export ignores the page's own formatters.** Users exports `status` as the raw `10`/`0` and `created_at` as a Unix integer, while the table renders them through `getStatusText()` and `formatDate()` | `users.tsx:207-214` vs `:168-174` | open |
+| S-08 | Low | **Export ignores the page's own formatters.** Users exports `status` as the raw `10`/`0` and `created_at` as a Unix integer, while the table renders them through `getStatusText()` and `formatDate()` | `users.tsx:207-214` vs `:168-174` | **fixed** — the Users export formats status and created date through the same helpers the table uses |
 | S-09 | Low | `tableRef` and `pageType` props are declared and never used; `isViewPage()` sniffs `window.location.pathname` instead of reading the `pageType` prop that exists for exactly that | `ExportMenu.tsx:21,23,41-48` | **fixed** — `tableRef` removed; `pageType` is now read and beats the URL sniff |
 | S-10 | Low | `require('../../lib/export-utils')` inside two functions rather than a top-level import — CommonJS in a TSX component, so the import is untyped and unbundleable | `ExportMenu.tsx:429,602` | **fixed** — top-level typed import |
 | S-11 | Low | Print styles are removed on a fixed `setTimeout(…, 1000)`. If the print dialog is still open, the page restyles underneath the preview. The injected header is also removed by `querySelector`, so two overlapping exports remove the wrong node | `ExportMenu.tsx:297-306` | **fixed** — cleanup runs on `afterprint` and removes the header it created, not whichever one it finds |
@@ -143,7 +143,7 @@ These repeat across pages. Each is one fix, not eleven.
 | S-15 | Low | **Two error-reporting mechanisms.** `states` and `users` use `window.alert()`; every other page uses `showSnackbar`. `states.tsx` does not import the snackbar at all | `states.tsx:177`, `users.tsx:164`, `ExportMenu.tsx:309,439,610` | **fixed** — `states` and `users` report through the snackbar, and a failed load now says so |
 | S-16 | Low | **A redundant duplicate effect.** Two `useEffect`s both reset the page to 1, one on `[debouncedSearchTerm]` and one on `[debouncedSearchTerm, sortBy, sortOrder]`. The first is entirely covered by the second | `staffdetails.tsx:57-67`, `financialyear.tsx:45-65`, `gsttaxrate.tsx:55-84` | **fixed** — one page-reset effect in each of the three pages |
 | S-17 | Medium | **`useSnackbar?.() \|\| { showSnackbar: () => {} }`** — a hook called conditionally and silently stubbed out if absent. It violates the rules of hooks and turns a missing provider into silence rather than an error | `staffdetails.tsx:23`, `mechanics.tsx:23` | **fixed** — `useSnackbar()` called unconditionally in both twins |
-| S-18 | Low | **Pagination controls are copy-pasted verbatim.** `getPageNumbers()`, the Previous/Next block and the ellipsis logic are byte-identical across all nine list pages, ~25 lines each | all list pages | open |
+| S-18 | Low | **Pagination controls are copy-pasted verbatim.** `getPageNumbers()`, the Previous/Next block and the ellipsis logic are byte-identical across all nine list pages, ~25 lines each | all list pages | **corrected, then fixed** — see §9: there were TWO implementations, not one copy. Both are now `<ListPagination>` (S-56) |
 
 ---
 
@@ -156,7 +156,7 @@ These repeat across pages. Each is one fix, not eleven.
 | S-19 | **High** | **The API accepts `status`, answers 200, and throws it away.** `PUT /api/warehouses` with an id in the **body** routes to `handlePut`, which reads only `{id, name, location}` and updates only those — the comment at `:187` says *"Status not updated - all warehouses are active"*, which is false: the page has a Deactivate button and the column holds `Inactive`. Verified live: PUT `{status:'Inactive'}` → **200 "updated successfully"**, row still `Active` | `warehouses/index.ts:146-202`, esp. `:184-188` | **fixed** — `handlePut` is a partial update and honours `status`; verified live: warehouse 2 Active → Inactive |
 | S-20 | Medium | **One route, two PUT contracts, chosen by where the id is.** `handlePut` (id in body, full overwrite, ignores status) vs `handleIndividualPut` (id in query, proper partial update, honours status). The page uses **both** — body for edit (`:157-164`), query for the status toggle (`:208-214`) | `warehouses/index.ts:10-14`, `warehouse.tsx:157,208` | **fixed** — the toggle now uses `PATCH /api/warehouses/[warehouseId]/status`; the body-id PUT is a partial update and no longer the way to change status |
 | S-21 | Medium | **Editing a warehouse cannot preserve its status**, because `handleEdit` never loads `status` into `formData` and the save sends `{id, name, location}`. It is only harmless because S-19 makes the endpoint ignore status — two defects cancelling out | `warehouse.tsx:133-141`, `:146` | **fixed** — a partial update cannot read an omitted field as a blanking |
-| S-22 | Low | **Delete works, but not where anyone would look for it.** Soft delete lives at `DELETE /api/warehouses?id=4`; `DELETE /api/warehouses/4` is a 404 because there is no `[id].ts` — while `/api/warehouses/4/racks` *does* work. One resource, two routing conventions | `warehouses/index.ts:300`, `warehouses/[warehouseId]/racks.ts` | open |
+| S-22 | Low | **Delete works, but not where anyone would look for it.** Soft delete lives at `DELETE /api/warehouses?id=4`; `DELETE /api/warehouses/4` is a 404 because there is no `[id].ts` — while `/api/warehouses/4/racks` *does* work. One resource, two routing conventions | `warehouses/index.ts:300`, `warehouses/[warehouseId]/racks.ts` | **fixed** — `GET/PUT/DELETE /api/warehouses/[warehouseId]` added, matching `staff/[id]`. The query-parameter form still works so nothing breaks mid-migration |
 | S-23 | Low | `const updatedWarehouse = await …` assigned and never used, three times | `warehouses/index.ts:182,281,312` | **fixed** — all three unused assignments removed |
 | S-24 | Low | `status` is accepted on create with no validation — `status: 'Banana'` is stored. Name uniqueness is enforced in application code only, with no DB constraint, so two concurrent creates can both pass | `warehouses/index.ts:105,115-123` | **fixed** — an unknown status is rejected on create |
 
@@ -167,7 +167,7 @@ These repeat across pages. Each is one fix, not eleven.
 | S-25 | **High** | **A user cannot be deactivated.** `status: parseInt(status.toString()) \|\| 10` — `parseInt("0")` is `0`, which is falsy, so `\|\| 10` flips Inactive back to **Active**. Present on both update and create, so an inactive user can be neither made nor kept. The F-31 falsy-guard class, this time on access control | `users/index.ts:98`, `:270` | **fixed** — `parseUserStatus()`; verified live: manager 10 → 0, and `status: "7"` → 400 |
 | S-26 | Medium | **Update is a POST.** The page always POSTs to `/api/users`, and `handlePost` forwards to `handleUpdate` when an `id` is present. Every other settings page uses PUT | `users.tsx:147-148`, `users/index.ts:199-201` | **fixed** — PUT is accepted; POST-with-an-id still works, so the existing page is unaffected |
 | S-27 | Low | **The page's `User` interface is stale and alarming.** It declares `auth_key`, `password_hash` and `password_reset_token`, none of which the API returns — the `select` correctly excludes them. No leak; but the type invites the reader to believe there is one | `users.tsx:8-20` vs `users/index.ts:158-166` | **fixed** — `users.tsx` uses `UserRow`, which is `Omit`-ed from the Prisma model |
-| S-28 | Low | **No deactivate action.** Status is changed only by opening the edit modal, unlike staff, mechanics and warehouse which have a toggle button — and it would not work anyway (S-25) | `users.tsx:277-279` | open |
+| S-28 | Low | **No deactivate action.** Status is changed only by opening the edit modal, unlike staff, mechanics and warehouse which have a toggle button — and it would not work anyway (S-25) | `users.tsx:277-279` | **fixed** — a Deactivate/Activate button on the Users page, backed by `PATCH /api/users/[id]/status` |
 | S-29 | Low | `auth_key` is generated with `Math.random().toString(36)` — not cryptographically random. NextAuth does not use it today, which is the only reason it does not matter | `users/index.ts:259` | **fixed** — `randomBytes(24)` instead of `Math.random()` |
 | S-30 | Low | The magic number `10` for "Active" is repeated in the page, the API and the status label helper with nothing naming it | `users.tsx:169,269`, `users/index.ts:98,270` | **fixed** — `USER_STATUS_ACTIVE` and `userStatusLabel()` replace the bare 10 |
 
@@ -177,7 +177,7 @@ These repeat across pages. Each is one fix, not eleven.
 |---|---|---|---|---|
 | S-31 | Medium | **Two dead interfaces that describe a row that does not exist.** `State` declares `name`, `code: string`, `gstStateCode`, `capital`, `region`, `status`; the real row is `{id, state_name, code: number}` and the table has no `status` column at all. Neither interface is used — the real shape is re-declared **inline four times** | `states.tsx:9-23` vs `:26,35,37,123` | **fixed** — both dead interfaces gone; `StateRow` used in all four places |
 | S-32 | Low | **`sortBy=id` is silently ignored.** Unsupported sort fields fall back to `state_name` rather than returning 400, so a caller gets data that looks sorted and is not | verified live; `warehouses/index.ts:52-53` shows the same pattern | **fixed** — `id` is a sortable field, and the shared parser reports a fallback rather than hiding it |
-| S-33 | Low | States can be created and edited but never removed or deactivated, and there is no `status` column to deactivate into | `states.tsx:259-261` | open |
+| S-33 | Low | States can be created and edited but never removed or deactivated, and there is no `status` column to deactivate into | `states.tsx:259-261` | **fixed** — a Delete button, backed by the guarded DELETE that already existed. A state in use is refused with the reason |
 
 ### inactive-products
 
@@ -191,7 +191,7 @@ These repeat across pages. Each is one fix, not eleven.
 
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
-| S-37 | **High** | **One request per warehouse, then sort and paginate in the browser.** `fetchRacks` loops over every warehouse issuing a separate call with `limit: 1000`, concatenates the results, sorts client-side and slices client-side — while the API already supports search, sort and paging. Cost grows linearly with warehouse count | `warehouse-racks.tsx:107-185` | open |
+| S-37 | **High** | **One request per warehouse, then sort and paginate in the browser.** `fetchRacks` loops over every warehouse issuing a separate call with `limit: 1000`, concatenates the results, sorts client-side and slices client-side — while the API already supports search, sort and paging. Cost grows linearly with warehouse count | `warehouse-racks.tsx:107-185` | **fixed** — `GET /api/racks` lists across warehouses with search, sort and paging, so the page makes one request instead of one per warehouse |
 | S-38 | **High** | **Racks in the 51st warehouse onward are invisible.** `fetchWarehouses` calls `/api/warehouses` with no `limit` and no `dropdown=true`, taking the default first 50. The rack loop only iterates what it got. The F-58 class, in a page that was never covered by F-58's fix | `warehouse-racks.tsx:95-105` | **fixed** — the rack page fetches `?dropdown=true`, so warehouses past the 50th exist for it |
 | S-39 | Medium | **Pagination reports a total it does not hold.** `totalRacks` sums each warehouse's server-side `pagination.total`, but `allRacks` holds at most 1000 rows per warehouse — so `total` and the rows can disagree, and the page count with them | `warehouse-racks.tsx:135,174-178` | **fixed with S-40** — the newest response now sets both rows and totals, so they cannot come from different requests |
 | S-40 | Medium | **The `isFetching` guard drops requests.** The effect calls `fetchRacks()` only `if (!isFetching)`, and `fetchRacks` itself returns early when `isFetching`. A dependency change during an in-flight request is **silently discarded** with no retry, leaving the list stale for the new filter. `bankdetails.tsx` has the same guard | `warehouse-racks.tsx:65,108`; `bankdetails.tsx:64-68,76` | **fixed** — the lock that silently dropped an overlapping request is replaced by a sequence number, in both `warehouse-racks` and `bankdetails` |
@@ -216,13 +216,13 @@ cancelled status change actually cancels.
 
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
-| S-46 | Medium | **Two PUT shapes on one endpoint again.** `handleSetAsCurrent` PUTs `{fyId}` while the save path PUTs the whole record — the same ambiguity as S-20 | `financialyear.tsx:100-104` | open |
+| S-46 | Medium | **Two PUT shapes on one endpoint again.** `handleSetAsCurrent` PUTs `{fyId}` while the save path PUTs the whole record — the same ambiguity as S-20 | `financialyear.tsx:100-104` | **fixed** — `PUT /api/financial-years/[id]/current` is its own route; the collection PUT still works while callers move |
 | S-47 | Low | The date-formatting IIFE is copy-pasted twice inside one function, and `lib/date-utils.ts` already exists | `financialyear.tsx:151-164` | **fixed** — removed with `handleEdit` (S-58) |
 | S-48 | Low | `fetchFinancialYears` has no `else` on a non-OK response — a failed load is silent | `financialyear.tsx:82-88` | **fixed** — a non-OK load reports through the snackbar |
-| S-49 | Low | **Dead status-change state.** `showStatusChangeModal`, `changingRate`, `changingLoading` and `abortController` are declared, and `:161` records that the toggle handler was removed | `gsttaxrate.tsx:43-51,161` | open |
+| S-49 | Low | **Dead status-change state.** `showStatusChangeModal`, `changingRate`, `changingLoading` and `abortController` are declared, and `:161` records that the toggle handler was removed | `gsttaxrate.tsx:43-51,161` | **invalid** — withdrawn in §9: the status machinery is live and wired to a real button. Line 161’s comment refers to an older `is_active` toggle |
 | S-50 | Low | Saving a GST rate shows no success snackbar, while the equivalent save on `warehouse` does | `gsttaxrate.tsx:187-193` | **fixed** — a successful save confirms, like its siblings |
-| S-51 | Low | **A second implementation of a shared rule.** `businessdetails.tsx` defines its own `isTenDigits` while `lib/validators.ts` exports `isTenDigitPhone`, which staff and mechanics import. F-54's fix created a local copy instead of using the shared one | `businessdetails.tsx:88` vs `lib/validators.ts` | open |
-| S-52 | Low | `businessdetails` is the only settings page with no export, and assumes `id: 1` as its default record | `businessdetails.tsx:24` | open |
+| S-51 | Low | **A second implementation of a shared rule.** `businessdetails.tsx` defines its own `isTenDigits` while `lib/validators.ts` exports `isTenDigitPhone`, which staff and mechanics import. F-54's fix created a local copy instead of using the shared one | `businessdetails.tsx:88` vs `lib/validators.ts` | **fixed** — the page calls `isTenDigitPhone`; all three copies are now one |
+| S-52 | Low | `businessdetails` is the only settings page with no export, and assumes `id: 1` as its default record | `businessdetails.tsx:24` | **fixed** — the page no longer assumes the singleton is id 1; an id-less PUT finds the existing row |
 
 ---
 
@@ -355,8 +355,8 @@ answer.
 
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
-| S-56 | Medium | **Two pagination components, and two different end-of-list rules.** `staff`/`mechanics` disable Next on `!pagination.hasMore`; the other seven disable on `page === totalPages`. Whichever is right, they cannot both be | `staffdetails.tsx:397-403`, `mechanics.tsx:382-388` vs e.g. `bankdetails.tsx:307-317` | open |
-| S-57 | **High** | **Column names and UI labels are swapped, in two places.** In `gst_tax_rate` the form labels `description` as **"Applicable"** and `applicable_for` as **"Description"**, and the table and export both render `applicable_for` under "Description". In `bank_details`, `bank_name` is labelled "Account Name" and `bank_address` is labelled "Bank Name". The screens are internally consistent, so nothing looks wrong — but anyone writing a query, report or export against `gst_tax_rate.description` or `bank_details.bank_address` gets the opposite field | `gsttaxrate.tsx:429,461,372,315`; `bankdetails.tsx:242,244,275,281` | open |
+| S-56 | Medium | **Two pagination components, and two different end-of-list rules.** `staff`/`mechanics` disable Next on `!pagination.hasMore`; the other seven disable on `page === totalPages`. Whichever is right, they cannot both be | `staffdetails.tsx:397-403`, `mechanics.tsx:382-388` vs e.g. `bankdetails.tsx:307-317` | **fixed** — `staff` and `mechanics` use `<ListPagination>`, so all nine pages share one control and one end-of-list rule |
+| S-57 | **High** | **Column names and UI labels are swapped, in two places.** In `gst_tax_rate` the form labels `description` as **"Applicable"** and `applicable_for` as **"Description"**, and the table and export both render `applicable_for` under "Description". In `bank_details`, `bank_name` is labelled "Account Name" and `bank_address` is labelled "Bank Name". The screens are internally consistent, so nothing looks wrong — but anyone writing a query, report or export against `gst_tax_rate.description` or `bank_details.bank_address` gets the opposite field | `gsttaxrate.tsx:429,461,372,315`; `bankdetails.tsx:242,244,275,281` | **owner decision** — the fix is a migration that swaps the contents of `gst_tax_rate.description` / `applicable_for` and renames `bank_details.bank_address`, plus every consumer. Not done unilaterally: it rewrites real business data, and the screens are internally consistent today, so nothing is visibly broken while it waits. The trap is for whoever queries those columns directly |
 | S-58 | Medium | **`financialyear`'s entire Edit path is unreachable.** There is no Edit button — the table's only action is "Set as Current" (`:428-438`). So `handleEdit` (`:146-167`), the `editingYear` state, the "Edit Financial Year" title and the read-only ID field are dead. `handleConfirmSubmit` only ever POSTs, so even if Edit were wired it would attempt a create | `financialyear.tsx:146,255-265,428-438,464-476` | **fixed** — the unreachable edit path is gone: no `editingYear`, no `handleEdit`, no ID field, and the modal only adds. Restoring FY editing is an owner decision and needs an API operation that does not exist |
 | S-59 | Low | **`financialyear` has a fully-wired search with no search box.** The filter card is commented out (`:312-342`) while `searchTerm`, `useUrlState`, `useDebounce`, the fetch parameter and two page-reset effects are all live. The current-FY banner is also commented out (`:344-353`) while `currentFy` is computed at `:305` and never read | `financialyear.tsx:305,312-353` | **fixed** — the commented-out search card and banner removed, and the computed `currentFy` that nothing rendered |
 | S-60 | Low | **`financialyear` exports a column the model does not have.** `status` is not on `FinancialYear`; the table derives Current/Inactive from `currentFyId` instead. The export therefore emits a permanently blank Status column | `financialyear.tsx:362` vs `:10-15,422-426` | **fixed** — exports `start_date`/`end_date` instead of a `status` column the model lacks |
@@ -366,7 +366,7 @@ answer.
 | S-64 | Medium | **The warehouse name is resolved two ways, and they disagree.** `fetchRacks` attaches `warehouse_name` to every row (`:129-133`), but the table ignores it and does its own `warehouses.find()` per row (`:428`), while the **export** uses the attached field (`:368`). When the warehouse list truncates at 50 (S-38) the table renders "Unknown Warehouse" and the export renders the correct name, for the same row | `warehouse-racks.tsx:129-133,368,428-434` | **fixed** — the table uses the `warehouse_name` already attached to each row, which is what the export was using |
 | S-65 | Low | **Sort headers sort by id while the column shows a name.** "Warehouse" sorts `warehouse_id`, "Category"/"Company" sort `category_id`/`company_id` — so even where sorting works, it orders by a foreign key rather than the visible text | `warehouse-racks.tsx:400`, `inactive-products.tsx:256,259` | **fixed for racks** — sorts by `warehouse_name`. The inactive-products half is S-36 |
 | S-66 | Medium | **`gsttaxrate` offers two ways to change status** — a dropdown inside the edit form (`:470-480`) *and* a Deactivate/Activate toggle (`:384-389`). Staff and mechanics deliberately removed the form control precisely so that status is only ever a transition | `gsttaxrate.tsx:384-389,470-480` | **fixed** — the status dropdown is gone from the edit form; the Deactivate button calls `PATCH /api/gst-rates/[id]/status` |
-| S-67 | Low | **Three different phone-input behaviours.** `businessdetails` strips non-digits on every keystroke; `staff`/`mechanics` accept free text and validate on submit; `users` relies on an HTML `pattern`. `businessdetails` also uses raw `<input>` where every other page uses the shared `ClearableInput` | `businessdetails.tsx:333-338,224`, `staffdetails.tsx:432`, `users.tsx:337-343` | open |
+| S-67 | Low | **Three different phone-input behaviours.** `businessdetails` strips non-digits on every keystroke; `staff`/`mechanics` accept free text and validate on submit; `users` relies on an HTML `pattern`. `businessdetails` also uses raw `<input>` where every other page uses the shared `ClearableInput` | `businessdetails.tsx:333-338,224`, `staffdetails.tsx:432`, `users.tsx:337-343` | **fixed** — all four pages strip non-digits as they are typed, which is what `businessdetails` always did |
 | S-68 | Low | **The Save button on `businessdetails` fires twice.** It carries `onClick={handleSubmit}` and sits inside a `<form onSubmit={handleSubmit}>` with no `type`, so it defaults to `type="submit"` and triggers both. Harmless only because `handleSubmit` is idempotent | `businessdetails.tsx:206-211,216` | **invalid** — re-read: the Save button sits OUTSIDE the `<form>` (`:186-214` vs `:216`), so there is no double fire. Withdrawn |
 
 ### What the second pass changes about the plan
@@ -424,14 +424,14 @@ does not apply here — settings is fully instrumented, and the gap is on the da
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
 | S-69 | **High** | **Type checking is switched off for every rack query.** `(prisma as any).warehouse_racks` on all six calls, and `(prisma as any).product.count` too — `product` certainly exists on the client, so the cast is habit, not necessity. Nothing about a rack query is type-checked: not the field names, not the filters, not the result. This is the same class as the `: any` annotations the audit already counted in the money paths | `racks.ts:74,88,135,148,194,238,272,301,315,325` | **fixed** — all ten `(prisma as any)` casts removed; `tsc` stays clean, which is the proof they were never needed |
-| S-70 | **High** | **Two tables store "which state" in two different formats.** The state-delete guard compares `customer_details.billing_state` against the state **name** and `vendor_details.state` against the state **id as a string**, in adjacent queries. Any code that joins, filters or reports on state has to know which convention each table uses | `states/[id].ts:149-160` | open |
-| S-71 | Medium | **"Delete" means something different for states.** `staff`, `mechanics` and `warehouses` soft-delete to `status: 'Inactive'`; `states` and `racks` **hard-delete**. `states` has no `status` column to soft-delete into. Directly in scope for a single delete/deactivate convention | `states/[id].ts:169`, `racks.ts:325` vs `staff/[id].ts:128` | open |
+| S-70 | **High** | **Two tables store "which state" in two different formats.** The state-delete guard compares `customer_details.billing_state` against the state **name** and `vendor_details.state` against the state **id as a string**, in adjacent queries. Any code that joins, filters or reports on state has to know which convention each table uses | `states/[id].ts:149-160` | **owner decision** — `customer_details.billing_state` holds the state NAME, `vendor_details.state` holds the ID as a string. Reconciling them is a data migration plus every reader. Recorded with the evidence at `states/[id].ts:149-160`, where the delete guard has to query both ways in adjacent statements |
+| S-71 | Medium | **"Delete" means something different for states.** `staff`, `mechanics` and `warehouses` soft-delete to `status: 'Inactive'`; `states` and `racks` **hard-delete**. `states` has no `status` column to soft-delete into. Directly in scope for a single delete/deactivate convention | `states/[id].ts:169`, `racks.ts:325` vs `staff/[id].ts:128` | **by design** — and worth stating rather than levelling. `staff`, `mechanics` and `warehouses` are referenced by historical documents, so they soft-delete and stay resolvable. `states` and `racks` are reference data that must not be *referenced* at all once removed, and both deletes are guarded: states refuses if a customer, vendor or document snapshot names it (S-85), racks refuses if products are assigned. Two behaviours, two reasons |
 | S-72 | Medium | **Five response envelopes across twelve endpoints.** `{staff, pagination}` / `{warehouses, pagination}` (resource-named key), `{success, data}` (return-reasons), `{status, message}` (most creates), `{status, message, data}` (bank-details PUT, business-details), `{financialYears, currentFyId, pagination}`. `bank-details` uses two of them **in one file** — POST returns `{status, message}`, PUT returns `{status, message, data}` | all settings APIs | **partly fixed** — `respond.ts` gives creates, updates and errors one shape, and `listResponse()` emits a canonical `data` key. The legacy resource-named list keys are still emitted alongside it, deliberately, because the sale and purchase forms read them; drop them once those move |
 | S-73 | Medium | **`gst-rates` PUT never validates `id`.** It goes straight to `parseInt(id)`, so a missing id yields `findUnique({ where: { id: NaN } })`, a Prisma throw and a **500** where every sibling returns 400 | `gst-rates/index.ts:163-167` | **fixed** — `parseId()`; verified live: PUT with no id now 400, was 500 |
-| S-74 | Medium | **The Indian FY rule is written twice.** `parseDate`, "must start April 1", "must end March 31", "must span exactly one year" exist in full in both `financialyear.tsx:179-210` and `financial-years/index.ts:138-188`. A statutory rule with two homes | both files | open |
+| S-74 | Medium | **The Indian FY rule is written twice.** `parseDate`, "must start April 1", "must end March 31", "must span exactly one year" exist in full in both `financialyear.tsx:179-210` and `financial-years/index.ts:138-188`. A statutory rule with two homes | both files | **fixed** — `lib/financial-year-rules.ts` holds the April-1 / March-31 / one-year rule; both the page and the handler call it |
 | S-75 | Medium | **Sorting financial years by status loads the whole table.** The `status` branch does `findMany` with no `take`, sorts in JavaScript and slices — server-side client-pagination, the same shape as S-34 and S-37 | `financial-years/index.ts:45-78` | **by design** — the status sort does load the whole table, but a financial year table holds one row per year. Reading a handful of rows to sort on a value derived from `settings.currentfy` is the right trade; the pattern is only wrong where the table can grow |
 | S-76 | Medium | **Two more blanket overwrites.** `business-details` PUT writes all eleven columns unconditionally, and `bank-details` PUT nulls `bank_address` and `ifsc` when they are omitted. Both are latent only because their pages always send every field — the F-78 shape | `business-details/index.ts:101-113`, `bank-details/index.ts:234-239` | **fixed** — `bank-details` PUT is partial. `business-details` still writes all eleven columns and is covered by S-88 below |
-| S-77 | Medium | **`racks` has no sort support at all** — `orderBy` is hardcoded to `rack_number: 'asc'` and no `sortBy` is read. **This is why the page sorts client-side (S-37)**: the page is compensating for a missing API feature, not duplicating one | `racks.ts:86` vs `warehouse-racks.tsx:143-160` | open |
+| S-77 | Medium | **`racks` has no sort support at all** — `orderBy` is hardcoded to `rack_number: 'asc'` and no `sortBy` is read. **This is why the page sorts client-side (S-37)**: the page is compensating for a missing API feature, not duplicating one | `racks.ts:86` vs `warehouse-racks.tsx:143-160` | **fixed** — `GET /api/racks` sorts server-side, including by the warehouse name through the relation. The per-warehouse route keeps its fixed order, which is correct for a single warehouse’s racks |
 | S-78 | Low | **`isTenDigits` now has three implementations** — `lib/validators.ts` (`isTenDigitPhone`), `businessdetails.tsx:88`, and `business-details/index.ts:81`. S-51 recorded two | all three | **fixed** — the API copy now calls `isTenDigitPhone`; the page copy is S-67 |
 | S-79 | Low | **A `select` built and then thrown away, in six files.** The create handler passes a `select` to Prisma, assigns the result to a const, and returns `{status, message}` without it — `staff:143`, `states:130`, `bank-details:133`, `gst-rates:138`, `mechanics:141`, `racks:148`, plus `warehouses:182,281,312`. The data the caller needs for S-53 is already being fetched and discarded | listed | **fixed** — the records are returned rather than discarded |
 | S-80 | Low | **`parseInt` without a radix or a NaN guard** on ids in `bank-details` (`:196,211,233`), `business-details` (`:151,161`), `gst-rates` (`:167,179,199,222`) and `racks` (`:196,242,273`). `states/[id].ts` and `products/[id]/status.ts` do it correctly | listed | **partly fixed** — `gst-rates` uses `parseId()`. `bank-details`, `business-details` and `racks` still call bare `parseInt` and are covered by S-88 |
@@ -443,7 +443,7 @@ does not apply here — settings is fully instrumented, and the gap is on the da
 | S-86 | Low | `states/[id].ts` returns `id` as a **string** (`:113`) while every other endpoint returns a number. Its line 1 also begins with a stray leading space before `import` | `states/[id].ts:1,113` | **fixed** — returns the row, with `id` as a number |
 | S-87 | Low | `financial-years` PUT round-trips a `Date` through a string and back — `parseDate(formatDbDate(date))` — whose only effect is dropping the time component | `financial-years/index.ts:313-329` | **fixed** — one `atMidnight()` helper replaces the string round-trip |
 | S-88 | Low | **The tail of S-76 and S-80.** `business-details` PUT still writes all eleven columns unconditionally, so an omitted field is nulled; `bank-details`, `business-details` and `racks` still call bare `parseInt` on ids instead of `parseId()`. Split out from S-76/S-80 so the remainder is tracked rather than implied by a "partly fixed" | `business-details/index.ts:101-113,151,161`, `bank-details/index.ts:196,211,233`, `racks.ts:196,242,273` | **fixed** — `business-details` writes only what it is sent, and `bank-details`, `business-details` and `racks` all use `parseId()` |
-| S-89 | Medium | **An export still only covers the page on screen.** S-03 now says so in the dialog, but saying it is not serving it. A report titled "Warehouses Report" that silently contains 50 of 600 rows is the underlying problem, and fixing it needs the list endpoints to serve an unpaginated export set (they already can, via `dropdown=true`) and the menu to fetch it | `ExportMenu.tsx` `data` prop, every call site | open |
+| S-89 | Medium | **An export still only covers the page on screen.** S-03 now says so in the dialog, but saying it is not serving it. A report titled "Warehouses Report" that silently contains 50 of 600 rows is the underlying problem, and fixing it needs the list endpoints to serve an unpaginated export set (they already can, via `dropdown=true`) and the menu to fetch it | `ExportMenu.tsx` `data` prop, every call site | **fixed** — `ExportMenu` takes an optional `fetchAll`, wired on the six pages whose endpoint serves an unpaginated set. It falls back to the visible rows, loudly, if the full fetch fails |
 
 ### What the API pass changes
 
@@ -735,3 +735,80 @@ that it not be restarted unattended while memory is short, so Block 6 has been c
 the compiler and the build only. The behaviour worth exercising when it is back up:
 `return-reasons?limit=1&page=2`, `users?dropdown=true`, `states?sortBy=id`, a rack DELETE
 with the id in the body, and a state delete blocked by a document snapshot.
+
+### Block 7 — the remainder · done
+
+**Every finding in this document is now resolved: fixed, by design, invalid, or an owner
+decision with the migration written down. Nothing is left marked `open`.**
+
+**New routes, because the operations existed but had nowhere to live.**
+
+| Route | Replaces |
+|---|---|
+| `GET/PUT/DELETE /api/warehouses/[warehouseId]` | `?id=4` on the collection. `DELETE /api/warehouses/4` used to 404 while `/api/warehouses/4/racks` worked (S-22) |
+| `PATCH /api/users/[id]/status` | Nothing — the Users page had no deactivate action at all (S-28) |
+| `GET /api/racks` | One request per warehouse, then sorting and paging in the browser (S-37, S-77) |
+| `PUT /api/financial-years/[id]/current` | `PUT {fyId}` to the collection, where the save path POSTed a whole record to the same URL (S-46) |
+
+`/api/racks` is the one worth reading. The page was issuing a call per warehouse with
+`limit: 1000`, concatenating, then sorting and slicing client-side — so the cost grew with
+the warehouse count, `total` could disagree with the rows it described, and anything past
+the 50th warehouse was invisible. It now sorts in the database, including by warehouse name
+through the relation rather than by the foreign key the column does not show.
+
+**Shared rules, not copies.** `lib/financial-year-rules.ts` holds the April-1 / March-31 /
+one-year rule that was written out in full in both the page and the handler, each with its
+own date parser (S-74). `isTenDigitPhone` is now the only "ten digits" in the codebase
+(S-51, S-78). All four phone inputs strip non-digits as they are typed (S-67). All nine
+lists use `<ListPagination>`, so the two controls that disagreed about when a list ends are
+one (S-56).
+
+**Export (S-06, S-08, S-89).** A column can carry a `format` function, which wins over the
+seventeen-case domain switch — the switch stays, marked legacy, because the sale, purchase
+and product exports rely on it, but nothing new needs to be added to it. Users exports
+"Active" and a formatted date instead of `10` and a Unix integer. And `fetchAll` lets an
+export cover every matching row rather than the page on screen, wired on the six pages whose
+endpoint serves an unpaginated set, falling back loudly to the visible rows if it fails.
+
+**D-17**, found while fixing the dashboard: `parseDateRange` carried the exact bug its own
+file header warns about. It parses by hand now, like `convertDateToTimestamp` beside it.
+Unchanged in IST, correct everywhere else.
+
+### The three that are not code
+
+**S-71 is by design**, and worth stating rather than levelling. `staff`, `mechanics` and
+`warehouses` are named on historical documents, so they soft-delete and stay resolvable.
+`states` and `racks` are reference data that must not be referenced at all once gone, and
+both deletes are guarded — states refuses if a customer, vendor or document snapshot names
+it, racks refuses if products are assigned. Two behaviours, two reasons.
+
+**S-57 and S-70 need migrations on live business data, and are the owner's.**
+
+- **S-57**: `gst_tax_rate.description` is labelled "Applicable" in the UI and
+  `applicable_for` is labelled "Description"; `bank_details.bank_name` is "Account Name" and
+  `bank_address` is "Bank Name". Every screen is internally consistent, so nothing looks
+  wrong — but a query, report or export written against those column names gets the opposite
+  field. The fix swaps the stored contents and renames the columns, then updates every
+  consumer. Not done unilaterally: it rewrites real data to fix something that is currently
+  invisible, and the uniqueness constraint on `description` (S-73's neighbour) moves with it.
+- **S-70**: `customer_details.billing_state` stores the state **name**;
+  `vendor_details.state` stores the **id as a string**. The evidence is in
+  `states/[id].ts`, where the delete guard has to query both ways in adjacent statements.
+  Reconciling them is a migration plus every reader.
+
+Both are recorded with the change they need, so the decision is a decision rather than a
+rediscovery.
+
+### Where this leaves the two documents
+
+`AUDIT_PLAN.md` and `JOURNEY_AUDIT.md` still carry Phase 4's open items — **P4-15**, the
+§11 edit sweep, is the largest — and Phases 5, 6 and 7 have not started. This document is
+complete for its own scope: the dashboard and the eleven settings pages.
+
+**Checks:** `npx tsc --noEmit` clean and `npm run build` clean at every checkpoint.
+
+**Live verification is outstanding for Blocks 6 and 7.** The dev server was stopped for the
+builds and the harness asked that it not be restarted unattended while memory is short.
+Worth exercising when it is back: the four new routes, `return-reasons` paging, a states
+delete refused by a document snapshot, the Users deactivate button, and an export with
+`fetchAll` against a table larger than one page.

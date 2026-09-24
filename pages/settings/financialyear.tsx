@@ -6,6 +6,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ClearableInput } from '../../components/common';
+import { validateFinancialYear } from '../../lib/financial-year-rules';
 
 interface FinancialYear {
   id: number;
@@ -98,10 +99,12 @@ export default function FinancialYear() {
   const handleSetAsCurrent = async (fyId: number) => {
     setSettingCurrent(fyId);
     try {
-      const response = await fetch('/api/financial-years', {
+      // S-46: its own route. This used to PUT { fyId } to the collection while
+      // the save path POSTed a whole record to the same URL - two unrelated
+      // operations told apart by which fields were present.
+      const response = await fetch(`/api/financial-years/${fyId}/current`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fyId })
+        headers: { 'Content-Type': 'application/json' }
       });
 
       if (response.ok) {
@@ -146,45 +149,21 @@ export default function FinancialYear() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate dates
-    if (!formData.start_date || !formData.end_date) {
-      showSnackbar('error', 'Please select both start and end dates');
+    // S-74: the April-1 / March-31 / one-year rules used to be written out here
+    // AND again in the API handler, each with its own date parser. One home now;
+    // the server still applies the same check, because the browser's copy is the
+    // one a caller can skip.
+    const checked = validateFinancialYear(formData.start_date, formData.end_date);
+    if (checked.ok === false) {
+      showSnackbar('error', checked.message);
       return;
     }
+    const { startDate, endDate } = checked.value;
 
-    // Parse date components manually to avoid timezone issues
     const parseDate = (dateString: string): Date => {
       const [year, month, day] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
+      return new Date(year, month - 1, day);
     };
-
-    const startDate = parseDate(formData.start_date);
-    const endDate = parseDate(formData.end_date);
-
-    // Validate Indian FY format: April 1 to March 31
-    const startMonth = startDate.getMonth(); // 0-indexed (0 = Jan, 3 = April)
-    const startDay = startDate.getDate();
-    const endMonth = endDate.getMonth(); // 0-indexed (2 = March)
-    const endDay = endDate.getDate();
-
-    if (startMonth !== 3 || startDay !== 1) {
-      showSnackbar('error', 'Financial year must start on April 1');
-      return;
-    }
-
-    if (endMonth !== 2 || endDay !== 31) {
-      showSnackbar('error', 'Financial year must end on March 31');
-      return;
-    }
-
-    // Validate year span
-    const startYear = startDate.getFullYear();
-    const endYear = endDate.getFullYear();
-
-    if (endYear !== startYear + 1) {
-      showSnackbar('error', 'Financial year must span exactly one year (e.g., April 1, 2024 → March 31, 2025)');
-      return;
-    }
 
     // Check for overlaps with existing FYs
     const hasOverlap = financialYears.some(fy => {

@@ -66,13 +66,11 @@ export default function WarehouseRacks() {
   // during a request was silently DROPPED, with no retry, leaving the list
   // showing results for the previous query. Requests are allowed to overlap; a
   // sequence number keeps the newest answer.
+  // No longer gated on the warehouse list: the rack list is its own query now,
+  // and the warehouses are only needed to populate the form's picker.
   useEffect(() => {
-    if (warehouses.length > 0) {
-      fetchRacks();
-    } else {
-      setLoading(false);
-    }
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, warehouses, sortBy, sortOrder]);
+    fetchRacks();
+  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
     // Reset to page 1 when search term changes
@@ -113,85 +111,48 @@ export default function WarehouseRacks() {
     }
   };
 
+  /**
+   * One request. This used to loop over every warehouse, issuing a separate
+   * call per warehouse with `limit: 1000`, then sort and paginate the combined
+   * result in the browser (S-37) - so the cost grew with the warehouse count,
+   * `total` could disagree with the rows it described (S-39), and anything past
+   * the 50th warehouse was invisible (S-38). /api/racks does all of it.
+   */
   const fetchRacks = async () => {
     const seq = ++requestSeq.current;
     setLoading(true);
 
     try {
-      const allRacks: WarehouseRack[] = [];
-      let totalRacks = 0;
-
-      // Fetch racks for each warehouse
-      for (const warehouse of warehouses) {
-        try {
-          const params = new URLSearchParams({
-            page: '1',
-            limit: '1000', // Get all racks for this warehouse
-            // The debounced term, not the raw one (S-12).
-            search: debouncedSearchTerm.trim()
-          });
-
-          const response = await fetch(`/api/warehouses/${warehouse.id}/racks?${params}`);
-          // Note (S-37/S-77): one request per warehouse, because the racks API
-          // has no cross-warehouse list and no sort support. Fixing that
-          // properly means a /api/racks endpoint; recorded, not done here.
-          if (response.ok) {
-            const data = await response.json();
-            const warehouseRacks = data.racks.map((rack: WarehouseRack) => ({
-              ...rack,
-              warehouse_name: warehouse.name,
-              warehouse_location: warehouse.location
-            }));
-            allRacks.push(...warehouseRacks);
-            totalRacks += data.pagination.total;
-          }
-        } catch (error) {
-          console.error(`Error fetching racks for warehouse ${warehouse.id}:`, error);
-        }
-      }
-
-      // Apply client-side sorting
-      allRacks.sort((a: any, b: any) => {
-        let aVal = a[sortBy];
-        let bVal = b[sortBy];
-
-        if (sortBy === 'id' || sortBy === 'warehouse_id') {
-          aVal = Number(aVal);
-          bVal = Number(bVal);
-        } else {
-          aVal = String(aVal || '').toLowerCase();
-          bVal = String(bVal || '').toLowerCase();
-        }
-
-        if (sortOrder === 'asc') {
-          return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-        } else {
-          return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
-        }
+      const params = new URLSearchParams({
+        page: String(pagination.page),
+        limit: String(pagination.limit),
+        search: debouncedSearchTerm.trim(),
+        sortBy,
+        sortOrder,
+        includeInactive: 'true',
       });
 
-      // Apply client-side pagination
-      const startIndex = (pagination.page - 1) * pagination.limit;
-      const endIndex = startIndex + pagination.limit;
-      const paginatedRacks = allRacks.slice(startIndex, endIndex);
+      const response = await fetch(`/api/racks?${params}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.message || `Request failed (${response.status})`);
+      }
 
-      // Add index to each rack for display
-      const racksWithIndex = paginatedRacks.map((rack: any, index: number) => ({
-        ...rack,
-        index: startIndex + index + 1
-      }));
+      const data = await response.json();
 
-      // Ignore an answer that a newer request has already superseded.
+      // Ignore an answer a newer request has already superseded (S-40).
       if (seq !== requestSeq.current) return;
 
-      setRacks(racksWithIndex);
-      setPagination(prev => ({
-        ...prev,
-        total: totalRacks,
-        totalPages: Math.ceil(totalRacks / pagination.limit)
+      const rows = (data.data || data.racks || []).map((rack: any, index: number) => ({
+        ...rack,
+        index: (pagination.page - 1) * pagination.limit + index + 1,
       }));
+
+      setRacks(rows);
+      setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching warehouse racks:', error);
+      if (seq === requestSeq.current) showSnackbar('error', 'Could not load warehouse racks');
     } finally {
       if (seq === requestSeq.current) setLoading(false);
     }

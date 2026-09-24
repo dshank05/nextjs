@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isValidGstin } from '../../lib/gst';
+import { isTenDigitPhone } from '../../lib/validators';
 
 interface BusinessDetailsData {
   id: number;
@@ -21,7 +22,10 @@ interface BusinessDetailsData {
 export default function BusinessDetails() {
   const { showSnackbar } = useSnackbar();
   const [businessData, setBusinessData] = useState<BusinessDetailsData>({
-    id: 1,
+    // S-52: 1 was a guess at the singleton's id. 0 means "not loaded yet", which
+    // is what the API's id-less PUT branch is for - it finds the existing row
+    // rather than trusting the client to know which one it is.
+    id: 0,
     gstin: '',
     name: '',
     tagline: '',
@@ -85,7 +89,9 @@ export default function BusinessDetails() {
   // this checked `.length !== 10` against the untrimmed value, so it disagreed
   // with the server twice over: it accepted "abcdefghij", and it accepted a
   // ten-character value with a trailing space that the API then rejected.
-  const isTenDigits = (value?: string) => /^[0-9]{10}$/.test((value || '').trim());
+  // S-51: a local copy of a rule lib/validators already exports and staff and
+  // mechanics already import - three implementations of "ten digits".
+  const isTenDigits = (value?: string) => isTenDigitPhone(value || '');
 
   const validatePhoneNumbers = () => {
     if (editedData.phone && !isTenDigits(editedData.phone)) {

@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { fail } from '../../../lib/api/respond'
+import { validateFinancialYear } from '../../../lib/financial-year-rules'
 
 async function handler(
   req: NextApiRequest,
@@ -127,65 +128,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { start_date, end_date } = req.body
 
-    // Validate required fields
-    if (!start_date || !end_date) {
-      return res.status(400).json({
-        message: 'Start date and end date are required'
-      })
+    // S-74: the April-1 / March-31 / one-year rules used to be written out
+    // here AND again in the settings page, each with its own date parser. One
+    // home now - and this is the copy that matters, because the browser's can
+    // be skipped by any other caller.
+    const checked = validateFinancialYear(start_date, end_date)
+    if (checked.ok === false) {
+      return res.status(400).json({ message: checked.message })
     }
-
-    // Parse dates manually to avoid timezone issues
-    const parseDate = (dateString: string): Date => {
-      const [year, month, day] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
-    };
-
-    const startDate = parseDate(start_date);
-    const endDate = parseDate(end_date);
-
-    // Validate dates
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return res.status(400).json({
-        message: 'Invalid date format'
-      })
-    }
-
-    // Validate end date is after start date
-    if (endDate <= startDate) {
-      return res.status(400).json({
-        message: 'End date must be after start date'
-      })
-    }
-
-    // Validate Indian FY format: April 1 to March 31
-    const startMonth = startDate.getMonth(); // 0-indexed
-    const startDay = startDate.getDate();
-    const endMonth = endDate.getMonth();
-    const endDay = endDate.getDate();
-
-    if (startMonth !== 3 || startDay !== 1) { // April 1 (month 3 is April in 0-indexed)
-      return res.status(400).json({
-        message: 'Financial year must start on April 1'
-      })
-    }
-
-    if (endMonth !== 2 || endDay !== 31) { // March 31 (month 2 is March in 0-indexed)
-      return res.status(400).json({
-        message: 'Financial year must end on March 31'
-      })
-    }
-
-    // Auto-generate FY string from dates (e.g., "2024-2025")
-    const startYear = startDate.getFullYear()
-    const endYear = endDate.getFullYear()
-    const fy = `${startYear}-${endYear}`
-
-    // Validate that end year is start year + 1
-    if (endYear !== startYear + 1) {
-      return res.status(400).json({
-        message: 'Financial year must span exactly one year (e.g., 2024-2025)'
-      })
-    }
+    const { startDate, endDate, fy } = checked.value
 
     // Check if financial year already exists
     const existingFy = await prisma.financial_year.findFirst({

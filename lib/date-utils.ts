@@ -186,15 +186,18 @@ export function parseDateRange(dateFrom: string, dateTo: string): {
   startTimestamp: number;
   endTimestamp: number;
 } {
-  // Parse start date - set to 00:00:00 (beginning of day)
-  const startDate = new Date(dateFrom);
-  startDate.setHours(0, 0, 0, 0);
-  const startTimestamp = Math.floor(startDate.getTime() / 1000);
+  // D-17: this used to do `new Date(dateFrom)` and then `.setHours(0,0,0,0)`,
+  // which is exactly the bug the header of this file warns about:
+  // `new Date("2026-01-30")` is UTC midnight, and setHours then applies LOCAL
+  // hours - so in any timezone behind UTC the range started a day early.
+  //
+  // `convertDateToTimestamp` below already parses the parts by hand, correctly.
+  // Using it makes the two functions agree. In IST (ahead of UTC) the result is
+  // unchanged, which is why this never showed in production here.
+  const startTimestamp = convertDateToTimestamp(dateFrom.split('T')[0]);
 
-  // Parse end date - set to 23:59:59 (end of day)
-  const endDate = new Date(dateTo);
-  endDate.setHours(23, 59, 59, 999);
-  const endTimestamp = Math.floor(endDate.getTime() / 1000);
+  // End of the same local day: start of day + 24h - 1s.
+  const endTimestamp = convertDateToTimestamp(dateTo.split('T')[0]) + 86399;
 
   return { startTimestamp, endTimestamp };
 }

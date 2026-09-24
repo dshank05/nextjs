@@ -271,6 +271,13 @@ export default function Warehouse() {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={warehouses}
+              // S-89: export every matching row, not just the page on screen.
+              fetchAll={async () => {
+                const r = await fetch('/api/warehouses?dropdown=true&includeInactive=true');
+                if (!r.ok) throw new Error('Could not load the full list');
+                const d = await r.json();
+                return d.data || d.warehouses || [];
+              }}
               columns={[
                 { key: 'id', label: 'ID', enabled: true },
                 { key: 'name', label: 'Name', enabled: true },

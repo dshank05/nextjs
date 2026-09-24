@@ -6,6 +6,7 @@ import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
+import { ListPagination } from '../../components/common/ListPagination';
 import { ClearableInput } from '../../components/common';
 
 interface Mechanic {
@@ -298,6 +299,13 @@ export default function MechanicDetails() {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={mechanics}
+              // S-89: export every matching row, not just the page on screen.
+              fetchAll={async () => {
+                const r = await fetch('/api/mechanics?dropdown=true&includeInactive=true');
+                if (!r.ok) throw new Error('Could not load the full list');
+                const d = await r.json();
+                return d.data || d.mechanics || [];
+              }}
               columns={[
                 { key: 'name', label: 'Name', enabled: true },
                 { key: 'phone', label: 'Phone', enabled: true },
@@ -393,13 +401,14 @@ export default function MechanicDetails() {
               )}
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <span className="text-sm text-slate-400 px-4">Page {pagination.page} of {pagination.totalPages}</span>
-                <button onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))} disabled={!pagination.hasMore} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            {/* S-56: this page used a bare Previous / Next control while the
+                other seven used a numbered one - and the two families disagreed
+                about when a list ends, this one on `!hasMore` and the others on
+                `page === totalPages`. One component, one rule. */}
+            <ListPagination
+              pagination={pagination}
+              onPageChange={(next) => setPagination(prev => ({ ...prev, page: next }))}
+            />
           </>
         )}
       </div>
@@ -431,7 +440,11 @@ export default function MechanicDetails() {
                 <ClearableInput
                   type="text"
                   value={formData.phone}
-                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  // S-67: digits only, as they are typed - the same behaviour
+                  // businessdetails has always had. staff and mechanics used to
+                  // accept any characters and only complain on submit, so three
+                  // pages collecting one kind of value behaved three ways.
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value.replace(/\D/g, '') }))}
                   required
                   maxLength={10}
                   placeholder="Enter phone number"

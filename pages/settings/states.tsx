@@ -31,6 +31,11 @@ export default function States() {
   const [editingState, setEditingState] = useState<StateRow | null>(null);
   const [formData, setFormData] = useState({ id: 0, state_name: '', code: '' });
   const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string, code: string } | null>(null);
+  // S-33: a state could be created and edited but never removed, although
+  // DELETE /api/states/[id] has existed all along - guarded, so a state in use
+  // by a customer, a vendor or an existing document is refused.
+  const [deletingState, setDeletingState] = useState<StateRow | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'state_name');
   const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
 
@@ -184,6 +189,28 @@ export default function States() {
     }
   };
 
+  const confirmDelete = async () => {
+    if (!deletingState) return;
+    setDeleteLoading(true);
+    try {
+      const response = await fetch(`/api/states/${deletingState.id}`, { method: 'DELETE' });
+      const body = await response.json().catch(() => ({}));
+      if (response.ok) {
+        showSnackbar('success', 'State deleted');
+        await fetchStates();
+      } else {
+        // The 409 here is the useful case: it names why the state cannot go.
+        showSnackbar('error', body.message || 'Could not delete the state');
+      }
+    } catch (error) {
+      console.error('Error deleting state:', error);
+      showSnackbar('error', 'Network error while deleting the state');
+    } finally {
+      setDeleteLoading(false);
+      setDeletingState(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
 
@@ -215,6 +242,13 @@ export default function States() {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={states}
+              // S-89: export every matching row, not just the page on screen.
+              fetchAll={async () => {
+                const r = await fetch('/api/states?dropdown=true');
+                if (!r.ok) throw new Error('Could not load the full list');
+                const d = await r.json();
+                return d.data || d.states || [];
+              }}
               columns={[
                 { key: 'code', label: 'Code', enabled: true },
                 { key: 'state_name', label: 'State Name', enabled: true },
@@ -261,6 +295,7 @@ export default function States() {
                       <td className="font-medium text-white">{state.state_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(state)}>Edit</button>
+                        <button className="btn-danger" onClick={() => setDeletingState(state)}>Delete</button>
                       </td>
                     </tr>
                   ))}
@@ -346,6 +381,21 @@ export default function States() {
           </div>
         </div>
       )}
+
+      <ConfirmationModal
+        isOpen={deletingState !== null}
+        title="Delete State"
+        message={
+          deletingState
+            ? `Delete "${deletingState.state_name}"? This cannot be undone. It will be refused if the state is in use.`
+            : ''
+        }
+        confirmText="Delete State"
+        cancelText="Cancel"
+        showLoading={deleteLoading}
+        onConfirm={confirmDelete}
+        onCancel={() => { if (!deleteLoading) setDeletingState(null); }}
+      />
 
       {/* Confirmation Modal */}
       <ConfirmationModal
