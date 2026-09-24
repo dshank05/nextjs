@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../../lib/db'
 import { withObservability } from '../../../../lib/withObservability'
+import { created, fail } from '../../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -101,11 +102,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, warehouseId:
       },
     })
   } catch (error) {
-    console.error('Warehouse racks fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch warehouse racks',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch warehouse racks')
   }
 }
 
@@ -154,16 +151,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
       }
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "Rack created successfully"
-    })
+    return created(res, rack, 'Rack created successfully')
   } catch (error) {
-    console.error('Warehouse rack creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create warehouse rack',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the rack')
   }
 }
 

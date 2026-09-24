@@ -128,7 +128,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       startDate = '',
       endDate = '',
       uidFilter = '',
-      partNoFilter = ''
+      partNoFilter = '',
+      // S-34: there was no way to ask for INACTIVE products - only "active" or
+      // "both" - which is why settings/inactive-products fetched page one of
+      // everything and filtered in the browser, showing a near-empty list
+      // however many inactive products existed.
+      isActive = '',
+      // S-35: the page has always sent these and this handler has always
+      // ignored them, hardcoding `id desc`, so every sortable column header on
+      // Inactive Products did nothing.
+      sortBy = '',
+      sortOrder = 'desc'
     } = req.query;
 
     const pageNum = parseInt(page as string);
@@ -138,7 +148,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const actualLimit = isFetchAll ? undefined : limitNum;
 
     const where: any = {};
-    if (includeInactive !== 'true') where.is_active = true;
+    // `isActive` is explicit and wins; `includeInactive` is the older, coarser
+    // switch and still means "active only unless told otherwise".
+    if (isActive === 'false') where.is_active = false;
+    else if (isActive === 'true') where.is_active = true;
+    else if (includeInactive !== 'true') where.is_active = true;
 
     // Handle search term - search across multiple fields for comprehensive results
     // MySQL's default collation is case-insensitive, so this will work automatically
@@ -307,9 +321,19 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       products = await prisma.$queryRawUnsafe(pagedSql, ...pagedParams) as any[];
     } else {
       // Normal Prisma query for all other cases (including model filter)
+      // Whitelisted, so an unknown column cannot reach the query builder.
+      const PRODUCT_SORT_FIELDS = [
+        'id', 'product_name', 'part_no', 'stock', 'min_stock',
+        'opening_stock', 'last_purchase_date', 'latest_purchase_rate'
+      ];
+      const sortField = PRODUCT_SORT_FIELDS.includes(sortBy as string)
+        ? (sortBy as string)
+        : 'id';
+      const sortDirection = (sortOrder as string) === 'asc' ? 'asc' : 'desc';
+
       const queryOptions: any = {
         where,
-        orderBy: { id: 'desc' },
+        orderBy: { [sortField]: sortDirection },
         include: { gst_rate: true },
       };
 

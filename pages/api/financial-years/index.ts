@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { fail } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -35,8 +36,11 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     } : {}
 
-    // Get current FY ID for status sorting
-    const settings = await prisma.settings.findFirst()
+    // Ordered explicitly. `settings` is a singleton the whole app reads with
+    // findFirst(), and without an orderBy "first" is whatever the database feels
+    // like returning - so a second row would make the current financial year
+    // non-deterministic between calls. Same fix as F-52 for business_details (S-81).
+    const settings = await prisma.settings.findFirst({ orderBy: { id: 'asc' } })
     const currentFyId = settings?.currentfy || null
 
     // Handle status sorting specially since it's derived from currentFyId
@@ -115,11 +119,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Financial years fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch financial years data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch financial years')
   }
 }
 
@@ -280,11 +280,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       financialYear
     })
   } catch (error) {
-    console.error('Financial year creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create financial year',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the financial year')
   }
 }
 
@@ -309,24 +305,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Parse dates manually to avoid timezone issues
-    const parseDate = (dateString: string): Date => {
-      const [year, month, day] = dateString.split('-').map(Number);
-      return new Date(year, month - 1, day); // month is 0-indexed in Date constructor
-    };
-    
-    // Convert DB Date objects to YYYY-MM-DD strings in local timezone
-    const formatDbDate = (date: Date): string => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
+    // S-87: this pair used to round-trip each date through a YYYY-MM-DD string
+    // and parse it straight back. The only actual effect was dropping the time
+    // component, which one helper does directly.
+    const atMidnight = (date: Date): Date =>
+      new Date(date.getFullYear(), date.getMonth(), date.getDate())
 
     // Validate that the current date falls within the FY being set as current
     const currentDate = new Date()
-    const fyStart = parseDate(formatDbDate(financialYear.start_date)) // Convert DB date to YYYY-MM-DD then parse
-    const fyEnd = parseDate(formatDbDate(financialYear.end_date))
+    const fyStart = atMidnight(financialYear.start_date)
+    const fyEnd = atMidnight(financialYear.end_date)
 
     if (currentDate < fyStart) {
       return res.status(400).json({
@@ -340,8 +328,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Ensure settings table has at least one row
-    let settings = await prisma.settings.findFirst()
+    // Ensure settings table has at least one row. Ordered, as above (S-81).
+    let settings = await prisma.settings.findFirst({ orderBy: { id: 'asc' } })
     
     if (!settings) {
       // Create settings record if it doesn't exist
@@ -369,11 +357,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Failed to set current financial year:', error)
-    res.status(500).json({
-      message: 'Failed to set current financial year',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'set the current financial year')
   }
 }
 

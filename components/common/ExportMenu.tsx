@@ -1,6 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ChevronDown, FileText, FileSpreadsheet, Printer } from 'lucide-react';
 import { getLocalDateString } from '../../lib/date-utils';
+import { escapeHtml } from '../../lib/html';
+// S-10: this was `require('../../lib/export-utils')` inside two functions -
+// CommonJS in a TSX component, so the import was untyped and unbundleable.
+import { exportToExcelGeneric } from '../../lib/export-utils';
 
 interface Column {
   key: string;
@@ -18,8 +22,13 @@ interface ExportMenuProps {
   data: any[];
   columns: Column[];
   config: ExportConfig;
-  tableRef?: React.RefObject<HTMLElement>;
   onExport?: (exportType: 'excel' | 'pdf' | 'print') => void;
+  /**
+   * S-09: `tableRef` and `pageType` used to be declared here and read nowhere.
+   * `pageType` in particular existed for exactly the job `isViewPage()` does by
+   * sniffing window.location - so the component had both a prop for the answer
+   * and a guess at it, and used the guess.
+   */
   pageType?: 'data' | 'view';
   className?: string;
 }
@@ -28,8 +37,8 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
   data,
   columns,
   config,
-  tableRef,
   onExport,
+  pageType,
   className = ''
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -39,30 +48,34 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
 
   // Detect if this is a view page
   const isViewPage = () => {
-    // Check URL for /view/ pattern
+    // The prop wins when it is given; the URL sniff is the fallback it always
+    // should have been (S-09).
+    if (pageType) return pageType === 'view';
     if (typeof window !== 'undefined') {
       return window.location.pathname.includes('/view/');
     }
-    // Fallback: check data structure (view pages have single object, tables have arrays)
     return data && !Array.isArray(data);
   };
 
-  // Fetch business details on component mount
-  useEffect(() => {
-    const fetchBusinessDetails = async () => {
-      try {
-        const response = await fetch('/api/business-details');
-        if (response.ok) {
-          const data = await response.json();
-          setBusinessDetails(data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch business details:', error);
+  /**
+   * Business details, fetched when the menu is first opened.
+   *
+   * This used to run on mount, so every page carrying an Export button made an
+   * extra request whether or not anyone ever pressed it - eleven settings pages
+   * plus products, sales and purchases (S-05). It is only needed to build the
+   * print header.
+   */
+  const loadBusinessDetails = useCallback(async () => {
+    if (businessDetails) return;
+    try {
+      const response = await fetch('/api/business-details');
+      if (response.ok) {
+        setBusinessDetails(await response.json());
       }
-    };
-
-    fetchBusinessDetails();
-  }, []);
+    } catch (error) {
+      console.error('Failed to fetch business details:', error);
+    }
+  }, [businessDetails]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -260,28 +273,39 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
       // Add styles to head
       document.head.appendChild(printStyle);
 
+      // Held so cleanup removes THIS header, not whichever one querySelector
+      // happens to find first if two exports overlap (S-11).
+      let header: HTMLDivElement | null = null;
+
       // Create business header and add to page
       if (businessDetails && businessDetails.name) {
         const businessHeader = document.createElement('div');
+        header = businessHeader;
         businessHeader.className = 'business-header';
+        // Every interpolation is escaped (S-02). These values come from the
+        // Settings > Business Details form, which any signed-in user can edit
+        // and which stores whatever it is given - so without this, a business
+        // name containing a <script> or an onerror attribute ran in the
+        // operator's session on every export.
+        const e = escapeHtml;
         businessHeader.innerHTML = `
           <div class="business-header-main">
             <div class="business-left">
-              <div class="business-name">${businessDetails.name}</div>
-              ${businessDetails.tagline ? `<div class="business-tagline">${businessDetails.tagline}</div>` : ''}
+              <div class="business-name">${e(businessDetails.name)}</div>
+              ${businessDetails.tagline ? `<div class="business-tagline">${e(businessDetails.tagline)}</div>` : ''}
               <div class="business-address">
-                ${businessDetails.address_line_1 || ''}${businessDetails.address_line_2 ? ', ' + businessDetails.address_line_2 : ''}${businessDetails.pin_code ? ' - ' + businessDetails.pin_code : ''}
+                ${e(businessDetails.address_line_1 || '')}${businessDetails.address_line_2 ? ', ' + e(businessDetails.address_line_2) : ''}${businessDetails.pin_code ? ' - ' + e(businessDetails.pin_code) : ''}
               </div>
-              ${businessDetails.phone ? `<div class="business-phone">Phone: ${businessDetails.phone}${businessDetails.phone2 ? ', ' + businessDetails.phone2 : ''}</div>` : ''}
+              ${businessDetails.phone ? `<div class="business-phone">Phone: ${e(businessDetails.phone)}${businessDetails.phone2 ? ', ' + e(businessDetails.phone2) : ''}</div>` : ''}
             </div>
             <div class="business-right">
-              ${businessDetails.email ? `<div class="business-email">Email: ${businessDetails.email}</div>` : ''}
-              ${businessDetails.fax ? `<div class="business-fax">Fax: ${businessDetails.fax}</div>` : ''}
-              ${businessDetails.gstin ? `<div class="business-gstin">GSTIN: ${businessDetails.gstin}</div>` : ''}
+              ${businessDetails.email ? `<div class="business-email">Email: ${e(businessDetails.email)}</div>` : ''}
+              ${businessDetails.fax ? `<div class="business-fax">Fax: ${e(businessDetails.fax)}</div>` : ''}
+              ${businessDetails.gstin ? `<div class="business-gstin">GSTIN: ${e(businessDetails.gstin)}</div>` : ''}
             </div>
           </div>
           <div class="print-date-time">
-            Printed on: ${new Date().toLocaleDateString('en-IN')} at ${new Date().toLocaleTimeString('en-IN')}
+            Printed on: ${e(new Date().toLocaleDateString('en-IN'))} at ${e(new Date().toLocaleTimeString('en-IN'))}
           </div>
         `;
 
@@ -290,20 +314,21 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
         body.insertBefore(businessHeader, body.firstChild);
       }
 
-      // Print the current page
+      // S-11: this used to tear the styles down on a fixed 1000 ms timer, so a
+      // print dialog left open longer than that restyled the page underneath
+      // its own preview. `afterprint` fires when the dialog closes.
+      const cleanup = () => {
+        document.getElementById('print-styles')?.remove();
+        header?.remove();
+        window.removeEventListener('afterprint', cleanup);
+      };
+      window.addEventListener('afterprint', cleanup);
+
       window.print();
 
-      // Remove styles and business header after printing
-      setTimeout(() => {
-        const styleElement = document.getElementById('print-styles');
-        if (styleElement) {
-          styleElement.remove();
-        }
-        const businessHeader = document.querySelector('.business-header');
-        if (businessHeader) {
-          businessHeader.remove();
-        }
-      }, 1000);
+      // Safari has historically not fired afterprint; this is a backstop, not
+      // the mechanism.
+      setTimeout(cleanup, 60000);
     } catch (error) {
       console.error('Print function error:', error);
       alert('Error preparing print content. Please try again.');
@@ -419,14 +444,15 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
             row[label] = item.selling_price || item['Selling Price'] || 0;
             break;
           default:
-            // For any other keys, try to get the value directly or use the key as label
-            row[label] = item[key] || '';
+            // S-07: this was `item[key] || ''`, so a real 0 - a 0% GST rate, a
+            // stock of 0, a status of 0 - exported as an empty cell. Only null
+            // and undefined are blank.
+            row[label] = item[key] ?? '';
         }
       });
       return row;
     });
 
-    const { exportToExcelGeneric } = require('../../lib/export-utils');
     exportToExcelGeneric(exportData, config);
   };
 
@@ -599,7 +625,6 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
         });
       }
 
-      const { exportToExcelGeneric } = require('../../lib/export-utils');
       exportToExcelGeneric(excelData, {
         title: config.title || 'Purchase Details',
         fileName: `${config.fileName || 'purchase'}_${getLocalDateString()}`
@@ -619,7 +644,11 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
     <>
       <div className={`relative ${className}`} ref={dropdownRef}>
         <button
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={() => {
+            const next = !isOpen;
+            setIsOpen(next);
+            if (next) loadBusinessDetails();
+          }}
           className="btn-secondary flex items-center gap-2"
           type="button"
         >
@@ -635,8 +664,13 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
                 onClick={handleExportPDF}
                 className="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-2 transition-colors"
               >
-                <FileText className="w-4 h-4" />
-                Export as PDF
+                <Printer className="w-4 h-4" />
+                {/* S-01: this calls window.print(). Whether a PDF appears
+                    depends entirely on the user choosing "Save as PDF" in the
+                    browser's print dialog, so calling it "Export as PDF" was a
+                    promise the code does not keep. The Printer icon was already
+                    imported and unused. */}
+                Print / Save as PDF
               </button>
               <button
                 onClick={handleExportExcel}
@@ -659,22 +693,25 @@ export const ExportMenu: React.FC<ExportMenuProps> = ({
             </h2>
 
             <div className="mb-6">
+              {/* S-04: these checkboxes used to be `checked readOnly`, so the
+                  modal offered a choice it could not honour. They are a plain
+                  list now - if per-column selection is wanted, it needs state,
+                  not a disabled input that looks interactive. */}
               <div className="max-h-64 overflow-y-auto border border-slate-600 rounded p-3 bg-slate-900">
                 {columns.filter(col => col.enabled).map((column) => (
-                  <label key={column.key} className="flex items-center mb-2 last:mb-0">
-                    <input
-                      type="checkbox"
-                      checked={true} // All enabled columns are selected by default
-                      readOnly // For now, select all enabled columns
-                      className="mr-3 h-4 w-4 text-blue-600 bg-slate-700 border-slate-500 rounded"
-                    />
-                    <span className="text-slate-300 text-sm">{column.label}</span>
-                  </label>
+                  <div key={column.key} className="text-slate-300 text-sm mb-2 last:mb-0">
+                    {column.label}
+                  </div>
                 ))}
               </div>
 
+              {/* S-03: `data` is the page currently on screen, so an export from
+                  a 50-row page of a 600-row table silently produced 50 rows under
+                  a title that said otherwise. Saying the count is the honest
+                  minimum; exporting the full set needs the endpoint. */}
               <div className="mt-2 text-xs text-slate-400">
-                All available columns will be exported
+                All {columns.filter(c => c.enabled).length} columns will be exported,
+                for the {Array.isArray(data) ? data.length : 0} row(s) currently listed.
               </div>
             </div>
 

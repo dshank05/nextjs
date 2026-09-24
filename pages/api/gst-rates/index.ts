@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { created, fail, parseId } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -92,11 +93,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       },
     })
   } catch (error) {
-    console.error('GST rates fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch GST rates',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch GST rates')
   }
 }
 
@@ -145,16 +142,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "GST rate created successfully"
-    })
+    return created(res, gstRate, 'GST rate created successfully')
   } catch (error) {
-    console.error('GST rate creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create GST rate',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the GST rate')
   }
 }
 
@@ -162,9 +152,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id, description, rate, hsn_code, applicable_for, status } = req.body
 
+    // S-73: this went straight to parseInt(id). A missing id became
+    // `where: { id: NaN }`, which Prisma throws on, so the caller got a 500
+    // where every sibling endpoint answers 400.
+    const rateId = parseId(id)
+    if (rateId === null) {
+      return res.status(400).json({ message: 'A valid GST rate ID is required' })
+    }
+
     // Check if GST rate exists
     const existingRate = await prisma.gst_tax_rate.findUnique({
-      where: { id: parseInt(id) }
+      where: { id: rateId }
     })
 
     if (!existingRate) {
@@ -176,7 +174,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     // Handle status-only update (for toggle functionality)
     if (description === undefined && rate === undefined && hsn_code === undefined && applicable_for === undefined && status) {
       const updatedRate = await prisma.gst_tax_rate.update({
-        where: { id: parseInt(id) },
+        where: { id: rateId },
         data: { status }
       })
       return res.status(200).json({
@@ -196,7 +194,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const duplicateRate = await prisma.gst_tax_rate.findFirst({
       where: {
         description,
-        id: { not: parseInt(id) }
+        id: { not: rateId }
       }
     })
 
@@ -219,20 +217,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const updatedRate = await prisma.gst_tax_rate.update({
-      where: { id: parseInt(id) },
+      where: { id: rateId },
       data: updateData
     })
 
     res.status(200).json({
       status: "success",
-      message: "GST rate updated successfully"
+      message: "GST rate updated successfully",
+      data: updatedRate
     })
   } catch (error) {
-    console.error('GST rate update error:', error)
-    res.status(500).json({
-      message: 'Failed to update GST rate',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update the GST rate')
   }
 }
 

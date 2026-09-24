@@ -2,6 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidGstin } from '../../../lib/gst'
+import { fail } from '../../../lib/api/respond'
+import { isTenDigitPhone } from '../../../lib/validators'
 
 async function handler(
   req: NextApiRequest,
@@ -34,11 +36,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     res.status(200).json(businessDetails)
   } catch (error) {
-    console.error('Business details fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch business details',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch business details')
   }
 }
 
@@ -78,7 +76,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     // Phone validation: if present, exactly 10 DIGITS. This used to check
     // `.length !== 10`, which accepted any ten characters - "abcdefghij" was a
     // valid phone number.
-    const isTenDigits = (value: string) => /^[0-9]{10}$/.test(value.trim())
+    // S-78: this was a third local copy of a rule lib/validators already
+    // exports, alongside the one in businessdetails.tsx. One rule, one home.
+    const isTenDigits = isTenDigitPhone
 
     if (phone && !isTenDigits(phone)) {
       return res.status(400).json({
@@ -168,11 +168,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       data: updatedDetails
     })
   } catch (error) {
-    console.error('Business details update error:', error)
-    res.status(500).json({
-      message: 'Failed to update business details',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update business details')
   }
 }
 

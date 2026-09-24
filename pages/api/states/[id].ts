@@ -64,12 +64,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string) 
     const duplicateState = await prisma.states.findFirst({
       where: {
         AND: [
-          {
-            OR: [
-              { state_name: trimmedName },
-              { state_name: trimmedName.toLowerCase() }
-            ]
-          },
+          { state_name: trimmedName },
           { id: { not: stateId } }
         ]
       }
@@ -107,13 +102,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string) 
       }
     })
 
+    // S-86: this returned `id` as a STRING while every other endpoint returns a
+    // number, so a caller comparing ids had to know which one it was talking to.
     res.status(200).json({
+      status: 'success',
       message: 'State updated successfully',
-      state: {
-        id: updatedState.id.toString(),
-        state_name: updatedState.state_name,
-        code: updatedState.code
-      }
+      data: updatedState,
+      // Kept for the settings page, which does not read it today. Remove with
+      // the rest of the legacy keys once every consumer reads `data`.
+      state: updatedState
     })
   } catch (error) {
     console.error('State update error:', error)
@@ -140,17 +137,17 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
       return res.status(404).json({ message: 'State not found' })
     }
 
-    // Check if state is being used by any customers or vendors
-    // Get state name for customer filtering (customers store state names as strings)
-    const stateRecord = await prisma.states.findUnique({
-      where: { id: stateId }
-    })
-
+    // S-82: `existingState` above is the same row. This fetched it a second
+    // time, four lines later, to read the one field it already had.
+    //
+    // Note what the two guards below reveal (S-70): customers store the state
+    // NAME, vendors store the state ID as a string. Two representations of one
+    // concept, in one database, which is why this check has to be written twice.
     const customersUsingState = await prisma.customer_details.findFirst({
       where: {
         OR: [
-          { billing_state: stateRecord?.state_name || '' },
-          { shipping_state: stateRecord?.state_name || '' }
+          { billing_state: existingState.state_name || '' },
+          { shipping_state: existingState.state_name || '' }
         ]
       }
     })

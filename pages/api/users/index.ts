@@ -2,6 +2,27 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { hashPassword, isAcceptablePassword, MIN_PASSWORD_LENGTH } from '../../../lib/password'
 import { withObservability } from '../../../lib/withObservability'
+import { USER_STATUS_ACTIVE, USER_STATUS_INACTIVE } from '../../../types/settings'
+
+/**
+ * Parse the account status.
+ *
+ * `user.status` is 10 for Active and 0 for Inactive - not the 'Active' /
+ * 'Inactive' strings every other settings resource uses. That is what made this
+ * a bug rather than a typo: the previous `parseInt(status.toString()) || 10`
+ * treated the falsy 0 as "nothing supplied" and wrote 10, so **deactivating a
+ * user silently reactivated them** (S-25). Same shape as F-31, where `!rate`
+ * rejected a 0% GST slab.
+ *
+ * Absent means "leave it at the default"; present but not 10 or 0 is refused
+ * rather than guessed at.
+ */
+function parseUserStatus(raw: unknown, fallback: number): number | null {
+  if (raw === undefined || raw === null || raw === '') return fallback
+  const value = parseInt(String(raw), 10)
+  if (value === USER_STATUS_ACTIVE || value === USER_STATUS_INACTIVE) return value
+  return null
+}
 
 async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
   try {
@@ -80,6 +101,13 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
     // alone". Before this, `password` was not even read here, so there was no
     // way to change a password anywhere in the app - the settings form hides
     // the field when editing, and the API ignored it if sent (F-61).
+    const parsedStatus = parseUserStatus(status, existingUser.status)
+    if (parsedStatus === null) {
+      return res.status(400).json({
+        message: `Status must be ${USER_STATUS_ACTIVE} (Active) or ${USER_STATUS_INACTIVE} (Inactive)`
+      })
+    }
+
     const wantsPasswordChange = typeof password === 'string' && password !== ''
 
     if (wantsPasswordChange && !isAcceptablePassword(password)) {
@@ -95,7 +123,7 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
         username: trimmedUsername,
         email: trimmedEmail,
         phone: phone ? phone.trim() : null,
-        status: parseInt(status.toString()) || 10,
+        status: parsedStatus,
         ...(wantsPasswordChange ? { password_hash: await hashPassword(password) } : {}),
         updated_at: Math.floor(Date.now() / 1000)
       }
@@ -232,6 +260,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    const parsedStatus = parseUserStatus(status, USER_STATUS_ACTIVE)
+    if (parsedStatus === null) {
+      return res.status(400).json({
+        message: `Status must be ${USER_STATUS_ACTIVE} (Active) or ${USER_STATUS_INACTIVE} (Inactive)`
+      })
+    }
+
     const trimmedUsername = username.trim()
     const trimmedEmail = email.trim()
 
@@ -267,7 +302,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         auth_key: authKey,
         password_hash: passwordHash,
         password_reset_token: null,
-        status: parseInt(status.toString()) || 10,
+        status: parsedStatus,
         created_at: Math.floor(Date.now() / 1000),
         updated_at: Math.floor(Date.now() / 1000)
       },

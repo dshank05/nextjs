@@ -68,6 +68,7 @@ export default function InactiveProducts() {
       setSortBy(field);
       setSortOrder('asc');
     }
+      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
   };
 
   const getSortIcon = (field: string) => {
@@ -85,8 +86,16 @@ export default function InactiveProducts() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        includeInactive: 'true',
+        // The debounced term, not the raw one (S-12).
+        search: debouncedSearchTerm.trim(),
+        // S-34: ask the database for inactive products. This used to request
+        // `includeInactive=true` - which returns BOTH - and then filter the page
+        // in the browser. With 601 of 602 products active and the list ordered
+        // by id descending, page one was almost entirely active rows, so the
+        // screen looked empty however many inactive products there were. The
+        // pagination was then recomputed from the filtered count, which made it
+        // meaningless as well.
+        isActive: 'false',
         sortBy: sortBy,
         sortOrder: sortOrder
       });
@@ -98,22 +107,12 @@ export default function InactiveProducts() {
 
       const data: ProductsResponse = await response.json();
 
-      // Filter to show only inactive products
-      const inactiveProducts = data.products.filter(product => product.is_active === false);
-
-      setProducts(inactiveProducts);
-
-      // Recalculate pagination for inactive products
-      const inactiveCount = inactiveProducts.length;
-      setPagination(prev => ({
-        ...prev,
-        total: inactiveCount,
-        totalPages: Math.ceil(inactiveCount / prev.limit),
-        hasMore: prev.page * prev.limit < inactiveCount
-      }));
+      setProducts(data.products);
+      setPagination(data.pagination);
 
     } catch (error) {
       console.error('Error fetching inactive products:', error);
+      showSnackbar('error', 'Could not load inactive products');
     } finally {
       setLoading(false);
     }
@@ -253,12 +252,12 @@ export default function InactiveProducts() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
                       Part Number {getSortIcon('part_no')}
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('category_id')}>
-                      Category {getSortIcon('category_id')}
-                    </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('company_id')}>
-                      Company {getSortIcon('company_id')}
-                    </th>
+                    {/* S-36: Category and Company are not sortable columns on
+                        `product` - they are joined names, and these headers used
+                        to sort by the raw foreign key while displaying the text.
+                        Plain headings until the endpoint can sort on the join. */}
+                    <th>Category</th>
+                    <th>Company</th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
                       Stock {getSortIcon('stock')}
                     </th>

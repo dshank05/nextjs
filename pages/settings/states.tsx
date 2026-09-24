@@ -5,25 +5,21 @@ import { ExportMenu } from '../../components/common/ExportMenu';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
-interface State {
-  id: number;
-  name: string;
-  code: string;
-  gstStateCode: string;
-  capital: string;
-  region: string;
-  status: string;
-  index: number;
-}
+import type { StateRow } from '../../types/settings';
 
-interface StateResponse {
-  states: State[];
-  pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean; };
-}
+/**
+ * S-31: two interfaces used to sit here describing a row that does not exist -
+ * `name`, `code: string`, `gstStateCode`, `capital`, `region`, `status` - while
+ * the real shape, `{id, state_name, code: number}`, was re-declared inline four
+ * times in this file. Neither interface was referenced. `StateRow` is derived
+ * from Prisma, so it cannot drift from the table again.
+ */
 
 export default function States() {
-  const [states, setStates] = useState<Array<{id: number, state_name: string, code: number}>>([]);
+  const { showSnackbar } = useSnackbar();
+  const [states, setStates] = useState<StateRow[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
   // Mirrored in the URL so search and sort survive a refresh and a return
@@ -32,7 +28,7 @@ export default function States() {
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
-  const [editingState, setEditingState] = useState<{id: number, state_name: string, code: number} | null>(null);
+  const [editingState, setEditingState] = useState<StateRow | null>(null);
   const [formData, setFormData] = useState({ id: 0, state_name: '', code: '' });
   const [pendingFormData, setPendingFormData] = useState<{ id: number, state_name: string, code: string } | null>(null);
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'state_name');
@@ -58,7 +54,10 @@ export default function States() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
+        // The DEBOUNCED term. The effect below already keys on it; sending the
+        // raw one meant any render that fired mid-keystroke sent a value the
+        // user had already changed (S-12).
+        search: debouncedSearchTerm.trim(),
         sortBy: sortBy,
         sortOrder: sortOrder
       });
@@ -73,6 +72,7 @@ export default function States() {
       setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching states:', error);
+      showSnackbar('error', 'Could not load states');
     } finally {
       setLoading(false);
     }
@@ -85,6 +85,7 @@ export default function States() {
       setSortBy(field);
       setSortOrder('asc');
     }
+      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
   };
 
   const getSortIcon = (field: string) => {
@@ -120,7 +121,7 @@ export default function States() {
     setShowModal(true);
   };
 
-  const handleEdit = (state: {id: number, state_name: string, code: number}) => {
+  const handleEdit = (state: StateRow) => {
     setEditingState(state);
     setFormData({
       id: state.id,
@@ -174,7 +175,9 @@ export default function States() {
       setPendingFormData(null);
     } catch (error) {
       console.error('Error saving state:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`);
+      // Every other settings page reports through the snackbar; this was the
+      // only one still using a blocking window.alert (S-15).
+      showSnackbar('error', error instanceof Error ? error.message : 'Could not save the state');
       setConfirmLoading(false);
     } finally {
       setConfirmLoading(false);
@@ -253,7 +256,7 @@ export default function States() {
                 <tbody>
                   {states.map((state, index) => (
                     <tr key={state.id}>
-                      <td>{index + 1}</td>
+                      <td>{(pagination.page - 1) * pagination.limit + index + 1}</td>
                       <td>{state.code}</td>
                       <td className="font-medium text-white">{state.state_name}</td>
                       <td className="text-right">

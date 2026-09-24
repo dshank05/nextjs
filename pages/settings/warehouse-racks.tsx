@@ -81,6 +81,7 @@ export default function WarehouseRacks() {
       setSortBy(field);
       setSortOrder('asc');
     }
+      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
   };
 
   const getSortIcon = (field: string) => {
@@ -94,7 +95,10 @@ export default function WarehouseRacks() {
 
   const fetchWarehouses = async () => {
     try {
-      const response = await fetch('/api/warehouses');
+      // S-38: without dropdown=true this took the default first page, so racks
+      // in the 51st warehouse onward could never be listed - the loop below only
+      // iterates what this returns. F-58's fix, finally applied here.
+      const response = await fetch('/api/warehouses?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setWarehouses(data.warehouses || []);
@@ -120,10 +124,14 @@ export default function WarehouseRacks() {
           const params = new URLSearchParams({
             page: '1',
             limit: '1000', // Get all racks for this warehouse
-            search: searchTerm
+            // The debounced term, not the raw one (S-12).
+            search: debouncedSearchTerm.trim()
           });
 
           const response = await fetch(`/api/warehouses/${warehouse.id}/racks?${params}`);
+          // Note (S-37/S-77): one request per warehouse, because the racks API
+          // has no cross-warehouse list and no sort support. Fixing that
+          // properly means a /api/racks endpoint; recorded, not done here.
           if (response.ok) {
             const data = await response.json();
             const warehouseRacks = data.racks.map((rack: WarehouseRack) => ({
@@ -233,15 +241,22 @@ export default function WarehouseRacks() {
 
     try {
       const method = editingRack ? 'PUT' : 'POST';
-      let url = '/api/warehouse-racks';
 
-      if (editingRack) {
-        url = `/api/warehouses/${pendingData.warehouse_id}/racks`;
-      } else {
-        url = `/api/warehouses/${pendingData.warehouse_id}/racks`;
-      }
+      // S-62: on edit this addressed `pendingData.warehouse_id` - the warehouse
+      // the user is moving the rack TO. But the handler scopes its lookup to the
+      // warehouse in the URL, which must be the one that currently OWNS the rack
+      // (that scoping is F-32's fix, and it is correct). Addressing the
+      // destination meant a move could never find the rack it was moving. The
+      // URL is the source; the body carries the destination.
+      //
+      // S-61: the two branches this replaces assigned the same value, after an
+      // initial `'/api/warehouse-racks'` that is not a route in this app; and
+      // `requestBody` was a ternary whose branches were equivalent.
+      const url = editingRack
+        ? `/api/warehouses/${editingRack.warehouse_id}/racks`
+        : `/api/warehouses/${pendingData.warehouse_id}/racks`;
 
-      const requestBody = editingRack ? { ...pendingData, warehouse_id: pendingData.warehouse_id } : pendingData;
+      const requestBody = pendingData;
 
       const response = await fetch(url, {
         method,
@@ -301,10 +316,13 @@ export default function WarehouseRacks() {
         headers: {
           'Content-Type': 'application/json',
         },
+        // rack_number is NOT required - the handler treats every field as
+        // optional and only validates rack_number when it is present. The
+        // comment claiming otherwise was wrong, and resending an unrelated field
+        // to change a status is how a transition gets corrupted (S-63).
         body: JSON.stringify({
           id: selectedRack.id,
-          status: newStatus,
-          rack_number: selectedRack.rack_number // Include current rack_number as required by API
+          status: newStatus
         }),
       });
 
@@ -397,8 +415,10 @@ export default function WarehouseRacks() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
                       ID {getSortIcon('id')}
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('warehouse_id')}>
-                      Warehouse {getSortIcon('warehouse_id')}
+                    {/* S-65: this sorted by warehouse_id while displaying the
+                        name, so the order had nothing to do with the column. */}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('warehouse_name')}>
+                      Warehouse {getSortIcon('warehouse_name')}
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rack_number')}>
                       Rack Number {getSortIcon('rack_number')}
@@ -424,14 +444,22 @@ export default function WarehouseRacks() {
                       </td>
                     </tr>
                   ) : (
-                    racks.map((rack) => {
-                      const warehouse = warehouses.find(w => w.id === rack.warehouse_id);
+                    racks.map((rack: any) => {
+                      // S-64: the warehouse name is attached to every row by
+                      // fetchRacks. This used to ignore it and re-derive the name
+                      // from the `warehouses` list instead - while the EXPORT used
+                      // the attached field. When that list truncates at 50 (S-38)
+                      // the two disagreed: the table said "Unknown Warehouse" and
+                      // the export printed the real name, for the same row.
+                      const warehouseLabel = rack.warehouse_name
+                        ? `${rack.warehouse_name}${rack.warehouse_location ? ' - ' + rack.warehouse_location : ''}`
+                        : 'Unknown Warehouse';
                       return (
                         <tr key={rack.id}>
                           <td>{rack.index}</td>
                           <td>{rack.id}</td>
                           <td className="font-medium text-white">
-                            {warehouse ? `${warehouse.name} - ${warehouse.location}` : 'Unknown Warehouse'}
+                            {warehouseLabel}
                           </td>
                           <td className="font-mono font-medium text-blue-300">{rack.rack_number}</td>
                           <td className="text-slate-300">{rack.description || '-'}</td>

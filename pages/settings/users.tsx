@@ -4,27 +4,23 @@ import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
-interface User {
-  id: number;
-  username: string;
-  auth_key: string;
-  password_hash: string;
-  password_reset_token: string | null;
-  email: string;
-  phone: string | null;
-  status: number;
-  created_at: number;
-  updated_at: number;
-  index: number;
-}
+import type { UserRow } from '../../types/settings';
+import { USER_STATUS_ACTIVE, userStatusLabel } from '../../types/settings';
 
-interface UserResponse {
-  users: User[];
-  pagination: { page: number; limit: number; total: number; totalPages: number; hasMore: boolean; };
-}
+/**
+ * S-27: the interface here used to declare `auth_key`, `password_hash` and
+ * `password_reset_token`. The API's `select` deliberately excludes all three,
+ * so nothing ever leaked - but the type said otherwise, and it cost this audit a
+ * wrong finding until the handler was read. `UserRow` is `Omit`-ed from the
+ * Prisma model, so a credential column added later is excluded by construction
+ * rather than by somebody remembering.
+ */
+type User = UserRow;
 
 export default function Users() {
+  const { showSnackbar } = useSnackbar();
   const [users, setUsers] = useState<User[]>([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
@@ -57,7 +53,8 @@ export default function Users() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
+        // The debounced term, not the raw one (S-12).
+        search: debouncedSearchTerm.trim(),
         sortBy: sortBy,
         sortOrder: sortOrder
       });
@@ -72,6 +69,7 @@ export default function Users() {
       setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching users:', error);
+      showSnackbar('error', 'Could not load users');
     } finally {
       setLoading(false);
     }
@@ -84,6 +82,7 @@ export default function Users() {
       setSortBy(field);
       setSortOrder('asc');
     }
+      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
   };
 
   const getSortIcon = (field: string) => {
@@ -161,13 +160,12 @@ export default function Users() {
       fetchUsers(); // Refresh the list
     } catch (error) {
       console.error('Error saving user:', error);
-      alert(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      showSnackbar('error', error instanceof Error ? error.message : 'Could not save the user');
     }
   };
 
-  const getStatusText = (status: number) => {
-    return status === 10 ? 'Active' : 'Inactive';
-  };
+  // S-30: the bare 10 used to appear in four places with nothing naming it.
+  const getStatusText = userStatusLabel;
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp * 1000).toLocaleDateString('en-IN');
@@ -259,14 +257,14 @@ export default function Users() {
                 <tbody>
                   {users.map((user, index) => (
                     <tr key={user.id}>
-                      <td>{index + 1}</td>
+                      <td>{(pagination.page - 1) * pagination.limit + index + 1}</td>
                       <td>{user.id}</td>
                       <td className="font-medium text-white">{user.username}</td>
                       <td className="text-slate-300">{user.email}</td>
                       <td className="text-slate-300">{user.phone || '-'}</td>
                       <td>
                         <span className={`px-2 py-1 rounded-full text-xs ${
-                          user.status === 10
+                          user.status === USER_STATUS_ACTIVE
                             ? 'bg-green-500/20 text-green-400'
                             : 'bg-red-500/20 text-red-400'
                         }`}>

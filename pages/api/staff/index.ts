@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isTenDigitPhone, isValidEmail } from '../../../lib/validators'
+import { created, fail } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -85,11 +86,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Get staff error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch staff',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch staff')
   }
 }
 
@@ -144,16 +141,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: staffData,
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "Staff member created successfully"
-    })
+    // Return the row. Every create in Settings but one answered with a bare
+    // message, so a caller could not navigate to or highlight what it had just
+    // made - and the record was already being fetched (S-53, S-79).
+    return created(res, staff, 'Staff member created successfully')
   } catch (error) {
-    console.error('Create staff error:', error)
-    res.status(500).json({
-      status: "failure",
-      message: 'Failed to create staff member'
-    })
+    return fail(res, error, 'create the staff member')
   }
 }
 

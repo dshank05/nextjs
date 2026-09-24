@@ -30,8 +30,12 @@ export default function FinancialYear() {
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'fy');
   const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'desc');
   const [showModal, setShowModal] = useState(false);
-  const [editingYear, setEditingYear] = useState<FinancialYear | null>(null);
-  const [formData, setFormData] = useState({ id: 0, fy: '', start_date: '', end_date: '' });
+  // S-58: there is no `editingYear` any more. Nothing could set it - the table's
+  // only action is "Set as Current" - and `handleConfirmSubmit` always POSTs, so
+  // the edit branches it guarded were unreachable. The API has no update-fields
+  // operation for a financial year either, so editing one is simply not a
+  // feature. Adding it is an owner decision, not a silent restoration.
+  const [formData, setFormData] = useState({ start_date: '', end_date: '' });
   const [currentFyId, setCurrentFyId] = useState<number | null>(null);
   const [settingCurrent, setSettingCurrent] = useState<number | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -41,12 +45,6 @@ export default function FinancialYear() {
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
 
-
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
 
   const handleSort = (column: string) => {
     if (sortBy === column) {
@@ -85,6 +83,9 @@ export default function FinancialYear() {
         setPagination(data.pagination);
         // Set current FY ID from the API response
         setCurrentFyId(data.currentFyId);
+      } else {
+        // S-48: a non-OK response used to leave the list silently stale.
+        showSnackbar('error', 'Could not load financial years');
       }
     } catch (error) {
       console.error('Error fetching financial years:', error);
@@ -138,31 +139,7 @@ export default function FinancialYear() {
   };
 
   const handleAdd = () => {
-    setEditingYear(null);
-    setFormData({ id: 0, fy: '', start_date: '', end_date: '' });
-    setShowModal(true);
-  };
-
-  const handleEdit = (year: FinancialYear) => {
-    setEditingYear(year);
-    setFormData({
-      id: year.id,
-      fy: year.fy,
-      start_date: year.start_date ? (() => {
-        const date = new Date(year.start_date);
-        const year_val = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year_val}-${month}-${day}`;
-      })() : '',
-      end_date: year.end_date ? (() => {
-        const date = new Date(year.end_date);
-        const year_val = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year_val}-${month}-${day}`;
-      })() : ''
-    });
+    setFormData({ start_date: '', end_date: '' });
     setShowModal(true);
   };
 
@@ -268,7 +245,7 @@ export default function FinancialYear() {
         // Success - close modals and refresh
         setShowConfirmModal(false);
         setShowModal(false);
-        setFormData({ id: 0, fy: '', start_date: '', end_date: '' });
+        setFormData({ start_date: '', end_date: '' });
         setPendingData(null);
         fetchFinancialYears();
         showSnackbar('success', 'Financial year created successfully!');
@@ -302,64 +279,29 @@ export default function FinancialYear() {
       <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
-  const currentFy = financialYears.find(fy => fy.id === currentFyId);
-
   return (
     <div className="space-y-6">
 
 
 
-      {/* <div className="card">
-        <div className="flex items-end justify-between">
-          <div className="flex items-end space-x-4">
-            <div className="w-80">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Search Financial Years</label>
-              <input
-                type="text"
-                placeholder="Search financial years..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="input w-full"
-              />
-            </div>
-            <div className="w-40">
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
-          </div>
-          <div className="w-24">
-            <button onClick={() => setSearchTerm('')} className="btn-secondary w-full">Clear</button>
-          </div>
-        </div>
-      </div> */}
-
-      {/* {currentFy && (
-        <div className="card">
-          <div className="p-4 bg-blue-900/30 border border-blue-700 rounded-lg">
-            <h3 className="text-lg font-semibold text-white mb-2">Current Financial Year: {currentFy.fy}</h3>
-            <p className="text-slate-400 text-sm">
-              This financial year is currently active for all new transactions. Invoice numbers restart at 1 for each financial year.
-            </p>
-          </div>
-        </div>
-      )} */}
+      {/* S-59: the search card and the current-FY banner that used to sit here,
+          commented out, are gone. The search machinery behind the card is still
+          live - searchTerm, the debounce, the fetch parameter and the page-reset
+          effect - so restoring the input is a one-line change if it is wanted.
+          The banner said nothing the Status column does not already show. */}
 
       <div className="card">
         <div className="flex justify-end space-x-2 mb-2">
           <ExportMenu
             data={financialYears}
             columns={[
+              // S-60: `status` is not a column on financial_year - the table
+              // derives Current/Inactive from currentFyId - so exporting it
+              // produced a permanently blank column.
               { key: 'id', label: 'ID', enabled: true },
               { key: 'fy', label: 'FY', enabled: true },
-              { key: 'status', label: 'Status', enabled: true },
+              { key: 'start_date', label: 'Start Date', enabled: true },
+              { key: 'end_date', label: 'End Date', enabled: true },
             ]}
             config={{
               title: 'Financial Years Report',
@@ -461,19 +403,8 @@ export default function FinancialYear() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 !mt-0">
           <div className="bg-slate-800 p-8 rounded-lg w-96 shadow-lg">
-            <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">{editingYear ? 'Edit Financial Year' : 'Add Financial Year'}</h2>
+            <h2 className="text-xl font-bold text-white mb-6 border-b border-slate-600 pb-4">Add Financial Year</h2>
             <form onSubmit={handleSubmit}>
-              {editingYear && (
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Financial Year ID</label>
-                  <input
-                    type="text"
-                    value={formData.id}
-                    className="input w-full"
-                    readOnly
-                  />
-                </div>
-              )}
               <div className="mb-6">
                 <label className="block text-sm font-medium text-slate-300 mb-2">Start Date</label>
                 <input

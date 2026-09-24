@@ -289,7 +289,10 @@ export default function BankDetails() {
                 <tbody>
                   {bankAccounts.map((account, index) => (
                     <tr key={account.id}>
-                      <td>{index + 1}</td>
+                      {/* fetchBankAccounts already computes this offset onto
+                          each row as `index`; rendering `index + 1` from the map
+                          threw that away and restarted at 1 on every page (S-14). */}
+                      <td>{account.index}</td>
                       <td>{account.id}</td>
                       <td className="font-medium text-white">{account.bank_name}</td>
                       <td className="text-slate-300 font-mono">{account.account_number}</td>

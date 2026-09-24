@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidGstStateCode, MIN_GST_STATE_CODE, MAX_GST_STATE_CODE } from '../../../lib/gst'
+import { created, fail } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -69,11 +70,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('States fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch states data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch states')
   }
 }
 
@@ -98,15 +95,12 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Check if state already exists (case insensitive)
+    // One comparison: MySQL's collation is already case-insensitive here. The
+    // `.toLowerCase()` clause that used to sit beside it only caught an
+    // all-lowercase duplicate, which is not what "case insensitive" means (S-84).
     const trimmedName = state_name.trim()
     const existingState = await prisma.states.findFirst({
-      where: {
-        OR: [
-          { state_name: trimmedName },
-          { state_name: trimmedName.toLowerCase() }
-        ]
-      }
+      where: { state_name: trimmedName }
     })
 
     if (existingState) {
@@ -139,16 +133,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "State created successfully"
-    })
+    return created(res, state, 'State created successfully')
   } catch (error) {
-    console.error('State creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create state',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the state')
   }
 }
 

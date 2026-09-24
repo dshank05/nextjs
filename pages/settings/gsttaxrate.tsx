@@ -52,12 +52,6 @@ export default function GSTTaxRate() {
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
-
   const handleSort = (field: string) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -191,6 +185,9 @@ export default function GSTTaxRate() {
         setFormData({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' });
         setPendingData(null);
         fetchGSTRates(); // Refresh the list
+        // S-50: this was the only save in Settings that reported nothing on
+        // success, while its sibling pages all confirm.
+        showSnackbar('success', `GST rate ${editingRate ? 'updated' : 'created'} successfully`);
       } else {
         // Error - keep modals open and show error
         const error = await response.json();
@@ -234,10 +231,13 @@ export default function GSTTaxRate() {
 
     try {
       const statusValue = changingRate.newStatus;
-      const response = await fetch('/api/gst-rates', {
-        method: 'PUT',
+      // The status route, not the full-update PUT. That PUT hid a status-only
+      // branch which only fired when all four other fields happened to be
+      // absent - a state transition inferred from what was missing (S-66).
+      const response = await fetch(`/api/gst-rates/${changingRate.id}/status`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: changingRate.id, status: statusValue }),
+        body: JSON.stringify({ status: statusValue }),
         signal: controller.signal
       });
 
@@ -467,17 +467,10 @@ export default function GSTTaxRate() {
                 />
               </div>
 
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'Active' | 'Inactive' }))}
-                  className="select w-full"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
+              {/* No Status control here. A GST rate had two ways to change
+                  status - this dropdown and the Deactivate button - which is
+                  exactly what staff and mechanics removed (S-66). The button is
+                  the one that survives, because it is a transition. */}
               <div className="border-t border-slate-600 pt-4 mt-6 flex justify-end space-x-3">
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary">Cancel</button>
                 <button type="submit" className="btn-primary">Save</button>

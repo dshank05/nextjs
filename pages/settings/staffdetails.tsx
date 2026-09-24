@@ -20,7 +20,11 @@ interface Staff {
 }
 
 export default function StaffDetails() {
-  const { showSnackbar } = useSnackbar?.() || { showSnackbar: () => {} };
+  // S-17: this used to be `useSnackbar?.() || { showSnackbar: () => {} }`, which
+  // calls a hook conditionally and turns a missing provider into silence rather
+  // than an error. The provider is mounted in _app; if it ever is not, failing
+  // loudly is the correct outcome.
+  const { showSnackbar } = useSnackbar();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -54,12 +58,8 @@ export default function StaffDetails() {
 
 
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
-
+  // S-16: there were two of these, and the first was entirely covered by the
+  // second.
   useEffect(() => {
     if (!loading) {
       setPagination(prev => ({ ...prev, page: 1 }));
@@ -227,8 +227,10 @@ export default function StaffDetails() {
 
     try {
       const statusValue = changingStaff.newStatus;
-      const response = await fetch(`/api/staff/${changingStaff.id}`, {
-        method: 'PUT',
+      // Activation is a state transition, not a field edit - so it goes to the
+      // status route rather than the record's PUT (F-91's rule, now shared).
+      const response = await fetch(`/api/staff/${changingStaff.id}/status`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: statusValue }),
         signal: controller.signal

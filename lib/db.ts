@@ -1,64 +1,41 @@
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+
+/**
+ * The shared Prisma client.
+ *
+ * Everything that used to sit alongside it here is gone (D-13, D-14, D-15,
+ * D-16). It was a query tracker feeding `/api/debug/query-stats`, and it had
+ * never worked: the `{ emit: 'event', level: 'query' }` line that would have
+ * fired the `$on('query')` handler was commented out, so `queryTracker` was
+ * always empty and the endpoint always answered `totalQueries: 0`. Dead
+ * machinery behind a live route that advertised a feature it did not have - and
+ * the route returned raw SQL text to any signed-in user, in an app with no role
+ * checks (F-05).
+ *
+ * The tracker also carried a trap for whoever re-enabled it: its cleanup loop
+ * walked the entire map on **every single query** to expire old entries.
+ *
+ * If query timings are wanted again, `withObservability` already wraps every
+ * route and is the right place for them.
+ */
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
 }
 
-// Query deduplication for analysis
-const queryTracker = new Map<string, { count: number; totalDuration: number; lastSeen: number }>();
-
 export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
     log: [
-      // { emit: 'event', level: 'query' }, // DISABLED for clean analysis
       { emit: 'stdout', level: 'error' },
       { emit: 'stdout', level: 'warn' },
     ],
   });
 
-if (process.env.NODE_ENV !== 'production') global.prisma = prisma;
-
-// Temporarily disable query logging for clean analysis
-prisma.$on('query' as never, (e: Prisma.QueryEvent) => {
-  // Query logging disabled - use /api/debug/query-stats for analysis
-  // Update stats silently
-  const queryKey = `${e.query}|${e.params}`;
-
-  if (queryTracker.has(queryKey)) {
-    const stats = queryTracker.get(queryKey)!;
-    stats.count++;
-    stats.totalDuration += e.duration;
-    stats.lastSeen = Date.now();
-  } else {
-    queryTracker.set(queryKey, {
-      count: 1,
-      totalDuration: e.duration,
-      lastSeen: Date.now()
-    });
-  }
-
-  // Clean up old entries (older than 30 seconds)
-  const now = Date.now();
-  for (const [key, stats] of Array.from(queryTracker.entries())) {
-    if (now - stats.lastSeen > 30000) {
-      queryTracker.delete(key);
-    }
-  }
-});
-
-// Function to get query statistics
-export function getQueryStats() {
-  const stats = Array.from(queryTracker.entries()).map(([queryKey, data]) => {
-    const [query, params] = queryKey.split('|');
-    return {
-      query,
-      params,
-      count: data.count,
-      avgDuration: data.totalDuration / data.count,
-      totalDuration: data.totalDuration
-    };
-  });
-
-  return stats.sort((a, b) => b.count - a.count); // Sort by frequency
+// Reuse one client across hot reloads in development, where each reload would
+// otherwise leak a connection pool. Assigned through the same typed reference it
+// is read from - it used to be read from `globalForPrisma.prisma` and written to
+// an untyped `global.prisma` (D-16).
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = prisma;
 }

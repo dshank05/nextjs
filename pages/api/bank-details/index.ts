@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidIfsc, normaliseIfsc } from '../../../lib/bank'
+import { created, updated, fail } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -75,11 +76,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Bank details fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch bank details data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch bank details')
   }
 }
 
@@ -111,11 +108,14 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Check if bank account already exists (case insensitive)
     const trimmedName = bank_name.trim()
     const trimmedAccount = account_number.trim()
+    // MySQL's default collation is already case-insensitive, so one comparison
+    // does the job. The extra `.toLowerCase()` clause that used to sit here
+    // caught an all-lowercase duplicate and nothing else - "HdFc" still passed -
+    // while the comment above it claimed the check was case-insensitive (S-84).
     const existingAccount = await prisma.bank_details.findFirst({
       where: {
         OR: [
           { bank_name: trimmedName },
-          { bank_name: trimmedName.toLowerCase() },
           { account_number: trimmedAccount }
         ]
       }
@@ -146,16 +146,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "Bank account created successfully"
-    })
+    return created(res, bankAccount, 'Bank account created successfully')
   } catch (error) {
-    console.error('Bank account creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create bank account',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the bank account')
   }
 }
 
@@ -212,7 +205,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           {
             OR: [
               { bank_name: trimmedName },
-              { bank_name: trimmedName.toLowerCase() },
               { account_number: trimmedAccount }
             ]
           }
@@ -229,27 +221,27 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Update bank account
+    // A partial update: write what was supplied, leave the rest alone.
+    //
+    // This used to write all four columns unconditionally, so a caller that
+    // omitted `bank_address` or `ifsc` had them **nulled** - the F-78 shape
+    // (S-76). It was latent only because the settings form always sends every
+    // field, and the form is not the only possible caller.
+    const updateData: any = {
+      bank_name: trimmedName,
+      account_number: trimmedAccount
+    }
+    if (bank_address !== undefined) updateData.bank_address = bank_address?.trim() || null
+    if (ifsc !== undefined) updateData.ifsc = normaliseIfsc(ifsc)
+
     const updatedAccount = await prisma.bank_details.update({
       where: { id: parseInt(id) },
-      data: {
-        bank_name: trimmedName,
-        account_number: trimmedAccount,
-        bank_address: bank_address?.trim() || null,
-        ifsc: normaliseIfsc(ifsc)
-      }
+      data: updateData
     })
 
-    res.status(200).json({
-      status: "success",
-      message: "Bank account updated successfully",
-      data: updatedAccount
-    })
+    return updated(res, updatedAccount, 'Bank account updated successfully')
   } catch (error) {
-    console.error('Bank account update error:', error)
-    res.status(500).json({
-      message: 'Failed to update bank account',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update the bank account')
   }
 }
 

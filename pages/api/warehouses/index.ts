@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { created, fail } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -92,11 +93,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       },
     })
   } catch (error) {
-    console.error('Warehouses fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch warehouses',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch warehouses')
   }
 }
 
@@ -130,27 +127,56 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "Warehouse created successfully"
-    })
+    return created(res, warehouse, 'Warehouse created successfully')
   } catch (error) {
-    console.error('Warehouse creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create warehouse',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the warehouse')
   }
 }
 
+/**
+ * PUT /api/warehouses with the id in the BODY.
+ *
+ * This used to read only `{id, name, location}` and write only those two
+ * columns, under the comment "Status not updated - all warehouses are active".
+ * That comment was false: the settings page has a Deactivate button and the
+ * column holds 'Inactive'. So a PUT carrying `status: 'Inactive'` was answered
+ * **200 "updated successfully"** and the row stayed Active (S-19).
+ *
+ * It is now a partial update - it writes what it is given and leaves the rest
+ * alone - which also removes the trap in the page: `handleEdit` never loads
+ * `status` into its form, so an edit sends `{id, name, location}` and must not
+ * be read as "set status to nothing" (S-21).
+ *
+ * The id still comes from the body here, and from the query in
+ * `handleIndividualPut`. Collapsing those two onto one path-segment route is
+ * S-20 and belongs with the API convention work, not with this fix.
+ */
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { id, name, location } = req.body
+    const { id, name, location, status } = req.body
 
     // Validation
-    if (!id || !name || !location) {
+    if (!id) {
       return res.status(400).json({
-        message: 'ID, name, and location are required'
+        message: 'ID is required'
+      })
+    }
+
+    if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
+      return res.status(400).json({ message: 'Name cannot be empty' })
+    }
+
+    if (location !== undefined && (typeof location !== 'string' || !location.trim())) {
+      return res.status(400).json({ message: 'Location cannot be empty' })
+    }
+
+    if (status !== undefined && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: "Status must be 'Active' or 'Inactive'" })
+    }
+
+    if (name === undefined && location === undefined && status === undefined) {
+      return res.status(400).json({
+        message: 'At least one field (name, location or status) must be supplied'
       })
     }
 
@@ -166,26 +192,29 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Check if another warehouse with same name exists (excluding current one)
-    const duplicateWarehouse = await prisma.warehouse.findFirst({
-      where: {
-        name,
-        id: { not: parseInt(id) }
-      }
-    })
-
-    if (duplicateWarehouse) {
-      return res.status(400).json({
-        message: 'Another warehouse with this name already exists'
+    if (name !== undefined) {
+      const duplicateWarehouse = await prisma.warehouse.findFirst({
+        where: {
+          name: name.trim(),
+          id: { not: parseInt(id) }
+        }
       })
+
+      if (duplicateWarehouse) {
+        return res.status(400).json({
+          message: 'Another warehouse with this name already exists'
+        })
+      }
     }
 
-    const updatedWarehouse = await prisma.warehouse.update({
+    const updateData: any = {}
+    if (name !== undefined) updateData.name = name.trim()
+    if (location !== undefined) updateData.location = location.trim()
+    if (status !== undefined) updateData.status = status
+
+    await prisma.warehouse.update({
       where: { id: parseInt(id) },
-      data: {
-        name,
-        location
-        // Status not updated - all warehouses are active
-      }
+      data: updateData
     })
 
     res.status(200).json({
@@ -278,7 +307,7 @@ async function handleIndividualPut(req: NextApiRequest, res: NextApiResponse, wa
       }
     }
 
-    const updatedWarehouse = await prisma.warehouse.update({
+    await prisma.warehouse.update({
       where: { id: warehouseId },
       data: updateData,
     })
@@ -309,7 +338,7 @@ async function handleIndividualDelete(req: NextApiRequest, res: NextApiResponse,
     }
 
     // Soft delete - just change status to Inactive
-    const deactivatedWarehouse = await prisma.warehouse.update({
+    await prisma.warehouse.update({
       where: { id: warehouseId },
       data: { status: 'Inactive' },
     })

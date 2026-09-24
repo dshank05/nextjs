@@ -205,8 +205,11 @@ export default function Warehouse() {
 
     try {
       const newStatus = selectedWarehouse.status === 'Active' ? 'Inactive' : 'Active';
-      const response = await fetch(`/api/warehouses?id=${selectedWarehouse.id}`, {
-        method: 'PUT',
+      // The shared status route. This used to PUT to the collection with the id
+      // in the QUERY while the edit above PUTs it in the BODY - one endpoint,
+      // two contracts, and the body one discarded status entirely (S-19, S-20).
+      const response = await fetch(`/api/warehouses/${selectedWarehouse.id}/status`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },

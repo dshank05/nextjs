@@ -20,16 +20,19 @@ interface Mechanic {
 }
 
 export default function MechanicDetails() {
-  const { showSnackbar } = useSnackbar?.() || { showSnackbar: () => { } };
+  // S-17: see staffdetails - a hook called conditionally, silently stubbed.
+  const { showSnackbar } = useSnackbar();
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingMechanic, setEditingMechanic] = useState<Mechanic | null>(null);
+  // No `status` here. The status control was commented out of this form (as it
+  // was in staff), but the field stayed in formData and was transmitted on every
+  // save even though nothing set it (S-43). Status is a transition now.
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
-    city: '',
-    status: 'Active' as 'Active' | 'Inactive'
+    city: ''
   });
   const [saving, setSaving] = useState(false);
   // Mirrored in the URL so search and sort survive a refresh and a return
@@ -67,7 +70,18 @@ export default function MechanicDetails() {
   const fetchMechanics = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/mechanics?includeInactive=true&sortBy=${sortBy}&sortOrder=${sortOrder}&page=${pagination.page}&limit=${pagination.limit}&search=${encodeURIComponent(debouncedSearchTerm)}`);
+      // S-42/S-44: this was hand-concatenated with only `search` encoded, so
+      // sortBy and sortOrder went in raw; and the term was not trimmed, unlike
+      // its twin in staffdetails. URLSearchParams encodes everything.
+      const params = new URLSearchParams({
+        includeInactive: 'true',
+        sortBy,
+        sortOrder,
+        page: String(pagination.page),
+        limit: String(pagination.limit),
+        search: debouncedSearchTerm.trim(),
+      });
+      const response = await fetch(`/api/mechanics?${params}`);
       if (response.ok) {
         const data = await response.json();
         const mechanicsWithIndex = data.mechanics.map((mechanic: Mechanic, index: number) => ({
@@ -111,8 +125,7 @@ export default function MechanicDetails() {
     setFormData({
       name: '',
       phone: '',
-      city: '',
-      status: 'Active'
+      city: ''
     });
     setShowModal(true);
   };
@@ -122,8 +135,7 @@ export default function MechanicDetails() {
     setFormData({
       name: mechanic.name,
       phone: mechanic.phone,
-      city: mechanic.city || '',
-      status: mechanic.status as 'Active' | 'Inactive'
+      city: mechanic.city || ''
     });
     setShowModal(true);
   };
@@ -209,8 +221,8 @@ export default function MechanicDetails() {
 
     try {
       const statusValue = changingMechanic.newStatus;
-      const response = await fetch(`/api/mechanics/${changingMechanic.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/mechanics/${changingMechanic.id}/status`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: statusValue }),
         signal: controller.signal

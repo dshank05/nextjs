@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { created, fail } from '../../../lib/api/respond'
 import { isTenDigitPhone } from '../../../lib/validators'
 
 async function handler(
@@ -142,16 +143,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       data: mechanicData,
     })
 
-    res.status(201).json({
-      status: "success",
-      message: "Mechanic created successfully"
-    })
+    return created(res, mechanic, 'Mechanic created successfully')
   } catch (error) {
-    console.error('Create mechanic error:', error)
-    res.status(500).json({
-      message: 'Failed to create mechanic',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create the mechanic')
   }
 }
 
