@@ -156,9 +156,18 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
       where: { state: stateId.toString() }
     })
 
-    if (customersUsingState || vendorsUsingState) {
+    // S-85: the guard used to stop at live customers and vendors, so a state
+    // named on historical invoices could still be destroyed - and those
+    // snapshots store the state as free text, so nothing would have repaired
+    // them. A billing snapshot is exactly what must not lose its meaning.
+    const snapshotUsingState = await prisma.bill_tosales.findFirst({
+      where: { billing_state: existingState.state_name || '' },
+      select: { id: true }
+    })
+
+    if (customersUsingState || vendorsUsingState || snapshotUsingState) {
       return res.status(409).json({
-        message: 'Cannot delete state as it is being used by customers or vendors'
+        message: 'Cannot delete this state: it is in use by customers, vendors or existing documents'
       })
     }
 

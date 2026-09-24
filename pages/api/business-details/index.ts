@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidGstin } from '../../../lib/gst'
-import { fail } from '../../../lib/api/respond'
+import { fail, parseId } from '../../../lib/api/respond'
 import { isTenDigitPhone } from '../../../lib/validators'
 
 async function handler(
@@ -98,18 +98,33 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    const data = {
+    // S-88: this used to write all eleven columns unconditionally, so a caller
+    // that omitted `tagline` or `terms` had them NULLed - the F-78 shape. The
+    // three required fields are always written, because they are validated
+    // above; the optional ones are written only when they were sent.
+    //
+    // An explicit `null` still clears a field. `undefined` - the key absent
+    // altogether - leaves it alone.
+    const data: any = {
       gstin: gstin.trim(),
       name: name.trim(),
-      tagline: tagline?.trim() || null,
-      address_line_1: address_line_1.trim(),
-      address_line_2: address_line_2?.trim() || null,
-      pin_code: pin_code?.trim() || null,
-      phone: phone?.trim() || null,
-      phone2: phone2?.trim() || null,
-      email: email?.trim() || null,
-      fax: fax?.trim() || null,
-      terms: terms?.trim() || null
+      address_line_1: address_line_1.trim()
+    }
+
+    const optional: Array<[string, unknown]> = [
+      ['tagline', tagline],
+      ['address_line_2', address_line_2],
+      ['pin_code', pin_code],
+      ['phone', phone],
+      ['phone2', phone2],
+      ['email', email],
+      ['fax', fax],
+      ['terms', terms]
+    ]
+    for (const [key, value] of optional) {
+      if (value !== undefined) {
+        data[key] = typeof value === 'string' ? (value.trim() || null) : null
+      }
     }
 
     // If id is 0 or not provided, create a new record - but only if there is
@@ -147,8 +162,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     // Otherwise, update existing record
+    const recordId = parseId(id)
+    if (recordId === null) {
+      return res.status(400).json({ message: 'A valid business details ID is required' })
+    }
+
     const existingDetails = await prisma.business_details.findUnique({
-      where: { id: parseInt(id) }
+      where: { id: recordId }
     })
 
     if (!existingDetails) {
@@ -158,7 +178,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     }
 
     const updatedDetails = await prisma.business_details.update({
-      where: { id: parseInt(id) },
+      where: { id: recordId },
       data
     })
 

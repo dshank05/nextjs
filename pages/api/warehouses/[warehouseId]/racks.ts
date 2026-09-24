@@ -1,7 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../../lib/db'
 import { withObservability } from '../../../../lib/withObservability'
-import { created, fail } from '../../../../lib/api/respond'
+import { created, fail, parseId } from '../../../../lib/api/respond'
+
+/**
+ * S-69: every query in this file used to go through `(prisma as any)`, which
+ * switches off type checking for the whole model - field names, filters and
+ * results alike. It was not necessary: `warehouse_racks` is on the generated
+ * client, as is `product`, which was also being cast. The cast was habit.
+ */
 
 async function handler(
   req: NextApiRequest,
@@ -72,7 +79,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, warehouseId:
     }
 
     const [racks, total] = await Promise.all([
-      (prisma as any).warehouse_racks.findMany({
+      prisma.warehouse_racks.findMany({
         where,
         include: {
           warehouse: {
@@ -86,7 +93,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, warehouseId:
         take: limitNum,
         orderBy: { rack_number: 'asc' }
       }),
-      (prisma as any).warehouse_racks.count({ where })
+      prisma.warehouse_racks.count({ where })
     ])
 
     const totalPages = Math.ceil(total / limitNum)
@@ -129,7 +136,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
     }
 
     // Check if rack number already exists for this warehouse
-    const rackNumberConflict = await (prisma as any).warehouse_racks.findFirst({
+    const rackNumberConflict = await prisma.warehouse_racks.findFirst({
       where: {
         warehouse_id: warehouseId,
         rack_number: rack_number.trim()
@@ -142,7 +149,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
       })
     }
 
-    const rack = await (prisma as any).warehouse_racks.create({
+    const rack = await prisma.warehouse_racks.create({
       data: {
         warehouse_id: warehouseId,
         rack_number: rack_number.trim(),
@@ -161,10 +168,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
   try {
     const { id, warehouse_id, rack_number, description, status } = req.body
 
-    // Validation - require ID
-    if (!id) {
+    // Validation - require ID (S-88: parseId, not a bare parseInt)
+    const rackId = parseId(id)
+    if (rackId === null) {
       return res.status(400).json({
-        message: 'Rack ID is required'
+        message: 'A valid rack ID is required'
       })
     }
 
@@ -181,9 +189,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
     // lived in warehouse 7 - the URL segment was decorative (F-32). A move
     // still works, because only the lookup is scoped, not the update.
     // handleDelete below already did it this way.
-    const existingRack = await (prisma as any).warehouse_racks.findFirst({
+    const existingRack = await prisma.warehouse_racks.findFirst({
       where: {
-        id: parseInt(id),
+        id: rackId,
         warehouse_id: warehouseId
       }
     })
@@ -225,11 +233,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       }
 
       // Check for rack number conflicts in target warehouse
-      const rackNumberConflict = await (prisma as any).warehouse_racks.findFirst({
+      const rackNumberConflict = await prisma.warehouse_racks.findFirst({
         where: {
           warehouse_id: targetWarehouseId,
           rack_number: rack_number.trim(),
-          id: { not: parseInt(id) }
+          id: { not: rackId }
         }
       })
 
@@ -259,8 +267,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       })
     }
 
-    const updatedRack = await (prisma as any).warehouse_racks.update({
-      where: { id: parseInt(id) },
+    const updatedRack = await prisma.warehouse_racks.update({
+      where: { id: rackId },
       data: updateData
     })
 
@@ -279,18 +287,22 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
 
 async function handleDelete(req: NextApiRequest, res: NextApiResponse, warehouseId: number) {
   try {
-    const { rackId } = req.query
+    // S-83: this read the id from the QUERY while PUT above reads it from the
+    // BODY, in one file. Both are accepted now, so a caller does not have to
+    // know which verb changed its mind.
+    const rawId = req.query.rackId ?? req.body?.id
+    const rackId = parseId(rawId)
 
-    if (!rackId) {
+    if (rackId === null) {
       return res.status(400).json({
-        message: 'Rack ID is required'
+        message: 'A valid rack ID is required'
       })
     }
 
     // Check if rack exists and belongs to this warehouse
-    const existingRack = await (prisma as any).warehouse_racks.findFirst({
+    const existingRack = await prisma.warehouse_racks.findFirst({
       where: {
-        id: parseInt(rackId as string),
+        id: rackId,
         warehouse_id: warehouseId
       }
     })
@@ -302,8 +314,8 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, warehouse
     }
 
     // Check if rack has products assigned
-    const productsCount = await (prisma as any).product.count({
-      where: { rack_id: parseInt(rackId as string) }
+    const productsCount = await prisma.product.count({
+      where: { rack_id: rackId }
     })
 
     if (productsCount > 0) {
@@ -312,8 +324,8 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, warehouse
       })
     }
 
-    await (prisma as any).warehouse_racks.delete({
-      where: { id: parseInt(rackId as string) }
+    await prisma.warehouse_racks.delete({
+      where: { id: rackId }
     })
 
     res.status(200).json({

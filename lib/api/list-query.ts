@@ -96,7 +96,7 @@ export function parseListQuery(req: NextApiRequest, opts: ListQueryOptions): Lis
  * slow one, because the missing entry simply cannot be selected and nothing
  * says so (F-58).
  */
-export function paginationArgs(list: ListQuery) {
+export function paginationArgs(list: ListQuery): { skip?: number; take?: number } {
   return list.isDropdown ? {} : { skip: list.skip, take: list.take }
 }
 

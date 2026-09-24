@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -51,7 +51,7 @@ export default function WarehouseRacks() {
   const [selectedRack, setSelectedRack] = useState<WarehouseRack | null>(null);
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'rack_number');
   const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
-  const [isFetching, setIsFetching] = useState(false);
+  const requestSeq = useRef(0);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -61,10 +61,15 @@ export default function WarehouseRacks() {
     fetchWarehouses();
   }, []);
 
+  // S-40: this used to skip the fetch entirely when one was already in flight,
+  // and fetchRacks returned early for the same reason - so a filter change
+  // during a request was silently DROPPED, with no retry, leaving the list
+  // showing results for the previous query. Requests are allowed to overlap; a
+  // sequence number keeps the newest answer.
   useEffect(() => {
-    if (warehouses.length > 0 && !isFetching) {
+    if (warehouses.length > 0) {
       fetchRacks();
-    } else if (warehouses.length === 0) {
+    } else {
       setLoading(false);
     }
   }, [pagination.page, pagination.limit, debouncedSearchTerm, warehouses, sortBy, sortOrder]);
@@ -109,9 +114,7 @@ export default function WarehouseRacks() {
   };
 
   const fetchRacks = async () => {
-    if (isFetching) return; // Prevent multiple concurrent API calls
-
-    setIsFetching(true);
+    const seq = ++requestSeq.current;
     setLoading(true);
 
     try {
@@ -178,6 +181,9 @@ export default function WarehouseRacks() {
         index: startIndex + index + 1
       }));
 
+      // Ignore an answer that a newer request has already superseded.
+      if (seq !== requestSeq.current) return;
+
       setRacks(racksWithIndex);
       setPagination(prev => ({
         ...prev,
@@ -187,8 +193,7 @@ export default function WarehouseRacks() {
     } catch (error) {
       console.error('Error fetching warehouse racks:', error);
     } finally {
-      setLoading(false);
-      setIsFetching(false); // Allow new API calls
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 

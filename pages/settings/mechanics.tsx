@@ -89,7 +89,9 @@ export default function MechanicDetails() {
           index: (pagination.page - 1) * pagination.limit + index + 1
         }));
         setMechanics(mechanicsWithIndex);
-        setPagination(prev => ({ ...prev, ...data.pagination }));
+        // S-45: the twin in staffdetails replaces the object; merging here left
+        // stale keys alive if the server ever stopped sending one.
+        setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load mechanics');
       }

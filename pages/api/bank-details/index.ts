@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidIfsc, normaliseIfsc } from '../../../lib/bank'
-import { created, updated, fail } from '../../../lib/api/respond'
+import { created, updated, fail, parseId } from '../../../lib/api/respond'
 
 async function handler(
   req: NextApiRequest,
@@ -156,10 +156,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
     const { id, bank_name, account_number, bank_address, ifsc } = req.body
 
-    // Validation
-    if (!id) {
+    // S-88: a bare `parseInt` reached Prisma as `where: { id: NaN }` for a junk
+    // id, surfacing as a 500 rather than a 400.
+    const accountId = parseId(id)
+    if (accountId === null) {
       return res.status(400).json({
-        message: 'ID is required'
+        message: 'A valid bank account ID is required'
       })
     }
 
@@ -186,7 +188,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     // Check if bank account exists
     const existingAccount = await prisma.bank_details.findUnique({
-      where: { id: parseInt(id) }
+      where: { id: accountId }
     })
 
     if (!existingAccount) {
@@ -201,7 +203,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const duplicate = await prisma.bank_details.findFirst({
       where: {
         AND: [
-          { id: { not: parseInt(id) } },
+          { id: { not: accountId } },
           {
             OR: [
               { bank_name: trimmedName },
@@ -235,7 +237,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     if (ifsc !== undefined) updateData.ifsc = normaliseIfsc(ifsc)
 
     const updatedAccount = await prisma.bank_details.update({
-      where: { id: parseInt(id) },
+      where: { id: accountId },
       data: updateData
     })
 

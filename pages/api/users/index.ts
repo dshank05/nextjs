@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
+import { randomBytes } from 'crypto'
 import { hashPassword, isAcceptablePassword, MIN_PASSWORD_LENGTH } from '../../../lib/password'
 import { withObservability } from '../../../lib/withObservability'
 import { USER_STATUS_ACTIVE, USER_STATUS_INACTIVE } from '../../../types/settings'
@@ -151,14 +152,24 @@ async function handler(
       return handleGet(req, res)
     case 'POST':
       return handlePost(req, res)
+    // S-26: an update was only reachable by POSTing an id to the collection,
+    // which is what every other settings page does with PUT. POST still works
+    // so the existing page keeps running.
+    case 'PUT':
+      return handleUpdate(req, res)
     default:
+      res.setHeader('Allow', ['GET', 'POST', 'PUT'])
       return res.status(405).json({ message: 'Method not allowed' })
   }
 }
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '', sortBy = 'created_at', sortOrder = 'desc' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'created_at', sortOrder = 'desc', dropdown = 'false' } = req.query
+    // S-55: F-58's fix - a picker that silently shows only its first page -
+    // reached customers, vendors, staff, mechanics, warehouses and gst-rates,
+    // but never users or states.
+    const isDropdown = dropdown === 'true'
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
@@ -193,8 +204,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         updated_at: true
       },
       orderBy: { [sortField]: sortDirection },
-      skip: (pageNum - 1) * limitNum,
-      take: limitNum
+      ...(isDropdown ? {} : { skip: (pageNum - 1) * limitNum, take: limitNum })
     })
 
     const totalPages = Math.ceil(total / limitNum)
@@ -291,7 +301,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // This used to be an unsalted SHA-256 digest, which bcrypt.compare() always
     // rejects - so every account created here was unusable from birth (F-60).
     const passwordHash = await hashPassword(password)
-    const authKey = Math.random().toString(36).substring(2, 15)
+    // S-29: this was Math.random().toString(36) - not a cryptographic
+    // source, and about 60 bits of a weak generator. NextAuth does not use
+    // auth_key today, which is the only reason it did not matter.
+    const authKey = randomBytes(24).toString("hex")
 
     // Create new user
     const user = await prisma.user.create({

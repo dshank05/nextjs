@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
@@ -38,7 +38,7 @@ export default function BankDetails() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
+  const requestSeq = useRef(0);
 
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
@@ -61,10 +61,10 @@ export default function BankDetails() {
       <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
+  // S-40: skipping the fetch when one was in flight silently dropped the newer
+  // filter, with no retry. Requests may overlap; the newest answer wins.
   useEffect(() => {
-    if (!isFetching) {
-      fetchBankAccounts();
-    }
+    fetchBankAccounts();
   }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
 
   useEffect(() => {
@@ -73,9 +73,7 @@ export default function BankDetails() {
   }, [debouncedSearchTerm]);
 
   const fetchBankAccounts = async () => {
-    if (isFetching) return; // Prevent multiple concurrent API calls
-
-    setIsFetching(true);
+    const seq = ++requestSeq.current;
     setLoading(true);
 
     try {
@@ -96,6 +94,7 @@ export default function BankDetails() {
           index: (pagination.page - 1) * pagination.limit + index + 1
         }));
 
+        if (seq !== requestSeq.current) return;
         setBankAccounts(bankAccountsWithIndex);
         setPagination(data.pagination);
       } else {
@@ -105,8 +104,7 @@ export default function BankDetails() {
       console.error('Error fetching bank accounts:', error);
       showSnackbar('error', 'Network error while loading bank accounts');
     } finally {
-      setLoading(false);
-      setIsFetching(false); // Allow new API calls
+      if (seq === requestSeq.current) setLoading(false);
     }
   };
 

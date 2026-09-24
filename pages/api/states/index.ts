@@ -20,22 +20,27 @@ async function handler(
 
 async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { page = 1, limit = 50, search = '', sortBy = 'state_name', sortOrder = 'asc' } = req.query
+    const { page = 1, limit = 50, search = '', sortBy = 'state_name', sortOrder = 'asc', dropdown = 'false' } = req.query
+    const isDropdown = dropdown === 'true'
 
     const pageNum = parseInt(page as string, 10)
     const limitNum = parseInt(limit as string, 10)
     const searchTerm = search as string
 
-    // Build where clause for search
-    const where = searchTerm ? {
-      state_name: {
-        contains: searchTerm
-      }
+    // Search the GST code too - it is a displayed, sortable column, and looking
+    // up "09" was previously impossible.
+    const where: any = searchTerm ? {
+      OR: [
+        { state_name: { contains: searchTerm } },
+        ...(Number.isInteger(Number(searchTerm)) ? [{ code: Number(searchTerm) }] : [])
+      ]
     } : {}
 
     // Build orderBy based on sortBy and sortOrder
     const orderBy: any = {}
-    const validSortFields = ['state_name', 'code']
+    // S-32: `id` was not on this list, so `sortBy=id` silently fell back to
+    // state_name and returned data that looked sorted and was not.
+    const validSortFields = ['id', 'state_name', 'code']
     const field = validSortFields.includes(sortBy as string) ? sortBy as string : 'state_name'
     const order = sortOrder === 'desc' ? 'desc' : 'asc'
     orderBy[field] = order
@@ -52,8 +57,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         code: true
       },
       orderBy,
-      skip: (pageNum - 1) * limitNum,
-      take: limitNum
+      ...(isDropdown ? {} : { skip: (pageNum - 1) * limitNum, take: limitNum })
     })
 
     const totalPages = Math.ceil(total / limitNum)

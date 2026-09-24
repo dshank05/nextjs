@@ -108,6 +108,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // S-24: `status` was taken straight from the body and stored, so
+    // `status: 'Banana'` became a warehouse that is neither Active nor Inactive
+    // and therefore invisible to every filter.
+    if (status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: "Status must be 'Active' or 'Inactive'" })
+    }
+
     // Check if warehouse with same name already exists
     const existingWarehouse = await prisma.warehouse.findFirst({
       where: { name }
