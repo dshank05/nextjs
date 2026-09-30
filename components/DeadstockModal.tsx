@@ -67,7 +67,7 @@ export default function DeadstockModal({
 
   const loadProducts = async () => {
     try {
-      const response = await fetch('/api/products?limit=1000&is_active=true');
+      const response = await fetch('/api/products?fetchAll=true');
       if (response.ok) {
         const data = await response.json();
         setProducts(data.products || []);

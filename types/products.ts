@@ -32,7 +32,7 @@ export interface Product {
   latest_selling_price?: number;
   gst_rate_id?: number;
   opening_rate?: number;
-  lastPurchaseDate?: string;
+  lastPurchaseDate?: string | null;
   carModelsDisplay?: string;
   barcode?: string;
 }

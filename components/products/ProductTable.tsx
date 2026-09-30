@@ -18,7 +18,7 @@ interface Product {
   categoryName?: string;
   companyName?: string;
   latestPurchaseRate?: number;
-  lastPurchaseDate?: string;
+  lastPurchaseDate?: string | null;
   carModelsDisplay?: string;
   subcategoryName?: string;
   pic?: string; // Product image URL
@@ -78,6 +78,9 @@ interface ProductTableProps {
     sortOrder?: string;
   };
 }
+
+/** The API sends an ISO timestamp; format it here, in the viewer's timezone (PQ-38). */
+const formatPurchaseDate = (iso?: string | null) => (iso ? new Date(iso).toLocaleDateString('en-GB') : '-');
 
 type SortField = 'id' | 'categoryName' | 'companyName' | 'subcategoryName' | 'part_no' | 'stock' | 'rate' | 'lastPurchaseDate';
 type SortOrder = 'asc' | 'desc';
@@ -229,7 +232,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               { key: 'part_no', label: 'Part Number', enabled: true },
               { key: 'stock', label: 'Stock Quantity', enabled: true },
               { key: 'rate', label: 'Rate', enabled: true },
-              { key: 'lastPurchaseDate', label: 'Last Purchase Date', enabled: true },
+              { key: 'lastPurchaseDate', label: 'Last Purchase Date', enabled: true, format: (row: any) => formatPurchaseDate(row.lastPurchaseDate) },
             ]}
             config={{
               title: 'Product Report',
@@ -559,7 +562,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 <td className="text-slate-300">{product.part_no || '-'}</td>
                 <td className="text-slate-300">{product.stock || 0}</td>
                 <td className="text-slate-300">₹{product.latestPurchaseRate || product.rate || 0}</td>
-                <td className="text-slate-300">{product.lastPurchaseDate || '-'}</td>
+                <td className="text-slate-300">{formatPurchaseDate(product.lastPurchaseDate)}</td>
                 <td>
                   <div className="flex items-center gap-2">
                     <Link href={`/products/view/${product.id}`} title="View Product Details" className="btn-icon text-slate-300">

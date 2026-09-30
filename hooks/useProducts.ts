@@ -39,7 +39,7 @@ export async function fetchProducts(filters: ProductFilters, signal?: AbortSigna
   // Fetch all flag
   if (filters.fetchAll) params.append('fetchAll', 'true');
 
-  const url = `/api/products/optimized?${params.toString()}`;
+  const url = `/api/products?${params.toString()}`;
   const response = await fetch(url, { signal });
 
   if (!response.ok) {

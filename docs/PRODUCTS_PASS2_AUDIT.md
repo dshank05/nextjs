@@ -391,3 +391,26 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
 - Deferred to Block 5: the five history endpoints (PQ-31/PQ-37 for those files).
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 4 — one list endpoint · done (2026-09-30)
+
+- **PQ-20** `GET /api/products` is the product list, built by `lib/product-query.ts`, in
+  the vocabulary the list page and the pickers already spoke (`category`, `subcategory`,
+  `model`, `company_id`, `quantity`, `uid`, `part_no`, `stockFilter`, dates, `fetchAll`),
+  plus `isActive` (`true` default, `false`, `all`) — which **closes F-107**. Bounded
+  `limit` (500), `listResponse` with the legacy `products` key. `/api/products/optimized`
+  is now a one-release alias of it; `useProducts` calls `/api/products`. The old
+  index-GET filter vocabulary (`categoryFilter` …) had no caller and is gone.
+- **PQ-19** one SQL path, built from the parsed query with every value bound — no more
+  translating a Prisma `where` into SQL by hand, twice. Joins supply category,
+  subcategory, company and GST in the same query; ties break on `id` so pages are stable.
+- **PQ-22** `latestPurchaseRates()` is the one latest-rate query (newest date, highest rate
+  on a tie); a failure is logged and the stored columns are used.
+- **PQ-23** the car-model match is one SQL clause here and `carModelWhere()` in
+  `lib/product-lookups.ts`.
+- **PQ-38** dates: range filters parsed by parts in local time (D-17);
+  `lastPurchaseDate` is sent as ISO and formatted in the browser (list and export).
+- **PQ-15** superseded — the separate low-stock branch no longer exists.
+- `DeadstockModal` asks for `fetchAll=true` (its `limit=1000` would now be capped).
+
+**Checks:** `tsc --noEmit` clean.
