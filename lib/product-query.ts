@@ -4,14 +4,8 @@ import { sellingPrice } from './product';
 import { convertDateToTimestamp } from './date-utils';
 
 /**
- * The product list: one parser, one query, one row shape (PQ-20).
- *
- * There were two list endpoints for one table - `GET /api/products` and
- * `/api/products/optimized` - with different parameter names, default sorts,
- * sort whitelists, response shapes, price rules and `is_active` handling, and
- * each had its own hand-written translation of a Prisma `where` into SQL for
- * the filters Prisma cannot express (PQ-19). This builds the SQL once, straight
- * from the parsed query, with every value bound as a parameter.
+ * The product list (PQ-20): one parser, one parameterised SQL path (PQ-19),
+ * one row shape.
  */
 
 export interface ProductListQuery {
@@ -43,11 +37,7 @@ const int = (v: unknown) => {
 
 const MAX_LIMIT = 500;
 
-/**
- * Sort keys the list accepts, and the SQL each orders by. `rate` orders by the
- * value the Rate column shows - the latest purchase rate, or the opening rate
- * before any purchase (PQ-11).
- */
+/** Sort keys and their SQL. `rate` orders by the value shown (PQ-11). */
 const SORT_SQL: Record<string, string> = {
   id: 'p.id',
   product_name: 'p.product_name',
@@ -211,10 +201,8 @@ function parseIds(csv: string | null | undefined): number[] {
 }
 
 /**
- * The latest purchase rate per product, from purchase lines: newest invoice
- * date first, highest rate breaking a tie. The one copy (PQ-22) - there were
- * three, disagreeing on the tie-break and on what to prefer. On failure it logs
- * and returns nothing, and callers fall back to the stored columns.
+ * Latest purchase rate per product: newest date, highest rate on a tie (PQ-22).
+ * On failure: logged, empty, callers use the stored columns.
  */
 export async function latestPurchaseRates(productIds: number[]): Promise<Map<number, { rate: number; date: number }>> {
   const map = new Map<number, { rate: number; date: number }>();

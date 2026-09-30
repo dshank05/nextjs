@@ -11,9 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { broadcast } from '../../../lib/broadcast';
 import type { ProductTransactionRow } from '../../../types/products';
 
-// The history endpoints send ISO timestamps; format once, here. They used to
-// send an already-formatted d/m/yyyy string that was parsed and formatted a
-// second time - Invalid Date, or day and month swapped (PQ-01).
+// History dates arrive as ISO timestamps and are formatted once, here (PQ-01).
 const formatDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-IN') : '-');
 
 /** One of the five "last five" tables - they were five copies of this (PQ-21, client side). */

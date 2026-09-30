@@ -1,16 +1,8 @@
 import { prisma } from './db';
 
 /**
- * Product business rules, in one place.
- *
- * These lived in pages/products/create.tsx - the browser decided what a product
- * was called, which GST rate applied, what its stock became, and whether it was
- * valid at all. The server accepted whatever arrived. That is how editing a
- * product came to reset its stock (F-75), and how an empty product name got
- * through a door that create keeps shut (F-79).
- *
- * The browser is entitled to decide what the user typed. It is not entitled to
- * decide what the record means.
+ * Product rules, on the server. The browser decides what the user typed;
+ * it does not decide what the record means (F-75, F-79).
  */
 
 export interface ProductInput {
@@ -23,19 +15,9 @@ export interface ValidationFailure {
 }
 
 /**
- * Fields the server owns outright. A client that sends one of these is ignored,
- * not trusted:
- *
- *   product_name - built from the category, subcategory, company, car models
- *                  and part number the product points at (PQ-12). The browser
- *                  used to build it from whatever dropdown lists it had loaded.
- *   stock        - derived from purchases, sales and returns. The form has no
- *                  field for it, yet it was sending one (F-75, F-85).
- *   rack_number  - denormalised from rack_id, which the server already has (F-84).
- *   display_name - the name with the id in front; rewritten with the name on
- *                  every save, not only on create (PQ-55).
- *   is_active    - owned by the deactivate path.
- *   last_purchase_date / latest_purchase_rate - maintained by the purchase flow.
+ * Fields the server owns; a client that sends one is ignored:
+ * product_name/display_name (built from the ids - PQ-12, PQ-55), stock (F-75),
+ * rack_number (F-84), is_active (status route), last purchase date/rate (purchase flow).
  */
 export const SERVER_OWNED_FIELDS = [
   'product_name',
@@ -75,13 +57,9 @@ const MONEY_FIELDS: Array<[string, string]> = [
 const NON_NEGATIVE = ['opening_stock', 'min_stock', 'opening_rate', 'mrp', 'discount', 'margin'];
 
 /**
- * The product rules, enforced on the server for create and update alike
- * (F-79, F-86). `partial` is for updates: a field that was not sent is not
- * re-required; a field that WAS sent is validated either way.
- *
- * Numbers must be numbers: "12abc" used to be read as 12 and "abc" stored as
- * NULL without a word (PQ-45). Every lookup runs in one round of parallel
- * queries rather than up to seven in a row.
+ * Product rules for create and update alike (F-79, F-86). `partial` (update):
+ * only what was sent is re-checked. Numbers must be numbers, and every lookup
+ * runs in one parallel round (PQ-45).
  */
 export async function validateProduct(
   input: ProductInput,
@@ -154,12 +132,7 @@ export async function validateProduct(
   return null;
 }
 
-/**
- * Part numbers are unique across ALL products, active or not - the database's
- * UNIQUE index does not care about is_active (F-100). MySQL's default collation
- * makes the comparison case-insensitive. `is_active` comes back so the caller
- * can say which case it is.
- */
+/** Part numbers are unique across all products, active or not, as the DB index is (F-100). */
 export async function findConflictingPartNo(
   partNo: string | null | undefined,
   excludeProductId?: number
@@ -182,11 +155,7 @@ export function partNoConflictMessage(
   return `Part number "${String(partNo).trim()}" is already in use by ${where}. Please use a different part number.`;
 }
 
-/**
- * rack_number is denormalised from rack_id. The browser used to look it up in
- * its own loaded list and send the string alongside the id; the server has the
- * id and can read the authoritative value (F-84).
- */
+/** rack_number, read from rack_id on the server (F-84). */
 export async function resolveRackNumber(rackId: number | null): Promise<string | null> {
   if (!rackId) return null;
   const rack = await prisma.warehouse_racks.findUnique({
@@ -197,12 +166,8 @@ export async function resolveRackNumber(rackId: number | null): Promise<string |
 }
 
 /**
- * Translate a client payload into columns, taking ONLY client-writable fields.
- *
- * `partial: true` (update) includes a column only when the client actually sent
- * it, so anything not mentioned keeps its stored value. The previous update
- * wrote all 21 columns on every save with 0/null fallbacks, so omitting a field
- * silently zeroed it (F-78) - and sending `stock` reset the stock (F-75).
+ * Payload -> columns, client-writable fields only. `partial` (update) writes
+ * only what was sent; nothing is zeroed by omission (F-75, F-78).
  */
 export async function buildProductData(
   input: ProductInput,
@@ -253,12 +218,8 @@ export interface ProductNameParts {
 }
 
 /**
- * The product's name, built on the server from the ids it points at (PQ-12).
- *
- * Same parts, in the same order, as the form's old generateProductDisplay():
- * car models, category, subcategory, company, part number - except that EVERY
- * car model is included, not just the first. The id goes in front, as it
- * always has once a product exists (F-77, by design).
+ * The product name, built on the server (PQ-12): id, every car model, category,
+ * subcategory, company, part number.
  */
 export async function buildProductName(id: number, parts: ProductNameParts): Promise<string> {
   const modelIds = (parts.car_model_ids || '')
@@ -299,9 +260,8 @@ export async function buildProductName(id: number, parts: ProductNameParts): Pro
 }
 
 /**
- * Selling price, one rule everywhere (PQ-39, owner decision 2026-09-30):
- * the latest purchase rate + margin - discount, or the opening rate + margin -
- * discount until the product has been purchased.
+ * Selling price (PQ-39): latest purchase rate (opening rate before any purchase)
+ * + margin - discount.
  */
 export function sellingPrice(p: {
   latestPurchaseRate?: number | null;

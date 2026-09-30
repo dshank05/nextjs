@@ -4,7 +4,7 @@ Fourth audit document, alongside `AUDIT_PLAN.md`, `JOURNEY_AUDIT.md` (Phase 3 / 
 the **first pass** on products) and `DASHBOARD_SETTINGS_AUDIT.md` (whose §7 and Blocks 1–8
 are the model for this pass).
 
-**Started:** 2026-09-30 · **Status:** Block 1 done — every §2 defect fixed; Blocks 2–8 (quality) not started.
+**Started:** 2026-09-30 · **Status:** **complete** — Blocks 1–8 done. The product module went from 8,928 to 4,549 lines.
 
 Finding IDs are **PQ-nn** so they do not collide with `F-nn`, `L-nn`, `P4-nn`, `D-nn`, `S-nn`.
 Each finding is tagged **Defect** (wrong behaviour) or **Quality** (duplication, dead code,
@@ -462,3 +462,29 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
 - PQ-12 and PQ-39 were done in Block 1.
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 8 — comments · done (2026-09-30)
+
+- **PQ-50** fix narratives trimmed to the rule plus the finding ID, as the owner agreed —
+  `lib/product.ts`, `create.tsx`, `products/index.tsx`, `ProductTable`, `useProducts`,
+  `product-query.ts`, `lowstock.tsx`, `view/[id].tsx`. The history stays in this document
+  and in `git log`.
+
+**Checks:** `tsc --noEmit` clean; `next build` clean (run after Block 8, covering Blocks 2–8).
+
+### Where this leaves products
+
+| | Before pass 2 | After |
+|---|---|---|
+| Product module (28 files) | 8,928 lines | **4,549 lines** (−49%) |
+| List endpoints | 2, disagreeing | 1 (`/optimized` an alias for one release) |
+| Lookup-table APIs / pages | 4 + 4 copies | 1 factory + 1 component |
+| History endpoints | 5 copies | 1 module |
+| Latest-rate queries | 3, disagreeing | 1 |
+| Known defects | 18 | 0 |
+
+**Still to do, outside this document:** a click-through against the real database (list,
+view, add/edit, the four lookup pages, a sale line added through the picker); and remove
+`/api/products/optimized` once nothing external calls it. Open by owner decision: F-73,
+F-74, F-101. Carried to other phases: `ProductSelectionPanel`'s exported `Product` type
+(Phase 4/5); salex's subcategory picker still pages at 50 (Phase 5).

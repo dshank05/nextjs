@@ -63,18 +63,14 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   // Shared, cached filter options (PQ-29).
   const { data: filterOptions = NO_OPTIONS } = useFilterOptions();
 
-  // Subcategories of the chosen category, from the filter options already
-  // loaded (each carries its category_id). This fetched the paginated
-  // subcategories endpoint, which stops at 50 (PQ-07).
+  // The chosen category's subcategories, from the loaded filter options (PQ-07).
   const dynamicSubcategories = filters.categoryFilter
     ? filterOptions.subcategories
         .filter(sub => String(sub.category_id) === String(filters.categoryFilter))
         .map(sub => ({ id: String(sub.id), subcategory_name: sub.name }))
     : [];
 
-  // Sort, starting from what the page restored. It always started at
-  // categoryName/asc, so the arrow disagreed with the list after returning to
-  // it, and the next filter change re-sent the default sort (PQ-09).
+  // Sort starts from what the page restored (PQ-09).
   const [sortBy, setSortBy] = useState<SortField>((initialFilters?.sortBy as SortField) || 'categoryName');
   const [sortOrder, setSortOrder] = useState<SortOrder>((initialFilters?.sortOrder as SortOrder) || 'asc');
 
@@ -93,7 +89,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     imageUrl: '',
     barcodeUrl: ''
   });
-
 
   // Update filters when initialFilters change
   useEffect(() => {
@@ -115,14 +110,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     }
   }, [initialFilters]);
 
-  // No effect clears the subcategory when the category changes. It fired on
-  // mount with the restored category and wiped the restored subcategory - F-88's
-  // mechanism, on the list. The clear happens where the user picks a category
-  // (PQ-10).
-
-
-
-
+  // The subcategory is cleared where the user picks a category, not in an effect (PQ-10).
 
   // Sorting logic - now triggers API re-fetch
   const handleSort = (field: SortField) => {
@@ -141,8 +129,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
       });
     }
   };
-
-
 
   return (
     <div className="card">

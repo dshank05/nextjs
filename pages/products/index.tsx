@@ -29,14 +29,7 @@ export default function Products() {
     storage: "session"
   });
 
-  // Persisted alongside the filters above, in the same session storage.
-  //
-  // The filter panel already survived a refresh, but search and page number did
-  // not - so returning from a product you had found by searching dropped you
-  // back at an unfiltered page one (F-65). Kept on session storage rather than
-  // moved to the URL: this page's filter state is a twelve-field object, which
-  // makes for an unreadable query string, and the settings pages that DID move
-  // to the URL each carry only three simple values.
+  // Search and page persist with the filters, in session storage (F-65).
   const [page, setPage] = useStorageState<number>('products-page-number', {
     defaultValue: 1,
     storage: 'session'
@@ -87,17 +80,8 @@ export default function Products() {
     return unsubscribe;
   }, [refetch]);
 
-  // No unmount cleanup.
-  //
-  // There was one, and it cleared 'products-page-filters' only. Once F-65 made
-  // the search term and the page number persist too, that left the three out of
-  // step: navigating into a product and back restored your search and put you
-  // on page 5, with every filter silently wiped. Either all of it survives or
-  // none of it does, and surviving is the point of F-65 - you came back from a
-  // product you had found by filtering. "Clear Filters" is how you clear them.
-  //
-  // A persisted page number can outlive the result set it was valid for, so it
-  // is corrected below rather than left pointing past the end.
+  // No unmount cleanup: filters, search and page survive together (F-65). A
+  // persisted page past the end of the results is corrected here.
   useEffect(() => {
     if (!isLoading && pagination.totalPages > 0 && page > pagination.totalPages) {
       setPage(1);
@@ -110,10 +94,7 @@ export default function Products() {
     }
   };
 
-
-  // Stable, so the table's sync effect runs when the restored filters change,
-  // not on every render; and it carries the sort, which the table used to
-  // reset to its default (PQ-09).
+  // Memoised, and carries the sort (PQ-09).
   const initialFilters = useMemo(() => ({
     categoryFilter: currentFilters.categoryFilter,
     subcategoryFilter: currentFilters.subcategoryFilter,

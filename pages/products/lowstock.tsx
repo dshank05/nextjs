@@ -8,9 +8,7 @@ export default function LowStock() {
     fetchAll: true
   });
 
-  // No client-side re-filter. The endpoint applies the low-stock rule itself
-  // now; this page used to ask for one rule and then quietly narrow the result
-  // with a second, so it fetched 362 rows to display 1 (F-70).
+  // The endpoint applies the one low-stock rule; no client-side re-filter (F-70).
   const products = data?.products || [];
 
   if (isLoading) {

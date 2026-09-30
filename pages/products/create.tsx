@@ -84,16 +84,10 @@ export default function ProductCreate() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingProductId, setEditingProductId] = useState<number | null>(null);
-  // The `updated_at` this form loaded, sent back on save so the server can tell
-  // whether someone else changed the product in the meantime (F-83). null is a
-  // real value here - it is what the 602 products that predate the column carry.
+  // The updated_at this form loaded, for the conflict check on save (F-83).
   const [loadedUpdatedAt, setLoadedUpdatedAt] = useState<string | null | undefined>(undefined);
 
-  // Subcategories of the chosen category, from the filter options already
-  // loaded (every subcategory, with its category_id). This used to fetch the
-  // paginated subcategories endpoint with no limit, so a category's 51st
-  // subcategory could not be picked - and on edit a product whose subcategory
-  // was past the first 50 lost it from its name (PQ-07).
+  // The chosen category's subcategories, from the loaded filter options - no 50 cap (PQ-07).
   const subcategories = filterOptions.subcategories.filter(
     (s: any) => String(s.category_id) === formData.product_category
   );
@@ -106,13 +100,7 @@ export default function ProductCreate() {
     fetchGstRates();
   }, []);
 
-  // Check for edit mode and load product data.
-  //
-  // Keyed on the edit id alone. This also depended on `filterOptions`, which
-  // arrives from its own fetch after mount, so the effect ran a second time and
-  // re-fetched the product - discarding anything already typed into the form and
-  // making a duplicate request every time (F-102). It is also half of F-88: see
-  // the cascade note below.
+  // Edit mode: load once, keyed on the edit id alone (F-102).
   useEffect(() => {
     const editId = router.query.edit;
     if (editId && typeof editId === 'string') {
@@ -123,9 +111,8 @@ export default function ProductCreate() {
     }
   }, [router.query.edit]);
 
-  // Fetch racks when the warehouse changes. Fetch only: clearing the rack is
-  // done in handleInputChange, on the user's own change - a programmatic load
-  // for edit is not typing (F-88).
+  // Fetch racks for the warehouse. Clearing the rack happens on the user's own
+  // change in handleInputChange, never here (F-88).
   useEffect(() => {
     if (formData.warehouse) {
       fetchRacks(formData.warehouse);
@@ -134,15 +121,7 @@ export default function ProductCreate() {
     }
   }, [formData.warehouse]);
 
-  // Show the HSN that the product's own GST rate belongs to, once the rates
-  // have loaded.
-  //
-  // This ran the other way round - it derived gst_rate by matching the HSN
-  // string against gst_tax_rate.hsn_code. That is the resolution F-43 removed
-  // from the backend and F-76 removed from the load path, and leaving it here
-  // meant it could still win a race and re-derive a rate the record already
-  // knows. The record's gst_rate_id is the answer; HSN is the field displayed
-  // alongside it.
+  // Show the HSN of the product's own GST rate; the rate is never re-derived from HSN (F-76).
   useEffect(() => {
     if (isEditing && gstRates.length > 0 && formData.gst_rate && !formData.hsn) {
       const currentRate = gstRates.find(rate => rate.id.toString() === formData.gst_rate);
@@ -204,9 +183,7 @@ export default function ProductCreate() {
   const handleInputChange = (field: keyof ProductFormData, value: string) => {
     setFormData(prev => {
       const next = { ...prev, [field]: value };
-      // Clearing a dependent selection belongs here, on the user's own change,
-      // not in an effect that cannot tell a user's pick from a programmatic
-      // load and so wiped the value an edit had just loaded (F-88).
+      // Clear dependent selections on the user's change only (F-88).
       if (field === 'product_category' && value !== prev.product_category) {
         next.product_subcategory = '';
       }
@@ -245,11 +222,6 @@ export default function ProductCreate() {
     return stock * openingRate;
   };
 
-  // calculateSellingPrice() was here. Removed with the commented-out Selling
-  // Price panel that was its only caller (F-90). It also disagreed with the
-  // server: it computed MRP - discount + margin, while the API derives
-  // sale_price from the latest purchase rate (or opening_rate) + margin -
-  // discount. Two formulas for one number, one of them unreachable.
 
   const loadProductForEdit = async (productId: number) => {
     setEditLoading(true);
@@ -258,18 +230,7 @@ export default function ProductCreate() {
       if (response.ok) {
         const product = await response.json();
 
-        // The product's own gst_rate_id is the answer. Use it.
-        //
-        // This used to re-derive the rate by matching product.hsn against
-        // gst_tax_rate.hsn_code, and only bothered at all if hsn was set. hsn is
-        // NULL on every product in the database, so the lookup always failed,
-        // the field stayed empty, and saving then wrote gst_rate_id: null -
-        // editing a product silently stripped its tax rate (F-76).
-        //
-        // HSN driving GST is the right interaction for data ENTRY, and it still
-        // is (see handleInputChange). It is the wrong way to reload a value the
-        // record already holds.
-        // Remember what this form loaded, for the conflict check on save (F-83).
+        // The product's own gst_rate_id is the rate (F-76); remember updated_at (F-83).
         setLoadedUpdatedAt(product.updated_at ?? null);
 
         let gstRateId = product.gst_rate_id ? product.gst_rate_id.toString() : '';
@@ -329,10 +290,7 @@ export default function ProductCreate() {
     }
   };
 
-  // A PREVIEW of the name. The server builds the real one from the ids on every
-  // save (PQ-12, lib/product.ts buildProductName) with the same rule: id (once
-  // the product exists), every car model, category, subcategory, company, part
-  // number. The browser no longer sends a name at all.
+  // A preview only: the server builds the name from the ids on save (PQ-12).
   const generateProductDisplay = () => {
     const uid = isEditing && editingProductId ? editingProductId.toString() : '';
     const modelNames = formData.car_models
@@ -365,11 +323,7 @@ export default function ProductCreate() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // The real in-flight state, from the mutation hooks.
-  //
-  // This was a `loading` useState that nothing ever set, so the submit button's
-  // disabled attribute and its "Creating.../Updating..." label could never fire
-  // and the form's only double-submit guard did nothing (F-103).
+  // In-flight state from the mutations: the double-submit guard (F-103).
   const isSaving = createProduct.isPending || updateProduct.isPending;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -399,25 +353,19 @@ export default function ProductCreate() {
       part_no: formData.part_no || null,
       min_stock: formData.min_stock ? parseInt(formData.min_stock) : null,
       opening_stock: formData.opening_stock ? parseInt(formData.opening_stock) : null,
-      // `stock` is NOT sent. It used to be, set to opening_stock, so saving an
-      // edit restored every unit that had been sold (F-75). Stock is derived
-      // from purchases, sales and returns; the server owns it and ignores any
-      // stock a client sends. On create the server sets it from opening_stock.
+      // No stock: the server owns it (F-75).
       opening_rate: formData.opening_rate ? parseFloat(formData.opening_rate) : null,
       hsn: formData.hsn || null,
       warehouse_id: formData.warehouse ? parseInt(formData.warehouse) : null,
       gst_rate_id: formData.gst_rate ? parseInt(formData.gst_rate) : null,
       rack_id: formData.rack_id ? parseInt(formData.rack_id) : null,
-      // rack_number is not sent either - the server derives it from rack_id
-      // rather than trusting a string the browser looked up (F-84).
+      // No rack_number: derived from rack_id (F-84).
       descriptions: formData.descriptions || null,
       notes: formData.notes || null,
       mrp: formData.mrp ? parseFloat(formData.mrp) : null,
       discount: formData.discount ? parseFloat(formData.discount) : null,
       margin: formData.margin ? parseFloat(formData.margin) : null,
-      // The version this edit started from. The server refuses the write with a
-      // 409 if the stored row has moved on since (F-83). Only sent when editing,
-      // and only when a load actually happened.
+      // The version this edit started from; 409 if the row moved on (F-83).
       ...(isEditing && loadedUpdatedAt !== undefined ? { updated_at: loadedUpdatedAt } : {}),
       fileStates: {
         image: {
