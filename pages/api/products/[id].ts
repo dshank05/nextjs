@@ -4,80 +4,49 @@ import { validateProduct, findConflictingPartNo, buildProductData, partNoConflic
 import { parseProductForm, readProductData, uploadProductFile, deleteProductFile } from '../../../lib/product-files'
 import { ok, badRequest, notFound, conflict, fail, parseId, route } from '../../../lib/api/respond'
 import { withObservability } from '../../../lib/withObservability'
+import { latestPurchaseRates } from '../../../lib/product-query'
 
-/** The product with the names, rates and prices the view and edit pages show. */
-async function enhanceProduct(product: any) {
+/**
+ * The product with the names, rates and prices the view and edit pages show:
+ * one query with its relations, one for car model names, one for the latest
+ * purchase rate. This ran seven `findMany({ id: { in: [one id] } })` lookups
+ * and its own latest-rate query with a different tie-break (PQ-18, PQ-22).
+ */
+async function loadProductDetail(id: number) {
+  const product = await prisma.product.findUnique({
+    where: { id },
+    include: {
+      category_ref: { select: { category_name: true } },
+      subcategory_ref: { select: { subcategory_name: true } },
+      product_company_ref: { select: { company_name: true } },
+      warehouse: { select: { name: true, location: true } },
+      rack: { select: { rack_number: true } },
+      gst_rate: { select: { rate: true } }
+    }
+  });
   if (!product) return null;
 
-  const latestPurchaseData = await prisma.purchaseitems.findFirst({
-    where: { product_id: product.id, rate: { gt: 0 } },
-    select: { rate: true, invoice_date: true },
-    orderBy: { invoice_date: 'desc' }
-  });
-
-  const latestPurchaseRate = latestPurchaseData?.rate || 0;
-
-  const categoryIds = product.product_category_id ? [product.product_category_id] : [];
-  const subcategoryIds = product.product_subcategory_id ? [product.product_subcategory_id] : [];
-  const carModelIds = product.car_model_ids
-    ? product.car_model_ids.split(',').map((id: string) => parseInt(id.trim())).filter(id => !isNaN(id))
-    : [];
-  const companyIds = product.company_id ? [product.company_id] : [];
-  const warehouseIds = product.warehouse_id ? [product.warehouse_id] : [];
-  const rackIds = product.rack_id ? [product.rack_id] : [];
-  // Resolve the GST rate through the gst_rate_id foreign key, which is what
-  // the product form writes and what the list endpoint reads.
-  //
-  // This used to match product.hsn against gst_tax_rate.hsn_code instead - a
-  // second, string-based resolution of the same fact. The two disagreed by
-  // construction, and since hsn is NULL on all 602 products the detail endpoint
-  // reported every product at 0% tax while the list reported the real rate
-  // (F-43). One product, two answers, depending on which screen you arrived
-  // from.
-  const gstRateId = product.gst_rate_id ?? null;
-
-  const [
-    categoryRecords,
-    subcategoryRecords,
-    carModelRecords,
-    companyRecords,
-    warehouseRecords,
-    rackRecords,
-    gstRateRecord
-  ] = await Promise.all([
-    categoryIds.length ? prisma.product_category.findMany({ where: { id: { in: categoryIds } }, select: { id: true, category_name: true } }) : Promise.resolve([]),
-    subcategoryIds.length ? prisma.product_subcategory.findMany({ where: { id: { in: subcategoryIds } }, select: { id: true, subcategory_name: true } }) : Promise.resolve([]),
-    carModelIds.length ? prisma.car_models.findMany({ where: { id: { in: carModelIds } }, select: { id: true, model_name: true } }) : Promise.resolve([]),
-    companyIds.length ? prisma.product_company.findMany({ where: { id: { in: companyIds } }, select: { id: true, company_name: true } }) : Promise.resolve([]),
-    warehouseIds.length ? prisma.warehouse.findMany({ where: { id: { in: warehouseIds } }, select: { id: true, name: true, location: true } }) : Promise.resolve([]),
-    rackIds.length ? prisma.warehouse_racks.findMany({ where: { id: { in: rackIds } }, select: { id: true, rack_number: true } }) : Promise.resolve([]),
-    gstRateId ? prisma.gst_tax_rate.findUnique({ where: { id: gstRateId }, select: { id: true, rate: true, hsn_code: true } }) : Promise.resolve(null)
+  const modelIds = (product.car_model_ids || '').split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+  const [models, rates] = await Promise.all([
+    modelIds.length ? prisma.car_models.findMany({ where: { id: { in: modelIds } }, select: { id: true, model_name: true } }) : Promise.resolve([] as { id: number; model_name: string }[]),
+    latestPurchaseRates([id])
   ]);
-
-  const categoryMap = new Map(categoryRecords.map(c => [c.id, c.category_name]));
-  const subcategoryMap = new Map(subcategoryRecords.map(s => [s.id, s.subcategory_name]));
-  const carModelMap = new Map(carModelRecords.map(c => [c.id, c.model_name]));
-  const companyMap = new Map(companyRecords.map(c => [c.id.toString(), c.company_name]));
-  const warehouseMap = new Map(warehouseRecords.map(w => [w.id, { name: w.name, location: w.location }]));
-  const rackMap = new Map(rackRecords.map(r => [r.id, r.rack_number]));
-  // gstRateRecord is the single rate this product points at, or null.
-
-  const carModelNames = carModelIds.map(id => carModelMap.get(id)).filter(Boolean) as string[];
+  const modelName = new Map<number, string>(models.map((m) => [m.id, m.model_name] as [number, string]));
+  const latestPurchaseRate = rates.get(id)?.rate || product.latest_purchase_rate || 0;
+  const { category_ref, subcategory_ref, product_company_ref, warehouse, rack, gst_rate, ...row } = product;
 
   return {
-    ...product,
-    categoryName: product.product_category_id ? categoryMap.get(product.product_category_id) || '' : '',
-    subcategoryName: product.product_subcategory_id ? subcategoryMap.get(product.product_subcategory_id) || '' : '',
-    companyName: product.company_id ? companyMap.get(product.company_id.toString()) || '' : '',
-    warehouse: product.warehouse_id && warehouseMap.get(product.warehouse_id)
-      ? `${warehouseMap.get(product.warehouse_id)?.name} - ${warehouseMap.get(product.warehouse_id)?.location}`
-      : '',
-    rack_number: product.rack_id ? rackMap.get(product.rack_id) || product.rack_number || '' : product.rack_number || '',
-    carModelsDisplay: carModelNames.join(', '),
-    // One selling-price rule everywhere (PQ-39).
+    ...row,
+    categoryName: category_ref?.category_name || '',
+    subcategoryName: subcategory_ref?.subcategory_name || '',
+    companyName: product_company_ref?.company_name || '',
+    warehouse: warehouse ? `${warehouse.name} - ${warehouse.location}` : '',
+    rack_number: rack?.rack_number || product.rack_number || '',
+    carModelsDisplay: modelIds.map((m) => modelName.get(m)).filter(Boolean).join(', '),
     latestPurchaseRate,
+    // One selling-price rule everywhere (PQ-39).
     sale_price: sellingPrice({ latestPurchaseRate, opening_rate: product.opening_rate, margin: product.margin, discount: product.discount }),
-    gst_rate: gstRateRecord?.rate ?? 0,
+    gst_rate: gst_rate?.rate ?? 0,
     opening_rate: product.opening_rate || 0
   };
 }
@@ -93,9 +62,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   return route(req, res, {
     GET: async () => {
       try {
-        const product = await prisma.product.findUnique({ where: { id: productId } });
+        const product = await loadProductDetail(productId);
         if (!product) return notFound(res, 'Product not found');
-        return ok(res, await enhanceProduct(product));
+        return ok(res, product);
       } catch (error) {
         return fail(res, error, 'load the product');
       }
@@ -183,8 +152,7 @@ async function updateProduct(req: NextApiRequest, res: NextApiResponse, productI
     }
 
     await Promise.all(replaced.map(deleteProductFile));
-    const reloaded = await prisma.product.findUnique({ where: { id: productId } });
-    return ok(res, await enhanceProduct(reloaded));
+    return ok(res, await loadProductDetail(productId));
   } catch (error) {
     await discardUploads();
     return fail(res, error, 'update the product');

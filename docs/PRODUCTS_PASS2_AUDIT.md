@@ -447,3 +447,18 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
   forms import (Phase 4/5).
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 7 — rules · done (2026-09-30)
+
+- **PQ-45** `validateProduct`: numbers must be numbers (`"12abc"` and `"abc"` are refused
+  with a 400 instead of being read as 12 or stored as NULL); every referenced record —
+  warehouse, category, company, subcategory, GST rate, rack, **car models** (not checked
+  before) — is looked up in one parallel round instead of up to seven in a row; the rack
+  still falls back to the stored warehouse (F-99). `car_model_ids` is normalised on save.
+  `findConflictingPartNo` is one `findFirst` instead of two raw queries (G-01).
+- **PQ-18** the product detail is one query with its relations, one for car-model names and
+  the shared `latestPurchaseRates()` (PQ-22) — replacing seven single-id `findMany`s and a
+  third latest-rate query with its own tie-break.
+- PQ-12 and PQ-39 were done in Block 1.
+
+**Checks:** `tsc --noEmit` clean.
