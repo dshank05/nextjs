@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
-import { useDebounce } from '../../hooks/useDebounce';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ExportMenu } from '../../components/common/ExportMenu';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ClearableInput } from '../../components/common';
 import { validateFinancialYear } from '../../lib/financial-year-rules';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 
 interface FinancialYear {
   id: number;
@@ -22,14 +21,12 @@ interface FinancialYearResponse {
 
 export default function FinancialYear() {
   const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook (§7b).
+  const list = useListQuery({ defaultSort: 'fy', defaultOrder: 'desc' });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [financialYears, setFinancialYears] = useState<FinancialYear[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'fy');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'desc');
   const [showModal, setShowModal] = useState(false);
   // S-58: there is no `editingYear` any more. Nothing could set it - the table's
   // only action is "Set as Current" - and `handleConfirmSubmit` always POSTs, so
@@ -43,45 +40,23 @@ export default function FinancialYear() {
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-
-
-  const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortOrder('asc');
-    }
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on sorting
-  };
-
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
-
+  const query = list.params.toString();
   useEffect(() => {
     fetchFinancialYears();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchFinancialYears = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      });
-      const response = await fetch(`/api/financial-years?${params}`);
+      const response = await fetch(`/api/financial-years?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
         const data = await response.json();
+        if (!isCurrent()) return;
         setFinancialYears(data.financialYears || []);
-        setPagination(data.pagination);
+        list.setPagination(data.pagination);
         // Set current FY ID from the API response
         setCurrentFyId(data.currentFyId);
       } else {
@@ -92,7 +67,7 @@ export default function FinancialYear() {
       console.error('Error fetching financial years:', error);
       showSnackbar('error', 'Failed to load financial years');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
@@ -121,24 +96,6 @@ export default function FinancialYear() {
     } finally {
       setSettingCurrent(null);
     }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
   };
 
   const handleAdd = () => {
@@ -249,24 +206,13 @@ export default function FinancialYear() {
     setPendingData(null);
   };
 
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
-
   return (
     <div className="space-y-6">
 
-
-
       {/* S-59: the search card and the current-FY banner that used to sit here,
           commented out, are gone. The search machinery behind the card is still
-          live - searchTerm, the debounce, the fetch parameter and the page-reset
-          effect - so restoring the input is a one-line change if it is wanted.
+          live in useListQuery, so restoring the input is a one-line change
+          (bind it to list.search / list.setSearch) if it is wanted.
           The banner said nothing the Status column does not already show. */}
 
       <div className="card">
@@ -295,24 +241,21 @@ export default function FinancialYear() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {financialYears.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} financial years</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={financialYears.length} noun="financial years" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('fy')}>
-                      Financial Year {getSortIcon('fy')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('fy')}>
+                      Financial Year <SortIcon field="fy" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                      Status {getSortIcon('status')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
+                      Status <SortIcon field="status" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -336,7 +279,7 @@ export default function FinancialYear() {
                   ) : (
                     financialYears.map((year, index) => (
                       <tr key={year.id}>
-                        <td>{(pagination.page - 1) * pagination.limit + index + 1}</td>
+                        <td>{list.serialNumber(index)}</td>
                         <td>{year.id}</td>
                         <td className="font-medium text-white">{year.fy}</td>
                         <td>
@@ -364,17 +307,7 @@ export default function FinancialYear() {
               </table>
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -432,7 +365,6 @@ export default function FinancialYear() {
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
       />
-
 
     </div>
   );

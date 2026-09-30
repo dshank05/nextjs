@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
-import { useDebounce } from '../../hooks/useDebounce';
+import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isValidIfsc } from '../../lib/bank';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ExportMenu } from '../../components/common/ExportMenu';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 import { ClearableInput } from '../../components/common';
 
 interface BankAccount {
@@ -14,7 +13,6 @@ interface BankAccount {
   account_number: string;
   bank_address: string | null;
   ifsc: string | null;
-  index: number;
 }
 
 interface BankResponse {
@@ -25,78 +23,39 @@ interface BankResponse {
 export default function BankDetails() {
   const { showSnackbar } = useSnackbar();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'bank_name');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
+  // Search, sort, page and limit: the shared list hook (§7b).
+  const list = useListQuery({ defaultSort: 'bank_name' });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [showModal, setShowModal] = useState(false);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [formData, setFormData] = useState({ id: 0, bank_name: '', account_number: '', bank_address: '', ifsc: '' });
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const requestSeq = useRef(0);
-
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
 
   // S-40: skipping the fetch when one was in flight silently dropped the newer
-  // filter, with no retry. Requests may overlap; the newest answer wins.
+  // filter, with no retry. Requests may overlap; the newest answer wins
+  // (list.beginRequest).
+  const query = list.params.toString();
   useEffect(() => {
     fetchBankAccounts();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
-
-  useEffect(() => {
-    // Reset to page 1 when search term changes
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [debouncedSearchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchBankAccounts = async () => {
-    const seq = ++requestSeq.current;
+    const isCurrent = list.beginRequest();
     setLoading(true);
 
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        sortBy: sortBy,
-        sortOrder: sortOrder
-      });
-
-      const response = await fetch(`/api/bank-details?${params}`);
+      const response = await fetch(`/api/bank-details?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
-        const data = await response.json();
-        // Add index to each bank account for display
-        const bankAccountsWithIndex = data.bankAccounts.map((bankAccount: BankAccount, index: number) => ({
-          ...bankAccount,
-          index: (pagination.page - 1) * pagination.limit + index + 1
-        }));
-
-        if (seq !== requestSeq.current) return;
-        setBankAccounts(bankAccountsWithIndex);
-        setPagination(data.pagination);
+        const data: BankResponse = await response.json();
+        if (!isCurrent()) return;
+        setBankAccounts(data.bankAccounts);
+        list.setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load bank accounts');
       }
@@ -104,26 +63,8 @@ export default function BankDetails() {
       console.error('Error fetching bank accounts:', error);
       showSnackbar('error', 'Network error while loading bank accounts');
     } finally {
-      if (seq === requestSeq.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
   };
 
   const handleAdd = () => {
@@ -215,22 +156,11 @@ export default function BankDetails() {
               <ClearableInput
                 type="text"
                 placeholder="Search bank accounts..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -256,30 +186,27 @@ export default function BankDetails() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {bankAccounts.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} bank accounts</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={bankAccounts.length} noun="bank accounts" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_name')}>
-                      Account Name {getSortIcon('bank_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('bank_name')}>
+                      Account Name <SortIcon field="bank_name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('account_number')}>
-                      Account Number {getSortIcon('account_number')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('account_number')}>
+                      Account Number <SortIcon field="account_number" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('bank_address')}>
-                      Bank Name {getSortIcon('bank_address')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('bank_address')}>
+                      Bank Name <SortIcon field="bank_address" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('ifsc')}>
-                      IFSC {getSortIcon('ifsc')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('ifsc')}>
+                      IFSC <SortIcon field="ifsc" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -287,10 +214,8 @@ export default function BankDetails() {
                 <tbody>
                   {bankAccounts.map((account, index) => (
                     <tr key={account.id}>
-                      {/* fetchBankAccounts already computes this offset onto
-                          each row as `index`; rendering `index + 1` from the map
-                          threw that away and restarted at 1 on every page (S-14). */}
-                      <td>{account.index}</td>
+                      {/* S-14: offset by the page, not restarted at 1. */}
+                      <td>{list.serialNumber(index)}</td>
                       <td>{account.id}</td>
                       <td className="font-medium text-white">{account.bank_name}</td>
                       <td className="text-slate-300 font-mono">{account.account_number}</td>
@@ -305,17 +230,7 @@ export default function BankDetails() {
               </table>
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -393,7 +308,6 @@ export default function BankDetails() {
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelSubmit}
       />
-
 
     </div>
   );

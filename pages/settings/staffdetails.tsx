@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useDebounce } from '../../hooks/useDebounce';
+import { useListQuery } from '../../hooks/useListQuery';
 import { ExportMenu } from '../../components/common/ExportMenu';
-import { ListPagination } from '../../components/common/ListPagination';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 import { ClearableInput } from '../../components/common';
 
 interface Staff {
@@ -17,7 +15,6 @@ interface Staff {
   status: string;
   created_at: string;
   updated_at: string;
-  index: number;
 }
 
 export default function StaffDetails() {
@@ -37,13 +34,10 @@ export default function StaffDetails() {
     // status: 'Active' as 'Active' | 'Inactive'
   });
   const [saving, setSaving] = useState(false);
-  // Mirrored in the URL so search, sort and page survive a refresh and a
-  // return from an edit, and so a filtered list can be linked (F-49).
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'name');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '')
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  // Search, sort, page and limit - URL-mirrored, debounced, page reset on a new
+  // query - live in one hook shared by every settings list (§7b).
+  const list = useListQuery({ defaultSort: 'name', fixedParams: { includeInactive: 'true' } });
+  const { pagination } = list;
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
@@ -57,39 +51,23 @@ export default function StaffDetails() {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-
-
-  // S-16: there were two of these, and the first was entirely covered by the
-  // second.
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
-
+  const query = list.params.toString();
   useEffect(() => {
     fetchStaff();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchStaff = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      });
-      const response = await fetch(`/api/staff?includeInactive=true&${params}`);
+      const response = await fetch(`/api/staff?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
         const data = await response.json();
-        const staffWithIndex = data.staff.map((member: Staff, index: number) => ({
-          ...member,
-          index: (pagination.page - 1) * pagination.limit + index + 1
-        }));
-        setStaff(staffWithIndex);
-        setPagination(data.pagination);
+        if (!isCurrent()) return;
+        setStaff(data.staff);
+        list.setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load staff members');
       }
@@ -97,32 +75,11 @@ export default function StaffDetails() {
       console.error('Error fetching staff:', error);
       showSnackbar('error', 'Network error while loading staff');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page on sorting
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
 
   const handleAdd = () => {
     setEditingStaff(null);
@@ -281,22 +238,11 @@ export default function StaffDetails() {
               <ClearableInput
                 type="text"
                 placeholder="Search staff..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -329,29 +275,24 @@ export default function StaffDetails() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>
-                Showing {staff.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} staff members
-              </div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={staff.length} noun="staff members" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
-                      Name {getSortIcon('name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('name')}>
+                      Name <SortIcon field="name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
-                      Phone {getSortIcon('phone')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('phone')}>
+                      Phone <SortIcon field="phone" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('email')}>
-                      Email {getSortIcon('email')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('email')}>
+                      Email <SortIcon field="email" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                      Status {getSortIcon('status')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
+                      Status <SortIcon field="status" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -364,9 +305,9 @@ export default function StaffDetails() {
                       </td>
                     </tr>
                   ) : (
-                    staff.map((member) => (
+                    staff.map((member, i) => (
                       <tr key={member.id}>
-                        <td>{member.index}</td>
+                        <td>{list.serialNumber(i)}</td>
                         <td className="font-medium text-white">{member.name}</td>
                         <td className="text-slate-300">{member.phone}</td>
                         <td className="text-slate-300">{member.email || '-'}</td>
@@ -398,20 +339,13 @@ export default function StaffDetails() {
                   )}
                 </tbody>
               </table>
-
-              {staff.length === 0 && !loading && (
-                <div className="text-center py-8 text-slate-400">No staff members found.</div>
-              )}
             </div>
 
             {/* S-56: this page used a bare Previous / Next control while the
                 other seven used a numbered one - and the two families disagreed
                 about when a list ends, this one on `!hasMore` and the others on
                 `page === totalPages`. One component, one rule. */}
-            <ListPagination
-              pagination={pagination}
-              onPageChange={(next) => setPagination(prev => ({ ...prev, page: next }))}
-            />
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -529,7 +463,6 @@ export default function StaffDetails() {
         onConfirm={confirmSave}
         onCancel={cancelSave}
       />
-
 
     </div>
   );

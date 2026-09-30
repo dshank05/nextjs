@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useUrlState } from './useUrlState'
 import { useDebounce } from './useDebounce'
 
@@ -21,6 +21,18 @@ import { useDebounce } from './useDebounce'
  *
  * Search, sort and limit all reset the page, because a result on page 3 of the
  * old query is meaningless in the new one.
+ *
+ * The reset is DERIVED, not an effect. The first version set page 1 in an
+ * effect after the debounced term changed - so the render in between built a
+ * query string with the new term and the old page, the page fetched it, then
+ * fetched again for page 1, and whichever response arrived last won. Now the
+ * page is stored together with the query it belongs to, and a page recorded
+ * against a different query reads as 1. There is never a render with the old
+ * page and the new query.
+ *
+ * `beginRequest()` covers the remaining race: a slow response for an old query
+ * arriving after a fast one for the new. Each page calls it before fetching and
+ * drops the response if `isCurrent()` is false by the time it lands.
  */
 
 export interface PaginationState {
@@ -56,8 +68,7 @@ export function useListQuery(opts: UseListQueryOptions) {
   const [sortBy, setSortBy] = useUrlState<string>('sortBy', defaultSort)
   const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', defaultOrder)
 
-  const [page, setPage] = useState(1)
-  const [limit, setLimitRaw] = useState(defaultLimit)
+  const [limit, setLimit] = useState(defaultLimit)
   const [pagination, setPagination] = useState<PaginationState>({
     page: 1,
     limit: defaultLimit,
@@ -68,17 +79,16 @@ export function useListQuery(opts: UseListQueryOptions) {
 
   const debouncedSearch = useDebounce(search, debounceMs)
 
-  // One effect, not the two-that-overlap several pages carried (S-16).
-  useEffect(() => {
-    setPage(1)
-  }, [debouncedSearch, sortBy, sortOrder])
+  // Everything that, when it changes, makes the current page number meaningless.
+  const queryKey = `${debouncedSearch.trim()}\u0000${sortBy}\u0000${sortOrder}\u0000${limit}`
+  const [pageState, setPageState] = useState({ page: 1, key: queryKey })
+  const page = pageState.key === queryKey ? pageState.page : 1
+  const setPage = useCallback(
+    (next: number) => setPageState({ page: next, key: queryKey }),
+    [queryKey]
+  )
 
   const setSearch = useCallback((next: string) => setSearchRaw(next), [setSearchRaw])
-
-  const setLimit = useCallback((next: number) => {
-    setLimitRaw(next)
-    setPage(1)
-  }, [])
 
   const toggleSort = useCallback(
     (field: string) => {
@@ -88,7 +98,7 @@ export function useListQuery(opts: UseListQueryOptions) {
         setSortBy(field)
         setSortOrder('asc')
       }
-      setPage(1)
+      // No explicit reset: the sort is part of queryKey, so page reads as 1.
     },
     [sortBy, sortOrder, setSortBy, setSortOrder]
   )
@@ -97,8 +107,15 @@ export function useListQuery(opts: UseListQueryOptions) {
     (next: number) => {
       if (next > 0 && next <= Math.max(1, pagination.totalPages)) setPage(next)
     },
-    [pagination.totalPages]
+    [pagination.totalPages, setPage]
   )
+
+  // Stale-response guard (see the header).
+  const requestSeq = useRef(0)
+  const beginRequest = useCallback(() => {
+    const id = ++requestSeq.current
+    return () => id === requestSeq.current
+  }, [])
 
   /**
    * The query string. Built from the DEBOUNCED search term — that is the whole
@@ -146,5 +163,6 @@ export function useListQuery(opts: UseListQueryOptions) {
     pagination,
     setPagination,
     serialNumber,
+    beginRequest,
   }
 }

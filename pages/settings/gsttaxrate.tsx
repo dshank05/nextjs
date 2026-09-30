@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
-import { useDebounce } from '../../hooks/useDebounce';
 import { ExportMenu } from '../../components/common/ExportMenu';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ClearableInput, ClearableTextarea } from '../../components/common';
 
 interface GSTTaxRate {
@@ -14,7 +13,6 @@ interface GSTTaxRate {
   hsn_code: string;
   applicable_for: string;
   status: string;
-  index: number;
 }
 
 interface GSTTaxRateResponse {
@@ -24,14 +22,12 @@ interface GSTTaxRateResponse {
 
 export default function GSTTaxRate() {
   const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook (§7b).
+  const list = useListQuery({ defaultSort: 'description', fixedParams: { includeInactive: 'true' } });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [gstRates, setGstRates] = useState<GSTTaxRate[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'description');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
   const [showModal, setShowModal] = useState(false);
   const [editingRate, setEditingRate] = useState<GSTTaxRate | null>(null);
   const [formData, setFormData] = useState({ id: 0, description: '', rate: '', hsn_code: '', applicable_for: '', status: 'Active' as 'Active' | 'Inactive' });
@@ -50,60 +46,23 @@ export default function GSTTaxRate() {
   const [changingLoading, setChangingLoading] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
-
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
-
+  const query = list.params.toString();
   useEffect(() => {
     fetchGSTRates();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchGSTRates = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        includeInactive: 'true',
-        sortBy: sortBy,
-        sortOrder: sortOrder
-      });
-
-      const response = await fetch(`/api/gst-rates?${params}`);
+      const response = await fetch(`/api/gst-rates?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
-        const data = await response.json();
-        // Add index to each GST rate for display
-        const gstRatesWithIndex = data.gstRates.map((rate: GSTTaxRate, index: number) => ({
-          ...rate,
-          index: (pagination.page - 1) * pagination.limit + index + 1
-        }));
-
-        setGstRates(gstRatesWithIndex);
-        setPagination(data.pagination);
+        const data: GSTTaxRateResponse = await response.json();
+        if (!isCurrent()) return;
+        setGstRates(data.gstRates);
+        list.setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load GST rates');
       }
@@ -111,26 +70,8 @@ export default function GSTTaxRate() {
       console.error('Error fetching GST rates:', error);
       showSnackbar('error', 'Network error while loading GST rates');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
   };
 
   const handleAdd = () => {
@@ -275,8 +216,6 @@ export default function GSTTaxRate() {
     setAbortController(null);
   };
 
-
-
   return (
     <div className="space-y-6">
 
@@ -288,22 +227,11 @@ export default function GSTTaxRate() {
               <ClearableInput
                 type="text"
                 placeholder="Search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -337,38 +265,35 @@ export default function GSTTaxRate() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {gstRates.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} GST rates</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={gstRates.length} noun="GST rates" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('hsn_code')}>
-                      HSN Code {getSortIcon('hsn_code')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('hsn_code')}>
+                      HSN Code <SortIcon field="hsn_code" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
-                      Rate (%) {getSortIcon('rate')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('rate')}>
+                      Rate (%) <SortIcon field="rate" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('applicable_for')}>
-                      Description {getSortIcon('applicable_for')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('applicable_for')}>
+                      Description <SortIcon field="applicable_for" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                      Status {getSortIcon('status')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
+                      Status <SortIcon field="status" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {gstRates.map((rate) => (
+                  {gstRates.map((rate, i) => (
                     <tr key={rate.id}>
-                      <td>{rate.index}</td>
+                      <td>{list.serialNumber(i)}</td>
                       <td>{rate.id}</td>
                       <td className="text-slate-300 font-mono">{rate.hsn_code}</td>
                       <td>
@@ -401,17 +326,7 @@ export default function GSTTaxRate() {
               </table>
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -512,7 +427,6 @@ export default function GSTTaxRate() {
         onConfirm={confirmStatusChange}
         onCancel={cancelStatusChange}
       />
-
 
     </div>
   );

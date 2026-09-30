@@ -1,12 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
-import { useDebounce } from '../../hooks/useDebounce';
+import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ExportMenu } from '../../components/common/ExportMenu';
 import { ClearableInput } from '../../components/common';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 
 interface WarehouseRack {
   id: number;
@@ -16,7 +15,6 @@ interface WarehouseRack {
   status: string;
   created_at: string;
   updated_at: string;
-  index?: number; // Added for display purposes
 }
 
 interface WarehouseRackResponse {
@@ -33,13 +31,13 @@ interface Warehouse {
 
 export default function WarehouseRacks() {
   const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook (§7b).
+  const list = useListQuery({ defaultSort: 'rack_number', fixedParams: { includeInactive: 'true' } });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [racks, setRacks] = useState<WarehouseRack[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
   const [showModal, setShowModal] = useState(false);
   const [editingRack, setEditingRack] = useState<WarehouseRack | null>(null);
   const [formData, setFormData] = useState({ id: '', warehouse_id: '', rack_number: '', description: '' });
@@ -49,13 +47,6 @@ export default function WarehouseRacks() {
   const [showToggleConfirmModal, setShowToggleConfirmModal] = useState(false);
   const [toggleConfirmLoading, setToggleConfirmLoading] = useState(false);
   const [selectedRack, setSelectedRack] = useState<WarehouseRack | null>(null);
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'rack_number');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
-  const requestSeq = useRef(0);
-
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-
 
   useEffect(() => {
     fetchWarehouses();
@@ -65,36 +56,14 @@ export default function WarehouseRacks() {
   // and fetchRacks returned early for the same reason - so a filter change
   // during a request was silently DROPPED, with no retry, leaving the list
   // showing results for the previous query. Requests are allowed to overlap; a
-  // sequence number keeps the newest answer.
+  // sequence guard (list.beginRequest) keeps the newest answer.
   // No longer gated on the warehouse list: the rack list is its own query now,
   // and the warehouses are only needed to populate the form's picker.
+  const query = list.params.toString();
   useEffect(() => {
     fetchRacks();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
-
-  useEffect(() => {
-    // Reset to page 1 when search term changes
-    setPagination(prev => ({ ...prev, page: 1 }));
-  }, [debouncedSearchTerm]);
-
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchWarehouses = async () => {
     try {
@@ -119,20 +88,12 @@ export default function WarehouseRacks() {
    * the 50th warehouse was invisible (S-38). /api/racks does all of it.
    */
   const fetchRacks = async () => {
-    const seq = ++requestSeq.current;
+    const isCurrent = list.beginRequest();
     setLoading(true);
 
     try {
-      const params = new URLSearchParams({
-        page: String(pagination.page),
-        limit: String(pagination.limit),
-        search: debouncedSearchTerm.trim(),
-        sortBy,
-        sortOrder,
-        includeInactive: 'true',
-      });
-
-      const response = await fetch(`/api/racks?${params}`);
+      const response = await fetch(`/api/racks?${query}`);
+      if (!isCurrent()) return;
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.message || `Request failed (${response.status})`);
@@ -141,39 +102,15 @@ export default function WarehouseRacks() {
       const data = await response.json();
 
       // Ignore an answer a newer request has already superseded (S-40).
-      if (seq !== requestSeq.current) return;
-
-      const rows = (data.data || data.racks || []).map((rack: any, index: number) => ({
-        ...rack,
-        index: (pagination.page - 1) * pagination.limit + index + 1,
-      }));
-
-      setRacks(rows);
-      setPagination(data.pagination);
+      if (!isCurrent()) return;
+      setRacks(data.data || data.racks || []);
+      list.setPagination(data.pagination);
     } catch (error) {
       console.error('Error fetching warehouse racks:', error);
-      if (seq === requestSeq.current) showSnackbar('error', 'Could not load warehouse racks');
+      if (isCurrent()) showSnackbar('error', 'Could not load warehouse racks');
     } finally {
-      if (seq === requestSeq.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
   };
 
   const handleAdd = () => {
@@ -327,22 +264,11 @@ export default function WarehouseRacks() {
               <ClearableInput
                 type="text"
                 placeholder="Search racks..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -368,32 +294,29 @@ export default function WarehouseRacks() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {racks.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} warehouse racks</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={racks.length} noun="warehouse racks" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
                     {/* S-65: this sorted by warehouse_id while displaying the
                         name, so the order had nothing to do with the column. */}
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('warehouse_name')}>
-                      Warehouse {getSortIcon('warehouse_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('warehouse_name')}>
+                      Warehouse <SortIcon field="warehouse_name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rack_number')}>
-                      Rack Number {getSortIcon('rack_number')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('rack_number')}>
+                      Rack Number <SortIcon field="rack_number" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('description')}>
-                      Description {getSortIcon('description')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('description')}>
+                      Description <SortIcon field="description" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                      Status {getSortIcon('status')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
+                      Status <SortIcon field="status" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -410,7 +333,7 @@ export default function WarehouseRacks() {
                       </td>
                     </tr>
                   ) : (
-                    racks.map((rack: any) => {
+                    racks.map((rack: any, i: number) => {
                       // S-64: the warehouse name is attached to every row by
                       // fetchRacks. This used to ignore it and re-derive the name
                       // from the `warehouses` list instead - while the EXPORT used
@@ -422,7 +345,7 @@ export default function WarehouseRacks() {
                         : 'Unknown Warehouse';
                       return (
                         <tr key={rack.id}>
-                          <td>{rack.index}</td>
+                          <td>{list.serialNumber(i)}</td>
                           <td>{rack.id}</td>
                           <td className="font-medium text-white">
                             {warehouseLabel}
@@ -456,17 +379,7 @@ export default function WarehouseRacks() {
               </table>
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -543,7 +456,6 @@ export default function WarehouseRacks() {
         onConfirm={handleConfirmToggle}
         onCancel={handleCancelToggle}
       />
-
 
     </div>
   );

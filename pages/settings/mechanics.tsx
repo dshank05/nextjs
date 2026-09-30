@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isTenDigitPhone } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import { useDebounce } from '../../hooks/useDebounce';
+import { useListQuery } from '../../hooks/useListQuery';
 import { ExportMenu } from '../../components/common/ExportMenu';
-import { ListPagination } from '../../components/common/ListPagination';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 import { ClearableInput } from '../../components/common';
 
 interface Mechanic {
@@ -17,7 +15,6 @@ interface Mechanic {
   status: string;
   created_at: string;
   updated_at: string;
-  index: number;
 }
 
 export default function MechanicDetails() {
@@ -36,11 +33,9 @@ export default function MechanicDetails() {
     city: ''
   });
   const [saving, setSaving] = useState(false);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'name');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '')
+  // Search, sort, page and limit: the shared list hook (§7b). See staffdetails.
+  const list = useListQuery({ defaultSort: 'name', fixedParams: { includeInactive: 'true' } });
+  const { pagination } = list;
 
   // Confirmation modal states
   const [showStatusChangeModal, setShowStatusChangeModal] = useState(false);
@@ -53,46 +48,27 @@ export default function MechanicDetails() {
   const [changingLoading, setChangingLoading] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
-
-
-
-
+  const query = list.params.toString();
   useEffect(() => {
     fetchMechanics();
-  }, [sortBy, sortOrder, pagination.page, pagination.limit, debouncedSearchTerm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
 
   const fetchMechanics = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      // S-42/S-44: this was hand-concatenated with only `search` encoded, so
-      // sortBy and sortOrder went in raw; and the term was not trimmed, unlike
-      // its twin in staffdetails. URLSearchParams encodes everything.
-      const params = new URLSearchParams({
-        includeInactive: 'true',
-        sortBy,
-        sortOrder,
-        page: String(pagination.page),
-        limit: String(pagination.limit),
-        search: debouncedSearchTerm.trim(),
-      });
-      const response = await fetch(`/api/mechanics?${params}`);
+      // S-42/S-44: the query string is built by the hook, fully encoded.
+      const response = await fetch(`/api/mechanics?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
         const data = await response.json();
-        const mechanicsWithIndex = data.mechanics.map((mechanic: Mechanic, index: number) => ({
-          ...mechanic,
-          index: (pagination.page - 1) * pagination.limit + index + 1
-        }));
-        setMechanics(mechanicsWithIndex);
-        // S-45: the twin in staffdetails replaces the object; merging here left
-        // stale keys alive if the server ever stopped sending one.
-        setPagination(data.pagination);
+        if (!isCurrent()) return;
+        setMechanics(data.mechanics);
+        // S-45: replace, never merge.
+        list.setPagination(data.pagination);
       } else {
         showSnackbar('error', 'Failed to load mechanics');
       }
@@ -100,27 +76,8 @@ export default function MechanicDetails() {
       console.error('Error fetching mechanics:', error);
       showSnackbar('error', 'Network error while loading mechanics');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  };
-
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
   };
 
   const handleAdd = () => {
@@ -198,10 +155,6 @@ export default function MechanicDetails() {
     setShowSaveModal(false);
   };
 
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
   const handleStatusChange = (mechanicId: number, mechanicName: string, currentStatus: 'Active' | 'Inactive') => {
     const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
     const actionText = newStatus === 'Active' ? 'activate' : 'deactivate';
@@ -269,8 +222,6 @@ export default function MechanicDetails() {
 
     <div>
 
-
-
       <div className="card">
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
@@ -279,22 +230,11 @@ export default function MechanicDetails() {
               <ClearableInput
                 type="text"
                 placeholder="Search mechanics..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <ExportMenu
@@ -327,29 +267,24 @@ export default function MechanicDetails() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>
-                Showing {mechanics.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} mechanics
-              </div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={mechanics.length} noun="mechanics" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('name')}>
-                      Name {getSortIcon('name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('name')}>
+                      Name <SortIcon field="name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('phone')}>
-                      Phone {getSortIcon('phone')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('phone')}>
+                      Phone <SortIcon field="phone" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('city')}>
-                      City {getSortIcon('city')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('city')}>
+                      City <SortIcon field="city" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('status')}>
-                      Status {getSortIcon('status')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
+                      Status <SortIcon field="status" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -362,9 +297,9 @@ export default function MechanicDetails() {
                       </td>
                     </tr>
                   ) : (
-                    mechanics.map((mechanic) => (
+                    mechanics.map((mechanic, i) => (
                       <tr key={mechanic.id}>
-                        <td>{mechanic.index}</td>
+                        <td>{list.serialNumber(i)}</td>
                         <td className="font-medium text-white">{mechanic.name}</td>
                         <td className="text-slate-300">{mechanic.phone}</td>
                         <td className="text-slate-300">{mechanic.city || '-'}</td>
@@ -395,20 +330,13 @@ export default function MechanicDetails() {
                   )}
                 </tbody>
               </table>
-
-              {mechanics.length === 0 && !loading && (
-                <div className="text-center py-8 text-slate-400">No mechanics found.</div>
-              )}
             </div>
 
             {/* S-56: this page used a bare Previous / Next control while the
                 other seven used a numbered one - and the two families disagreed
                 about when a list ends, this one on `!hasMore` and the others on
                 `page === totalPages`. One component, one rule. */}
-            <ListPagination
-              pagination={pagination}
-              onPageChange={(next) => setPagination(prev => ({ ...prev, page: next }))}
-            />
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -526,7 +454,6 @@ export default function MechanicDetails() {
         onConfirm={confirmSave}
         onCancel={cancelSave}
       />
-
 
     </div>
   );

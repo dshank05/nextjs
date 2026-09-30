@@ -1,5 +1,10 @@
 # Dashboard & Settings Audit
 
+> **Status: COMPLETE (2026-09-29).** Every finding is fixed, by design, invalid, or an owner
+> decision with its migration written down (S-57, S-70). The §7b list-page refactor landed
+> in Block 8. Build clean; list behaviour verified against a mocked API. Only a click-through
+> against the real database remains, and it is a check, not open work.
+
 Third audit document, alongside `AUDIT_PLAN.md` (phase plan, master register, statutory
 reference) and `JOURNEY_AUDIT.md` (the product journey, phases 3-6). This one covers the
 **dashboard** and the **eleven settings pages**, end to end: front end, API, Prisma usage,
@@ -355,7 +360,7 @@ answer.
 
 | ID | Sev | Finding | Evidence | Status |
 |---|---|---|---|---|
-| S-56 | Medium | **Two pagination components, and two different end-of-list rules.** `staff`/`mechanics` disable Next on `!pagination.hasMore`; the other seven disable on `page === totalPages`. Whichever is right, they cannot both be | `staffdetails.tsx:397-403`, `mechanics.tsx:382-388` vs e.g. `bankdetails.tsx:307-317` | **fixed** — `staff` and `mechanics` use `<ListPagination>`, so all nine pages share one control and one end-of-list rule |
+| S-56 | Medium | **Two pagination components, and two different end-of-list rules.** `staff`/`mechanics` disable Next on `!pagination.hasMore`; the other seven disable on `page === totalPages`. Whichever is right, they cannot both be | `staffdetails.tsx:397-403`, `mechanics.tsx:382-388` vs e.g. `bankdetails.tsx:307-317` | **fixed (Block 8)** — Block 7 marked this fixed when only `staff` and `mechanics` had moved; the other seven still carried their own numbered control. Block 8 moved them, so all ten list pages now share one control and one end-of-list rule |
 | S-57 | **High** | **Column names and UI labels are swapped, in two places.** In `gst_tax_rate` the form labels `description` as **"Applicable"** and `applicable_for` as **"Description"**, and the table and export both render `applicable_for` under "Description". In `bank_details`, `bank_name` is labelled "Account Name" and `bank_address` is labelled "Bank Name". The screens are internally consistent, so nothing looks wrong — but anyone writing a query, report or export against `gst_tax_rate.description` or `bank_details.bank_address` gets the opposite field | `gsttaxrate.tsx:429,461,372,315`; `bankdetails.tsx:242,244,275,281` | **owner decision** — the fix is a migration that swaps the contents of `gst_tax_rate.description` / `applicable_for` and renames `bank_details.bank_address`, plus every consumer. Not done unilaterally: it rewrites real business data, and the screens are internally consistent today, so nothing is visibly broken while it waits. The trap is for whoever queries those columns directly |
 | S-58 | Medium | **`financialyear`'s entire Edit path is unreachable.** There is no Edit button — the table's only action is "Set as Current" (`:428-438`). So `handleEdit` (`:146-167`), the `editingYear` state, the "Edit Financial Year" title and the read-only ID field are dead. `handleConfirmSubmit` only ever POSTs, so even if Edit were wired it would attempt a create | `financialyear.tsx:146,255-265,428-438,464-476` | **fixed** — the unreachable edit path is gone: no `editingYear`, no `handleEdit`, no ID field, and the modal only adds. Restoring FY editing is an owner decision and needs an API operation that does not exist |
 | S-59 | Low | **`financialyear` has a fully-wired search with no search box.** The filter card is commented out (`:312-342`) while `searchTerm`, `useUrlState`, `useDebounce`, the fetch parameter and two page-reset effects are all live. The current-FY banner is also commented out (`:344-353`) while `currentFy` is computed at `:305` and never read | `financialyear.tsx:305,312-353` | **fixed** — the commented-out search card and banner removed, and the computed `currentFy` that nothing rendered |
@@ -759,9 +764,11 @@ through the relation rather than by the foreign key the column does not show.
 **Shared rules, not copies.** `lib/financial-year-rules.ts` holds the April-1 / March-31 /
 one-year rule that was written out in full in both the page and the handler, each with its
 own date parser (S-74). `isTenDigitPhone` is now the only "ten digits" in the codebase
-(S-51, S-78). All four phone inputs strip non-digits as they are typed (S-67). All nine
-lists use `<ListPagination>`, so the two controls that disagreed about when a list ends are
-one (S-56).
+(S-51, S-78). All four phone inputs strip non-digits as they are typed (S-67).
+~~All nine lists use `<ListPagination>`, so the two controls that disagreed about when a list
+ends are one (S-56).~~ **Wrong when written:** only `staffdetails` and `mechanics` used it;
+the other seven still had their own control and no page used `useListQuery`. Corrected and
+done in Block 8.
 
 **Export (S-06, S-08, S-89).** A column can carry a `format` function, which wins over the
 seventeen-case domain switch — the switch stays, marked legacy, because the sale, purchase
@@ -812,3 +819,59 @@ builds and the harness asked that it not be restarted unattended while memory is
 Worth exercising when it is back: the four new routes, `return-reasons` paging, a states
 delete refused by a document snapshot, the Users deactivate button, and an export with
 `fetchAll` against a table larger than one page.
+
+### Block 8 — the list pages onto the shared hook · done (2026-09-29)
+
+Block 5 built `useListQuery` and `<ListPagination>` and deliberately did not adopt them;
+Block 7 then claimed every list used `<ListPagination>`. Checked against the code, that was
+not true: **no page used `useListQuery`, and only `staffdetails` and `mechanics` used
+`<ListPagination>`**. The other seven each still carried their own `handleSort`,
+`getSortIcon`, `handlePageChange`, `handleLimitChange`, `getPageNumbers`, page-reset effect
+and numbered control. This block is the §7b refactor Block 5 left as "the remaining
+refactor".
+
+**All ten list pages now use the hook and the shared controls:** `staffdetails`,
+`mechanics`, `bankdetails`, `gsttaxrate`, `states`, `users`, `warehouse`,
+`inactive-products`, `financialyear`, `warehouse-racks`. (`businessdetails` is a single
+form, not a list.) Each page now keeps only its own fetch: it reads `list.params`, reports
+back with `list.setPagination`, numbers rows with `list.serialNumber(i)`, and renders
+`<ListSummary>`, `<SortIcon>`, `<PageSizeSelect>` and `<ListPagination>`. Fixed parameters
+(`includeInactive=true`, `isActive=false`) are declared once via `fixedParams`.
+Net: **-1,126 / +352 lines** across the ten pages and the hook.
+
+**The hook had its own version of the bug it was written to prevent**, fixed before any page
+depended on it. It reset the page in an *effect* after the debounced term changed, so one
+render built a query with the new term and the old page: the page fetched page 3 of the new
+search, then page 1, and whichever answer landed last won. The page is now stored with the
+query it belongs to (`queryKey` = search + sort + order + limit), and a page recorded
+against another query reads as 1 — there is never a render with the old page and the new
+query. `toggleSort` and `setLimit` no longer need to reset anything.
+
+**Stale-response guard in one place.** `bankdetails` and `warehouse-racks` had their own
+`requestSeq` counters (S-40) and the other eight had none. `list.beginRequest()` returns an
+`isCurrent()` check that every page now applies before touching state, so a slow answer to an
+old query can no longer overwrite a newer one on any list.
+
+**Row indexes are no longer written into the data.** Five pages copied every row to add an
+`index` field computed from the page number at fetch time; `serialNumber(i)` derives it at
+render time instead, and the `index` fields are gone from the row types.
+
+**Also removed:** the duplicate "No staff members found" / "No mechanics found" line that
+rendered below an empty table *and* inside it.
+
+**Checks:** `tsc --noEmit` clean. `next build` clean, no warnings (all eleven settings
+routes emitted), run from a Linux copy of the project with its own `node_modules`.
+**Behaviour, against a mocked API:** each of the ten pages was mounted in jsdom inside
+`SnackbarProvider`, with `fetch` answering any list URL with 230 rows, and driven through
+the UI - 88 checks, all passing: initial load is exactly one request for page 1; the
+numbered control renders and page 3 requests page 3 with serials starting at 101; searching
+from page 3 sends **exactly one** request, for page 1 with the new term, and serials restart
+at 1; sorting from page 2 sends one request for page 1 and shows the arrow; items-per-page
+10 sends one request for page 1 with `limit=10`. Fixed params reach the server
+(`includeInactive=true`, `isActive=false`). (`financialyear` has no search input and no
+page-size select, by S-59.)
+
+**Not yet verified against the real database** - the VM has no route to Hostinger. On the
+laptop, `npm run dev` and on each list page — type a search from page 2+ (lands on page 1, one
+request in the network tab), sort a column (page 1, arrow shows), change items per page,
+page forward (serial numbers continue), and refresh (search and sort survive in the URL).

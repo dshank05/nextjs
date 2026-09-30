@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useUrlState } from '../../hooks/useUrlState';
-import { useDebounce } from '../../hooks/useDebounce';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ClearableInput, ExportMenu } from '../../components/common';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 
 interface Product {
   id: number;
@@ -31,109 +30,47 @@ interface ProductsResponse {
 
 export default function InactiveProducts() {
   const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook (§7b).
+  // S-34: ask the database for inactive products. This used to request
+  // `includeInactive=true` - which returns BOTH - and then filter the page in
+  // the browser, so page one was almost entirely active rows and the screen
+  // looked empty however many inactive products there were.
+  const list = useListQuery({ defaultSort: 'product_name', fixedParams: { isActive: 'false' } });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [products, setProducts] = useState<Product[]>([]);
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 50,
-    total: 0,
-    totalPages: 1,
-    hasMore: false
-  });
   const [loading, setLoading] = useState(true);
-  // Mirrored in the URL so search and sort survive a refresh and a return
-  // from an edit, and so a filtered list can be linked (F-49).
-  const [searchTerm, setSearchTerm] = useUrlState<string>('search', '');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [sortBy, setSortBy] = useUrlState<string>('sortBy', 'product_name');
-  const [sortOrder, setSortOrder] = useUrlState<'asc' | 'desc'>('sortOrder', 'asc');
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
-
+  const query = list.params.toString();
   useEffect(() => {
     fetchInactiveProducts();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
-
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(field);
-      setSortOrder('asc');
-    }
-      setPagination(prev => ({ ...prev, page: 1 })); // a result on page 3 of the old order means nothing in the new one (S-13)
-  };
-
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchInactiveProducts = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        // The debounced term, not the raw one (S-12).
-        search: debouncedSearchTerm.trim(),
-        // S-34: ask the database for inactive products. This used to request
-        // `includeInactive=true` - which returns BOTH - and then filter the page
-        // in the browser. With 601 of 602 products active and the list ordered
-        // by id descending, page one was almost entirely active rows, so the
-        // screen looked empty however many inactive products there were. The
-        // pagination was then recomputed from the filtered count, which made it
-        // meaningless as well.
-        isActive: 'false',
-        sortBy: sortBy,
-        sortOrder: sortOrder
-      });
-
-      const response = await fetch(`/api/products?${params}`);
+      const response = await fetch(`/api/products?${query}`);
+      if (!isCurrent()) return;
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data: ProductsResponse = await response.json();
-
+      if (!isCurrent()) return;
       setProducts(data.products);
-      setPagination(data.pagination);
+      list.setPagination(data.pagination);
 
     } catch (error) {
       console.error('Error fetching inactive products:', error);
       showSnackbar('error', 'Could not load inactive products');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  };
-
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
-
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
-
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
   };
 
   const handleReactivate = (product: Product) => {
@@ -193,15 +130,15 @@ export default function InactiveProducts() {
               <ClearableInput
                 type="text"
                 placeholder="Search products..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
             <div className="w-40">
               <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
               <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
+                value={list.limit}
+                onChange={(e) => list.setLimit(parseInt(e.target.value, 10))}
                 className="select w-full"
               >
                 <option value="10">10</option>
@@ -236,21 +173,18 @@ export default function InactiveProducts() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {products.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} inactive products</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={products.length} noun="inactive products" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('product_name')}>
-                      Product Name {getSortIcon('product_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('product_name')}>
+                      Product Name <SortIcon field="product_name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
-                      Part Number {getSortIcon('part_no')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('part_no')}>
+                      Part Number <SortIcon field="part_no" {...sortProps} />
                     </th>
                     {/* S-36: Category and Company are not sortable columns on
                         `product` - they are joined names, and these headers used
@@ -258,8 +192,8 @@ export default function InactiveProducts() {
                         Plain headings until the endpoint can sort on the join. */}
                     <th>Category</th>
                     <th>Company</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
-                      Stock {getSortIcon('stock')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('stock')}>
+                      Stock <SortIcon field="stock" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
@@ -267,7 +201,7 @@ export default function InactiveProducts() {
                 <tbody>
                   {products.map((product, index) => (
                     <tr key={product.id}>
-                      <td>{(pagination.page - 1) * pagination.limit + index + 1}</td>
+                      <td>{list.serialNumber(index)}</td>
                       <td className="font-medium text-white">{product.product_name}</td>
                       <td>{product.part_no || 'N/A'}</td>
                       <td>{product.categoryName || 'N/A'}</td>
@@ -296,17 +230,7 @@ export default function InactiveProducts() {
               )}
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
