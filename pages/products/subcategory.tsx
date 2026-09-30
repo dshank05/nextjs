@@ -1,11 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-import { useDebounce } from '../../hooks/useDebounce';
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ClearableInput } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { useListQuery } from '../../hooks/useListQuery';
+import { useDebounce } from '../../hooks/useDebounce';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 
 interface Category {
   id: number;
@@ -16,7 +19,6 @@ interface Subcategory {
   id: number;
   subcategory_name: string;
   category_id?: number;
-  index: number;
   category?: Category;
 }
 
@@ -26,14 +28,21 @@ interface SubcategoryResponse {
 }
 
 export default function Subcategories() {
+  const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook, as on the settings
+  // pages (settings Block 8). This page had its own copy, with two
+  // overlapping page-reset effects that fetched twice on every search (PQ-24).
+  const [mainCategorySearchTerm, setMainCategorySearchTerm] = useState('');
+  const debouncedMainCategorySearchTerm = useDebounce(mainCategorySearchTerm, 300);
+  const list = useListQuery({
+    defaultSort: 'subcategory_name',
+    extraParams: { category_search: debouncedMainCategorySearchTerm.trim() },
+  });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [mainCategorySearchTerm, setMainCategorySearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<string>('subcategory_name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingSubcategoryData, setPendingSubcategoryData] = useState<any>(null);
@@ -43,8 +52,6 @@ export default function Subcategories() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [categorySearchTerm, setCategorySearchTerm] = useState('');
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
-  const debouncedMainCategorySearchTerm = useDebounce(mainCategorySearchTerm, 300);
 
   // Column definitions for export
   const exportColumns = [
@@ -106,39 +113,22 @@ export default function Subcategories() {
     closeColumnSelector();
   };
 
-  const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortOrder('asc');
-    }
-    // Reset to first page when sorting
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm]);
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedMainCategorySearchTerm]);
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [sortBy, sortOrder]);
 
+  // The category list is for the dialog's picker; it does not change with the
+  // table's page, search or sort, so it loads once (PQ-52).
   useEffect(() => {
     fetchCategories();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const query = list.params.toString();
+  useEffect(() => {
     fetchSubcategories();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, debouncedMainCategorySearchTerm, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   // Close category dropdown on outside click
   useEffect(() => {
@@ -192,55 +182,30 @@ export default function Subcategories() {
   };
 
   const fetchSubcategories = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        category_search: debouncedMainCategorySearchTerm.trim(),
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      });
-      const response = await fetch(`/api/products/subcategories?${params}`);
+      const response = await fetch(`/api/products/subcategories?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
         const data: SubcategoryResponse = await response.json();
+        if (!isCurrent()) return;
         setSubcategories(data.subcategories);
-        setPagination(data.pagination);
+        list.setPagination(data.pagination);
+      } else {
+        showSnackbar('error', 'Could not load subcategories');
       }
     } catch (error) {
       console.error('Error fetching subcategories:', error);
+      showSnackbar('error', 'Could not load subcategories');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
 
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
 
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  };
 
   const handleAdd = () => {
     setEditingSubcategory(null);
@@ -262,8 +227,15 @@ export default function Subcategories() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.category_name || !formData.subcategory_name) {
-      alert('Please fill in all required fields');
+    if (!formData.subcategory_name.trim()) {
+      showSnackbar('warning', 'Subcategory name is required');
+      return;
+    }
+    // Pick an existing category. Typed text that matched none used to be sent
+    // as a name, and the API created a category from it - a typo became a new
+    // category in every dropdown (PQ-08).
+    if (!formData.category_id) {
+      showSnackbar('warning', 'Choose a category from the list');
       return;
     }
 
@@ -291,9 +263,16 @@ export default function Subcategories() {
         setShowConfirmModal(false);
         setPendingSubcategoryData(null);
         fetchSubcategories();
+        showSnackbar('success', `Subcategory ${pendingSubcategoryData.method === 'PUT' ? 'updated' : 'created'}`);
+      } else {
+        // A refused save (a duplicate name, say) used to close the dialog
+        // exactly as a successful one did, and say nothing (PQ-05).
+        const body = await response.json().catch(() => ({}));
+        showSnackbar('error', body.message || 'Could not save the subcategory');
       }
     } catch (error) {
       console.error('Error saving subcategory:', error);
+      showSnackbar('error', 'Network error while saving the subcategory');
     } finally {
       setIsSaving(false);
       setShowConfirmModal(false);
@@ -325,22 +304,11 @@ export default function Subcategories() {
               <ClearableInput
                 type="text"
                 placeholder="Search subcategories..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <button className="btn-secondary" onClick={() => handleExport('excel')}>
@@ -360,33 +328,30 @@ export default function Subcategories() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {subcategories.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} subcategories</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={subcategories.length} noun="subcategories" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('category_name')}>
-                      Category {getSortIcon('category_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('category_name')}>
+                      Category <SortIcon field="category_name" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
-                      Subcategory Name {getSortIcon('subcategory_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('subcategory_name')}>
+                      Subcategory Name <SortIcon field="subcategory_name" {...sortProps} />
                     </th>
                     
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {subcategories.map((subcategory) => (
+                  {subcategories.map((subcategory, i) => (
                     <tr key={subcategory.id}>
-                      <td>{subcategory.index}</td>
+                      <td>{list.serialNumber(i)}</td>
                       <td>{subcategory.id}</td>
                       <td className="text-slate-300">
                         {subcategory.category ? subcategory.category.category_name : 'N/A'}
@@ -405,17 +370,7 @@ export default function Subcategories() {
               )}
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>

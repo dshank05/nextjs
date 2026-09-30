@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useDebounce } from '../../hooks/useDebounce';
-import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
+import { useSnackbar } from '../../components/SnackbarProvider';
 import { useExport } from '../../hooks/useExport';
 import { ExportColumnSelector } from '../../components/ExportColumnSelector';
 import { ClearableInput } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { useListQuery } from '../../hooks/useListQuery';
+import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../components/common/ListPagination';
 
 interface Model {
   id: number;
-  subcategory_name: string;
-  index: number;
+  model_name: string;
 }
 
 interface ModelResponse {
@@ -19,25 +19,27 @@ interface ModelResponse {
 }
 
 export default function Models() {
+  const { showSnackbar } = useSnackbar();
+  // Search, sort, page and limit: the shared list hook, as on the settings
+  // pages (settings Block 8). This page had its own copy, with two
+  // overlapping page-reset effects that fetched twice on every search (PQ-24).
+  const list = useListQuery({ defaultSort: 'model_name' });
+  const { pagination } = list;
+  const sortProps = { sortBy: list.sortBy, sortOrder: list.sortOrder };
   const [models, setModels] = useState<Model[]>([]);
-  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, totalPages: 1, hasMore: false });
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [sortBy, setSortBy] = useState<string>('subcategory_name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showModal, setShowModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingModelData, setPendingModelData] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [editingModel, setEditingModel] = useState<Model | null>(null);
-  const [formData, setFormData] = useState({ id: 0, subcategory_name: '' });
+  const [formData, setFormData] = useState({ id: 0, model_name: '' });
 
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
   // Column definitions for export
   const exportColumns = [
     { key: 'id', label: 'ID', enabled: true },
-    { key: 'subcategory_name', label: 'Car Model Name', enabled: true },
+    { key: 'model_name', label: 'Car Model Name', enabled: true },
   ];
 
   // Export functionality
@@ -69,8 +71,8 @@ export default function Models() {
           case 'id':
             row.ID = model.id;
             break;
-          case 'subcategory_name':
-            row['Car Model Name'] = model.subcategory_name;
+          case 'model_name':
+            row['Car Model Name'] = model.model_name;
             break;
         }
       });
@@ -90,105 +92,52 @@ export default function Models() {
     closeColumnSelector();
   };
 
-  const handleSort = (column: string) => {
-    if (sortBy === column) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortBy(column);
-      setSortOrder('asc');
-    }
-    // Reset to first page when sorting
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
 
-  useEffect(() => {
-    if (!loading) {
-      setPagination(prev => ({ ...prev, page: 1 }));
-    }
-  }, [debouncedSearchTerm, sortBy, sortOrder]);
 
+  const query = list.params.toString();
   useEffect(() => {
     fetchModels();
-  }, [pagination.page, pagination.limit, debouncedSearchTerm, sortBy, sortOrder]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
 
   const fetchModels = async () => {
+    const isCurrent = list.beginRequest();
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        page: pagination.page.toString(),
-        limit: pagination.limit.toString(),
-        search: debouncedSearchTerm.trim(),
-        sortBy: sortBy,
-        sortOrder: sortOrder,
-      });
-      const response = await fetch(`/api/products/models?${params}`);
+      const response = await fetch(`/api/products/models?${query}`);
+      if (!isCurrent()) return;
       if (response.ok) {
         const data: ModelResponse = await response.json();
+        if (!isCurrent()) return;
         setModels(data.models);
-        setPagination(data.pagination);
+        list.setPagination(data.pagination);
+      } else {
+        showSnackbar('error', 'Could not load models');
       }
     } catch (error) {
       console.error('Error fetching models:', error);
+      showSnackbar('error', 'Could not load models');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   };
 
-  const getSortIcon = (field: string) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
 
-  const handlePageChange = (newPage: number) => {
-    if (newPage > 0 && newPage <= pagination.totalPages) {
-      setPagination(prev => ({ ...prev, page: newPage }));
-    }
-  };
 
-  const handleLimitChange = (newLimit: number) => {
-    setPagination(prev => ({ ...prev, limit: newLimit, page: 1 }));
-  };
 
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  };
 
   const handleAdd = () => {
     setEditingModel(null);
-    setFormData({ id: 0, subcategory_name: '' });
+    setFormData({ id: 0, model_name: '' });
     setShowModal(true);
   };
 
   const handleEdit = (model: Model) => {
     setEditingModel(model);
-    setFormData({ id: model.id, subcategory_name: model.subcategory_name });
+    setFormData({ id: model.id, model_name: model.model_name });
     setShowModal(true);
   };
 
-  // const handleDelete = async (id: number) => {
-  //   if (confirm('Are you sure you want to delete this car model?')) {
-  //     try {
-  //       const response = await fetch(`/api/products/models`, {
-  //         method: 'DELETE',
-  //         headers: { 'Content-Type': 'application/json' },
-  //         body: JSON.stringify({ id }),
-  //       });
-  //       if (response.ok) {
-  //         fetchModels();
-  //       }
-  //     } catch (error) {
-  //       console.error('Error deleting model:', error);
-  //     }
-  //   }
-  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,9 +166,16 @@ export default function Models() {
         setShowConfirmModal(false);
         setPendingModelData(null);
         fetchModels();
+        showSnackbar('success', `Model ${pendingModelData.method === 'PUT' ? 'updated' : 'created'}`);
+      } else {
+        // A refused save (a duplicate name, say) used to close the dialog
+        // exactly as a successful one did, and say nothing (PQ-05).
+        const body = await response.json().catch(() => ({}));
+        showSnackbar('error', body.message || 'Could not save the model');
       }
     } catch (error) {
       console.error('Error saving model:', error);
+      showSnackbar('error', 'Network error while saving the model');
     } finally {
       setIsSaving(false);
       setShowConfirmModal(false);
@@ -242,22 +198,11 @@ export default function Models() {
               <ClearableInput
                 type="text"
                 placeholder="Search car models..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={list.search}
+                onChange={(e) => list.setSearch(e.target.value)}
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Items per page</label>
-              <select
-                value={pagination.limit}
-                onChange={(e) => handleLimitChange(parseInt(e.target.value))}
-                className="select w-full min-w-24"
-              >
-                <option value="10">10</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
-            </div>
+            <PageSizeSelect limit={list.limit} onChange={list.setLimit} />
           </div>
           <div className="flex items-center gap-2">
             <button className="btn-secondary" onClick={() => handleExport('excel')}>
@@ -276,34 +221,30 @@ export default function Models() {
           </div>
         ) : (
           <>
-            <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-              <div>Showing {models.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} car models</div>
-              <div>Page {pagination.page} of {pagination.totalPages}</div>
-            </div>
+            <ListSummary pagination={pagination} shown={models.length} noun="car models" />
 
             <div className="overflow-x-auto">
               <table className="table">
                 <thead>
                   <tr>
                     <th>S.N</th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                      ID {getSortIcon('id')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('id')}>
+                      ID <SortIcon field="id" {...sortProps} />
                     </th>
-                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategory_name')}>
-                      Car Model Name {getSortIcon('subcategory_name')}
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('model_name')}>
+                      Car Model Name <SortIcon field="model_name" {...sortProps} />
                     </th>
                     <th className="text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {models.map((model) => (
+                  {models.map((model, i) => (
                     <tr key={model.id}>
-                      <td>{model.index}</td>
+                      <td>{list.serialNumber(i)}</td>
                       <td>{model.id}</td>
-                      <td className="font-medium text-white">{model.subcategory_name}</td>
+                      <td className="font-medium text-white">{model.model_name}</td>
                       <td className="text-right">
                         <button className="btn-secondary mr-2" onClick={() => handleEdit(model)}>Edit</button>
-                        {/* <button className="btn-danger" onClick={() => handleDelete(model.id)}>Delete</button> */}
                       </td>
                     </tr>
                   ))}
@@ -315,17 +256,7 @@ export default function Models() {
               )}
             </div>
 
-            {pagination.totalPages > 1 && (
-              <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-                <button onClick={() => handlePageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-                <div className="flex space-x-2">
-                  {pagination.page > 3 && <> <button onClick={() => handlePageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-                  {getPageNumbers().map(p => <button key={p} onClick={() => handlePageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-                  {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => handlePageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-                </div>
-                <button onClick={() => handlePageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-              </div>
-            )}
+            <ListPagination pagination={pagination} onPageChange={list.goToPage} />
           </>
         )}
       </div>
@@ -350,8 +281,8 @@ export default function Models() {
                 <label className="block text-sm font-medium text-slate-300 mb-2">Car Model Name</label>
                 <ClearableInput
                   type="text"
-                  value={formData.subcategory_name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, subcategory_name: e.target.value }))}
+                  value={formData.model_name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, model_name: e.target.value }))}
                   required
                 />
               </div>
@@ -367,7 +298,7 @@ export default function Models() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title="Confirm Action"
-        message={`Do you want to ${editingModel ? 'edit' : 'create'} - ${formData.subcategory_name} car model?`}
+        message={`Do you want to ${editingModel ? 'edit' : 'create'} - ${formData.model_name} car model?`}
         showLoading={isSaving}
         onConfirm={handleConfirmSubmit}
         onCancel={handleCancelConfirm}

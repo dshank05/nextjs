@@ -2,6 +2,18 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { withObservability } from '../../../lib/withObservability';
 
+/**
+ * The category a subcategory belongs to must already exist. Saving used to
+ * accept a category NAME instead and create the category if it was not found,
+ * so a typo in the subcategory dialog made a new category (PQ-08).
+ */
+async function existingCategoryId(raw: unknown): Promise<number | null> {
+  const id = parseInt(String(raw ?? ''), 10);
+  if (Number.isNaN(id) || id <= 0) return null;
+  const category = await prisma.product_category.findUnique({ where: { id }, select: { id: true } });
+  return category ? id : null;
+}
+
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
@@ -121,32 +133,10 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         },
       });
   } else if (req.method === 'POST') {
-      const { subcategory_name, category_id, category_name } = req.body;
-      if (!subcategory_name || (!category_id && !category_name)) {
-        return res.status(400).json({ message: 'Subcategory name is required, and either category_id or category_name must be provided' });
-      }
-
-      let finalCategoryId;
-      if (category_id) {
-        // Validate that the category exists
-        const category = await prisma.product_category.findUnique({
-          where: { id: parseInt(category_id) }
-        });
-        if (!category) {
-          return res.status(400).json({ message: 'Invalid category_id' });
-        }
-        finalCategoryId = parseInt(category_id);
-      } else if (category_name) {
-        // Find existing category or create new
-        let category = await prisma.product_category.findFirst({
-          where: { category_name: category_name.trim() }
-        });
-        if (!category) {
-          category = await prisma.product_category.create({
-            data: { category_name: category_name.trim() }
-          });
-        }
-        finalCategoryId = category.id;
+      const subcategory_name = String(req.body?.subcategory_name ?? '').trim();
+      const finalCategoryId = await existingCategoryId(req.body?.category_id);
+      if (!subcategory_name || !finalCategoryId) {
+        return res.status(400).json({ message: 'Subcategory name and an existing category are required' });
       }
 
       const subcategory = await prisma.product_subcategory.create({
@@ -160,32 +150,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         message: "Subcategory created successfully"
       });
     } else if (req.method === 'PUT') {
-      const { id, subcategory_name, category_id, category_name } = req.body;
-      if (!id || !subcategory_name || (!category_id && !category_name)) {
-        return res.status(400).json({ message: 'ID, subcategory name are required, and either category_id or category_name must be provided' });
-      }
-
-      let finalCategoryId;
-      if (category_id) {
-        // Validate that the category exists
-        const category = await prisma.product_category.findUnique({
-          where: { id: parseInt(category_id) }
-        });
-        if (!category) {
-          return res.status(400).json({ message: 'Invalid category_id' });
-        }
-        finalCategoryId = parseInt(category_id);
-      } else if (category_name) {
-        // Find existing category or create new
-        let category = await prisma.product_category.findFirst({
-          where: { category_name: category_name.trim() }
-        });
-        if (!category) {
-          category = await prisma.product_category.create({
-            data: { category_name: category_name.trim() }
-          });
-        }
-        finalCategoryId = category.id;
+      const { id } = req.body;
+      const subcategory_name = String(req.body?.subcategory_name ?? '').trim();
+      const finalCategoryId = await existingCategoryId(req.body?.category_id);
+      if (!id || !subcategory_name || !finalCategoryId) {
+        return res.status(400).json({ message: 'ID, subcategory name and an existing category are required' });
       }
 
       const subcategory = await prisma.product_subcategory.update({

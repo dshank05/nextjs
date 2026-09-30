@@ -27,13 +27,17 @@ export default async function handler(
       take: 5
     })
 
-    // Get invoice details for the salex
-    const invoiceNos = salexItems.map(item => item.invoice_no)
+    // Sale lines store the HEADER'S PRIMARY KEY in invoice_no (sales/index.ts
+    // writes `invoice_no: sale.id`), so the header is found by id. This matched
+    // it against the header's own invoice_no - a different number - and showed
+    // some other invoice's number and customer (PQ-02).
+    const headerIds = salexItems.map(item => item.invoice_no)
     const invoices = await prisma.invoicex.findMany({
       where: {
-        invoice_no: { in: invoiceNos }
+        id: { in: headerIds }
       },
       select: {
+        id: true,
         invoice_no: true,
         invoice_date: true,
         select_customer: true
@@ -55,7 +59,7 @@ export default async function handler(
 
     // Create lookup maps
     const invoiceMap = new Map(
-      invoices.map(inv => [inv.invoice_no, inv])
+      invoices.map(inv => [inv.id, inv])
     )
     const customerMap = new Map(
       customers.map(cust => [cust.id, cust])
@@ -66,18 +70,9 @@ export default async function handler(
       const invoice = invoiceMap.get(item.invoice_no)
       const customerInfo = invoice ? customerMap.get(invoice.select_customer) : null
 
-      // Format date
-      let formattedDate = '-'
-      if (item.invoice_date) {
-        try {
-          const dateObj = new Date(item.invoice_date * 1000)
-          if (!isNaN(dateObj.getTime())) {
-            formattedDate = dateObj.toLocaleDateString('en-IN')
-          }
-        } catch (error) {
-          console.warn('Error formatting salex date:', error)
-        }
-      }
+      // ISO, formatted once in the browser. This sent an already-formatted
+      // d/m/yyyy string that the page parsed and formatted again (PQ-01).
+      const date = item.invoice_date ? new Date(item.invoice_date * 1000).toISOString() : null
 
       return {
         sn: index + 1,
@@ -86,7 +81,7 @@ export default async function handler(
         qty: item.qty || 0,
         rate: item.rate || 0,
         amount: (item.qty || 0) * (item.rate || 0),
-        date: formattedDate
+        date
       }
     })
 
@@ -94,8 +89,7 @@ export default async function handler(
   } catch (error) {
     console.error('Error fetching product salex:', error)
     res.status(500).json({
-      message: 'Failed to fetch product salex',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: 'Failed to fetch product salex'
     })
   }
 }

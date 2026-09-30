@@ -50,6 +50,11 @@ export interface UseListQueryOptions {
   defaultLimit?: number
   /** Extra query parameters sent on every request, e.g. `includeInactive`. */
   fixedParams?: Record<string, string>
+  /**
+   * Extra filters that CAN change (already debounced by the caller). Part of
+   * the query, so changing one returns to page 1 like search and sort do.
+   */
+  extraParams?: Record<string, string>
   debounceMs?: number
 }
 
@@ -59,8 +64,10 @@ export function useListQuery(opts: UseListQueryOptions) {
     defaultOrder = 'asc',
     defaultLimit = 50,
     fixedParams,
+    extraParams,
     debounceMs = 300,
   } = opts
+  const extraKey = extraParams ? JSON.stringify(extraParams) : ''
 
   // Mirrored in the URL so a filtered list survives a refresh and can be
   // linked (F-49).
@@ -80,7 +87,7 @@ export function useListQuery(opts: UseListQueryOptions) {
   const debouncedSearch = useDebounce(search, debounceMs)
 
   // Everything that, when it changes, makes the current page number meaningless.
-  const queryKey = `${debouncedSearch.trim()}\u0000${sortBy}\u0000${sortOrder}\u0000${limit}`
+  const queryKey = `${debouncedSearch.trim()}\u0000${sortBy}\u0000${sortOrder}\u0000${limit}\u0000${extraKey}`
   const [pageState, setPageState] = useState({ page: 1, key: queryKey })
   const page = pageState.key === queryKey ? pageState.page : 1
   const setPage = useCallback(
@@ -132,11 +139,14 @@ export function useListQuery(opts: UseListQueryOptions) {
     if (fixedParams) {
       for (const [k, v] of Object.entries(fixedParams)) p.set(k, v)
     }
+    if (extraParams) {
+      for (const [k, v] of Object.entries(extraParams)) p.set(k, v)
+    }
     return p
     // fixedParams is a literal at every call site; depending on its identity
     // would rebuild the string on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, debouncedSearch, sortBy, sortOrder])
+  }, [page, limit, debouncedSearch, sortBy, sortOrder, extraKey])
 
   /** The row number to display, offset by the page (S-14). */
   const serialNumber = useCallback(

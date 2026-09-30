@@ -292,7 +292,10 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
               {onSubcategorySelection && (
                 <div>
                   <SearchableSelect
-                    options={filterOptions.subcategories.map(sub => ({ 
+                    // Only the chosen category's subcategories, as on the list page (PQ-51).
+                    options={filterOptions.subcategories
+                      .filter(sub => !selectedCategory || String(sub.category_id) === String(selectedCategory))
+                      .map(sub => ({ 
                       id: sub.id.toString(), 
                       name: sub.subcategory_name || sub.name 
                     }))}

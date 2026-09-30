@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowUpDown, ArrowUp, ArrowDown, Eye, ChevronDown, X, Check, Image } from 'lucide-react';
-import { useDebounce } from '../../hooks/useDebounce';
+import { Eye, Image } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { SearchableMultiSelect } from '../../components/common/SearchableMultiSelect';
 import { ClearableInput, ExportMenu, ImagePreviewModal } from '../common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { ListPagination, ListSummary, SortIcon } from '../common/ListPagination';
 
 interface Product {
   id: number;
@@ -35,7 +35,7 @@ interface Pagination {
 
 interface FilterOptions {
   categories: { id: string; name: string }[];
-  subcategories: { id: string; name: string }[];
+  subcategories: { id: string; name: string; category_id?: number | null }[];
   companies: { id: string; name: string }[];
   models: { id: string; name: string }[];
 }
@@ -51,6 +51,8 @@ interface ProductTableProps {
   onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
   onExport?: (exportType: 'excel' | 'pdf') => void;
+  /** Every row matching the current filters, for export (S-89). */
+  fetchAllForExport?: () => Promise<Product[]>;
   onApplyFilters?: (filters: {
     categoryFilter: string;
     subcategoryFilter: string;
@@ -76,6 +78,8 @@ interface ProductTableProps {
     endDate: string;
     uidFilter: string;
     partNoFilter: string;
+    sortBy?: string;
+    sortOrder?: string;
   };
 }
 
@@ -94,7 +98,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   actionButton,
   onExport,
   onApplyFilters,
-  initialFilters
+  initialFilters,
+  fetchAllForExport
 }) => {
   // Consolidated filter state - initialize with initialFilters if provided
   const [filters, setFilters] = useState({
@@ -116,18 +121,20 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     models: []
   });
 
-  // UI states for dropdowns - no longer needed after migration
+  // Subcategories of the chosen category, from the filter options already
+  // loaded (each carries its category_id). This fetched the paginated
+  // subcategories endpoint, which stops at 50 (PQ-07).
+  const dynamicSubcategories = filters.categoryFilter
+    ? filterOptions.subcategories
+        .filter(sub => String(sub.category_id) === String(filters.categoryFilter))
+        .map(sub => ({ id: String(sub.id), subcategory_name: sub.name }))
+    : [];
 
-  // Dynamic subcategories state
-  const [dynamicSubcategories, setDynamicSubcategories] = useState<{ id: string; subcategory_name: string; category_id?: number; index?: number }[]>([]);
-  const [dynamicSubcategoriesLoading, setDynamicSubcategoriesLoading] = useState(false);
-
-  // Sorting states - now using backend sorting
-  const [sortBy, setSortBy] = useState<SortField>('categoryName');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
-
-  // Debounced search
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  // Sort, starting from what the page restored. It always started at
+  // categoryName/asc, so the arrow disagreed with the list after returning to
+  // it, and the next filter change re-sent the default sort (PQ-09).
+  const [sortBy, setSortBy] = useState<SortField>((initialFilters?.sortBy as SortField) || 'categoryName');
+  const [sortOrder, setSortOrder] = useState<SortOrder>((initialFilters?.sortOrder as SortOrder) || 'asc');
 
   // Image preview modal state
   const [imagePreviewModal, setImagePreviewModal] = useState({
@@ -157,18 +164,15 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         uidFilter: initialFilters.uidFilter || '',
         partNoFilter: initialFilters.partNoFilter || ''
       });
+      if (initialFilters.sortBy) setSortBy(initialFilters.sortBy as SortField);
+      if (initialFilters.sortOrder) setSortOrder(initialFilters.sortOrder as SortOrder);
     }
   }, [initialFilters]);
 
-  // Fetch dynamic subcategories when category changes
-  useEffect(() => {
-    if (filters.categoryFilter) {
-      fetchDynamicSubcategories(filters.categoryFilter);
-      setFilters(prev => ({ ...prev, subcategoryFilter: '' }));
-    } else {
-      setDynamicSubcategories([]);
-    }
-  }, [filters.categoryFilter]);
+  // No effect clears the subcategory when the category changes. It fired on
+  // mount with the restored category and wiped the restored subcategory - F-88's
+  // mechanism, on the list. The clear happens where the user picks a category
+  // (PQ-10).
 
   const fetchFilterOptions = async () => {
     try {
@@ -179,29 +183,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     }
   };
 
-  const fetchDynamicSubcategories = async (categoryId: string) => {
-    if (!categoryId) {
-      setDynamicSubcategories([]);
-      return;
-    }
-
-    setDynamicSubcategoriesLoading(true);
-    try {
-      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setDynamicSubcategories(data.subcategories || []);
-      } else {
-        console.error('Failed to fetch subcategories:', response.status);
-        setDynamicSubcategories([]);
-      }
-    } catch (error) {
-      console.error('Error fetching dynamic subcategories:', error);
-      setDynamicSubcategories([]);
-    } finally {
-      setDynamicSubcategoriesLoading(false);
-    }
-  };
 
 
 
@@ -223,22 +204,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     }
   };
 
-  const getSortIcon = (field: SortField) => {
-    if (sortBy !== field) {
-      return null;
-    }
-    return sortOrder === 'asc' ?
-      <ArrowUp className="inline w-4 h-4 ml-1" /> :
-      <ArrowDown className="inline w-4 h-4 ml-1" />;
-  };
 
-  const getPageNumbers = () => {
-    const pages = [];
-    const start = Math.max(1, pagination.page - 2);
-    const end = Math.min(pagination.totalPages, pagination.page + 2);
-    for (let i = start; i <= end; i++) pages.push(i);
-    return pages;
-  };
 
   return (
     <div className="card">
@@ -254,7 +220,11 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <ExportMenu
-            data={products.map((product, idx) => ({ ...product, serialNumber: idx + 1 }))}
+            data={products.map((product, idx) => ({ ...product, serialNumber: (pagination.page - 1) * pagination.limit + idx + 1 }))}
+            // Export every matching row, not only the page on screen (S-89).
+            fetchAll={fetchAllForExport
+              ? async () => (await fetchAllForExport()).map((product, idx) => ({ ...product, serialNumber: idx + 1 }))
+              : undefined}
             columns={[
               { key: 'serialNumber', label: 'S.N', enabled: true },
               { key: 'id', label: 'UID', enabled: true },
@@ -323,12 +293,16 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             selectedValue={filters.categoryFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setFilters(prev => ({ ...prev, categoryFilter: newValue }));
+              // A new category invalidates the chosen subcategory - cleared here,
+              // on the user's pick, not in an effect (PQ-10).
+              const subcategoryFilter = newValue === filters.categoryFilter ? filters.subcategoryFilter : '';
+              setFilters(prev => ({ ...prev, categoryFilter: newValue, subcategoryFilter }));
               // Auto-apply filter
               if (onApplyFilters) {
                 onApplyFilters({
                   ...filters,
                   categoryFilter: newValue,
+                  subcategoryFilter,
                   sortBy,
                   sortOrder
                 });
@@ -360,7 +334,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 });
               }
             }}
-            placeholder={filters.categoryFilter ? (dynamicSubcategoriesLoading ? "Loading..." : "Select subcategory...") : "Select a category first"}
+            placeholder={filters.categoryFilter ? "Select subcategory..." : "Select a category first"}
             disabled={!filters.categoryFilter}
           />
         </div>
@@ -505,7 +479,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 partNoFilter: ''
               };
               setFilters(clearedFilters);
-              setDynamicSubcategories([]);
               // Apply cleared filters
               if (onApplyFilters) {
                 onApplyFilters({
@@ -523,12 +496,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
       </div>
 
       {/* Table Section */}
-      {pagination && (
-        <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
-          <div>Showing {products.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} products</div>
-          <div>Page {pagination.page} of {pagination.totalPages}</div>
-        </div>
-      )}
+      <ListSummary pagination={{ ...pagination, hasMore: pagination.page < pagination.totalPages }} shown={products.length} noun="products" />
 
       <div className="overflow-x-auto relative">
         {loading && (
@@ -542,29 +510,29 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             <tr>
               <th>S.N</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('id')}>
-                UID {getSortIcon('id')}
+                UID <SortIcon field="id" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('categoryName')}>
-                Category {getSortIcon('categoryName')}
+                Category <SortIcon field="categoryName" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('subcategoryName')}>
-                Subcategory {getSortIcon('subcategoryName')}
+                Subcategory <SortIcon field="subcategoryName" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th>Car Models</th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('companyName')}>
-                Company {getSortIcon('companyName')}
+                Company <SortIcon field="companyName" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('part_no')}>
-                Part Number {getSortIcon('part_no')}
+                Part Number <SortIcon field="part_no" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('stock')}>
-                Stock {getSortIcon('stock')}
+                Stock <SortIcon field="stock" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('rate')}>
-                Rate {getSortIcon('rate')}
+                Rate <SortIcon field="rate" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
               <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => handleSort('lastPurchaseDate')}>
-                Last Purchase Date {getSortIcon('lastPurchaseDate')}
+                Last Purchase Date <SortIcon field="lastPurchaseDate" sortBy={sortBy} sortOrder={sortOrder} />
               </th>
 
               <th>Actions</th>
@@ -573,7 +541,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <tbody>
             {products.map((product, idx) => (
               <tr key={product.id}>
-                <td>{idx + 1}</td>
+                {/* Offset by the page; this restarted at 1 on every page (S-14). */}
+                <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                 <td className="text-slate-400 text-sm">{product.id}</td>
                 <td className="text-slate-300">{product.categoryName || '-'}</td>
                 <td className="text-slate-300">{product.subcategoryName || '-'}</td>
@@ -629,17 +598,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         )}
       </div>
 
-      {pagination.totalPages > 1 && (
-        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-700">
-          <button onClick={() => onPageChange(pagination.page - 1)} disabled={pagination.page === 1} className="btn-secondary disabled:opacity-50">Previous</button>
-          <div className="flex space-x-2">
-            {pagination.page > 3 && <> <button onClick={() => onPageChange(1)} className="px-3 py-1 rounded hover:bg-slate-700">1</button> <span>...</span> </>}
-            {getPageNumbers().map(p => <button key={p} onClick={() => onPageChange(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-blue-600 text-white' : 'hover:bg-slate-700'}`}>{p}</button>)}
-            {pagination.page < pagination.totalPages - 2 && <> <span>...</span> <button onClick={() => onPageChange(pagination.totalPages)} className="px-3 py-1 rounded hover:bg-slate-700">{pagination.totalPages}</button> </>}
-          </div>
-          <button onClick={() => onPageChange(pagination.page + 1)} disabled={pagination.page === pagination.totalPages} className="btn-secondary disabled:opacity-50">Next</button>
-        </div>
-      )}
+      <ListPagination pagination={{ ...pagination, hasMore: pagination.page < pagination.totalPages }} onPageChange={onPageChange} />
 
       {/* Image Preview Modal */}
       <ImagePreviewModal

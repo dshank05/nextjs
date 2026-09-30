@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Product, FilterOptions, DeadstockFilters, DeadstockResponse, ProductFilters, ProductsResponse } from '../types/products';
 
-async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Promise<ProductsResponse> {
+export async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Promise<ProductsResponse> {
   const params = new URLSearchParams();
   
   // Pagination
@@ -71,7 +71,15 @@ async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Pro
     car_model_ids: product.car_model_ids,
     carModelsDisplay: product.carModelsDisplay,
     pic: product.pic,
-    barcode: product.barcode
+    barcode: product.barcode,
+    // Read by the purchase, sale and salex pickers when a line is added (PQ-39).
+    display_name: product.display_name,
+    hsn: product.hsn,
+    opening_rate: product.opening_rate,
+    latest_purchase_rate: product.latest_purchase_rate,
+    latest_selling_price: product.latest_selling_price,
+    gst_rate_id: product.gst_rate_id,
+    gst_rate_percentage: product.gst_rate_percentage
   }));
 
   return {

@@ -91,18 +91,8 @@ export default async function handler(
       const purchase = purchaseReturn ? purchaseMap.get(purchaseReturn.purchase_id) : null
       const vendorInfo = purchase ? vendorMap.get(purchase.vendor_id) : null
 
-      // Format date
-      let formattedDate = '-'
-      if (purchaseReturn?.return_date) {
-        try {
-          const dateObj = new Date(Number(purchaseReturn.return_date) * 1000)
-          if (!isNaN(dateObj.getTime())) {
-            formattedDate = dateObj.toLocaleDateString('en-IN')
-          }
-        } catch (error) {
-          console.warn('Error formatting purchase return date:', error)
-        }
-      }
+      // ISO, formatted once in the browser (PQ-01).
+      const date = purchaseReturn?.return_date ? new Date(Number(purchaseReturn.return_date) * 1000).toISOString() : null
 
       return {
         sn: index + 1,
@@ -111,7 +101,7 @@ export default async function handler(
         qty: item.return_qty || 0,
         rate: item.unit_price || 0,
         amount: Number(item.return_qty || 0) * Number(item.unit_price || 0),
-        date: formattedDate
+        date
       }
     })
 
@@ -119,8 +109,7 @@ export default async function handler(
   } catch (error) {
     console.error('Error fetching product purchase returns:', error)
     res.status(500).json({
-      message: 'Failed to fetch product purchase returns',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: 'Failed to fetch product purchase returns'
     })
   }
 }

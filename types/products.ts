@@ -29,6 +29,8 @@ export interface Product {
   gst_rate_percentage?: number;
   latest_purchase_rate?: number;
   latestPurchaseRate?: number;
+  latest_selling_price?: number;
+  gst_rate_id?: number;
   opening_rate?: number;
   lastPurchaseDate?: string;
   carModelsDisplay?: string;
@@ -142,5 +144,6 @@ export interface ProductTransactionRow {
   qty: number;
   rate: number;
   amount: number;
-  date: string;
+  /** ISO timestamp, or null when the document has no date. Formatted in the browser. */
+  date: string | null;
 }

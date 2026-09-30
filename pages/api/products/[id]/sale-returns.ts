@@ -91,18 +91,8 @@ export default async function handler(
       const invoice = saleReturn ? invoiceMap.get(saleReturn.invoice_id) : null
       const customerInfo = invoice ? customerMap.get(invoice.select_customer) : null
 
-      // Format date
-      let formattedDate = '-'
-      if (saleReturn?.return_date) {
-        try {
-          const dateObj = new Date(saleReturn.return_date * 1000)
-          if (!isNaN(dateObj.getTime())) {
-            formattedDate = dateObj.toLocaleDateString('en-IN')
-          }
-        } catch (error) {
-          console.warn('Error formatting sale return date:', error)
-        }
-      }
+      // ISO, formatted once in the browser (PQ-01).
+      const date = saleReturn?.return_date ? new Date(saleReturn.return_date * 1000).toISOString() : null
 
       return {
         sn: index + 1,
@@ -111,7 +101,7 @@ export default async function handler(
         qty: item.return_qty || 0,
         rate: item.unit_price || 0,
         amount: (item.return_qty || 0) * (item.unit_price || 0),
-        date: formattedDate
+        date
       }
     })
 
@@ -119,8 +109,7 @@ export default async function handler(
   } catch (error) {
     console.error('Error fetching product sale returns:', error)
     res.status(500).json({
-      message: 'Failed to fetch product sale returns',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: 'Failed to fetch product sale returns'
     })
   }
 }

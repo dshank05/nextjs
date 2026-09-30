@@ -8,7 +8,14 @@ import { useSnackbar } from '../../../components/SnackbarProvider';
 import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { useProduct } from '../../../hooks/useProducts';
+import { useQueryClient } from '@tanstack/react-query';
+import { broadcast } from '../../../lib/broadcast';
 import type { ProductTransactionRow } from '../../../types/products';
+
+// The history endpoints send ISO timestamps; format once, here. They used to
+// send an already-formatted d/m/yyyy string that was parsed and formatted a
+// second time - Invalid Date, or day and month swapped (PQ-01).
+const formatDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-IN') : '-');
 
 export default function ProductView() {
   const { showSnackbar } = useSnackbar();
@@ -17,6 +24,7 @@ export default function ProductView() {
   
   // Query hook
   const { data: product, isLoading, refetch } = useProduct(id as string);
+  const queryClient = useQueryClient();
   
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -113,6 +121,10 @@ export default function ProductView() {
       if (response.ok) {
         showSnackbar('success', `Product ${action}d successfully!`);
         setShowConfirmModal(false);
+        // The list is a cached query; without this it kept showing the product
+        // it was just told to hide, for up to two minutes (PQ-16).
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+        broadcast({ type: 'updated', resource: 'products', id: Number(id) });
         refetch();
         router.push('/products');
       } else {
@@ -246,7 +258,7 @@ export default function ProductView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">GST Rate:</span>
-              <span className="text-white font-medium">{product.gst_rate || 'N/A'}%</span>
+              <span className="text-white font-medium">{product.gst_rate_id ? `${product.gst_rate ?? 0}%` : 'N/A'}</span>
             </div>
 
             {/* Row 5 */}
@@ -256,7 +268,7 @@ export default function ProductView() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Latest Rate:</span>
-              <span className="text-white font-medium">₹{product.latestPurchaseRate || product.rate || 0}</span>
+              <span className="text-white font-medium">₹{product.latestPurchaseRate || product.opening_rate || 0}</span>
             </div>
             <div className="col-span-1"></div>
 
@@ -348,7 +360,7 @@ export default function ProductView() {
                       <td>{purchase.qty}</td>
                       <td>₹{purchase.rate}</td>
                       <td>₹{purchase.amount}</td>
-                      <td>{new Date(purchase.date).toLocaleDateString('en-IN')}</td>
+                      <td>{formatDate(purchase.date)}</td>
                     </tr>
                   )) : (
                     <tr>
@@ -387,7 +399,7 @@ export default function ProductView() {
                       <td>{sale.qty}</td>
                       <td>₹{sale.rate}</td>
                       <td>₹{sale.amount}</td>
-                      <td>{new Date(sale.date).toLocaleDateString('en-IN')}</td>
+                      <td>{formatDate(sale.date)}</td>
                     </tr>
                   )) : (
                     <tr>
@@ -426,7 +438,7 @@ export default function ProductView() {
                       <td>{salexItem.qty}</td>
                       <td>₹{salexItem.rate}</td>
                       <td>₹{salexItem.amount}</td>
-                      <td>{new Date(salexItem.date).toLocaleDateString('en-IN')}</td>
+                      <td>{formatDate(salexItem.date)}</td>
                     </tr>
                   )) : (
                     <tr>
@@ -465,7 +477,7 @@ export default function ProductView() {
                       <td>{saleReturn.qty}</td>
                       <td>₹{saleReturn.rate}</td>
                       <td>₹{saleReturn.amount}</td>
-                      <td>{new Date(saleReturn.date).toLocaleDateString('en-IN')}</td>
+                      <td>{formatDate(saleReturn.date)}</td>
                     </tr>
                   )) : (
                     <tr>
@@ -504,7 +516,7 @@ export default function ProductView() {
                       <td>{purchaseReturn.qty}</td>
                       <td>₹{purchaseReturn.rate}</td>
                       <td>₹{purchaseReturn.amount}</td>
-                      <td>{new Date(purchaseReturn.date).toLocaleDateString('en-IN')}</td>
+                      <td>{formatDate(purchaseReturn.date)}</td>
                     </tr>
                   )) : (
                     <tr>

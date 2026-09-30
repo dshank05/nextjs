@@ -3,7 +3,7 @@ import Link from 'next/link';
 import useStorageState from 'use-storage-state';
 import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
-import { useProducts } from '../../hooks/useProducts';
+import { useProducts, fetchProducts } from '../../hooks/useProducts';
 import { useDebounce } from '../../hooks/useDebounce';
 import type { ProductFilters } from '../../types/products';
 
@@ -93,7 +93,6 @@ export default function Products() {
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
       if (msg.resource === 'products' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
-        console.log(`🔄 Product ${msg.type} in another tab, refreshing data...`);
         refetch();
       }
     });
@@ -129,9 +128,27 @@ export default function Products() {
     setPage(1);
   };
 
+  // Stable, so the table's sync effect runs when the restored filters change,
+  // not on every render; and it carries the sort, which the table used to
+  // reset to its default (PQ-09).
+  const initialFilters = useMemo(() => ({
+    categoryFilter: currentFilters.categoryFilter,
+    subcategoryFilter: currentFilters.subcategoryFilter,
+    modelFilter: currentFilters.modelFilter,
+    companyFilter: currentFilters.companyFilter,
+    quantityFilter: currentFilters.quantityFilter,
+    stockFilter: currentFilters.stockFilter,
+    startDate: currentFilters.startDate,
+    endDate: currentFilters.endDate,
+    uidFilter: currentFilters.uidFilter,
+    partNoFilter: currentFilters.partNoFilter,
+    sortBy: currentFilters.sortBy,
+    sortOrder: currentFilters.sortOrder
+  }), [currentFilters]);
+
   // Handle filter application
-  const handleApplyFilters = (filters: FilterState) => {
-    setCurrentFilters(filters);
+  const handleApplyFilters = (filters: Omit<FilterState, 'sortBy' | 'sortOrder'> & { sortBy?: string; sortOrder?: string }) => {
+    setCurrentFilters({ ...currentFilters, ...filters } as FilterState);
     setPage(1);
   };
 
@@ -162,18 +179,8 @@ export default function Products() {
         onItemsPerPageChange={handleLimitChange}
         onExport={() => { }}
         onApplyFilters={handleApplyFilters}
-        initialFilters={{
-          categoryFilter: currentFilters.categoryFilter,
-          subcategoryFilter: currentFilters.subcategoryFilter,
-          modelFilter: currentFilters.modelFilter,
-          companyFilter: currentFilters.companyFilter,
-          quantityFilter: currentFilters.quantityFilter,
-          stockFilter: currentFilters.stockFilter,
-          startDate: currentFilters.startDate,
-          endDate: currentFilters.endDate,
-          uidFilter: currentFilters.uidFilter,
-          partNoFilter: currentFilters.partNoFilter
-        }}
+        initialFilters={initialFilters}
+        fetchAllForExport={async () => (await fetchProducts({ ...queryFilters, fetchAll: true })).products}
         actionButton={(
           <Link
             href="/products/create"

@@ -21,8 +21,8 @@ import { withObservability } from '../../../../lib/withObservability';
  * Both of those are correct on their own terms. The product FORM has no
  * business setting `is_active`, and the form endpoint has no business parsing
  * JSON. Activation is a state transition, not a field edit, so it gets its own
- * route with its own body parser - the same shape as the DELETE that
- * deactivates.
+ * route with its own body parser. It is the only deactivate route; the DELETE
+ * that did the same thing with no caller was removed (PQ-33).
  */
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'PATCH' && req.method !== 'PUT') {

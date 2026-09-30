@@ -27,17 +27,20 @@ export default async function handler(
       take: 5
     })
 
-    // Get purchase invoice details and vendor IDs
-    const invoiceNos = purchaseItems.map(item => item.invoice_no)
+    // Purchase lines carry the human invoice number AND the financial year; the
+    // number alone repeats across years, so the header is matched on both
+    // (PQ-03, the L-1 class).
+    const headerKey = (invoiceNo: number, fy: number) => `${invoiceNo}:${fy}`
     const vendorIds = Array.from(new Set(purchaseItems.map(item => item.vendor_id).filter(Boolean)))
 
     const [purchaseInvoices, vendors] = await Promise.all([
       prisma.purchase.findMany({
         where: {
-          invoice_no: { in: invoiceNos }
+          OR: purchaseItems.map(item => ({ invoice_no: item.invoice_no, fy: item.fy }))
         },
         select: {
           invoice_no: true,
+          fy: true,
           bill_reference: true,
           bill_reference_date: true,
           invoice_date: true,
@@ -53,7 +56,7 @@ export default async function handler(
 
     // Create lookup maps for invoice details and vendors
     const invoiceMap = new Map(
-      purchaseInvoices.map(inv => [inv.invoice_no, inv])
+      purchaseInvoices.map(inv => [headerKey(inv.invoice_no, inv.fy), inv])
     )
     const vendorMap = new Map(
       vendors.map(vendor => [vendor.id, vendor])
@@ -61,52 +64,23 @@ export default async function handler(
 
     // Format the results for display
     const results = purchaseItems.map((item, index) => {
-      const invoice = invoiceMap.get(item.invoice_no)
+      const invoice = invoiceMap.get(headerKey(item.invoice_no, item.fy))
       const vendor = vendorMap.get(item.vendor_id)
 
-      // Format invoice date
-      let formattedDate = '-'
-      if (invoice?.invoice_date) {
-        try {
-          if (typeof invoice.invoice_date === 'string') {
-            const dateObj = new Date(invoice.invoice_date)
-            if (!isNaN(dateObj.getTime())) {
-              formattedDate = dateObj.toLocaleDateString('en-IN')
-            }
-          } else if (typeof invoice.invoice_date === 'number') {
-            const dateObj = new Date(invoice.invoice_date * 1000)
-            if (!isNaN(dateObj.getTime())) {
-              formattedDate = dateObj.toLocaleDateString('en-IN')
-            }
-          }
-        } catch (error) {
-          console.warn('Error formatting purchase date:', error)
-        }
-      }
-
-      // Format bill reference date
-      let formattedBillRefDate = '-'
-      if (invoice?.bill_reference_date) {
-        try {
-          const dateObj = new Date(invoice.bill_reference_date)
-          if (!isNaN(dateObj.getTime())) {
-            formattedBillRefDate = dateObj.toLocaleDateString('en-IN')
-          }
-        } catch (error) {
-          console.warn('Error formatting bill reference date:', error)
-        }
-      }
+      // ISO, formatted once in the browser (PQ-01).
+      const date = invoice?.invoice_date ? new Date(invoice.invoice_date * 1000).toISOString() : null
+      const billRefDate = invoice?.bill_reference_date ? new Date(invoice.bill_reference_date).toISOString() : null
 
       return {
         sn: index + 1,
         invoice_number: item.invoice_no?.toString() || '-',
         bill_reference: invoice?.bill_reference || '-',
-        bill_reference_date: formattedBillRefDate,
+        bill_reference_date: billRefDate,
         vendor: vendor?.vendor_name || '-',
         qty: item.qty || 0,
         rate: item.rate || 0,
         amount: (item.qty || 0) * (item.rate || 0),
-        date: formattedDate
+        date
       }
     })
 
@@ -114,8 +88,7 @@ export default async function handler(
   } catch (error) {
     console.error('Error fetching product purchases:', error)
     res.status(500).json({
-      message: 'Failed to fetch product purchases',
-      error: error instanceof Error ? error.message : 'Unknown error'
+      message: 'Failed to fetch product purchases'
     })
   }
 }

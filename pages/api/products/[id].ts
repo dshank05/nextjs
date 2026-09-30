@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
-import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage } from '../../../lib/product'
+import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage, buildProductName, sellingPrice } from '../../../lib/product'
 import { withObservability } from '../../../lib/withObservability'
 import formidable from 'formidable'
 import fs from 'fs'
@@ -175,7 +175,9 @@ async function enhanceProduct(product: any) {
       : '',
     rack_number: product.rack_id ? rackMap.get(product.rack_id) || product.rack_number || '' : product.rack_number || '',
     carModelsDisplay: carModelNames.join(', '),
-    sale_price: (latestPurchaseRate || product?.opening_rate || 0) + (product.margin || 0) - (product.discount || 0),
+    // One selling-price rule everywhere (PQ-39).
+    latestPurchaseRate,
+    sale_price: sellingPrice({ latestPurchaseRate, opening_rate: product.opening_rate, margin: product.margin, discount: product.discount }),
     gst_rate: gstRateRecord?.rate ?? 0,
     opening_rate: product.opening_rate || 0
   };
@@ -212,11 +214,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           productData = JSON.parse(productDataStr);
         } catch (parseError) {
           console.error('JSON parse error:', parseError);
-          console.error('Raw productData:', productDataStr);
-          return res.status(400).json({
-            message: 'Invalid JSON in product data',
-            error: parseError instanceof Error ? parseError.message : 'Unknown parse error'
-          });
+          return res.status(400).json({ message: 'Invalid JSON in product data' });
         }
 
         // The product has to exist before anything else. Without this check the
@@ -224,7 +222,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         // generic 500 (F-80).
         const existingProduct = await prisma.product.findUnique({
           where: { id: productId },
-          select: { id: true }
+          select: {
+            id: true, pic: true, barcode: true,
+            product_category_id: true, product_subcategory_id: true,
+            company_id: true, car_model_ids: true, part_no: true
+          }
         });
         if (!existingProduct) {
           return res.status(404).json({ message: 'Product not found' });
@@ -248,189 +250,104 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           });
         }
 
-        // Smart file handling - handle new uploads, existing files, and deletions
-        const fileStates = productData.fileStates || {};
-        const uploadPromises: Promise<void>[] = [];
-        // `undefined` means "the client said nothing about this file, leave the
-        // stored value alone". These were initialised to `null`, which is a real
-        // value meaning "no image" - so the `!== undefined` guard further down
-        // was always true and the documented no-change branch could never run.
-        // Any update that omitted fileStates wiped the product's image and
-        // barcode (F-87).
-        let imageUrl: string | null | undefined = undefined;
-        let barcodeUrl: string | null | undefined = undefined;
-
-        // Handle image file
-        if (fileStates.image?.hasNewFile && files.image && files.image[0]) {
-          // NEW FILE: Upload new file and delete old one if exists
-          uploadPromises.push(
-            (async () => {
-              try {
-                imageUrl = await uploadFileToStorage(files.image[0]);
-                // Delete old file if it exists
-                if (imageUrl && fileStates.image.existingUrl) {
-                  await deleteOldFile(fileStates.image.existingUrl);
-                }
-              } catch (uploadError) {
-                console.error('Image upload failed:', uploadError);
-                // Continue without image - don't fail the entire update
-              }
-            })()
-          );
-        } else if (fileStates.image && fileStates.image.existingUrl === null && fileStates.image.hasNewFile === false) {
-          // DELETE: User explicitly removed existing file - delete from FTP and set DB to null
-          try {
-            // Get current product to check existing file
-            const currentProduct = await prisma.product.findUnique({
-              where: { id: productId },
-              select: { pic: true }
-            });
-            if (currentProduct?.pic) {
-              await deleteOldFile(currentProduct.pic);
-            }
-          } catch (deleteError) {
-          }
-          imageUrl = null; // Set DB field to null
-        } else if (fileStates.image?.existingUrl) {
-          // KEEP EXISTING: Preserve existing URL
-          imageUrl = fileStates.image.existingUrl;
-        }
-        // If no fileStates.image or existingUrl is undefined, keep current DB value (no change)
-
-        // Handle barcode file
-        if (fileStates.barcode?.hasNewFile && files.barcode && files.barcode[0]) {
-          // NEW FILE: Upload new file and delete old one if exists
-          uploadPromises.push(
-            (async () => {
-              try {
-                barcodeUrl = await uploadFileToStorage(files.barcode[0]);
-                // Delete old file if it exists
-                if (barcodeUrl && fileStates.barcode.existingUrl) {
-                  await deleteOldFile(fileStates.barcode.existingUrl);
-                }
-              } catch (uploadError) {
-                console.error('Barcode upload failed:', uploadError);
-                // Continue without barcode - don't fail the entire update
-              }
-            })()
-          );
-        } else if (fileStates.barcode && fileStates.barcode.existingUrl === null && fileStates.barcode.hasNewFile === false) {
-          // DELETE: User explicitly removed existing file - delete from FTP and set DB to null
-          try {
-            // Get current product to check existing file
-            const currentProduct = await prisma.product.findUnique({
-              where: { id: productId },
-              select: { barcode: true }
-            });
-            if (currentProduct?.barcode) {
-              await deleteOldFile(currentProduct.barcode);
-            }
-          } catch (deleteError) {
-          }
-          barcodeUrl = null; // Set DB field to null
-        } else if (fileStates.barcode?.existingUrl) {
-          // KEEP EXISTING: Preserve existing URL
-          barcodeUrl = fileStates.barcode.existingUrl;
-        }
-        // If no fileStates.barcode or existingUrl is undefined, keep current DB value (no change)
-
-        // Wait for all uploads to complete in parallel
-        if (uploadPromises.length > 0) {
-          await Promise.all(uploadPromises);
-        }
-
-        // Only client-writable fields, and only the ones actually sent.
+        // Files: the SERVER decides, from what is stored (PQ-13).
         //
-        // `stock` is deliberately absent and is never accepted from a client.
-        // The form has no current-stock field, yet it was sending
-        // `stock: opening_stock` on every save - so editing a product to fix a
-        // typo restored every unit that had been sold (F-75). Stock is derived
-        // from purchases, sales and returns; correcting it is a stock movement,
-        // not a product edit. `rack_number` is likewise derived server-side
-        // from `rack_id` (F-84).
-        const finalData: any = await buildProductData(productData, { partial: true });
+        // `fileStates` from the client now only says what the user DID - picked
+        // a new file, or removed the current one. The stored URL comes from the
+        // row. It used to come from `fileStates.*.existingUrl`, so a caller could
+        // set pic/barcode to any URL, or name any file in /uploads for deletion.
+        //
+        // Order (PQ-14): upload -> write the row -> delete the replaced file.
+        // If the write fails or is refused (409), the new upload is removed and
+        // the old file is untouched. Old files used to be deleted before the
+        // write, so a refused edit could leave the row pointing at nothing.
+        const fileStates = productData.fileStates || {};
+        const uploaded: string[] = [];
+        const replaced: string[] = [];
+        const fileData: Record<string, string | null> = {};
 
-        // File URLs stay outside buildProductData because they come from the
-        // upload handling above, not from the payload. Still undefined means
-        // the client said nothing, so the stored value is left alone.
-        if (imageUrl !== undefined) finalData.pic = imageUrl;
-        if (barcodeUrl !== undefined) finalData.barcode = barcodeUrl;
+        for (const field of ['image', 'barcode'] as const) {
+          const column = field === 'image' ? 'pic' : 'barcode';
+          const state = fileStates[field];
+          const stored = existingProduct[column];
+          const incoming = files[field]?.[0];
+
+          if (state?.hasNewFile && incoming) {
+            try {
+              const url = await uploadFileToStorage(incoming);
+              if (url) {
+                uploaded.push(url);
+                fileData[column] = url;
+                if (stored) replaced.push(stored);
+              }
+            } catch (uploadError) {
+              // Continue without the file - don't fail the entire update.
+              console.error(`${field} upload failed:`, uploadError);
+            }
+          } else if (state && state.hasNewFile === false && state.existingUrl === null) {
+            // The user removed the current file.
+            fileData[column] = null;
+            if (stored) replaced.push(stored);
+          }
+          // Anything else: the client said nothing about this file; leave it.
+        }
+
+        const discardUploads = () => Promise.all(uploaded.map(deleteOldFile));
+
+        // Only client-writable fields, and only the ones actually sent (F-75,
+        // F-78, F-84). File columns come from the block above, not the payload.
+        const finalData: any = { ...(await buildProductData(productData, { partial: true })), ...fileData };
 
         if (Object.keys(finalData).length === 0) {
           return res.status(400).json({ message: 'No changes supplied' });
         }
 
-        // Optimistic concurrency, when the client tells us what it loaded.
-        //
-        // Two people editing the same product used to overwrite each other in
-        // silence, and no check was even possible because Product carried no
-        // timestamp to compare (F-82, F-83). It does now, so a client that
-        // sends back the `updated_at` it read gets a 409 instead of quietly
-        // discarding the other person's work.
-        //
-        // Clients that send nothing keep the old behaviour rather than being
-        // broken by this; the form sends it.
-        if (productData.updated_at !== undefined) {
-          const seen = productData.updated_at === null ? null : new Date(productData.updated_at);
-          if (seen !== null && isNaN(seen.getTime())) {
-            return res.status(400).json({ message: 'Invalid updated_at value' });
-          }
+        // The name is rebuilt from what the row WILL hold - stored values
+        // overlaid with this update - and display_name moves with it (PQ-12,
+        // PQ-55). display_name used to be written once, on create, and go stale.
+        const name = await buildProductName(productId, { ...existingProduct, ...finalData });
+        finalData.product_name = name;
+        finalData.display_name = name;
 
-          const { count } = await prisma.product.updateMany({
-            where: { id: productId, updated_at: seen },
-            data: finalData
-          });
+        try {
+          // Optimistic concurrency when the client sends the updated_at it
+          // loaded (F-83): 409 instead of silently overwriting someone else.
+          if (productData.updated_at !== undefined) {
+            const seen = productData.updated_at === null ? null : new Date(productData.updated_at);
+            if (seen !== null && isNaN(seen.getTime())) {
+              await discardUploads();
+              return res.status(400).json({ message: 'Invalid updated_at value' });
+            }
 
-          if (count === 0) {
-            return res.status(409).json({
-              message: 'This product was changed by someone else while you were editing it. Reload the product and reapply your changes.'
+            const { count } = await prisma.product.updateMany({
+              where: { id: productId, updated_at: seen },
+              data: finalData
             });
+
+            if (count === 0) {
+              await discardUploads();
+              return res.status(409).json({
+                message: 'This product was changed by someone else while you were editing it. Reload the product and reapply your changes.'
+              });
+            }
+          } else {
+            await prisma.product.update({ where: { id: productId }, data: finalData });
           }
-
-          const reloaded = await prisma.product.findUnique({ where: { id: productId } });
-          return res.status(200).json(await enhanceProduct(reloaded));
+        } catch (writeError) {
+          await discardUploads();
+          throw writeError;
         }
 
-        const updatedProduct = await prisma.product.update({ where: { id: productId }, data: finalData });
-        const enhancedProduct = await enhanceProduct(updatedProduct);
-        return res.status(200).json(enhancedProduct);
+        await Promise.all(replaced.map(deleteOldFile));
+
+        const reloaded = await prisma.product.findUnique({ where: { id: productId } });
+        return res.status(200).json(await enhanceProduct(reloaded));
       }
 
-      case 'DELETE': {
-        // Deactivate, do not destroy.
-        //
-        // This was a hard delete with no reference check. Two things were wrong
-        // with that. Products that have been SOLD are protected by ON DELETE
-        // RESTRICT from invoice_items/invoice_itemsx/deadstock, so the delete
-        // failed - but as a raw 500, not an explanation. Products that had only
-        // been PURCHASED were not protected at all, because Purchaseitems
-        // carries product_id with no foreign key, so their purchase lines were
-        // left pointing at a product that no longer existed (F-63).
-        //
-        // `is_active` already existed and there is a whole inactive-products
-        // screen built around it; nothing was using it here.
-        const existing = await prisma.product.findUnique({
-          where: { id: productId },
-          select: { id: true, is_active: true }
-        });
-
-        if (!existing) {
-          return res.status(404).json({ message: 'Product not found' });
-        }
-
-        await prisma.product.update({
-          where: { id: productId },
-          data: { is_active: false }
-        });
-
-        return res.status(200).json({
-          status: 'success',
-          message: 'Product deactivated. It stays on existing documents and can be restored from Inactive Products.'
-        });
-      }
-
+      // No DELETE. Deactivation is PATCH /api/products/[id]/status - the route
+      // the app actually uses. This DELETE did the same thing with no caller (PQ-33).
       default:
-        res.setHeader('Allow', ['GET', 'PUT', 'DELETE']);
+        res.setHeader('Allow', ['GET', 'PUT']);
         return res.status(405).end(`Method ${req.method} Not Allowed`);
     }
   } catch (error: any) {

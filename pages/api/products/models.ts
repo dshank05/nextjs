@@ -36,7 +36,6 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       const startIndex = (pageNum - 1) * limitNum;
       const modelsWithIndex = models.map((mod, idx) => ({
         ...mod,
-        subcategory_name: mod.model_name, // Add backward compatibility
         index: startIndex + idx + 1,
       }));
 
@@ -52,25 +51,28 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       });
 
     } else if (req.method === 'POST') {
-      const { subcategory_name } = req.body;
-      if (!subcategory_name) {
+      // The model name is `model_name`. It travelled as `subcategory_name` -
+      // this file was copied from subcategories and never renamed (PQ-36).
+      const model_name = String(req.body?.model_name ?? '').trim();
+      if (!model_name) {
         return res.status(400).json({ message: 'Model name is required' });
       }
       const model = await prisma.car_models.create({
-        data: { model_name: subcategory_name },
+        data: { model_name },
       });
       res.status(201).json({
         status: "success",
         message: "Model created successfully"
       });
     } else if (req.method === 'PUT') {
-      const { id, subcategory_name } = req.body;
-      if (!id || !subcategory_name) {
+      const { id } = req.body;
+      const model_name = String(req.body?.model_name ?? '').trim();
+      if (!id || !model_name) {
         return res.status(400).json({ message: 'ID and model name are required' });
       }
       const model = await prisma.car_models.update({
         where: { id: parseInt(id, 10) },
-        data: { model_name: subcategory_name },
+        data: { model_name },
       });
       res.status(200).json({
         status: "success",

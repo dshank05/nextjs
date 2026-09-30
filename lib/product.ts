@@ -26,14 +26,19 @@ export interface ValidationFailure {
  * Fields the server owns outright. A client that sends one of these is ignored,
  * not trusted:
  *
+ *   product_name - built from the category, subcategory, company, car models
+ *                  and part number the product points at (PQ-12). The browser
+ *                  used to build it from whatever dropdown lists it had loaded.
  *   stock        - derived from purchases, sales and returns. The form has no
  *                  field for it, yet it was sending one (F-75, F-85).
  *   rack_number  - denormalised from rack_id, which the server already has (F-84).
- *   display_name - composed from the id, which only exists after insert.
+ *   display_name - the name with the id in front; rewritten with the name on
+ *                  every save, not only on create (PQ-55).
  *   is_active    - owned by the deactivate path.
  *   last_purchase_date / latest_purchase_rate - maintained by the purchase flow.
  */
 export const SERVER_OWNED_FIELDS = [
+  'product_name',
   'stock',
   'rack_number',
   'display_name',
@@ -67,13 +72,6 @@ export async function validateProduct(
 ): Promise<ValidationFailure | null> {
   const partial = options.partial === true;
   const supplied = (field: string) => input[field] !== undefined;
-
-  if (supplied('product_name') && String(input.product_name || '').trim() === '') {
-    return { status: 400, message: 'Product name cannot be empty' };
-  }
-  if (!partial && !String(input.product_name || '').trim()) {
-    return { status: 400, message: 'Product name is required' };
-  }
 
   if (!partial || supplied('warehouse_id')) {
     const warehouseId = toInt(input.warehouse_id);
@@ -254,7 +252,6 @@ export async function buildProductData(
   const data: Record<string, any> = {};
   const has = (field: string) => !partial || input[field] !== undefined;
 
-  if (input.product_name !== undefined) data.product_name = String(input.product_name).trim();
   if (has('product_category_id')) data.product_category_id = toInt(input.product_category_id);
   if (has('product_subcategory_id')) data.product_subcategory_id = toInt(input.product_subcategory_id);
   if (has('car_model_ids')) data.car_model_ids = input.car_model_ids || null;
@@ -281,4 +278,74 @@ export async function buildProductData(
   }
 
   return data;
+}
+
+/** The stored columns a product's name is built from. */
+export interface ProductNameParts {
+  product_category_id?: number | null;
+  product_subcategory_id?: number | null;
+  company_id?: number | null;
+  car_model_ids?: string | null;
+  part_no?: string | null;
+}
+
+/**
+ * The product's name, built on the server from the ids it points at (PQ-12).
+ *
+ * Same parts, in the same order, as the form's old generateProductDisplay():
+ * car models, category, subcategory, company, part number - except that EVERY
+ * car model is included, not just the first. The id goes in front, as it
+ * always has once a product exists (F-77, by design).
+ */
+export async function buildProductName(id: number, parts: ProductNameParts): Promise<string> {
+  const modelIds = (parts.car_model_ids || '')
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !Number.isNaN(n));
+
+  const [models, category, subcategory, company] = await Promise.all([
+    modelIds.length
+      ? prisma.car_models.findMany({ where: { id: { in: modelIds } }, select: { id: true, model_name: true } })
+      : Promise.resolve([] as { id: number; model_name: string | null }[]),
+    parts.product_category_id
+      ? prisma.product_category.findUnique({ where: { id: parts.product_category_id }, select: { category_name: true } })
+      : Promise.resolve(null),
+    parts.product_subcategory_id
+      ? prisma.product_subcategory.findUnique({ where: { id: parts.product_subcategory_id }, select: { subcategory_name: true } })
+      : Promise.resolve(null),
+    parts.company_id
+      ? prisma.product_company.findUnique({ where: { id: parts.company_id }, select: { company_name: true } })
+      : Promise.resolve(null)
+  ]);
+
+  // Keep the order the ids were stored in, not the order the query returned.
+  const modelName = new Map(models.map((m) => [m.id, m.model_name]));
+  const modelNames = modelIds.map((mid) => modelName.get(mid)).filter(Boolean).join(' / ');
+
+  return [
+    String(id),
+    modelNames,
+    category?.category_name,
+    subcategory?.subcategory_name,
+    company?.company_name,
+    parts.part_no?.trim()
+  ]
+    .map((p) => (p || '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Selling price, one rule everywhere (PQ-39, owner decision 2026-09-30):
+ * the latest purchase rate + margin - discount, or the opening rate + margin -
+ * discount until the product has been purchased.
+ */
+export function sellingPrice(p: {
+  latestPurchaseRate?: number | null;
+  opening_rate?: number | null;
+  margin?: number | null;
+  discount?: number | null;
+}): number {
+  const base = p.latestPurchaseRate && p.latestPurchaseRate > 0 ? p.latestPurchaseRate : p.opening_rate || 0;
+  return base + (p.margin || 0) - (p.discount || 0);
 }

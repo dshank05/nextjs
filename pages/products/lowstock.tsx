@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { useProducts } from '../../hooks/useProducts';
 import type { Product } from '../../types/products';
 
 export default function LowStock() {
   // Query hook with low stock filter
   const { data, isLoading, refetch } = useProducts({
-    stockFilter: 'low',
+    stockFilter: 'low_stock',
     fetchAll: true
   });
 
@@ -32,9 +31,6 @@ export default function LowStock() {
             className="btn-secondary"
           >
             Refresh
-          </button>
-          <button className="btn-primary">
-            Add Stock
           </button>
         </div>
       </div>
@@ -107,8 +103,10 @@ export default function LowStock() {
                   <tr key={product.id} className={criticalLevel ? 'bg-red-900/30' : ''}>
                     <td className="font-medium text-white">{product.product_name}</td>
                     <td className="text-slate-300">{product.part_no || '-'}</td>
-                    <td className="text-slate-300">{product.product_category || '-'}</td>
-                    <td className="text-slate-300">{product.company || '-'}</td>
+                    {/* categoryName / companyName are what the hook returns; the
+                        old field names were always empty (PQ-04). */}
+                    <td className="text-slate-300">{product.categoryName || '-'}</td>
+                    <td className="text-slate-300">{product.companyName || '-'}</td>
                     <td className={`font-semibold ${criticalLevel ? 'text-red-400' : 'text-orange-400'}`}>
                       {product.stock || 0}
                     </td>
@@ -144,26 +142,6 @@ export default function LowStock() {
         </div>
       </div>
 
-      {/* Quick Actions */}
-      {products.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <button className="flex items-center justify-center p-4 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
-              <span className="text-xl mr-2">📦</span>
-              <span>Create Purchase Order</span>
-            </button>
-            <button className="flex items-center justify-center p-4 bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
-              <span className="text-xl mr-2">📊</span>
-              <span>Export Low Stock Report</span>
-            </button>
-            <button className="flex items-center justify-center p-4 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
-              <span className="text-xl mr-2">🔔</span>
-              <span>Set Up Alerts</span>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

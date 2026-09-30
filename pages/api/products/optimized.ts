@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { format } from 'date-fns'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { sellingPrice } from '../../../lib/product'
 
 // Removed: lookupCache / getCachedLookupData, and createSearchableText below.
 // Neither was ever called - a module-level Map that nothing read or wrote, and
@@ -195,7 +196,10 @@ async function handler(
     // columns, and car models, which match inside a comma-joined string.
     // Subcategory is an ordinary column and now goes through Prisma with the
     // rest (F-96).
-    const needsSpecialHandling = lowStock === 'true' || stockFilter === 'low_stock' || hasModelFilter;
+    // Sorting by Rate also takes the raw path: the Rate column shows the latest
+    // purchase rate (or the opening rate before any purchase), and only SQL can
+    // order by that fallback. It used to order by opening_rate alone (PQ-11).
+    const needsSpecialHandling = lowStock === 'true' || stockFilter === 'low_stock' || hasModelFilter || sortField === 'rate';
 
 
     let products: any[];
@@ -312,7 +316,7 @@ async function handler(
         part_no: 'p.part_no',
         stock: 'p.stock',
         lastPurchaseDate: 'p.last_purchase_date',
-        rate: 'p.opening_rate',
+        rate: 'COALESCE(NULLIF(p.latest_purchase_rate, 0), p.opening_rate)',
         categoryName: 'pc.category_name',
         subcategoryName: 'psc.subcategory_name',
         companyName: 'pcm.company_name'
@@ -344,8 +348,6 @@ async function handler(
         orderBy = { product_company_ref: { company_name: sortDirection } };
       } else if (sortField === 'subcategoryName') {
         orderBy = { subcategory_ref: { subcategory_name: sortDirection } };
-      } else if (sortField === 'rate') {
-        orderBy = { opening_rate: sortDirection };
       } else if (sortField === 'lastPurchaseDate') {
         orderBy = { last_purchase_date: sortDirection };
       } else {
@@ -389,7 +391,9 @@ async function handler(
 
 
     // Single batch query for all lookup data
-    const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, purchaseRates] = await Promise.all([
+    const gstRateIds = Array.from(new Set(products.map(p => p.gst_rate_id).filter(Boolean)));
+
+    const [categoryRecords, subcategoryRecords, carModelRecords, companyRecords, purchaseRates, gstRecords] = await Promise.all([
       categoryIds.length > 0 ? prisma.product_category.findMany({
         where: { id: { in: categoryIds } },
         select: { id: true, category_name: true }
@@ -406,8 +410,13 @@ async function handler(
         where: { id: { in: companyIds } },
         select: { id: true, company_name: true }
       }) : Promise.resolve([]),
-      getPurchaseRatesOptimized(productIds)
+      getPurchaseRatesOptimized(productIds),
+      gstRateIds.length > 0 ? prisma.gst_tax_rate.findMany({
+        where: { id: { in: gstRateIds } },
+        select: { id: true, rate: true }
+      }) : Promise.resolve([])
     ]);
+    const gstMap = new Map(gstRecords.map(g => [g.id, g.rate]));
 
 
     // Create efficient lookup maps
@@ -449,7 +458,21 @@ async function handler(
         lastPurchaseDate: product.last_purchase_date ? format(new Date(product.last_purchase_date * 1000), 'dd/MM/yyyy') : '-',
         pic: product.pic || undefined,
         barcode: product.barcode || undefined,
-        index: undefined
+        // What the purchase, sale and salex pickers read when a line is added.
+        // This endpoint did not return any of it, so a sale line defaulted to
+        // the purchase rate and 0% GST (PQ-39).
+        display_name: product.display_name || undefined,
+        hsn: product.hsn || undefined,
+        opening_rate: product.opening_rate || 0,
+        latest_purchase_rate: latestPurchaseRate,
+        latest_selling_price: sellingPrice({
+          latestPurchaseRate: purchaseRates.get(product.id.toString()) || product.latest_purchase_rate,
+          opening_rate: product.opening_rate,
+          margin: product.margin,
+          discount: product.discount
+        }),
+        gst_rate_id: product.gst_rate_id || undefined,
+        gst_rate_percentage: product.gst_rate_id ? gstMap.get(product.gst_rate_id) ?? 0 : 0
       };
     });
 

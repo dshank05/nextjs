@@ -85,8 +85,9 @@ export default function ProductCreate() {
   const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
   const [barcodePreview, setBarcodePreview] = useState<string>('');
-  const [existingImageUrl, setExistingImageUrl] = useState<string>('');
-  const [existingBarcodeUrl, setExistingBarcodeUrl] = useState<string>('');
+  // null = the user removed the stored file; '' = there was none.
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>('');
+  const [existingBarcodeUrl, setExistingBarcodeUrl] = useState<string | null>('');
   const [isNewImage, setIsNewImage] = useState<boolean>(false);
   const [isNewBarcode, setIsNewBarcode] = useState<boolean>(false);
   const [editLoading, setEditLoading] = useState(false);
@@ -99,9 +100,14 @@ export default function ProductCreate() {
   // real value here - it is what the 602 products that predate the column carry.
   const [loadedUpdatedAt, setLoadedUpdatedAt] = useState<string | null | undefined>(undefined);
 
-  // State for dynamic subcategories
-  const [subcategories, setSubcategories] = useState<any[]>([]);
-  const [subcategoriesLoading, setSubcategoriesLoading] = useState(false);
+  // Subcategories of the chosen category, from the filter options already
+  // loaded (every subcategory, with its category_id). This used to fetch the
+  // paginated subcategories endpoint with no limit, so a category's 51st
+  // subcategory could not be picked - and on edit a product whose subcategory
+  // was past the first 50 lost it from its name (PQ-07).
+  const subcategories = filterOptions.subcategories.filter(
+    (s: any) => String(s.category_id) === formData.product_category
+  );
 
 
 
@@ -129,29 +135,9 @@ export default function ProductCreate() {
     }
   }, [router.query.edit]);
 
-  // Fetch subcategories when the category changes.
-  //
-  // Fetch only. Clearing the dependent field moved to handleInputChange, where
-  // the user actually picks a category.
-  //
-  // This effect used to clear product_subcategory unconditionally, and it does
-  // not know why the category changed. Loading a product for edit sets the
-  // category, so the effect fired and wiped the subcategory that had been loaded
-  // one line earlier - whether it survived came down to which render won, which
-  // is why the live data showed some edited products keeping a subcategory and
-  // most losing it (F-88). Same shape for warehouse -> rack below.
-  //
-  // The rule the rest of this audit runs on applies here too: the browser
-  // decides what the USER TYPED. A programmatic load is not typing.
-  useEffect(() => {
-    if (formData.product_category) {
-      fetchSubcategories(formData.product_category);
-    } else {
-      setSubcategories([]);
-    }
-  }, [formData.product_category]);
-
-  // Fetch racks when the warehouse changes. Fetch only - see above (F-88).
+  // Fetch racks when the warehouse changes. Fetch only: clearing the rack is
+  // done in handleInputChange, on the user's own change - a programmatic load
+  // for edit is not typing (F-88).
   useEffect(() => {
     if (formData.warehouse) {
       fetchRacks(formData.warehouse);
@@ -207,29 +193,6 @@ export default function ProductCreate() {
       }
     } catch (error) { console.error('Error fetching GST rates:', error); }
   };
-  // Fetch subcategories based on selected category
-  const fetchSubcategories = async (categoryId: string) => {
-    if (!categoryId) {
-      setSubcategories([]);
-      return;
-    }
-
-    setSubcategoriesLoading(true);
-    try {
-      const response = await fetch(`/api/products/subcategories?category_id=${categoryId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSubcategories(data.subcategories || []);
-      } else {
-        setSubcategories([]);
-      }
-    } catch (error) {
-      console.error('Error fetching subcategories:', error);
-      setSubcategories([]);
-    } finally {
-      setSubcategoriesLoading(false);
-    }
-  };
 
   // Fetch racks based on selected warehouse
   const fetchRacks = async (warehouseId: string) => {
@@ -240,7 +203,8 @@ export default function ProductCreate() {
 
     setRacksLoading(true);
     try {
-      const response = await fetch(`/api/warehouses/${warehouseId}/racks`);
+      // Every rack of the warehouse; the endpoint pages at 50 by default (PQ-07).
+      const response = await fetch(`/api/warehouses/${warehouseId}/racks?limit=1000`);
       if (response.ok) {
         const data = await response.json();
         setRacks(data.racks || []);
@@ -384,33 +348,28 @@ export default function ProductCreate() {
     }
   };
 
+  // A PREVIEW of the name. The server builds the real one from the ids on every
+  // save (PQ-12, lib/product.ts buildProductName) with the same rule: id (once
+  // the product exists), every car model, category, subcategory, company, part
+  // number. The browser no longer sends a name at all.
   const generateProductDisplay = () => {
-    // For new products, we don't have a UID yet, so we'll show a preview format
-    // For editing, we show the actual format with UID
     const uid = isEditing && editingProductId ? editingProductId.toString() : '';
-    const carModelName = formData.car_models.length > 0
-      ? filterOptions.models.find(m => m.id.toString() === formData.car_models[0])?.name || ''
-      : '';
+    const modelNames = formData.car_models
+      .map(id => filterOptions.models.find(m => m.id.toString() === id)?.name)
+      .filter(Boolean)
+      .join(' / ');
     const categoryName = filterOptions.categories.find(c => c.id.toString() === formData.product_category)?.name || '';
-    const subcategoryName = subcategories.find(s => s.id.toString() === formData.product_subcategory)?.subcategory_name || '';
+    const subcategoryName = subcategories.find((s: any) => s.id.toString() === formData.product_subcategory)?.name || '';
     const companyName = filterOptions.companies.find(c => c.id.toString() === formData.company_id)?.name || '';
 
-    // Build parts array - omit empty optional fields
-    const parts = [uid, carModelName, categoryName];
-    if (subcategoryName) parts.push(subcategoryName);
-    parts.push(companyName);
-    if (formData.part_no) parts.push(formData.part_no);
-
-    return parts.join(' ');
+    return [uid, modelNames, categoryName, subcategoryName, companyName, formData.part_no.trim()]
+      .filter(Boolean)
+      .join(' ');
   };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    const displayName = generateProductDisplay();
-    if (!displayName.trim()) {
-      newErrors.product_category = 'Complete product details are required';
-    }
     if (!formData.product_category) {
       newErrors.product_category = 'Category is required';
     }
@@ -450,8 +409,8 @@ export default function ProductCreate() {
     const formDataToSend = new FormData();
 
     // Add product data as JSON string with file state information
+    // No product_name: the server builds it from the ids (PQ-12).
     const productData = {
-      product_name: displayName,
       product_category_id: formData.product_category ? parseInt(formData.product_category) : null,
       product_subcategory_id: formData.product_subcategory ? parseInt(formData.product_subcategory) : null,
       car_model_ids: formData.car_models.length > 0 ? formData.car_models.join(',') : null,
@@ -579,7 +538,7 @@ export default function ProductCreate() {
               maxSize={5}
               value={imageFile}
               previewUrl={imagePreview}
-              existingUrl={existingImageUrl}
+              existingUrl={existingImageUrl || undefined}
               onChange={(file, isNew) => {
                 setImageFile(file);
                 setIsNewImage(isNew);
@@ -608,7 +567,7 @@ export default function ProductCreate() {
               maxSize={5}
               value={barcodeFile}
               previewUrl={barcodePreview}
-              existingUrl={existingBarcodeUrl}
+              existingUrl={existingBarcodeUrl || undefined}
               onChange={(file, isNew) => {
                 setBarcodeFile(file);
                 setIsNewBarcode(isNew);
@@ -658,17 +617,15 @@ export default function ProductCreate() {
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">SUB CATEGORY</label>
                   <SearchableSelect
-                    options={subcategories.map(sub => ({ id: sub.id.toString(), name: sub.subcategory_name }))}
+                    options={subcategories.map((sub: any) => ({ id: sub.id.toString(), name: sub.name }))}
                     selectedValue={formData.product_subcategory}
                     onSelectionChange={(value) => handleInputChange('product_subcategory', value || '')}
                     placeholder={
                       !formData.product_category
                         ? "Please select a category first"
-                        : subcategoriesLoading
-                          ? "Loading subcategories..."
-                          : "Select Sub Category"
+                        : "Select Sub Category"
                     }
-                    disabled={!formData.product_category || subcategoriesLoading}
+                    disabled={!formData.product_category}
                   />
                 </div>
 
@@ -763,7 +720,10 @@ export default function ProductCreate() {
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">HSN</label>
                 <SearchableSelect
-                  options={gstRates.map(rate => ({ id: rate.hsn_code, name: rate.hsn_code }))}
+                  // One option per distinct, non-empty HSN. The code is the option
+                  // id, so duplicates or blanks collided in the picker.
+                  options={Array.from(new Set(gstRates.map(rate => rate.hsn_code).filter(Boolean)))
+                    .map(code => ({ id: code as string, name: code as string }))}
                   selectedValue={formData.hsn}
                   onSelectionChange={(value) => handleInputChange('hsn', value || '')}
                   placeholder="Select HSN Code"
@@ -802,7 +762,9 @@ export default function ProductCreate() {
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">RACK</label>
                 <SearchableSelect
-                  options={racks.filter(rack => rack.status === 'Active').map(rack => ({
+                  // Active racks, plus the product's current rack even if it has
+                  // since been deactivated - otherwise an edit shows it blank.
+                  options={racks.filter(rack => rack.status === 'Active' || rack.id.toString() === formData.rack_id).map(rack => ({
                     id: rack.id.toString(),
                     name: `${rack.rack_number} ${rack.description ? `(${rack.description})` : ''}`
                   }))}
@@ -931,7 +893,7 @@ export default function ProductCreate() {
       <ConfirmationModal
         isOpen={showConfirmModal}
         title={isEditing ? "Update Product?" : "Create Product?"}
-        message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product? ${isEditing ? `This will update the existing product with UID: ${editingProductId}.` : 'This action cannot be undone.'}`}
+        message={`Are you sure you want to ${isEditing ? 'update' : 'create'} this product?${isEditing ? ` This will update the existing product with UID: ${editingProductId}.` : ''}`}
         confirmText={isEditing ? "Update Product" : "Create Product"}
         cancelText="Cancel"
         showLoading={createProduct.isPending || updateProduct.isPending}

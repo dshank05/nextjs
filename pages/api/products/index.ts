@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
-import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage } from '../../../lib/product';
+import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage, buildProductName, sellingPrice } from '../../../lib/product';
 import { withObservability } from '../../../lib/withObservability';
 import formidable from 'formidable';
 import fs from 'fs';
@@ -356,18 +356,21 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const processedProducts = products.map(p => {
       const latestPurchase = latestRateMap.get(p.id);
       const displayRate = latestPurchase?.rate || p.opening_rate || 0;
-      const latestSelling = (latestPurchase?.rate || p.opening_rate || 0) - (p.discount || 0) + (p.margin || 0);
-      const calcSelling = (p.opening_rate || 0) + (p.margin || 0) - (p.discount || 0);
+      // One selling-price rule everywhere (PQ-39). The three names are kept
+      // because callers read them; they now carry the same number.
+      const selling = sellingPrice({ latestPurchaseRate: latestPurchase?.rate, opening_rate: p.opening_rate, margin: p.margin, discount: p.discount });
 
       return {
         ...p,
         display_rate: displayRate,
-        latest_selling_price: latestSelling,
-        calculated_selling_price: calcSelling,
+        latest_selling_price: selling,
+        calculated_selling_price: selling,
         latest_purchase_rate: p.latest_purchase_rate || latestPurchase?.rate || null,
         last_purchase_date: p.last_purchase_date || latestPurchase?.date || null,
-        selling_price: calcSelling,
-        gst_rate_percentage: p.gst_rate?.rate || 0,
+        selling_price: selling,
+        // The raw low-stock path selects `gst_rate_value`; the Prisma path
+        // includes the relation. Read whichever this row has (PQ-15).
+        gst_rate_percentage: p.gst_rate?.rate ?? p.gst_rate_value ?? 0,
       };
     });
 
@@ -481,19 +484,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
 
     try {
-      const product = await prisma.product.create({ data: finalProductData });
-
-      // display_name needs the id, which only exists after the insert, so it is
-      // a second statement - but an AWAITED one.
-      //
-      // It used to be fired and forgotten with a .catch() that only logged. If
-      // it lost the race or failed, the product kept display_name NULL, and
-      // display_name is the FIRST field both list endpoints search on - so the
-      // product was effectively unfindable by name and nothing reported why
-      // (F-105).
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { display_name: `${product.id} ${product.product_name}` }
+      // The name is built on the server from the ids (PQ-12) and needs the new
+      // id, so it is written in the same transaction as the insert - never left
+      // half-done (F-105).
+      const product = await prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({ data: { ...finalProductData, product_name: '' } });
+        const name = await buildProductName(created.id, finalProductData);
+        return tx.product.update({
+          where: { id: created.id },
+          data: { product_name: name, display_name: name }
+        });
       });
 
       res.status(201).json({
