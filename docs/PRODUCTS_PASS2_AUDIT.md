@@ -414,3 +414,14 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
 - `DeadstockModal` asks for `fetchAll=true` (its `limit=1000` would now be capped).
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 5 — history · done (2026-09-30)
+
+- **PQ-21** `lib/product-history.ts` builds all five "last five" tables; the five routes
+  under `/api/products/[id]/` are three-line wrappers (`historyRoute(kind)`). Sales and
+  salex share one function. The Block 1 rules — ISO dates (PQ-01), header by id for
+  sales (PQ-02), `(invoice_no, fy)` for purchases (PQ-03) — now live once.
+- **PQ-31, PQ-37** for these routes: `parseId`, `fail()`, `withObservability`.
+- The unused `bill_reference_date` field is no longer sent.
+
+**Checks:** `tsc --noEmit` clean.

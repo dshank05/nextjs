@@ -103,6 +103,7 @@ export interface ProductTransactionRow {
   sn: number;
   invoice_number?: string;
   voucher_number?: string;
+  bill_reference?: string;
   vendor?: string;
   customer?: string;
   qty: number;
