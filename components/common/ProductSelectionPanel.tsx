@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Search, Filter, Loader } from 'lucide-react';
 import { SearchableSelect } from './SearchableSelect';
+import { useFilterOptions } from '../../hooks/useProducts';
 
 export interface Product {
     id: number;
@@ -86,40 +87,10 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     const [selectedProductIds, setSelectedProductIds] = useState<Set<number>>(new Set());
     const [selectMode, setSelectMode] = useState<'single' | 'multi'>(defaultToMultiSelect ? 'multi' : 'single');
     
-    // Internal state for filter options - will fetch from API if not provided via props
-    const [internalFilterOptions, setInternalFilterOptions] = useState<FilterOptions>({
-        categories: [],
-        subcategories: [],
-        companies: [],
-        models: []
-    });
-    const [filterOptionsLoading, setFilterOptionsLoading] = useState(false);
-
-    // Use prop filterOptions if provided, otherwise use internal state
-    const filterOptions = propFilterOptions || internalFilterOptions;
-
-    // Fetch filter options from API if not provided via props
-    useEffect(() => {
-        const fetchFilterOptions = async () => {
-            // Only fetch if not provided via props
-            if (propFilterOptions) return;
-
-            setFilterOptionsLoading(true);
-            try {
-                const response = await fetch('/api/products/filters');
-                if (response.ok) {
-                    const data = await response.json();
-                    setInternalFilterOptions(data);
-                }
-            } catch (error) {
-                console.error('Error fetching filter options:', error);
-            } finally {
-                setFilterOptionsLoading(false);
-            }
-        };
-
-        fetchFilterOptions();
-    }, [propFilterOptions]);
+    // The shared, cached filter options unless the caller passes its own (PQ-29).
+    const { data: sharedFilterOptions, isLoading: sharedLoading } = useFilterOptions();
+    const filterOptionsLoading = !propFilterOptions && sharedLoading;
+    const filterOptions: FilterOptions = propFilterOptions || (sharedFilterOptions as any) || { categories: [], subcategories: [], companies: [], models: [] };
 
     useEffect(() => {
         if (isOpen && inputRef.current) {

@@ -7,7 +7,10 @@ import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ClearableTextarea, FileUpload } from '../../components/common';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast } from '../../lib/broadcast';
-import { useCreateProduct, useUpdateProduct } from '../../hooks/useProducts';
+import { useCreateProduct, useUpdateProduct, useFilterOptions } from '../../hooks/useProducts';
+import type { FilterOptions } from '../../types/products';
+
+const NO_OPTIONS: FilterOptions = { categories: [], subcategories: [], companies: [], models: [] };
 
 interface ProductFormData {
   product_category: string;
@@ -30,13 +33,6 @@ interface ProductFormData {
   margin: string; // Changed from sale_price to match API expectations
 }
 
-interface FilterOptions {
-  categories: any[];
-  subcategories: any[];
-  companies: any[];
-  models: any[];
-}
-
 export default function ProductCreate() {
   const { showSnackbar } = useSnackbar();
   const router = useRouter();
@@ -45,12 +41,8 @@ export default function ProductCreate() {
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    categories: [],
-    subcategories: [],
-    companies: [],
-    models: []
-  });
+  // Shared, cached filter options (PQ-29).
+  const { data: filterOptions = NO_OPTIONS } = useFilterOptions();
 
   // ===== NEW STATE FOR WAREHOUSE AND GST =====
   const [warehouses, setWarehouses] = useState<any[]>([]);
@@ -110,7 +102,6 @@ export default function ProductCreate() {
 
   // Fetch all options on mount
   useEffect(() => {
-    fetchFilterOptions();
     fetchWarehouses();
     fetchGstRates();
   }, []);
@@ -163,12 +154,6 @@ export default function ProductCreate() {
 
 
 
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) { console.error('Error fetching filter options:', error); }
-  };
 
   const fetchWarehouses = async () => {
     try {

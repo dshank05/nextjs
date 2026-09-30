@@ -425,3 +425,25 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
 - The unused `bill_reference_date` field is no longer sent.
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 6 — client · done (2026-09-30)
+
+- **PQ-25, PQ-53** `components/products/LookupTablePage.tsx`: one page for categories,
+  companies, car models and subcategories; each page file is now a ~15-line config.
+  `<ExportMenu>` with a full-list export replaces the old `useExport` +
+  `ExportColumnSelector` + inline `require` path. Subcategories' parent category is a
+  `SearchableSelect` of existing categories (no hand-rolled dropdown, nothing typed can
+  become a category).
+- **PQ-26** `ProductTable`: seven auto-apply handlers and the Clear button go through one
+  `applyFilter(patch)`.
+- **PQ-28** `useProducts` returns the API's rows as `Product` — no second mapping layer;
+  `ProductTable` and `products/index.tsx` use `Product`, `ProductListFilters` and
+  `PaginationState` instead of local copies. Option ids are stringified for
+  `SearchableSelect` (they were numbers typed as strings).
+- **PQ-29** `ProductTable`, `create.tsx` and `ProductSelectionPanel` use the cached
+  `useFilterOptions()`; three separate `/filters` fetchers are gone.
+- View page: the five history tables are one `<HistoryTable>`.
+- Left: `ProductSelectionPanel` keeps its exported `Product` type, which the three document
+  forms import (Phase 4/5).
+
+**Checks:** `tsc --noEmit` clean.

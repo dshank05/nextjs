@@ -7,41 +7,17 @@ import { SearchableMultiSelect } from '../../components/common/SearchableMultiSe
 import { ClearableInput, ExportMenu, ImagePreviewModal } from '../common';
 import { getLocalDateString } from '../../lib/date-utils';
 import { ListPagination, ListSummary, SortIcon } from '../common/ListPagination';
+import type { PaginationState } from '../../hooks/useListQuery';
+import { useFilterOptions } from '../../hooks/useProducts';
+import type { Product, ProductListFilters, FilterOptions } from '../../types/products';
 
-interface Product {
-  id: number;
-  product_name: string;
-  stock?: number;
-  min_stock?: number;
-  rate?: number;
-  part_no?: string;
-  categoryName?: string;
-  companyName?: string;
-  latestPurchaseRate?: number;
-  lastPurchaseDate?: string | null;
-  carModelsDisplay?: string;
-  subcategoryName?: string;
-  pic?: string; // Product image URL
-  barcode?: string; // Barcode image URL
-}
+const NO_OPTIONS: FilterOptions = { categories: [], subcategories: [], companies: [], models: [] };
 
-interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
-interface FilterOptions {
-  categories: { id: string; name: string }[];
-  subcategories: { id: string; name: string; category_id?: number | null }[];
-  companies: { id: string; name: string }[];
-  models: { id: string; name: string }[];
-}
+type Filters = Omit<ProductListFilters, 'sortBy' | 'sortOrder'>;
 
 interface ProductTableProps {
   products: Product[];
-  pagination: Pagination;
+  pagination: PaginationState;
   loading: boolean;
   onPageChange: (newPage: number) => void;
   searchTerm: string;
@@ -49,34 +25,8 @@ interface ProductTableProps {
   actionButton?: React.ReactNode;
   /** Every row matching the current filters, for export (S-89). */
   fetchAllForExport?: () => Promise<Product[]>;
-  onApplyFilters?: (filters: {
-    categoryFilter: string;
-    subcategoryFilter: string;
-    modelFilter: string[];
-    companyFilter: string;
-    quantityFilter: string;
-    stockFilter: string;
-    startDate: string;
-    endDate: string;
-    uidFilter: string;
-    partNoFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }) => void;
-  initialFilters?: {
-    categoryFilter: string;
-    subcategoryFilter: string;
-    modelFilter: string[];
-    companyFilter: string;
-    quantityFilter: string;
-    stockFilter: string;
-    startDate: string;
-    endDate: string;
-    uidFilter: string;
-    partNoFilter: string;
-    sortBy?: string;
-    sortOrder?: string;
-  };
+  onApplyFilters?: (filters: ProductListFilters) => void;
+  initialFilters?: ProductListFilters;
 }
 
 /** The API sends an ISO timestamp; format it here, in the viewer's timezone (PQ-38). */
@@ -98,7 +48,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   fetchAllForExport
 }) => {
   // Consolidated filter state - initialize with initialFilters if provided
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<Filters>({
     categoryFilter: initialFilters?.categoryFilter || '',
     subcategoryFilter: initialFilters?.subcategoryFilter || '',
     modelFilter: initialFilters?.modelFilter || [],
@@ -110,12 +60,8 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     uidFilter: initialFilters?.uidFilter || '',
     partNoFilter: initialFilters?.partNoFilter || ''
   });
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    categories: [],
-    subcategories: [],
-    companies: [],
-    models: []
-  });
+  // Shared, cached filter options (PQ-29).
+  const { data: filterOptions = NO_OPTIONS } = useFilterOptions();
 
   // Subcategories of the chosen category, from the filter options already
   // loaded (each carries its category_id). This fetched the paginated
@@ -132,6 +78,14 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   const [sortBy, setSortBy] = useState<SortField>((initialFilters?.sortBy as SortField) || 'categoryName');
   const [sortOrder, setSortOrder] = useState<SortOrder>((initialFilters?.sortOrder as SortOrder) || 'asc');
 
+  // Every filter control applies itself: update local state and hand the whole
+  // set, with the current sort, to the page (PQ-26 - this was seven copies).
+  const applyFilter = (patch: Partial<Filters>) => {
+    const next = { ...filters, ...patch };
+    setFilters(next);
+    onApplyFilters?.({ ...next, sortBy, sortOrder });
+  };
+
   // Image preview modal state
   const [imagePreviewModal, setImagePreviewModal] = useState({
     isOpen: false,
@@ -140,10 +94,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
     barcodeUrl: ''
   });
 
-  // Fetch filter options on mount
-  useEffect(() => {
-    fetchFilterOptions();
-  }, []);
 
   // Update filters when initialFilters change
   useEffect(() => {
@@ -170,14 +120,6 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   // mechanism, on the list. The clear happens where the user picks a category
   // (PQ-10).
 
-  const fetchFilterOptions = async () => {
-    try {
-      const response = await fetch('/api/products/filters');
-      if (response.ok) setFilterOptions(await response.json());
-    } catch (error) {
-      console.error('Error fetching filter options:', error);
-    }
-  };
 
 
 
@@ -264,16 +206,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             value={filters.uidFilter}
             onChange={(e) => {
               const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, uidFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  uidFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ uidFilter: newValue });
             }}
           />
         </div>
@@ -284,7 +217,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <SearchableSelect
             options={[
               { id: '', name: 'All Categories' },
-              ...filterOptions.categories
+              ...filterOptions.categories.map(o => ({ id: String(o.id), name: o.name }))
             ]}
             selectedValue={filters.categoryFilter}
             onSelectionChange={(value) => {
@@ -292,17 +225,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
               // A new category invalidates the chosen subcategory - cleared here,
               // on the user's pick, not in an effect (PQ-10).
               const subcategoryFilter = newValue === filters.categoryFilter ? filters.subcategoryFilter : '';
-              setFilters(prev => ({ ...prev, categoryFilter: newValue, subcategoryFilter }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  categoryFilter: newValue,
-                  subcategoryFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ categoryFilter: newValue, subcategoryFilter });
             }}
             placeholder="Select category..."
           />
@@ -319,16 +242,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             selectedValue={filters.subcategoryFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setFilters(prev => ({ ...prev, subcategoryFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  subcategoryFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ subcategoryFilter: newValue });
             }}
             placeholder={filters.categoryFilter ? "Select subcategory..." : "Select a category first"}
             disabled={!filters.categoryFilter}
@@ -341,22 +255,13 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <SearchableSelect
             options={[
               { id: '', name: 'All Car Models' },
-              ...filterOptions.models
+              ...filterOptions.models.map(o => ({ id: String(o.id), name: o.name }))
             ]}
             selectedValue={filters.modelFilter.length > 0 ? filters.modelFilter[0] : ''}
             onSelectionChange={(value) => {
               const newValue = value || '';
               const newModelFilter = newValue ? [newValue] : [];
-              setFilters(prev => ({ ...prev, modelFilter: newModelFilter }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  modelFilter: newModelFilter,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ modelFilter: newModelFilter });
             }}
             placeholder="Select car model..."
           />
@@ -368,21 +273,12 @@ export const ProductTable: React.FC<ProductTableProps> = ({
           <SearchableSelect
             options={[
               { id: '', name: 'All Companies' },
-              ...filterOptions.companies
+              ...filterOptions.companies.map(o => ({ id: String(o.id), name: o.name }))
             ]}
             selectedValue={filters.companyFilter}
             onSelectionChange={(value) => {
               const newValue = value || '';
-              setFilters(prev => ({ ...prev, companyFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  companyFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ companyFilter: newValue });
             }}
             placeholder="Select company..."
           />
@@ -397,16 +293,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             value={filters.partNoFilter}
             onChange={(e) => {
               const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, partNoFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  partNoFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ partNoFilter: newValue });
             }}
           />
         </div>
@@ -420,16 +307,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             value={filters.quantityFilter}
             onChange={(e) => {
               const newValue = e.target.value;
-              setFilters(prev => ({ ...prev, quantityFilter: newValue }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  quantityFilter: newValue,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ quantityFilter: newValue });
             }}
             min="0"
           />
@@ -442,17 +320,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
             startDate={filters.startDate}
             endDate={filters.endDate}
             onDateChange={(start, end) => {
-              setFilters(prev => ({ ...prev, startDate: start, endDate: end }));
-              // Auto-apply filter
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...filters,
-                  startDate: start,
-                  endDate: end,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              applyFilter({ startDate: start, endDate: end });
             }}
             placeholder="Select date range..."
           />
@@ -462,7 +330,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         <div className="flex items-end">
           <button
             onClick={() => {
-              const clearedFilters = {
+              applyFilter({
                 categoryFilter: '',
                 subcategoryFilter: '',
                 modelFilter: [],
@@ -473,16 +341,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
                 endDate: '',
                 uidFilter: '',
                 partNoFilter: ''
-              };
-              setFilters(clearedFilters);
-              // Apply cleared filters
-              if (onApplyFilters) {
-                onApplyFilters({
-                  ...clearedFilters,
-                  sortBy,
-                  sortOrder
-                });
-              }
+              });
             }}
             className="btn-secondary px-4 py-2"
           >
@@ -492,7 +351,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
       </div>
 
       {/* Table Section */}
-      <ListSummary pagination={{ ...pagination, hasMore: pagination.page < pagination.totalPages }} shown={products.length} noun="products" />
+      <ListSummary pagination={pagination} shown={products.length} noun="products" />
 
       <div className="overflow-x-auto relative">
         {loading && (
@@ -594,7 +453,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
         )}
       </div>
 
-      <ListPagination pagination={{ ...pagination, hasMore: pagination.page < pagination.totalPages }} onPageChange={onPageChange} />
+      <ListPagination pagination={pagination} onPageChange={onPageChange} />
 
       {/* Image Preview Modal */}
       <ImagePreviewModal

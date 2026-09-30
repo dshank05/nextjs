@@ -16,6 +16,53 @@ import type { ProductTransactionRow } from '../../../types/products';
 // second time - Invalid Date, or day and month swapped (PQ-01).
 const formatDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-IN') : '-');
 
+/** One of the five "last five" tables - they were five copies of this (PQ-21, client side). */
+function HistoryTable({ title, rows, numberLabel, partyLabel, empty }: {
+  title: string;
+  rows: ProductTransactionRow[];
+  numberLabel: string;
+  partyLabel: string;
+  empty: string;
+}) {
+  return (
+    <div>
+      <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">{title}</h3>
+      <div className="overflow-x-auto">
+        <table className="table">
+          <thead>
+            <tr>
+              <th className="w-16">SN</th>
+              <th>{numberLabel}</th>
+              <th>{partyLabel}</th>
+              <th>QTY</th>
+              <th>RATE</th>
+              <th>AMOUNT</th>
+              <th>DATE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? rows.map((r) => (
+              <tr key={r.sn}>
+                <td>{r.sn}</td>
+                <td>{r.invoice_number || r.voucher_number || '-'}</td>
+                <td>{r.vendor || r.customer || '-'}</td>
+                <td>{r.qty}</td>
+                <td>₹{r.rate}</td>
+                <td>₹{r.amount}</td>
+                <td>{formatDate(r.date)}</td>
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={7} className="text-center text-slate-400 py-4">{empty}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function ProductView() {
   const { showSnackbar } = useSnackbar();
   const router = useRouter();
@@ -328,200 +375,11 @@ export default function ProductView() {
 
         {/* Transaction Tables Section - Merged into main card */}
         <div className="space-y-6 p-6 pt-0">
-          {/* Last Five Purchase */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE PURCHASE</h3>
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th className="w-16">SN</th>
-                    <th>INVOICE NUMBER</th>
-                    <th>VENDOR</th>
-                    <th>QTY</th>
-                    <th>RATE</th>
-                    <th>AMOUNT</th>
-                    <th>DATE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchases.length > 0 ? purchases.map((purchase, index) => (
-                    <tr key={index}>
-                      <td>{purchase.sn}</td>
-                      <td>{purchase.invoice_number || '-'}</td>
-                      <td>{purchase.vendor || '-'}</td>
-                      <td>{purchase.qty}</td>
-                      <td>₹{purchase.rate}</td>
-                      <td>₹{purchase.amount}</td>
-                      <td>{formatDate(purchase.date)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="text-center text-slate-400 py-4">
-                        No purchase records found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Last Five Sale */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE</h3>
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th className="w-16">SN</th>
-                    <th>INVOICE NUMBER</th>
-                    <th>CUSTOMER</th>
-                    <th>QTY</th>
-                    <th>RATE</th>
-                    <th>AMOUNT</th>
-                    <th>DATE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sales.length > 0 ? sales.map((sale, index) => (
-                    <tr key={index}>
-                      <td>{sale.sn}</td>
-                      <td>{sale.invoice_number || '-'}</td>
-                      <td>{sale.customer || '-'}</td>
-                      <td>{sale.qty}</td>
-                      <td>₹{sale.rate}</td>
-                      <td>₹{sale.amount}</td>
-                      <td>{formatDate(sale.date)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="text-center text-slate-400 py-4">
-                        No sales records found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Last Five Sale X */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE X</h3>
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th className="w-16">SN</th>
-                    <th>INVOICE NUMBER</th>
-                    <th>CUSTOMER</th>
-                    <th>QTY</th>
-                    <th>RATE</th>
-                    <th>AMOUNT</th>
-                    <th>DATE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {salex.length > 0 ? salex.map((salexItem, index) => (
-                    <tr key={index}>
-                      <td>{salexItem.sn}</td>
-                      <td>{salexItem.invoice_number || '-'}</td>
-                      <td>{salexItem.customer || '-'}</td>
-                      <td>{salexItem.qty}</td>
-                      <td>₹{salexItem.rate}</td>
-                      <td>₹{salexItem.amount}</td>
-                      <td>{formatDate(salexItem.date)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="text-center text-slate-400 py-4">
-                        No salex records found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Last Five Sale Return */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE SALE RETURN</h3>
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th className="w-16">SN</th>
-                    <th>VOUCHER NUMBER</th>
-                    <th>CUSTOMER</th>
-                    <th>QTY</th>
-                    <th>RATE</th>
-                    <th>AMOUNT</th>
-                    <th>DATE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {saleReturns.length > 0 ? saleReturns.map((saleReturn, index) => (
-                    <tr key={index}>
-                      <td>{saleReturn.sn}</td>
-                      <td>{saleReturn.voucher_number || '-'}</td>
-                      <td>{saleReturn.customer || '-'}</td>
-                      <td>{saleReturn.qty}</td>
-                      <td>₹{saleReturn.rate}</td>
-                      <td>₹{saleReturn.amount}</td>
-                      <td>{formatDate(saleReturn.date)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="text-center text-slate-400 py-8">
-                        No sale return records found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Last Five Purchase Return */}
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-4 pb-2 border-b border-slate-700">LAST FIVE PURCHASE RETURN</h3>
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th className="w-16">SN</th>
-                    <th>VOUCHER NUMBER</th>
-                    <th>VENDOR</th>
-                    <th>QTY</th>
-                    <th>RATE</th>
-                    <th>AMOUNT</th>
-                    <th>DATE</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchaseReturns.length > 0 ? purchaseReturns.map((purchaseReturn, index) => (
-                    <tr key={index}>
-                      <td>{purchaseReturn.sn}</td>
-                      <td>{purchaseReturn.voucher_number || '-'}</td>
-                      <td>{purchaseReturn.vendor || '-'}</td>
-                      <td>{purchaseReturn.qty}</td>
-                      <td>₹{purchaseReturn.rate}</td>
-                      <td>₹{purchaseReturn.amount}</td>
-                      <td>{formatDate(purchaseReturn.date)}</td>
-                    </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan={7} className="text-center text-slate-400 py-8">
-                        No purchase return records found
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <HistoryTable title="LAST FIVE PURCHASE" rows={purchases} numberLabel="INVOICE NUMBER" partyLabel="VENDOR" empty="No purchase records found" />
+          <HistoryTable title="LAST FIVE SALE" rows={sales} numberLabel="INVOICE NUMBER" partyLabel="CUSTOMER" empty="No sales records found" />
+          <HistoryTable title="LAST FIVE SALE X" rows={salex} numberLabel="INVOICE NUMBER" partyLabel="CUSTOMER" empty="No salex records found" />
+          <HistoryTable title="LAST FIVE SALE RETURN" rows={saleReturns} numberLabel="VOUCHER NUMBER" partyLabel="CUSTOMER" empty="No sale return records found" />
+          <HistoryTable title="LAST FIVE PURCHASE RETURN" rows={purchaseReturns} numberLabel="VOUCHER NUMBER" partyLabel="VENDOR" empty="No purchase return records found" />
         </div>
       </div>
 

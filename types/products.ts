@@ -56,6 +56,22 @@ export interface ProductFilters {
   fetchAll?: boolean;
 }
 
+/** The list page's persisted filter set (session storage) and sort. */
+export interface ProductListFilters {
+  categoryFilter: string;
+  subcategoryFilter: string;
+  modelFilter: string[];
+  companyFilter: string;
+  quantityFilter: string;
+  stockFilter: string;
+  startDate: string;
+  endDate: string;
+  uidFilter: string;
+  partNoFilter: string;
+  sortBy?: string;
+  sortOrder?: string;
+}
+
 export interface ProductsResponse {
   products: Product[];
   pagination: {

@@ -48,38 +48,9 @@ export async function fetchProducts(filters: ProductFilters, signal?: AbortSigna
 
   const data = await response.json();
   
-  // Transform products
-  const transformedProducts: Product[] = (data.products || []).map((product: any) => ({
-    id: product.id,
-    product_name: product.product_name,
-    stock: product.stock,
-    min_stock: product.min_stock,
-    rate: product.rate,
-    part_no: product.part_no,
-    product_category_id: product.product_category_id,
-    categoryName: product.categoryName,
-    product_subcategory_id: product.product_subcategory_id,
-    subcategoryName: product.subcategoryName,
-    companyName: product.companyName,
-    company_id: product.company_id,
-    latestPurchaseRate: product.latestPurchaseRate,
-    lastPurchaseDate: product.lastPurchaseDate,
-    car_model_ids: product.car_model_ids,
-    carModelsDisplay: product.carModelsDisplay,
-    pic: product.pic,
-    barcode: product.barcode,
-    // Read by the purchase, sale and salex pickers when a line is added (PQ-39).
-    display_name: product.display_name,
-    hsn: product.hsn,
-    opening_rate: product.opening_rate,
-    latest_purchase_rate: product.latest_purchase_rate,
-    latest_selling_price: product.latest_selling_price,
-    gst_rate_id: product.gst_rate_id,
-    gst_rate_percentage: product.gst_rate_percentage
-  }));
-
   return {
-    products: transformedProducts,
+    // The API's row shape is the client's Product type; no second mapping layer (PQ-28).
+    products: (data.data || data.products || []) as Product[],
     pagination: data.pagination || {
       page: filters.page || 1,
       limit: filters.limit || 50,

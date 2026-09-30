@@ -5,24 +5,10 @@ import { ProductTable } from '../../components/products/ProductTable';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { useProducts, fetchProducts } from '../../hooks/useProducts';
 import { useDebounce } from '../../hooks/useDebounce';
-import type { ProductFilters } from '../../types/products';
+import type { ProductFilters, ProductListFilters } from '../../types/products';
 
 export default function Products() {
-  // Define filter type
-  type FilterState = {
-    categoryFilter: string;
-    subcategoryFilter: string;
-    modelFilter: string[];
-    companyFilter: string;
-    quantityFilter: string;
-    stockFilter: string;
-    startDate: string;
-    endDate: string;
-    uidFilter: string;
-    partNoFilter: string;
-    sortBy: string;
-    sortOrder: string;
-  };
+  type FilterState = ProductListFilters & { sortBy: string; sortOrder: string };
 
   // Create persistent filter state
   const [currentFilters, setCurrentFilters] = useStorageState<FilterState>('products-page-filters', {
@@ -144,7 +130,7 @@ export default function Products() {
   }), [currentFilters]);
 
   // Handle filter application
-  const handleApplyFilters = (filters: Omit<FilterState, 'sortBy' | 'sortOrder'> & { sortBy?: string; sortOrder?: string }) => {
+  const handleApplyFilters = (filters: ProductListFilters) => {
     setCurrentFilters({ ...currentFilters, ...filters } as FilterState);
     setPage(1);
   };
