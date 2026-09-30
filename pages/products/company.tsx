@@ -156,7 +156,7 @@ export default function Companies() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`/api/products/companies`, {
+      const response = await fetch(`/api/products/companies${pendingCompanyData.method === 'PUT' ? `/${pendingCompanyData.body.id}` : ''}`, {
         method: pendingCompanyData.method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pendingCompanyData.body),

@@ -92,7 +92,7 @@ export default function InactiveProducts() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ is_active: true }),
+        body: JSON.stringify({ status: 'Active' }),
       });
 
       if (response.ok) {

@@ -2,110 +2,8 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { validateProduct, findConflictingPartNo, buildProductData, partNoConflictMessage, buildProductName, sellingPrice } from '../../../lib/product';
 import { withObservability } from '../../../lib/withObservability';
-import formidable from 'formidable';
-import fs from 'fs';
-import path from 'path';
-import { Client } from 'basic-ftp';
-
-// ==================== Helper: Upload file to Hostinger FTP ====================
-async function uploadFileToStorage(file: formidable.File): Promise<string | null> {
-  const client = new Client();
-
-  try {
-    // Connect to FTP server
-    await client.access({
-      host: process.env.FTP_HOST,
-      port: parseInt(process.env.FTP_PORT) || 21,
-      user: process.env.FTP_USERNAME,
-      password: process.env.FTP_PASSWORD,
-      secure: false // Regular FTP, not FTPS
-    });
-
-    // Ensure remote directory exists
-    await client.ensureDir('/public_html/uploads');
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 8);
-    const originalName = file.originalFilename || 'unknown';
-    const ext = path.extname(originalName);
-    const base = path.basename(originalName, ext).replace(/[^a-zA-Z0-9]/g, '_');
-    const uniqueName = `${base}_${timestamp}_${random}${ext}`;
-
-    // Upload file
-    await client.uploadFrom(file.filepath, `/public_html/uploads/${uniqueName}`);
-
-    // Clean up local temp file
-    fs.unlink(file.filepath, (err) => {
-      // Kept as an error, not dropped with the debug logging: a temp file that
-      // will not delete is a real condition worth seeing in the logs.
-      if (err) console.error('Failed to remove temp upload file:', file.filepath, err);
-    });
-
-    const hostingerDomain = process.env.HOSTINGER_DOMAIN || 'https://baijnathsons.com';
-    const publicUrl = `${hostingerDomain}/uploads/${uniqueName}`;
-
-    return publicUrl;
-  } catch (error) {
-    console.error('FTP upload error:', error);
-    throw error;
-  } finally {
-    // Always close the connection
-    client.close();
-  }
-}
-
-// ---------------------
-// Helper: Promisify Formidable parsing
-// ---------------------
-function parseForm(req: NextApiRequest): Promise<{ fields: formidable.Fields; files: formidable.Files }> {
-  return new Promise((resolve, reject) => {
-
-    const form = formidable({
-      keepExtensions: true,
-      maxFileSize: 5 * 1024 * 1024,
-      filter: (part) => ['image/jpeg','image/png','image/gif','image/webp'].includes(part.mimetype || ''),
-    });
-
-
-    // Add timeout
-    const timeout = setTimeout(() => {
-      console.error('FORMIDABLE: TIMEOUT - Parsing took longer than 30 seconds');
-      reject(new Error('Form parsing timeout'));
-    }, 30000); // 30 second timeout
-
-    form.on('field', (name, value) => {
-    });
-
-    form.on('fileBegin', (name, file) => {
-    });
-
-    form.on('file', (name, file) => {
-    });
-
-    form.on('progress', (bytesReceived, bytesExpected) => {
-    });
-
-    form.on('error', (err) => {
-      console.error('FORMIDABLE: Error occurred:', err);
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    form.on('end', () => {
-      clearTimeout(timeout);
-    });
-
-    form.parse(req, (err, fields, files) => {
-      clearTimeout(timeout);
-      if (err) {
-        console.error('FORMIDABLE: Parse callback error:', err);
-        return reject(err);
-      }
-      resolve({ fields, files });
-    });
-  });
-}
+import { parseProductForm, readProductData, uploadProductFile, deleteProductFile } from '../../../lib/product-files';
+import { created, badRequest, fail } from '../../../lib/api/respond';
 
 // ---------------------
 // GET handler: Paginated products
@@ -392,148 +290,52 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 // POST handler: Create product
 // ---------------------
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
+  const uploaded: string[] = [];
   try {
+    const { fields, files } = await parseProductForm(req);
+    const productData = readProductData(fields);
+    if (!productData) return badRequest(res, 'Product data is missing or not valid JSON');
 
-    // Parse FormData (UI sends FormData with productData JSON)
-    const { fields, files } = await parseForm(req);
-    
-
-    const productDataStr = Array.isArray(fields.productData) ? fields.productData[0] : fields.productData;
-    if (!productDataStr) return res.status(400).json({ message: 'Product data is required' });
-
-    // Guarded, the way the update path guards it. A malformed payload used to
-    // throw straight past this into the outer catch and answer 500, when the
-    // client is the one that got it wrong (F-109).
-    let productData;
-    try {
-      productData = JSON.parse(productDataStr);
-    } catch (parseError) {
-      console.error('POST /products: JSON parse error:', parseError);
-      return res.status(400).json({ message: 'Invalid JSON in product data' });
-    }
-
-    // Validate BEFORE uploading anything.
-    //
-    // The uploads used to run first, so a product rejected for a missing
-    // warehouse or a duplicate part number had already pushed its image and
-    // barcode to the FTP server, where nothing would ever reference or remove
-    // them (F-104).
-    //
-    // Same rules the update path applies, from the same module, so create and
-    // update cannot drift apart again - which is how edit came to accept an
-    // empty product name that create rejected (F-79).
+    // Validate before uploading anything (F-104); same rules as update (F-79).
     const failure = await validateProduct(productData, { partial: false });
-    if (failure) {
-      return res.status(failure.status).json({ message: failure.message });
-    }
+    if (failure) return res.status(failure.status).json({ message: failure.message });
 
     const partNoConflict = await findConflictingPartNo(productData.part_no);
-    if (partNoConflict) {
-      return res.status(400).json({
-        message: partNoConflictMessage(productData.part_no, partNoConflict)
-      });
-    }
+    if (partNoConflict) return badRequest(res, partNoConflictMessage(productData.part_no, partNoConflict));
 
-    // Smart file handling for new products (all files are new)
-    const uploadPromises: Promise<void>[] = [];
-    let imageUrl: string | null = null;
-    let barcodeUrl: string | null = null;
-
-    // Upload image if provided
-    if (files.image && files.image[0]) {
-      uploadPromises.push(
-        (async () => {
-          try {
-            imageUrl = await uploadFileToStorage(files.image[0]);
-          } catch (uploadError) {
-            console.error('Image upload failed:', uploadError);
-            // Continue without image - don't fail the entire creation
-          }
-        })()
-      );
-    }
-
-    // Upload barcode if provided
-    if (files.barcode && files.barcode[0]) {
-      uploadPromises.push(
-        (async () => {
-          try {
-            barcodeUrl = await uploadFileToStorage(files.barcode[0]);
-          } catch (uploadError) {
-            console.error('Barcode upload failed:', uploadError);
-            // Continue without barcode - don't fail the entire creation
-          }
-        })()
-      );
-    }
-
-    // Wait for all uploads to complete in parallel
-    if (uploadPromises.length > 0) {
-      await Promise.all(uploadPromises);
-    }
-
-    const finalProductData: any = await buildProductData(productData, { partial: false });
-
-    // Opening stock IS the starting stock - but only here, at creation. This is
-    // the one legitimate place the two are equal; repeating it on update was
-    // F-75. `stock` is not read from the payload: the client does not get to
-    // choose a stock level.
-    finalProductData.stock = finalProductData.opening_stock;
-    finalProductData.pic = imageUrl;
-    finalProductData.barcode = barcodeUrl;
-
-
-    try {
-      // The name is built on the server from the ids (PQ-12) and needs the new
-      // id, so it is written in the same transaction as the insert - never left
-      // half-done (F-105).
-      const product = await prisma.$transaction(async (tx) => {
-        const created = await tx.product.create({ data: { ...finalProductData, product_name: '' } });
-        const name = await buildProductName(created.id, finalProductData);
-        return tx.product.update({
-          where: { id: created.id },
-          data: { product_name: name, display_name: name }
-        });
-      });
-
-      res.status(201).json({
-        message: 'Product created successfully',
-        product: {
-          id: product.id,
-          product_name: product.product_name,
-          part_no: product.part_no
-        }
-      });
-    } catch (dbError: any) {
-      // Translated at the boundary, the same way [id].ts does it. This used to
-      // return the raw Prisma message AND the stack trace to the client, which
-      // is F-81 with an extra step - the fix landed on the update path and not
-      // on create.
-      console.error('POST /products: Database error:', dbError);
-      if (dbError?.code === 'P2002') {
-        // part_no carries a database-level unique index across ALL products,
-        // active or not, which is wider than the check findConflictingPartNo
-        // makes (F-100).
-        return res.status(409).json({
-          status: 'failure',
-          message: 'That part number is already in use, including by a deactivated product'
-        });
+    const fileUrls: { pic: string | null; barcode: string | null } = { pic: null, barcode: null };
+    for (const [field, column] of [['image', 'pic'], ['barcode', 'barcode']] as const) {
+      const file = files[field]?.[0];
+      if (!file) continue;
+      try {
+        const url = await uploadProductFile(file);
+        uploaded.push(url);
+        fileUrls[column] = url;
+      } catch (uploadError) {
+        // Create the product without the file rather than not at all.
+        console.error(`${field} upload failed:`, uploadError);
       }
-      if (dbError?.code === 'P2003') {
-        return res.status(400).json({
-          status: 'failure',
-          message: 'A selected category, company, warehouse, rack or GST rate does not exist'
-        });
-      }
-      return res.status(500).json({ status: 'failure', message: 'Failed to create product' });
     }
+
+    const data: any = await buildProductData(productData, { partial: false });
+    // Opening stock is the starting stock - here, at creation, only (F-75).
+    data.stock = data.opening_stock;
+    data.pic = fileUrls.pic;
+    data.barcode = fileUrls.barcode;
+
+    // The name needs the new id: insert and name in one transaction (PQ-12, F-105).
+    const product = await prisma.$transaction(async (tx) => {
+      const row = await tx.product.create({ data: { ...data, product_name: '' } });
+      const name = await buildProductName(row.id, data);
+      return tx.product.update({ where: { id: row.id }, data: { product_name: name, display_name: name } });
+    });
+
+    return created(res, { id: product.id, product_name: product.product_name, part_no: product.part_no }, 'Product created');
   } catch (error) {
-    console.error('POST /products error:', error);
-    res.status(500).json({ status: 'failure', message: 'Failed to create product' });
+    await Promise.all(uploaded.map(deleteProductFile));
+    return fail(res, error, 'create the product');
   }
 }
-
-
 
 // ---------------------
 // ULTRA OPTIMIZED: Get all purchase rates in a single efficient query

@@ -156,7 +156,7 @@ export default function Models() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`/api/products/models`, {
+      const response = await fetch(`/api/products/models${pendingModelData.method === 'PUT' ? `/${pendingModelData.body.id}` : ''}`, {
         method: pendingModelData.method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pendingModelData.body),

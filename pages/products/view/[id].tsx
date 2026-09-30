@@ -109,7 +109,7 @@ export default function ProductView() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ is_active: newStatus }),
+        body: JSON.stringify({ status: newStatus ? 'Active' : 'Inactive' }),
       });
 
       if (response.ok) {

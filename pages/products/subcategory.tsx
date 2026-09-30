@@ -171,7 +171,7 @@ export default function Subcategories() {
 
   const fetchCategories = async () => {
     try {
-      const response = await fetch('/api/products/categories?limit=1000');
+      const response = await fetch('/api/products/categories?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setCategories(data.categories || []);
@@ -253,7 +253,7 @@ export default function Subcategories() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`/api/products/subcategories`, {
+      const response = await fetch(`/api/products/subcategories${pendingSubcategoryData.method === 'PUT' ? `/${pendingSubcategoryData.body.id}` : ''}`, {
         method: pendingSubcategoryData.method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pendingSubcategoryData.body),

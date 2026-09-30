@@ -156,7 +156,7 @@ export default function Categories() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(`/api/products/categories`, {
+      const response = await fetch(`/api/products/categories${pendingCategoryData.method === 'PUT' ? `/${pendingCategoryData.body.id}` : ''}`, {
         method: pendingCategoryData.method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pendingCategoryData.body),

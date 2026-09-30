@@ -365,3 +365,29 @@ fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
 - Kept on purpose: `create.tsx`'s hidden `barcode` field (F-101, owner: keep as is).
 
 **Checks:** `tsc --noEmit` clean.
+
+### Block 3 — server contract · done (2026-09-30)
+
+- **PQ-54** `lib/product-files.ts`: one form parser, one upload, one delete (which now
+  always closes its FTP client and logs failures). `products/index.ts` and `[id].ts` no
+  longer carry their own copies.
+- **PQ-30, PQ-31, PQ-32** onto `lib/api/respond.ts` and `lib/api/list-query.ts`:
+  `[id].ts` (`parseId`, `route`, `ok`/`badRequest`/`notFound`/`conflict`, `fail`),
+  `POST /api/products` (`created()` — the response is now `{status, message, data}`;
+  `create.tsx` reads `data.id`), `filters.ts` (`fail`, and `ORDER BY` name — PQ-46).
+  A failed create now also removes any file it had already uploaded.
+- **PQ-33** `[id]/status.ts` is built by `makeStatusRoute` and takes
+  `{ status: 'Active' | 'Inactive' }` like every settings resource; the product view and
+  Inactive Products send that.
+- **PQ-34, PQ-35, PQ-36** the four lookup tables are one factory, `lib/product-lookups.ts`,
+  behind `/api/products/<resource>` (GET list, POST) and `/api/products/<resource>/[id]`
+  (PUT, DELETE). Names trimmed and required; duplicates refused with 409 (subcategories:
+  within the same category); "in use" refused with 409; creates and updates return the
+  record; bounded paging and `dropdown=true`; no server-written `index`. The legacy
+  list keys (`categories`, `companies`, `models`, `subcategories`) stay beside `data`.
+  The subcategory page loads its category picker with `dropdown=true` (the old
+  `limit=1000` is now capped at 500). `carModelWhere()` is the one four-position match
+  for the car-model guard (PQ-23, part).
+- Deferred to Block 5: the five history endpoints (PQ-31/PQ-37 for those files).
+
+**Checks:** `tsc --noEmit` clean.

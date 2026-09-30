@@ -478,7 +478,7 @@ export default function ProductCreate() {
       createProduct.mutate(formDataToSend, {
         onSuccess: (responseData) => {
           showSnackbar('success', 'Product created successfully!');
-          const createdProductId = responseData.product?.id;
+          const createdProductId = responseData.data?.id;
           broadcast({
             type: 'created',
             resource: 'products',
