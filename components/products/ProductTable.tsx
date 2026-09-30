@@ -17,7 +17,6 @@ interface Product {
   part_no?: string;
   categoryName?: string;
   companyName?: string;
-  subcategoryNames?: string;
   latestPurchaseRate?: number;
   lastPurchaseDate?: string;
   carModelsDisplay?: string;
@@ -47,10 +46,7 @@ interface ProductTableProps {
   onPageChange: (newPage: number) => void;
   searchTerm: string;
   onSearchChange: (value: string) => void;
-  itemsPerPage: number;
-  onItemsPerPageChange: (value: number) => void;
   actionButton?: React.ReactNode;
-  onExport?: (exportType: 'excel' | 'pdf') => void;
   /** Every row matching the current filters, for export (S-89). */
   fetchAllForExport?: () => Promise<Product[]>;
   onApplyFilters?: (filters: {
@@ -93,10 +89,7 @@ export const ProductTable: React.FC<ProductTableProps> = ({
   onPageChange,
   searchTerm,
   onSearchChange,
-  itemsPerPage,
-  onItemsPerPageChange,
   actionButton,
-  onExport,
   onApplyFilters,
   initialFilters,
   fetchAllForExport

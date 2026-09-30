@@ -5,7 +5,6 @@ import { Edit } from 'lucide-react';
 import { ConfirmationModal } from '../../../components/ConfirmationModal';
 import { ImageCarousel } from '../../../components/common/ImageCarousel';
 import { useSnackbar } from '../../../components/SnackbarProvider';
-import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { useProduct } from '../../../hooks/useProducts';
 import { useQueryClient } from '@tanstack/react-query';
@@ -85,11 +84,6 @@ export default function ProductView() {
     }
   };
 
-  const handleEditProduct = () => {
-    if (product) {
-      SessionStorageService.set('products', id.toString(), product);
-    }
-  };
 
 
 
@@ -320,7 +314,6 @@ export default function ProductView() {
               </button>
               <Link
                 href={`/products/create?edit=${id}`}
-                onClick={handleEditProduct}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Product"
               >

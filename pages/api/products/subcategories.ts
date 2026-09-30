@@ -17,56 +17,7 @@ async function existingCategoryId(raw: unknown): Promise<number | null> {
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
     if (req.method === 'GET') {
-      const { type, page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id, category_search = '' } = req.query;
-
-      // Handle getting categories from product/category
-      if (type === 'categories') {
-        // Import logic from categories.ts
-        const categoriesPageNum = parseInt(page as string, 10);
-        const categoriesLimitNum = parseInt(limit as string, 10);
-        const categoriesSearchTerm = search as string;
-        const categoriesSortField = sortBy as string;
-        const categoriesSortDirection = sortOrder === 'desc' ? 'desc' : 'asc';
-
-        const categoriesWhere = categoriesSearchTerm
-          ? { category_name: { contains: categoriesSearchTerm } }
-          : {};
-
-        const categoriesTotal = await prisma.product_category.count({ where: categoriesWhere });
-        const categoriesTotalPages = Math.ceil(categoriesTotal / categoriesLimitNum);
-
-        const categoriesOrderBy: any = {};
-        if (categoriesSortField === 'id') {
-          categoriesOrderBy.id = categoriesSortDirection;
-        } else {
-          categoriesOrderBy.category_name = categoriesSortDirection;
-        }
-
-        const categories = await prisma.product_category.findMany({
-          where: categoriesWhere,
-          skip: (categoriesPageNum - 1) * categoriesLimitNum,
-          take: categoriesLimitNum,
-          orderBy: categoriesOrderBy,
-        });
-
-        const categoriesStartIndex = (categoriesPageNum - 1) * categoriesLimitNum;
-        const categoriesWithIndex = categories.map((cat, idx) => ({
-          ...cat,
-          category_name: cat.category_name,
-          index: categoriesStartIndex + idx + 1,
-        }));
-
-        return res.status(200).json({
-          categories: categoriesWithIndex,
-          pagination: {
-            page: categoriesPageNum,
-            limit: categoriesLimitNum,
-            total: categoriesTotal,
-            totalPages: categoriesTotalPages,
-            hasMore: categoriesPageNum < categoriesTotalPages,
-          },
-        });
-      }
+      const { page = 1, limit = 50, search = '', sortBy = 'subcategory_name', sortOrder = 'asc', category_id, category_search = '' } = req.query;
 
       const pageNum = parseInt(page as string, 10);
       const limitNum = parseInt(limit as string, 10);

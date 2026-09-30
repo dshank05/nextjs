@@ -347,3 +347,21 @@ Purchases tables on a product with history; adding products to a sale in the pic
 
 **Known and left, by decision:** F-73, F-74, F-101 (owner: keep as is); list page size
 fixed at 50 (no page-size control — no new feature); quality Blocks 2–8.
+
+### Block 2 — delete · done (2026-09-30)
+
+- **PQ-40** `CreateProductModal.tsx` deleted (543 lines, no importer).
+- **PQ-41** `GET /api/products/subcategories?type=categories` branch removed (no caller).
+- **PQ-43** dead code removed: `create.tsx` `rack_number` state, the never-set `errors.submit`
+  block and the `SessionStorageService` pair with `view/[id].tsx` (written, never read);
+  `ProductTable`'s unused `onExport`, `itemsPerPage`/`onItemsPerPageChange` props and
+  `subcategoryNames`; `products/index.tsx`'s unused limit setter and `handleLimitChange`;
+  `optimized.ts`'s `lowStock` flag and `normalizeSearchText` (`stockFilter=low_stock` is the
+  one low-stock switch; `useProducts` no longer accepts `'low'`); `filters.ts`'s
+  `source: 'products'`; `ProductSelectionPanel`'s commented-out Select All block and its
+  dead handler.
+- **PQ-44** deadstock types → `types/deadstock.ts`, hooks → `hooks/useDeadstock.ts`;
+  `useProducts.ts` imports at the top.
+- Kept on purpose: `create.tsx`'s hidden `barcode` field (F-101, owner: keep as is).
+
+**Checks:** `tsc --noEmit` clean.

@@ -1,9 +1,9 @@
 import { useState, useMemo } from 'react';
 import { DeadstockTable } from '../../components/transactions/DeadstockTable';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { useDeadstock } from '../../hooks/useProducts';
+import { useDeadstock } from '../../hooks/useDeadstock';
 import { useDebounce } from '../../hooks/useDebounce';
-import type { DeadstockFilters } from '../../types/products';
+import type { DeadstockFilters } from '../../types/deadstock';
 
 export default function DeadstockPage() {
   const { showSnackbar } = useSnackbar();

@@ -55,7 +55,8 @@ export default function Products() {
     defaultValue: 1,
     storage: 'session'
   });
-  const [limit, setLimit] = useState(50);
+  // Fixed page size: the list has no page-size control.
+  const limit = 50;
   const [searchTerm, setSearchTerm] = useStorageState<string>('products-page-search', {
     defaultValue: '',
     storage: 'session'
@@ -123,10 +124,6 @@ export default function Products() {
     }
   };
 
-  const handleLimitChange = (newLimit: number) => {
-    setLimit(newLimit);
-    setPage(1);
-  };
 
   // Stable, so the table's sync effect runs when the restored filters change,
   // not on every render; and it carries the sort, which the table used to
@@ -175,9 +172,6 @@ export default function Products() {
         onPageChange={handlePageChange}
         searchTerm={searchTerm}
         onSearchChange={setSearchTerm}
-        itemsPerPage={pagination.limit}
-        onItemsPerPageChange={handleLimitChange}
-        onExport={() => { }}
         onApplyFilters={handleApplyFilters}
         initialFilters={initialFilters}
         fetchAllForExport={async () => (await fetchProducts({ ...queryFilters, fetchAll: true })).products}

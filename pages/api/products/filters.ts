@@ -55,27 +55,23 @@ async function handler(
     // Build filter options directly (database already sorted, no need for JS sorting)
     const categoryOptions = categories.map((cat) => ({
       id: cat.id,
-      name: cat.category_name || '',
-      source: 'products'
+      name: cat.category_name || ''
     }))
 
     const subcategoryOptions = subcategories.map((sub) => ({
       category_id:sub.category_id,
       id: sub.id,
-      name: sub.subcategory_name || '',
-      source: 'products'
+      name: sub.subcategory_name || ''
     }))
 
     const companyOptions = companies.map((comp) => ({
       id: comp.id,
-      name: comp.company_name || '',
-      source: 'products'
+      name: comp.company_name || ''
     }))
 
     const modelOptions = models.map((model) => ({
       id: model.id,
-      name: model.model_name || '',
-      source: 'products'
+      name: model.model_name || ''
     }))
 
     res.status(200).json({

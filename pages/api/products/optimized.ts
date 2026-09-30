@@ -10,15 +10,6 @@ import { sellingPrice } from '../../../lib/product'
 // size hides the live code; the caching idea is worth revisiting deliberately
 // if the lookup queries ever show up in a profile.
 
-// Search normalization function
-function normalizeSearchText(text: string): string {
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '') // Remove all whitespace
-    .replace(/[^a-z0-9]/g, '') // Remove special characters except alphanumeric
-}
-
 // Columns the search box may match against. A column name cannot be passed as a
 // SQL parameter, so the raw-SQL path whitelists it instead of interpolating
 // whatever key turns up in the `where` clause.
@@ -44,7 +35,6 @@ async function handler(
       model = '', // NEW: Filters car models (comma-separated IDs)
       company_id = '',
       quantity = '', // NEW: Filter by exact quantity/stock
-      lowStock = 'false',
       stockFilter = 'all', // in_stock | out_of_stock | low_stock | all
       startDate = '',
       endDate = '',
@@ -97,16 +87,12 @@ async function handler(
       where.id = parseInt(uid as string)
     }
 
-    // Handle search with normalized text
+    // Search
     if (search) {
-      const normalizedSearch = normalizeSearchText(search as string)
       where.OR = [
         { product_name: { contains: search as string } },
         { display_name: { contains: search as string } },
-        { part_no: { contains: search as string } },
-        { product_name: { contains: normalizedSearch } },
-        { display_name: { contains: normalizedSearch } },
-        { part_no: { contains: normalizedSearch } }
+        { part_no: { contains: search as string } }
       ]
     }
 
@@ -123,12 +109,6 @@ async function handler(
     // Handle part_no filtering
     if (part_no && part_no !== '') {
       where.part_no = { contains: part_no as string }
-    }
-
-    // Handle low stock filter (database level)
-    if (lowStock === 'true') {
-      // Use raw SQL for complex stock conditions since Prisma doesn't support field comparisons
-      // This will be handled in the main query
     }
 
     // Handle quantity filter (exact stock match)
@@ -199,7 +179,7 @@ async function handler(
     // Sorting by Rate also takes the raw path: the Rate column shows the latest
     // purchase rate (or the opening rate before any purchase), and only SQL can
     // order by that fallback. It used to order by opening_rate alone (PQ-11).
-    const needsSpecialHandling = lowStock === 'true' || stockFilter === 'low_stock' || hasModelFilter || sortField === 'rate';
+    const needsSpecialHandling = stockFilter === 'low_stock' || hasModelFilter || sortField === 'rate';
 
 
     let products: any[];
@@ -265,7 +245,7 @@ async function handler(
       }
 
       // Low stock condition
-      if (lowStock === 'true' || stockFilter === 'low_stock') {
+      if (stockFilter === 'low_stock') {
         // "Low stock" means below the minimum someone actually set for the
         // product. A min_stock of 0 or NULL means no minimum was defined, so
         // the product cannot be below it.

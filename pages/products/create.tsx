@@ -7,7 +7,6 @@ import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ClearableInput, ClearableTextarea, FileUpload } from '../../components/common';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { broadcast } from '../../lib/broadcast';
-import SessionStorageService from '../../lib/sessionStorage';
 import { useCreateProduct, useUpdateProduct } from '../../hooks/useProducts';
 
 interface ProductFormData {
@@ -24,7 +23,6 @@ interface ProductFormData {
   gst_rate: string; // Keep as string, change to input field
   warehouse: string;
   rack_id: string;
-  rack_number: string;
   descriptions: string;
   notes: string;
   mrp: string;
@@ -73,7 +71,6 @@ export default function ProductCreate() {
     gst_rate: '',
     warehouse: '',
     rack_id: '',
-    rack_number: '',
     descriptions: '',
     notes: '',
     mrp: '',
@@ -315,7 +312,6 @@ export default function ProductCreate() {
           gst_rate: gstRateId, // the product's own gst_rate_id
           warehouse: product.warehouse_id?.toString() || '', // Use original FK ID directly
           rack_id: product.rack_id?.toString() || '', // Use original FK ID directly
-          rack_number: product.rack_number || '', // Direct text value
           descriptions: product.descriptions || '',
           notes: product.notes || '',
           mrp: product.mrp?.toString() || '',
@@ -856,24 +852,12 @@ export default function ProductCreate() {
             </div>
           </div>
 
-          {/* Error Display */}
-          {errors.submit && (
-            <div className="bg-red-900 border border-red-700 rounded p-3">
-              <p className="text-red-200 text-sm">{errors.submit}</p>
-            </div>
-          )}
 
           {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-slate-700">
             <button
               type="button"
-              onClick={() => {
-                // Clean up sessionStorage on cancel
-                if (isEditing && editingProductId) {
-                  SessionStorageService.remove('products', editingProductId.toString());
-                }
-                router.push('/products');
-              }}
+              onClick={() => router.push('/products')}
               className="px-4 py-2 text-slate-300 hover:text-white border border-slate-600 rounded hover:bg-slate-700 transition-colors"
             >
               Cancel

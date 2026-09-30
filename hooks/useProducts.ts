@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import type { Product, FilterOptions, DeadstockFilters, DeadstockResponse, ProductFilters, ProductsResponse } from '../types/products';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Product, FilterOptions, ProductFilters, ProductsResponse } from '../types/products';
 
 export async function fetchProducts(filters: ProductFilters, signal?: AbortSignal): Promise<ProductsResponse> {
   const params = new URLSearchParams();
@@ -26,9 +26,6 @@ export async function fetchProducts(filters: ProductFilters, signal?: AbortSigna
   // the server, and in_stock/out_of_stock were not forwarded at all (F-95).
   if (filters.stockFilter && filters.stockFilter !== 'all') {
     params.append('stockFilter', filters.stockFilter);
-    if (filters.stockFilter === 'low_stock' || filters.stockFilter === 'low') {
-      params.append('lowStock', 'true');
-    }
   }
   if (filters.startDate) params.append('startDate', filters.startDate);
   if (filters.endDate) params.append('endDate', filters.endDate);
@@ -65,7 +62,6 @@ export async function fetchProducts(filters: ProductFilters, signal?: AbortSigna
     subcategoryName: product.subcategoryName,
     companyName: product.companyName,
     company_id: product.company_id,
-    subcategoryNames: product.subcategoryNames,
     latestPurchaseRate: product.latestPurchaseRate,
     lastPurchaseDate: product.lastPurchaseDate,
     car_model_ids: product.car_model_ids,
@@ -124,48 +120,6 @@ export function useFilterOptions() {
   });
 }
 
-// ============================================================================
-// DEADSTOCK HOOKS
-// ============================================================================
-
-async function fetchDeadstock(filters: DeadstockFilters, signal?: AbortSignal): Promise<DeadstockResponse> {
-  const params = new URLSearchParams();
-  
-  params.append('page', filters.page.toString());
-  params.append('limit', filters.limit.toString());
-  if (filters.search) params.append('search', filters.search);
-  params.append('sortBy', filters.sortBy || 'created_at');
-  params.append('sortOrder', filters.sortOrder || 'desc');
-
-  const response = await fetch(`/api/deadstock?${params}`, { signal });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch deadstock');
-  }
-
-  const data = await response.json();
-
-  return {
-    deadstock: data.deadstock || [],
-    pagination: data.pagination || {
-      page: filters.page,
-      limit: filters.limit,
-      total: 0,
-      totalPages: 1
-    }
-  };
-}
-
-export function useDeadstock(filters: DeadstockFilters) {
-  return useQuery({
-    queryKey: ['deadstock', filters],
-    queryFn: ({ signal }) => fetchDeadstock(filters, signal),
-    staleTime: 30000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  });
-}
-
 // Single Product Query
 async function fetchProduct(id: string | number, signal?: AbortSignal): Promise<any> {
   const response = await fetch(`/api/products/${id}`, { signal });
@@ -192,7 +146,6 @@ export function useProduct(id: string | number | undefined) {
 // PRODUCT MUTATIONS
 // ============================================================================
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 // Create Product Mutation
 async function createProduct(formData: FormData) {

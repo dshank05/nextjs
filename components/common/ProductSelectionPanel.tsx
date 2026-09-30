@@ -164,16 +164,6 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
     };
 
     // Handle "Select All" / "Deselect All"
-    const handleToggleSelectAll = () => {
-        if (selectedProductIds.size === searchedProducts.length) {
-            // Deselect all
-            setSelectedProductIds(new Set());
-        } else {
-            // Select all visible products
-            const allIds = new Set(searchedProducts.map(p => p.id));
-            setSelectedProductIds(allIds);
-        }
-    };
 
     if (!isOpen) return null;
 
@@ -245,25 +235,6 @@ export const ProductSelectionPanel: React.FC<ProductSelectionPanelProps> = ({
             />
           </div>
 
-          {/* Multi-select actions (only show in multi mode)
-          {selectMode === 'multi' && searchedProducts.length > 0 && (
-            <div className="flex items-center justify-between mb-3">
-              <button
-                onClick={handleToggleSelectAll}
-                className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
-              >
-                {selectedProductIds.size === searchedProducts.length ? 'Deselect All' : 'Select All'}
-              </button>
-              {selectedProductIds.size > 0 && (
-                <button
-                  onClick={() => setSelectedProductIds(new Set())}
-                  className="text-sm text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  Clear Selection
-                </button>
-              )}
-            </div>
-          )} */}
 
           {/* Filters Row */}
           {filterOptionsLoading ? (
