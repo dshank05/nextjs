@@ -1189,6 +1189,7 @@ export default async function handler(
           where: { id: purchaseId },
           select: { 
             invoice_no: true,
+            fy: true,
             payment_status: true,
             vendor_id: true,
             return_status: true
@@ -1199,11 +1200,22 @@ export default async function handler(
           return res.status(404).json({ message: 'Purchase not found' })
         }
 
-        // Block deletion ONLY if fully returned
-        if (purchase.return_status === 2) {
+        // Refused while any return exists, partial or full (PU-02/03). The
+        // return already took its qty out of stock and may carry a refund;
+        // deleting the purchase underneath it removed that stock a second time
+        // and left the refund behind. Same rule as salex. Counted from the
+        // return lines themselves, not return_status, which only says "full".
+        const lines = await prisma.purchaseitems.findMany({
+          where: { invoice_no: purchase.invoice_no, fy: purchase.fy },
+          select: { id: true }
+        })
+        const returnLines = lines.length === 0 ? 0 : await prisma.purchase_return_items.count({
+          where: { purchase_item_id: { in: lines.map(l => l.id) } }
+        })
+        if (returnLines > 0) {
           return res.status(400).json({
-            message: 'Cannot delete fully returned purchase. All items have been returned.',
-            error_code: 'FULLY_RETURNED'
+            message: 'This purchase has returns. Delete its returns first.',
+            error_code: 'HAS_RETURNS'
           })
         }
 
@@ -1212,6 +1224,7 @@ export default async function handler(
           purchaseId,
           vendorId: purchase.vendor_id,
           invoiceNo: purchase.invoice_no,
+          fy: purchase.fy,
           paymentStatus: purchase.payment_status,
           returnStatus: purchase.return_status
         })

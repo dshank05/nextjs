@@ -5,7 +5,6 @@ import { withObservability } from '../../../lib/withObservability'
 import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../auth/[...nextauth]'
-import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 async function handler(
   req: NextApiRequest,
@@ -528,8 +527,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, salexId: str
       })
     }
 
-    // F-01: financial year comes from Settings, never from the calendar.
-    const financialYear = await getCurrentFinancialYear()
+    // An edit keeps the bill in the year it was issued. This used to take the
+    // CURRENT year from Settings, so editing last year's bill moved it - and
+    // its new lines - into this year, where (invoice_no, fy) can already exist.
+    const financialYear = existingSalex.fy
 
     const invoiceDate = dateValue ? convertDateToTimestamp(dateValue) : existingSalex.invoice_date
 

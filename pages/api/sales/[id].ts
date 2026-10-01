@@ -4,7 +4,6 @@ import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { customerTransactionHandler } from '../../../lib/customer-transaction-handler'
 import { getServerSession } from 'next-auth/next'
 import { authOptions } from '../auth/[...nextauth]'
-import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
 export default async function handler(
   req: NextApiRequest,
@@ -510,8 +509,10 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // F-01: financial year comes from Settings, never from the calendar.
-    const financialYear = await getCurrentFinancialYear()
+    // An edit keeps the bill in the year it was issued. This used to take the
+    // CURRENT year from Settings, so editing last year's bill moved it - and
+    // its new lines - into this year, where (invoice_no, fy) can already exist.
+    const financialYear = existingSale.fy
 
     const invoiceDate = convertDateToTimestamp(dateValue)
 
@@ -846,6 +847,19 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       return res.status(404).json({ message: 'Sale not found' })
     }
 
+    // Refused while any return exists, as salex already does. The return put
+    // its qty back into stock and carries a credit note; deleting the sale
+    // underneath it restored that stock a second time.
+    const returnCount = await prisma.sale_returns.count({
+      where: { invoice_id: saleId }
+    })
+    if (returnCount > 0) {
+      return res.status(400).json({
+        message: 'This sale has returns. Delete its returns first.',
+        error_code: 'HAS_RETURNS'
+      })
+    }
+
     // ✅ Use customer transaction handler for deletion
     if (sale.select_customer && sale.select_customer !== 0) {
       const operations = await customerTransactionHandler.handleSaleDelete({
@@ -879,6 +893,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
         await tx.invoiceitems.deleteMany({ where: { invoice_no: saleId } })
         await tx.bill_tosales.deleteMany({ where: { invoice_no: saleId } })
         await tx.shipto.deleteMany({ where: { invoice_no: saleId } })
+        await tx.transport_details.deleteMany({ where: { invoice_id: saleId } })
         await tx.invoice.delete({ where: { id: saleId } })
       })
     }

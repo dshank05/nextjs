@@ -54,6 +54,19 @@ export interface DeleteResult {
   vendorId: number;
 }
 
+/**
+ * The rows that belong to one purchase. purchase_items and bill_to carry the
+ * human invoice number, which restarts every financial year, so it is only a
+ * key together with fy. Without fy a delete reached every year's bill of the
+ * same number (PU-01). Refuses rather than guessing when fy is missing.
+ */
+function purchaseLinesOf(data: { invoiceNo?: number; fy?: number }) {
+  if (data.invoiceNo === undefined || data.fy === undefined || data.fy === null) {
+    throw new Error('Purchase delete needs both invoice_no and fy');
+  }
+  return { invoice_no: data.invoiceNo, fy: data.fy };
+}
+
 export class TransactionHandler {
   /**
    * Handle purchase edit transaction
@@ -948,6 +961,8 @@ export class TransactionHandler {
     purchaseId: number;
     vendorId: number;
     invoiceNo: number;
+    // A purchase is (invoice_no, fy); invoice_no alone repeats every year (PU-01).
+    fy: number;
     paymentStatus: number;
     returnStatus: number;
   }): Promise<DeleteResult> {
@@ -956,7 +971,7 @@ export class TransactionHandler {
     // Operation 1: Get and restore stock (parallel)
     operations.push({
       type: 'STOCK_RESTORE',
-      data: { invoiceNo: params.invoiceNo },
+      data: { invoiceNo: params.invoiceNo, fy: params.fy },
       parallel: true
     });
     
@@ -979,6 +994,7 @@ export class TransactionHandler {
       data: {
         type: 'purchase',
         invoiceNo: params.invoiceNo,
+        fy: params.fy,
         purchaseId: params.purchaseId
       },
       parallel: false
@@ -1282,7 +1298,7 @@ export class TransactionHandler {
     if (data.invoiceNo !== undefined) {
       // Purchase: restore stock for all items
       const items = await tx.purchaseitems.findMany({
-        where: { invoice_no: data.invoiceNo },
+        where: purchaseLinesOf(data),
         select: { product_id: true, qty: true }
       });
       
@@ -1454,7 +1470,7 @@ export class TransactionHandler {
       // ✅ FIX: Delete related returns FIRST to avoid FK constraint violations
       // Get all purchase item IDs for this invoice
       const purchaseItems = await tx.purchaseitems.findMany({
-        where: { invoice_no: data.invoiceNo },
+        where: purchaseLinesOf(data),
         select: { id: true }
       });
       
@@ -1493,8 +1509,8 @@ export class TransactionHandler {
       }
       
       // NOW safe to delete purchase items (no more FK references)
-      await tx.purchaseitems.deleteMany({ where: { invoice_no: data.invoiceNo } });
-      await tx.bill_to.deleteMany({ where: { invoice_no: data.invoiceNo } });
+      await tx.purchaseitems.deleteMany({ where: purchaseLinesOf(data) });
+      await tx.bill_to.deleteMany({ where: purchaseLinesOf(data) });
       await tx.purchase.delete({ where: { id: data.purchaseId } });
       
     } else if (data.type === 'return') {

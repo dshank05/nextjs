@@ -54,6 +54,44 @@ export interface DeleteResult {
   customerId: number;
 }
 
+/**
+ * Prisma names for the two invoice families. Sale and salex lines both store
+ * the HEADER id in invoice_no (not the printed invoice number), and the salex
+ * tables do not follow the sale names - `invoicexitems` does not exist and the
+ * return-line FK is `invoice_itemx_id`. Spelling these inline is what made every
+ * customer-salex delete fail and every customer-sale delete hit the wrong bill.
+ */
+const INVOICE_TABLES = {
+  sale: {
+    header: 'invoice',
+    items: 'invoiceitems',
+    returns: 'sale_returns',
+    returnItems: 'sale_return_items',
+    returnFk: 'sale_return_id',
+    returnItemFk: 'invoice_item_id',
+    billTo: 'bill_tosales',
+    shipTo: 'shipto',
+    transport: 'transport_details',
+  },
+  salex: {
+    header: 'invoicex',
+    items: 'invoice_itemsx',
+    returns: 'salex_returns',
+    returnItems: 'salex_return_items',
+    returnFk: 'salex_return_id',
+    returnItemFk: 'invoice_itemx_id',
+    billTo: 'bill_tosalesx',
+    shipTo: 'shiptox',
+    transport: 'transport_detailsx',
+  },
+} as const;
+
+function invoiceTables(type: string) {
+  const t = (INVOICE_TABLES as any)[type];
+  if (!t) throw new Error(`Unknown invoice type: ${type}`);
+  return t as (typeof INVOICE_TABLES)['sale'] | (typeof INVOICE_TABLES)['salex'];
+}
+
 export class CustomerTransactionHandler {
   /**
    * Handle sale/salex edit transaction
@@ -910,7 +948,8 @@ export class CustomerTransactionHandler {
     operations.push({
       type: 'STOCK_RESTORE',
       data: { 
-        invoiceNo: params.invoiceNo,
+        // Lines are keyed by the header id, not the printed number.
+        invoiceId: params.invoiceId,
         type: params.type
       },
       parallel: true
@@ -1242,11 +1281,10 @@ export class CustomerTransactionHandler {
   // All methods accept shared context for passing data between operations
   
   private async executeStockRestore(tx: any, data: any, context: any): Promise<void> {
-    if (data.invoiceNo !== undefined) {
+    if (data.invoiceId !== undefined) {
       // Sale/Salex: restore stock for all items (INCREMENT stock - reverse of sale)
-      const itemTable = data.type === 'sale' ? 'invoiceitems' : 'invoicexitems';
-      const items = await tx[itemTable].findMany({
-        where: { invoice_no: data.invoiceNo },
+      const items = await tx[invoiceTables(data.type).items].findMany({
+        where: { invoice_no: data.invoiceId },
         select: { product_id: true, qty: true }
       });
       
@@ -1262,18 +1300,18 @@ export class CustomerTransactionHandler {
       );
     } else if (data.returnId !== undefined) {
       // Return: restore stock for all items (DECREMENT stock - reverse of return)
-      const returnTable = data.type === 'sale' ? 'sale_return_items' : 'salex_return_items';
-      const returnItems = await tx[returnTable].findMany({
-        where: { 
-          sale_return_id: data.type === 'sale' ? data.returnId : undefined,
-          salex_return_id: data.type === 'salex' ? data.returnId : undefined
-        },
-        select: { invoice_item_id: true, return_qty: true }
+      const t = invoiceTables(data.type);
+      const rawReturnItems = await tx[t.returnItems].findMany({
+        where: { [t.returnFk]: data.returnId },
+        select: { [t.returnItemFk]: true, return_qty: true }
       });
+      const returnItems = rawReturnItems.map((r: any) => ({
+        invoice_item_id: r[t.returnItemFk] as number,
+        return_qty: r.return_qty
+      }));
       
-      const itemTable = data.type === 'sale' ? 'invoiceitems' : 'invoicexitems';
       const invoiceItemIds = returnItems.map(item => item.invoice_item_id);
-      const invoiceItems = await tx[itemTable].findMany({
+      const invoiceItems = await tx[t.items].findMany({
         where: { id: { in: invoiceItemIds } },
         select: { id: true, product_id: true }
       });
@@ -1406,30 +1444,25 @@ export class CustomerTransactionHandler {
 
   private async executeDeleteRecord(tx: any, data: any, context: any): Promise<void> {
     if (data.type === 'sale' || data.type === 'salex') {
-      // Delete related returns FIRST to avoid FK constraint violations
-      const itemTable = data.type === 'sale' ? 'invoiceitems' : 'invoicexitems';
-      const invoiceItems = await tx[itemTable].findMany({
-        where: { invoice_no: data.invoiceNo },
+      const t = invoiceTables(data.type);
+      // Lines are keyed by the header id (invoice_no = invoice.id).
+      const invoiceItems = await tx[t.items].findMany({
+        where: { invoice_no: data.invoiceId },
         select: { id: true }
       });
       
       const itemIds = invoiceItems.map(item => item.id);
       
       if (itemIds.length > 0) {
-        // Get return IDs that reference these invoice items
-        const returnTable = data.type === 'sale' ? 'sale_return_items' : 'salex_return_items';
-        const returnItems = await tx[returnTable].findMany({
-          where: { invoice_item_id: { in: itemIds } },
-          select: { 
-            sale_return_id: data.type === 'sale' ? true : undefined,
-            salex_return_id: data.type === 'salex' ? true : undefined
-          },
-          distinct: data.type === 'sale' ? ['sale_return_id'] : ['salex_return_id']
+        // Returns are refused at the route (sales/salex DELETE), so this only
+        // runs if one slipped in between that check and here.
+        const returnItems = await tx[t.returnItems].findMany({
+          where: { [t.returnItemFk]: { in: itemIds } },
+          select: { [t.returnFk]: true },
+          distinct: [t.returnFk]
         });
         
-        const returnIds = returnItems.map(r => 
-          data.type === 'sale' ? r.sale_return_id : r.salex_return_id
-        ).filter(Boolean);
+        const returnIds = returnItems.map((r: any) => r[t.returnFk]).filter(Boolean);
         
         if (returnIds.length > 0) {
           // DELETE CREDIT_NOTE ledger entries directly (no reversal needed)
@@ -1441,37 +1474,32 @@ export class CustomerTransactionHandler {
             }
           });
           
-          // Delete return items first (child records)
-          await tx[returnTable].deleteMany({
-            where: { invoice_item_id: { in: itemIds } }
+          await tx[t.returnItems].deleteMany({
+            where: { [t.returnItemFk]: { in: itemIds } }
           });
           
-          // Delete return records (parent records)
-          const returnMainTable = data.type === 'sale' ? 'sale_returns' : 'salex_returns';
-          await tx[returnMainTable].deleteMany({
+          await tx[t.returns].deleteMany({
             where: { id: { in: returnIds } }
           });
         }
       }
       
-      // NOW safe to delete invoice items (no more FK references)
-      await tx[itemTable].deleteMany({ where: { invoice_no: data.invoiceNo } });
+      await tx[t.items].deleteMany({ where: { invoice_no: data.invoiceId } });
+      // The billing / shipping / transport snapshots, as the "Other"-customer
+      // path in the routes already deletes them. They were left orphaned here.
+      await tx[t.billTo].deleteMany({ where: { invoice_no: data.invoiceId } });
+      await tx[t.shipTo].deleteMany({ where: { invoice_no: data.invoiceId } });
+      await tx[t.transport].deleteMany({ where: { invoice_id: data.invoiceId } });
+      if (data.type === 'salex') {
+        await tx.incexpx.deleteMany({ where: { invoice_id: data.invoiceId } });
+      }
       
-      // Delete main invoice record
-      const invoiceTable = data.type === 'sale' ? 'invoice' : 'invoicex';
-      await tx[invoiceTable].delete({ where: { id: data.invoiceId } });
+      await tx[t.header].delete({ where: { id: data.invoiceId } });
       
     } else if (data.type === 'return') {
-      const returnTable = data.returnType === 'sale' ? 'sale_return_items' : 'salex_return_items';
-      await tx[returnTable].deleteMany({ 
-        where: { 
-          sale_return_id: data.returnType === 'sale' ? data.returnId : undefined,
-          salex_return_id: data.returnType === 'salex' ? data.returnId : undefined
-        } 
-      });
-      
-      const returnMainTable = data.returnType === 'sale' ? 'sale_returns' : 'salex_returns';
-      await tx[returnMainTable].delete({ where: { id: data.returnId } });
+      const t = invoiceTables(data.returnType);
+      await tx[t.returnItems].deleteMany({ where: { [t.returnFk]: data.returnId } });
+      await tx[t.returns].delete({ where: { id: data.returnId } });
       
     } else if (data.type === 'payment') {
       await tx.customer_payments.delete({ where: { id: data.paymentId } });

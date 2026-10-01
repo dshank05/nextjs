@@ -174,3 +174,40 @@ not wait for the rewrite.
    then **C**, then **D**. Commit per block; `tsc` + `next build` after each, as before.
 4. Owner: PU-33 (round stock or allow fractional qty?), F-34 (GST rounding), F-47 (which
    "outstanding" is right).
+
+## 6. Fix log and checkpoint
+
+Owner approved item 1 (2026-09-30) and then said "fix everything, rewrites included".
+
+### Done — Step 1: delete paths and fy on edit (money, approved)
+
+| Fix | Files |
+|---|---|
+| **PU-01** purchase delete scoped to `(invoice_no, fy)` — `purchaseLinesOf()` refuses without `fy` | `lib/transaction-handler.ts`, `api/purchases/[id].ts` |
+| **PU-02 / PU-03** purchase delete refused while any return line exists (`HAS_RETURNS`), counted from return lines, not `return_status` | `api/purchases/[id].ts` |
+| **Sale delete key** — customer handler now keys lines by header id (`invoiceId`), not the printed number | `lib/customer-transaction-handler.ts` |
+| **Salex delete crash** — one `INVOICE_TABLES` map (`invoice_itemsx`, `invoice_itemx_id`, `salex_return_id`); also repairs the customer **salex-return** delete, which had the same crash | `lib/customer-transaction-handler.ts` |
+| Handler delete now removes bill-to / ship-to / transport (and `incexpx` for salex), as the "Other" path does; sale "Other" path now removes `transport_details` | same + `api/sales/[id].ts` |
+| Sale delete refused while returns exist (as salex) — needed once the key is right, or the stock comes back twice | `api/sales/[id].ts` |
+| **Sale / salex edit keeps the bill's `fy`** (was: current year) | `api/sales/[id].ts`, `api/salex/[id].ts` |
+
+Verified: `tsc` clean, `next build` clean, and an in-memory transaction check
+(`~/harness/delcheck`, 16 cases: other-year purchase untouched, sale #99/id 5 vs #5/id 99,
+salex delete + salex-return delete, sale-return delete) — **all pass on the new code; 11 fail
+on the old code**, so the check reproduces the bugs. Not yet clicked through on the live DB.
+
+### Resume here — remaining, in order
+
+1. **Small fixes:** PU-04 (cache key `String(id)` — also sale/salex hooks), PU-30 (broadcast
+   `msg.data.id`), PU-31 (view footer), PU-32 (always fetch on edit), PU-34 (`num` strict).
+   PU-33 waits on the owner (round stock?).
+2. **Block B** — `[id].ts` → `lib/purchase-read.ts` + `lib/purchase-edit.ts` (reconcile by
+   line id, every column saved, absent fields keep stored values). Absorbs PU-14…PU-21.
+3. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
+   Absorbs PU-05…PU-13.
+4. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
+   `PurchaseTable.tsx` in full first.
+5. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
+6. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+
+Each block: commit after, `tsc` + `next build`.
