@@ -1,79 +1,51 @@
 import { useQuery } from '@tanstack/react-query';
 import type { Purchase, PurchaseFilters, PurchasesResponse, PurchaseReturn, PurchaseReturnFilters, PurchaseReturnsResponse } from '../types/purchases';
 
-async function fetchPurchases(filters: PurchaseFilters, signal?: AbortSignal): Promise<PurchasesResponse> {
+/**
+ * List parameters, named exactly as `lib/purchase-query.ts` reads them. Four
+ * of these were sent under other names (`billRef`, `items`, `taxAmount`,
+ * `pf`) and silently ignored (PU-22).
+ */
+export function purchaseListParams(filters: PurchaseFilters): URLSearchParams {
   const params = new URLSearchParams();
-  
-  params.append('page', filters.page.toString());
-  params.append('limit', filters.limit.toString());
-  
-  if (filters.search) params.append('search', filters.search);
-  if (filters.vendorFilter) params.append('vendor', filters.vendorFilter);
-  if (filters.statusFilter) params.append('status', filters.statusFilter);
-  if (filters.dateFrom) params.append('startDate', filters.dateFrom);
-  if (filters.dateTo) params.append('endDate', filters.dateTo);
-  if (filters.amountMin) params.append('amountMin', filters.amountMin);
-  if (filters.amountMax) params.append('amountMax', filters.amountMax);
-  if (filters.uidFilter) params.append('uid', filters.uidFilter);
-  if (filters.billReference) params.append('billRef', filters.billReference);
-  if (filters.itemCount) params.append('items', filters.itemCount);
-  if (filters.paymentMode) params.append('paymentMode', filters.paymentMode);
-  if (filters.totalTax) params.append('taxAmount', filters.totalTax);
-  if (filters.packingForwardingTotal) params.append('pf', filters.packingForwardingTotal);
-  if (filters.total && !filters.amountMin) {
-    params.append('amountMin', filters.total);
-    params.append('amountMax', filters.total);
-  }
-  params.append('sortBy', filters.sortBy || 'invoice_no');
-  params.append('sortOrder', filters.sortOrder || 'asc');
+  const set = (key: string, value: unknown) => {
+    if (value !== undefined && value !== null && String(value) !== '') params.set(key, String(value));
+  };
+  set('page', filters.page);
+  set('limit', filters.limit);
+  set('search', filters.search);
+  set('vendor', filters.vendorFilter);
+  if (filters.statusFilter && filters.statusFilter !== 'all') set('status', filters.statusFilter);
+  set('startDate', filters.dateFrom);
+  set('endDate', filters.dateTo);
+  set('uid', filters.uidFilter);
+  set('billReference', filters.billReference);
+  set('itemCount', filters.itemCount);
+  set('paymentMode', filters.paymentMode);
+  set('totalTax', filters.totalTax);
+  set('packingForwardingTotal', filters.packingForwardingTotal);
+  // "Total" is an exact amount: the same value as both bounds.
+  set('amountMin', filters.amountMin || filters.total);
+  set('amountMax', filters.amountMax || (filters.amountMin ? '' : filters.total));
+  set('sortBy', filters.sortBy || 'invoice_date');
+  set('sortOrder', filters.sortOrder || 'desc');
+  return params;
+}
 
-  const response = await fetch(`/api/purchases?${params}`, { signal });
-
+export async function fetchPurchases(filters: PurchaseFilters, signal?: AbortSignal): Promise<PurchasesResponse> {
+  const response = await fetch(`/api/purchases?${purchaseListParams(filters)}`, { signal });
   if (!response.ok) {
     throw new Error('Failed to fetch purchases');
   }
-
   const data = await response.json();
-
-  // Transform purchases data
-  const transformedPurchases: Purchase[] = (data.purchases || []).map((purchase: any) => ({
-    id: purchase.id,
-    invoice_no: purchase.invoice_no,
-    vendor_id: purchase.vendor_id,
-    vendor_name: purchase.vendor_name,
-    vendor_address: purchase.vendor_address,
-    vendor_gstin: purchase.vendor_gstin,
-    items_total: purchase.items_total,
-    freight: purchase.freight,
-    total_taxable_value: purchase.total_taxable_value,
-    taxrate: purchase.taxrate,
-    total_cgst: purchase.total_cgst,
-    total_sgst: purchase.total_sgst,
-    total_igst: purchase.total_igst,
-    total_tax: purchase.total_tax,
-    packing_forwarding_total: purchase.packing_forwarding_total,
-    total: purchase.total,
-    notes: purchase.notes,
-    invoice_date: purchase.invoice_date,
-    status: purchase.status,
-    payment_status: purchase.payment_status,
-    payment_mode: purchase.payment_mode,
-    fy: purchase.fy,
-    transport: purchase.transport,
-    item_count: purchase.item_count,
-    formattedDate: purchase.formattedDate,
-    bill_reference: purchase.bill_reference,
-    return_status: purchase.return_status,
+  const purchases: Purchase[] = (data.data || data.purchases || []).map((purchase: any) => ({
+    ...purchase,
     type: 'purchase',
     customer_vendor_name: purchase.vendor_name,
     customer_vendor_address: purchase.vendor_address,
     customer_vendor_gstin: purchase.vendor_gstin
   }));
-
-  return {
-    purchases: transformedPurchases,
-    pagination: data.pagination
-  };
+  return { purchases, pagination: data.pagination };
 }
 
 export function usePurchases(filters: PurchaseFilters) {

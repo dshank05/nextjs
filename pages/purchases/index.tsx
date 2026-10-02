@@ -1,108 +1,51 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import useStorageState from 'use-storage-state';
 import { useQueryClient } from '@tanstack/react-query';
-import { PurchaseTable } from '../../components/transactions/PurchaseTable';
-import { subscribeBroadcast } from '../../lib/broadcast';
-import { usePurchases } from '../../hooks/usePurchases';
-import type { Purchase } from '../../types/purchases';
+import { PurchaseTable, EMPTY_PURCHASE_FILTERS, type PurchaseListFilters } from '../../components/transactions/PurchaseTable';
+import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
+import { usePurchases, fetchPurchases } from '../../hooks/usePurchases';
 import { useDebounce } from '../../hooks/useDebounce';
+import type { PurchaseFilters } from '../../types/purchases';
 
-type PurchaseFilterState = {
-  vendorFilter: string;
-  statusFilter: string;
-  dateFrom: string;
-  dateTo: string;
-  amountMin: string;
-  amountMax: string;
-  uidFilter: string;
-  billReference: string;
-  itemCount: string;
-  paymentMode: string;
-  total: string;
-  totalTax: string;
-  packingForwardingTotal: string;
-  sortBy: string;
-  sortOrder: string;
-};
+/**
+ * The purchase list. Filters and page persist together in session storage, as
+ * on the product list (F-65): they were saved and then deleted on unmount, so
+ * coming back from a bill lost them, and a new filter left the page where it
+ * was (PU-24).
+ */
+const LIMIT = 50;
 
 export default function PurchasesPage() {
   const queryClient = useQueryClient();
-
-  const [currentFilters, setCurrentFilters] = useStorageState<PurchaseFilterState>('purchases-page-filters', {
-    defaultValue: {
-      vendorFilter: '',
-      statusFilter: 'all',
-      dateFrom: '',
-      dateTo: '',
-      amountMin: '',
-      amountMax: '',
-      uidFilter: '',
-      billReference: '',
-      itemCount: '',
-      paymentMode: '',
-      total: '',
-      totalTax: '',
-      packingForwardingTotal: '',
-      sortBy: 'invoice_no',
-      sortOrder: 'asc'
-    },
-    storage: "session"
+  const [filters, setFilters] = useStorageState<PurchaseListFilters>('purchases-page-filters', {
+    defaultValue: EMPTY_PURCHASE_FILTERS,
+    storage: 'session'
   });
+  const [page, setPage] = useStorageState<number>('purchases-page-number', { defaultValue: 1, storage: 'session' });
 
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(50);
-  const [searchTerm, setSearchTerm] = useState('');
-  
-  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+  // Typed filters settle before they query; the page is part of what they reset.
+  const settled = useDebounce(filters, 300);
+  const query: PurchaseFilters = useMemo(() => ({ ...settled, page, limit: LIMIT }), [settled, page]);
+  const { data, isLoading, error, refetch } = usePurchases(query);
+  const purchases = data?.purchases || [];
+  const pagination = data?.pagination
+    ? { hasMore: false, ...data.pagination }
+    : { page: 1, limit: LIMIT, total: 0, totalPages: 1, hasMore: false };
 
-  const queryFilters = useMemo(() => ({
-    page,
-    limit,
-    search: debouncedSearchTerm,
-    ...currentFilters
-  }), [page, limit, debouncedSearchTerm, currentFilters]);
-
-  const { data, isLoading, error, refetch } = usePurchases(queryFilters);
-
-  useEffect(() => {
-    const unsubscribe = subscribeBroadcast((msg) => {
-      if (msg.resource === 'purchases' && (msg.type === 'created' || msg.type === 'updated' || msg.type === 'deleted')) {
-        console.log(`🔄 Purchase ${msg.type} in another tab, refreshing data...`);
-        queryClient.invalidateQueries({ queryKey: ['purchases'] });
-      }
-    });
-
-    return unsubscribe;
-  }, [queryClient]);
-
-  useEffect(() => {
-    return () => {
-      if (typeof window !== 'undefined') {
-        sessionStorage.removeItem('purchases-page-filters');
-      }
-    };
-  }, []);
-
-  const handlePageChange = (newPage: number) => {
-    if (data && newPage > 0 && newPage <= data.pagination.totalPages) {
-      setPage(newPage);
+  useEffect(() => subscribeBroadcast((msg) => {
+    if (msg.resource === 'purchases' && ['created', 'updated', 'deleted'].includes(msg.type)) {
+      queryClient.invalidateQueries({ queryKey: ['purchases'] });
     }
-  };
+  }), [queryClient]);
 
-  const handleLimitChange = (newLimit: number) => {
-    setLimit(newLimit);
-    setPage(1);
-  };
+  // A remembered page past the end of the current results goes back to 1.
+  useEffect(() => {
+    if (!isLoading && pagination.totalPages > 0 && page > pagination.totalPages) setPage(1);
+  }, [isLoading, pagination.totalPages, page, setPage]);
 
-  const handlePrintPurchase = (transaction: Purchase) => {
-    console.log('Printing purchase:', transaction.id);
-    alert(`Print functionality for purchase ${transaction.invoice_no} will be implemented`);
-  };
-
-  const handleApplyFilters = (filters: PurchaseFilterState) => {
-    console.log('📥 Purchases index handleApplyFilters received:', filters);
-    setCurrentFilters(filters);
+  const changeFilters = (patch: Partial<PurchaseListFilters>) => {
+    setFilters({ ...filters, ...patch });
     setPage(1);
   };
 
@@ -118,54 +61,25 @@ export default function PurchasesPage() {
                 <div className="text-red-300 text-sm">{error.message}</div>
               </div>
             </div>
-            <button
-              onClick={() => refetch()}
-              className="btn-secondary text-red-400 text-sm py-1 px-3"
-            >
-              Retry
-            </button>
+            <button onClick={() => refetch()} className="btn-secondary text-red-400 text-sm py-1 px-3">Retry</button>
           </div>
         </div>
       )}
 
       <PurchaseTable
-        purchases={data?.purchases || []}
-        pagination={data?.pagination || { page: 1, limit: 50, total: 0, totalPages: 0 }}
+        purchases={purchases}
+        pagination={pagination}
         loading={isLoading}
-        onPageChange={handlePageChange}
-        searchTerm={searchTerm}
-        onSearchChange={setSearchTerm}
-        itemsPerPage={limit}
-        onItemsPerPageChange={handleLimitChange}
-        onExport={() => {}}
-        onApplyFilters={handleApplyFilters}
-        onViewDetails={() => {}}
-        onPrintDetails={handlePrintPurchase}
-        sortBy={currentFilters.sortBy as 'invoice_no' | 'vendor_name' | 'total' | 'invoice_date' | 'payment_status' | 'bill_reference' | 'item_count' | 'payment_mode' | 'total_tax'}
-        sortOrder={currentFilters.sortOrder as 'asc' | 'desc'}
-        initialFilters={{
-          vendorFilter: currentFilters.vendorFilter,
-          statusFilter: currentFilters.statusFilter,
-          dateFrom: currentFilters.dateFrom,
-          dateTo: currentFilters.dateTo,
-          amountMin: currentFilters.amountMin,
-          amountMax: currentFilters.amountMax,
-          uidFilter: currentFilters.uidFilter,
-          billReference: currentFilters.billReference,
-          itemCount: currentFilters.itemCount,
-          paymentMode: currentFilters.paymentMode,
-          total: currentFilters.total,
-          totalTax: currentFilters.totalTax,
-          packingForwardingTotal: currentFilters.packingForwardingTotal
+        filters={filters}
+        onFiltersChange={changeFilters}
+        onPageChange={(next) => { if (next > 0 && next <= pagination.totalPages) setPage(next); }}
+        onDeleted={(purchase) => {
+          // Same filters means the same query key; without this the deleted row stayed (PU-37).
+          queryClient.invalidateQueries({ queryKey: ['purchases'] });
+          broadcast({ type: 'deleted', resource: 'purchases', data: { id: purchase.id } });
         }}
-        actionButton={(
-          <Link
-            href="/purchases/create"
-            className="btn-primary"
-          >
-            Add Purchase
-          </Link>
-        )}
+        fetchAllForExport={async () => (await fetchPurchases({ ...settled, page: 1, limit: 1000 })).purchases}
+        actionButton={<Link href="/purchases/create" className="btn-primary">Add Purchase</Link>}
       />
     </div>
   );

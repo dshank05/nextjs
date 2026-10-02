@@ -266,11 +266,32 @@ save disabled until a change; inline total 236 at 18% → rate 200; PUT carries 
 status for a part-paid bill, no client totals; create mode takes the next number and waits
 for a vendor.
 
+### Done — Block C: list (2026-10-01)
+
+Same pattern as the product list (React Query + session-persisted filters and page), not
+`useListQuery` — that hook is for the plain-fetch settings lists. List GET moved to
+`lib/purchase-query.ts` (173): one SQL query with vendor name, item count and amount paid
+joined in. `PurchaseTable.tsx` 885 → 305, `purchases/index.tsx` 172 → 86, list GET ~390 → 10.
+Net about −890.
+
+| Finding | How |
+|---|---|
+| PU-22 | client and API use one set of names (`purchaseListParams` ↔ `parsePurchaseListQuery`) |
+| PU-23 | date range = whole local days (`parseDateRange`); either end may be alone |
+| PU-24 | filters and page persist together; any filter change returns to page 1; a remembered page past the end goes back to 1 |
+| PU-25 | vendor / item-count sort and the item-count filter run in SQL before paging; limit capped at 1,000 (the vendor-payment screen asks for that many) |
+| **PU-37** (new, [C]) | a delete "refreshed" by resending the same filters — same query key, no refetch — so the deleted row stayed until reload. Now invalidates and broadcasts |
+| **PU-38** (new, [C]) | the vendor filter fetched `/api/vendors` without `dropdown=true`: first 50 vendors only. Uses `useVendors` (every vendor) |
+| new | status filter stored `'paid'` but sent `'1'`, so a restored status showed blank — one value now; export takes every matching row, not the page (S-89 class); delete disabled for any bill with returns (server rule); the Print button (an "will be implemented" alert) and the never-passed return buttons removed |
+
+Checked: `tsc`, `next build`, `delcheck/listcheck` 11/11 (names round-trip, end-of-day,
+placeholders = params, SQL sort / filter before LIMIT, injection-shaped sort falls back),
+jsdom `test4.jsx` 7/7 (filter name sent, page reset, vendors via dropdown, returned bill
+not deletable, deleted row disappears). The SQL itself has not run against MySQL here.
+
 ### Resume here — remaining, in order
 
-1. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
-   `PurchaseTable.tsx` in full first.
-2. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
-3. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+1. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
+2. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
 
 Each block: commit after, `tsc` + `next build`.

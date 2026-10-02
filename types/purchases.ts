@@ -35,8 +35,11 @@ export interface Purchase {
   item_count?: number;
   formattedDate?: string;
   bill_reference?: string;
+  bill_reference_date?: string | null;
   return_status?: number;
   packing_forwarding_total?: number;
+  total_paid?: number;
+  remaining_amount?: number;
   type?: 'purchase';
   customer_vendor_name?: string;
   customer_vendor_address?: string;
