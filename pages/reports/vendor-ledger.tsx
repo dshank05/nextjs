@@ -99,7 +99,7 @@ export default function VendorLedgerPage() {
 
   const fetchVendors = async () => {
     try {
-      const response = await fetch('/api/vendors');
+      const response = await fetch('/api/vendors?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setVendors(data.vendors || []);
@@ -131,7 +131,8 @@ export default function VendorLedgerPage() {
         // ✅ Client-side merge: Merge adjustments, then recalculate balance (exactly like backend)
         const rawEntries = data.entries as LedgerEntry[];
         const mergedEntries = mergeLedgerEntries(rawEntries);
-        const entriesWithBalance = recalculateBalance(mergedEntries);
+        // Runs on from everything before this page and before dateFrom (PU-26).
+        const entriesWithBalance = recalculateBalance(mergedEntries, Number(data.openingBalance) || 0);
         
         setAccountingEntries(entriesWithBalance);
         setPagination(data.pagination);

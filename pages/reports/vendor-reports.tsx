@@ -99,7 +99,7 @@ export default function VendorLedgerPage() {
 
   const fetchVendorOptions = async () => {
     try {
-      const response = await fetch('/api/vendors');
+      const response = await fetch('/api/vendors?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setVendorOptions([
@@ -202,7 +202,7 @@ export default function VendorLedgerPage() {
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('outstanding')}
+            onClick={() => { setActiveView('outstanding'); setPagination(prev => ({ ...prev, page: 1 })); }}
           >
             Outstanding Balances
           </button>
@@ -212,7 +212,7 @@ export default function VendorLedgerPage() {
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('debit-notes')}
+            onClick={() => { setActiveView('debit-notes'); setPagination(prev => ({ ...prev, page: 1 })); }}
           >
             Debit Notes
           </button>
@@ -264,7 +264,7 @@ export default function VendorLedgerPage() {
               type="text"
               placeholder={activeView === 'outstanding' ? 'Search vendors...' : 'Search debit notes...'}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -276,6 +276,7 @@ export default function VendorLedgerPage() {
               selectedValue={filters.vendorFilter}
               onSelectionChange={(value) => {
                 setFilters(prev => ({ ...prev, vendorFilter: value || '' }));
+                setPagination(prev => ({ ...prev, page: 1 }));
               }}
               placeholder="Select vendor..."
             />
@@ -288,7 +289,7 @@ export default function VendorLedgerPage() {
               type="number"
               placeholder="Min amount"
               value={filters.amountMin}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMin: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMin: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -300,7 +301,7 @@ export default function VendorLedgerPage() {
               type="number"
               placeholder="Max amount"
               value={filters.amountMax}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMax: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMax: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -311,7 +312,7 @@ export default function VendorLedgerPage() {
             <DateRangeFilter
               startDate={filters.dateFrom}
               endDate={filters.dateTo}
-              onDateChange={(start, end) => setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }))}
+              onDateChange={(start, end) => { setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end })); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select date range..."
             />
           </div>

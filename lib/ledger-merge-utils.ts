@@ -262,10 +262,12 @@ export function mergeLedgerEntries(entries: LedgerEntry[]): LedgerEntry[] {
 }
 
 /**
- * Recalculate running balance after merge
+ * Recalculate running balance after merge, starting from what came before the
+ * first entry (the report's `openingBalance`; 0 when the list starts at the
+ * beginning of the ledger).
  */
-export function recalculateBalance(entries: LedgerEntry[]): LedgerEntry[] {
-  let runningBalance = 0
+export function recalculateBalance(entries: LedgerEntry[], openingBalance = 0): LedgerEntry[] {
+  let runningBalance = openingBalance
 
   return entries.map(entry => {
     runningBalance = runningBalance + entry.debit - entry.credit

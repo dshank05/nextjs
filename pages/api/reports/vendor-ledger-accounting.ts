@@ -1,116 +1,92 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
-import { parseDateRange } from '../../../lib/date-utils'
+import { badRequest, fail, methodNotAllowed } from '../../../lib/api/respond'
+import { withObservability } from '../../../lib/withObservability'
+import { queryInt, reportPage, reportPagination, reportDayRange } from '../../../lib/api/report-query'
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ message: 'Method not allowed' })
-  }
+/**
+ * One vendor's ledger, a page at a time, with a running balance.
+ *
+ * The running balance started at 0 on every page and ignored everything
+ * before `dateFrom`, so page 2 onward and any dated view showed the wrong
+ * balance on every row (PU-26). `openingBalance` is now everything that comes
+ * before the first row of this page - earlier dates and earlier pages - and
+ * each row's balance runs on from it. The page's client re-runs the balance
+ * after merging adjustments and starts from the same opening figure.
+ */
 
+// Display order. "Before this page" means before it in exactly this order.
+const ORDER = [{ transaction_date: 'asc' as const }, { created_at: 'asc' as const }, { id: 'asc' as const }]
+
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') return methodNotAllowed(res, ['GET'])
   try {
-    const {
-      vendor_id,
-      dateFrom,
-      dateTo,
-      page = '1',
-      limit = '50'
-    } = req.query
+    const vendorId = queryInt(req, 'vendor_id')
+    if (vendorId === null) return badRequest(res, 'Vendor ID is required')
 
-    if (!vendor_id) {
-      return res.status(400).json({ message: 'Vendor ID is required' })
+    const { page, limit, skip } = reportPage(req, 50, 1000)
+    const range = reportDayRange(req)
+
+    const where: any = { vendor_id: vendorId }
+    if (range) {
+      where.transaction_date = {}
+      if (range.start !== null) where.transaction_date.gte = range.start
+      if (range.end !== null) where.transaction_date.lte = range.end
     }
 
-    const pageNum = parseInt(page as string)
-    const limitNum = parseInt(limit as string)
-    const skip = (pageNum - 1) * limitNum
-
-    // Build where clause
-    const where: any = {
-      vendor_id: parseInt(vendor_id as string)
-    }
-
-    // ✅ Date range filter - ONLY apply if user provides date range via UI
-    // Otherwise, show ALL entries (no date filter)
-    if (dateFrom && dateTo) {
-      const { startTimestamp, endTimestamp } = parseDateRange(
-        dateFrom as string,
-        dateTo as string
-      );
-      where.transaction_date = {
-        gte: startTimestamp,
-        lte: endTimestamp
-      };
-    }
-
-    // Fetch ledger entries
-    const [entries, total] = await Promise.all([
-      prisma.vendor_ledger.findMany({
-        where,
-        orderBy: [
-          { transaction_date: 'asc' },  // Primary sort: transaction date
-          { created_at: 'asc' },        // ✅ NEW: Secondary sort by creation time (not updated_at)
-          { id: 'asc' }                 // ✅ Tertiary sort: id for absolute consistency
-        ],
-        skip,
-        take: limitNum
-      }),
-      prisma.vendor_ledger.count({ where })
+    const [entries, total, beforeRange, earlierPages] = await Promise.all([
+      prisma.vendor_ledger.findMany({ where, orderBy: ORDER, skip, take: limit }),
+      prisma.vendor_ledger.count({ where }),
+      range?.start != null
+        ? prisma.vendor_ledger.aggregate({
+            where: { vendor_id: vendorId, transaction_date: { lt: range.start } },
+            _sum: { debit: true, credit: true }
+          })
+        : Promise.resolve(null),
+      skip > 0
+        ? prisma.vendor_ledger.findMany({ where, orderBy: ORDER, take: skip, select: { debit: true, credit: true } })
+        : Promise.resolve([] as { debit: number; credit: number }[])
     ])
 
-    // ✅ Return RAW entries (merge happens on client-side)
-    // Calculate running balance
-    let runningBalance = 0
-    entries.forEach(entry => {
-      runningBalance = runningBalance + Number(entry.debit) - Number(entry.credit)
-      entry.balance = runningBalance
-    })
+    const openingBalance =
+      (beforeRange ? Number(beforeRange._sum.debit || 0) - Number(beforeRange._sum.credit || 0) : 0) +
+      earlierPages.reduce((s, e) => s + Number(e.debit) - Number(e.credit), 0)
 
-    // ✅ Filter out zero-value entries (cancelled transactions)
-    const nonZeroEntries = entries.filter(entry => entry.debit !== 0 || entry.credit !== 0)
-
-    // ✅ Return RAW entries - all formatting/merging happens on client-side
-    const formattedEntries = nonZeroEntries.map(entry => {
-      return {
+    let running = openingBalance
+    const formattedEntries = entries
+      .map(entry => {
+        running += Number(entry.debit) - Number(entry.credit)
+        return { entry, balance: running }
+      })
+      // Zero-value rows (cancelled transactions) still count toward the balance
+      // above; they are only left off the page.
+      .filter(({ entry }) => Number(entry.debit) !== 0 || Number(entry.credit) !== 0)
+      .map(({ entry, balance }) => ({
         id: entry.id,
         date: entry.transaction_date,
-        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN', { 
-          timeZone: 'Asia/Kolkata' 
-        }),
-        particulars: entry.notes || '',  // Raw notes
-        voucherType: entry.transaction_type,  // Raw transaction type
+        formattedDate: new Date(entry.transaction_date * 1000).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        particulars: entry.notes || '',
+        voucherType: entry.transaction_type,
         voucherNo: entry.reference_no || '-',
         debit: Number(entry.debit) || 0,
         credit: Number(entry.credit) || 0,
-        balance: Number(entry.balance) || 0,
+        balance,
         remarks: entry.notes || '',
         paymentMode: entry.payment_mode,
         transactionType: entry.transaction_type,
         referenceType: entry.reference_type,
         referenceId: entry.reference_id,
-        transaction_id: entry.transaction_id  // ✅ NEW: Send transaction_id for grouping logic
-      }
-    })
+        transaction_id: entry.transaction_id
+      }))
 
-    const totalPages = Math.ceil(total / limitNum)
-
-    res.status(200).json({
+    return res.status(200).json({
       entries: formattedEntries,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages,
-        hasMore: pageNum < totalPages
-      }
+      openingBalance,
+      pagination: reportPagination(page, limit, total)
     })
   } catch (error) {
-    console.error('Vendor ledger accounting fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch vendor ledger',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch vendor ledger')
   }
 }
+
+export default withObservability(handler)

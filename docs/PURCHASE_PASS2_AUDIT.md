@@ -1,7 +1,7 @@
 # Purchases — P4-15 edit sweep and Second Pass (code quality)
 
-> Status: **assessment complete, nothing fixed yet.** Money-handling code is not changed
-> without the owner's go-ahead. The point of this document is the decision the owner asked
+> Status: **COMPLETE (2026-10-01)** — fixes approved by the owner and landed in Steps 1–2 and
+> Blocks A–D (§6). Live click-through on the real database still to do. The point of this document is the decision the owner asked
 > for: *where does a rewrite score a major win, so that the bugs inside the rewritten code
 > do not need fixing one by one?*
 
@@ -289,9 +289,32 @@ placeholders = params, SQL sort / filter before LIMIT, injection-shaped sort fal
 jsdom `test4.jsx` 7/7 (filter name sent, page reset, vendors via dropdown, returned bill
 not deletable, deleted row disappears). The SQL itself has not run against MySQL here.
 
-### Resume here — remaining, in order
+### Done — Block D: vendor reports (2026-10-01)
 
-1. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
-2. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+Four endpoints 527 → 345, plus `lib/api/report-query.ts` (61): shared paging (capped, junk
+page = page 1) and whole-local-day ranges. All four now answer errors through `fail()` — no
+raw error text.
 
-Each block: commit after, `tsc` + `next build`.
+| Finding | How |
+|---|---|
+| PU-26 | ledger returns `openingBalance` (everything before `dateFrom` and before this page, in display order); rows run on from it, and the page's `recalculateBalance` starts from it too |
+| PU-27 | outstanding is one row per vendor: the balance on its latest ledger entry (by id; inside the date range when one is given) — the definition `ledgerService.getLatestBalance` already uses. `search` filters by vendor name. Which definition is *right* is still F-47 |
+| PU-28 | bill-reference search without `mode: 'insensitive'` (MySQL), end day included, "Other" vendor named from its bill snapshot |
+| PU-29 | balance-log range covers the whole end day |
+| PU-38 twin | the ledger, outstanding and balance-log pages fetched `/api/vendors` without `dropdown=true` — first 50 vendors only |
+| new | outstanding and bill-reference pages did not return to page 1 when a filter, the search or the view changed |
+
+Checked: `tsc`, `next build`, `delcheck/reportcheck` 10/10 (page-2 opening balance, dated
+opening, latest-row-per-vendor SQL, placeholders = params, sort fallback, row shape, "Other"
+vendor name). The customer ledger report has the same running-balance bug — Phase 5 (§4).
+
+### Purchase second pass — complete
+
+All 38 findings are fixed except those owned elsewhere: F-34 (GST rounding) and F-47
+(definition of outstanding) wait on the owner; the sale/salex rows of §4 are Phase 5.
+
+### Remaining
+
+1. Click through purchases on the live database (create, edit a taxed / part-paid / returned
+   bill, delete, list filters, the four vendor reports). Nothing here has run against MySQL.
+2. Phase 5: the sale/salex rows of §4 not covered by Step 1, and the customer ledger report.

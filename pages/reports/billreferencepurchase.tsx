@@ -101,7 +101,7 @@ export default function BillReferencePurchase() {
               type="text"
               placeholder="Search by bill reference..."
               value={billRefSearch}
-              onChange={(e) => setBillRefSearch(e.target.value)}
+              onChange={(e) => { setBillRefSearch(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -113,6 +113,7 @@ export default function BillReferencePurchase() {
               onDateChange={(start, end) => {
                 setDateFrom(start);
                 setDateTo(end);
+                setPagination(prev => ({ ...prev, page: 1 }));
               }}
               placeholder="Select date range..."
             />
