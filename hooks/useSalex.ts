@@ -169,7 +169,8 @@ export function useUpdateSalex() {
     mutationFn: updateSalex,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['salex'] });
-      queryClient.invalidateQueries({ queryKey: ['salex-item', variables.id] });
+      // String key, to match the view's router id (PU-04 twin).
+      queryClient.invalidateQueries({ queryKey: ['salex-item', String(variables.id)] });
     },
   });
 }

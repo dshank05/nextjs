@@ -74,11 +74,30 @@ export const CLIENT_SETTABLE_PAYMENT_STATUSES: number[] = [
 
 export const VALID_PAYMENT_MODES = [0, 1]; // 0 = Cash, 1 = Bank
 
+/**
+ * Strict parse: a missing or empty field is 0, anything that is not wholly a
+ * number is NaN. parseFloat read "12abc" as 12 (PU-34).
+ */
+export const toNumber = (v: any): number => {
+  if (v === undefined || v === null) return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+  const s = String(v).trim();
+  if (s === '') return 0;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
+};
+
 /** One numeric coercion for every amount, so a missing field is 0, never NaN. */
 export const num = (v: any): number => {
-  const n = parseFloat(String(v ?? '').trim());
+  const n = toNumber(v);
   return Number.isFinite(n) ? n : 0;
 };
+
+/**
+ * Quantities are whole units (owner decision, PU-33). Rounded once, here, so the
+ * stored line and the stock movement are the same number.
+ */
+export const lineQty = (v: any): number => Math.round(num(v));
 
 export interface PurchaseLineTotals {
   product_id: number;
@@ -135,7 +154,7 @@ export function computePurchaseTotals(params: {
   );
 
   const lines: PurchaseLineTotals[] = (params.items || []).map((item: any) => {
-    const qty = num(item.qty);
+    const qty = lineQty(item.qty);
     const rate = num(item.rate);
     const taxable = qty * rate;
     const gstPercentage = num(item.gst_percentage);
@@ -215,11 +234,16 @@ export async function validatePurchase(
       if (!productId || isNaN(productId)) {
         return { status: 400, message: 'Every line needs a valid product' };
       }
-      if (num(item.qty) <= 0) {
-        return { status: 400, message: 'Every line needs a quantity greater than zero' };
+      for (const [field, label] of [['qty', 'Quantity'], ['rate', 'Rate'], ['gst_percentage', 'GST %']]) {
+        if (Number.isNaN(toNumber(item[field]))) {
+          return { status: 400, message: `${label} must be a number` };
+        }
       }
-      if (num(item.qty) < 0 || num(item.rate) < 0) {
-        return { status: 400, message: 'Quantities and rates cannot be negative' };
+      if (lineQty(item.qty) < 1) {
+        return { status: 400, message: 'Every line needs a quantity of at least 1' };
+      }
+      if (num(item.rate) < 0) {
+        return { status: 400, message: 'Rates cannot be negative' };
       }
       const gst = num(item.gst_percentage);
       if (gst < 0 || gst > 100) {

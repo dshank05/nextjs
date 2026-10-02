@@ -773,17 +773,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
       // duplicate WHEN is not a mistake Prisma would let you make. Rewriting it
       // through the query builder fixes the class, not just this instance.
       const perProduct = new Map<number, { qty: number; rate: number }>();
-      for (const item of items) {
-        const productId = parseInt(item.product_id);
+      // From the server's line figures, so stock moves by exactly the qty stored
+      // on the line (whole units, PU-33).
+      for (const line of totals.lines) {
+        const productId = line.product_id;
         if (isNaN(productId)) continue;
         const existing = perProduct.get(productId);
         if (existing) {
           // Same product on another line: quantities ADD, and the later line's
           // rate is the one that stands as "latest".
-          existing.qty += num(item.qty);
-          existing.rate = num(item.rate);
+          existing.qty += line.qty;
+          existing.rate = line.rate;
         } else {
-          perProduct.set(productId, { qty: num(item.qty), rate: num(item.rate) });
+          perProduct.set(productId, { qty: line.qty, rate: line.rate });
         }
       }
 
@@ -792,7 +794,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
       for (const [productId, agg] of Array.from(perProduct.entries())) {
         await tx.product.update({
           where: { id: productId },
-          data: { stock: { increment: Math.round(agg.qty) } }
+          data: { stock: { increment: agg.qty } }
         });
 
         // Only advance the "latest purchase" fields when this document really is

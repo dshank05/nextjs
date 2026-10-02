@@ -317,7 +317,8 @@ export function useUpdateSale() {
     mutationFn: updateSale,
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['sale', variables.id] });
+      // String key, to match the view's router id (PU-04 twin).
+      queryClient.invalidateQueries({ queryKey: ['sale', String(variables.id)] });
     },
   });
 }

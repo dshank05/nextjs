@@ -392,10 +392,6 @@ export function useCreatePurchase() {
       // Invalidate purchases list
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       
-      // Optionally set the new purchase in cache
-      if (data.purchase?.id) {
-        queryClient.setQueryData(['purchase', data.purchase.id], data.purchase);
-      }
     },
   });
 }
@@ -411,7 +407,10 @@ export function useUpdatePurchase() {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       
       // Invalidate the specific purchase
-      queryClient.invalidateQueries({ queryKey: ['purchase', variables.id] });
+      // String key: the view reads the id from the router, so ['purchase', 5]
+      // and ['purchase', '5'] were two cache entries and the edited bill could
+      // show its old figures for 30 s (PU-04).
+      queryClient.invalidateQueries({ queryKey: ['purchase', String(variables.id)] });
     },
   });
 }

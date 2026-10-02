@@ -196,18 +196,34 @@ Verified: `tsc` clean, `next build` clean, and an in-memory transaction check
 salex delete + salex-return delete, sale-return delete) — **all pass on the new code; 11 fail
 on the old code**, so the check reproduces the bugs. Not yet clicked through on the live DB.
 
+### Done — Step 2: small fixes (2026-10-01)
+
+| Fix | Files |
+|---|---|
+| **PU-33** owner: quantities are whole units. `lineQty()` rounds once; totals, stored line and stock movement all use it; validator rejects qty < 1 | `lib/purchase.ts`, `api/purchases/index.ts` |
+| **PU-34** `toNumber()` strict ("12abc" → NaN); validator rejects non-numeric qty / rate / GST %; dead `qty<0` line gone | `lib/purchase.ts` |
+| **PU-04** view cache invalidated by `String(id)` — purchase, sale, salex hooks. Create no longer seeds `['purchase', id]` with the 4-field summary (with a matching key it would have shown that summary as the bill) | `hooks/usePurchases.ts`, `useSales.ts`, `useSalex.ts` |
+| **PU-30** view refreshes on `msg.data.id` | `purchases/view/[id].tsx` |
+| **PU-31** view footer = sum of the Total column | `purchases/view/[id].tsx` |
+
+PU-32 (edit loads a SessionStorage snapshot) moves into Block A — that loader is rewritten
+there. Checked: `tsc` clean; `numcheck` 10/10.
+
+**New, found while fixing — PU-35 (High, [C]): editing a Partially Paid purchase fails.**
+`validatePurchase` rejects `payment_status: 2` (partial is derived, not client-settable — by
+design), and the edit form always resends the loaded status. Every save of a part-paid bill is
+a 400. Absorbed by Blocks A + B: the server keeps the stored status unless the user changed it,
+and the form only sends a status the user picked.
+
 ### Resume here — remaining, in order
 
-1. **Small fixes:** PU-04 (cache key `String(id)` — also sale/salex hooks), PU-30 (broadcast
-   `msg.data.id`), PU-31 (view footer), PU-32 (always fetch on edit), PU-34 (`num` strict).
-   PU-33 waits on the owner (round stock?).
-2. **Block B** — `[id].ts` → `lib/purchase-read.ts` + `lib/purchase-edit.ts` (reconcile by
+1. **Block B** — `[id].ts` → `lib/purchase-read.ts` + `lib/purchase-edit.ts` (reconcile by
    line id, every column saved, absent fields keep stored values). Absorbs PU-14…PU-21.
-3. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
+2. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
    Absorbs PU-05…PU-13.
-4. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
+3. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
    `PurchaseTable.tsx` in full first.
-5. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
-6. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+4. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
+5. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
 
 Each block: commit after, `tsc` + `next build`.

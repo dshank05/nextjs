@@ -172,8 +172,8 @@ export default function PurchaseView() {
   // Listen for broadcast messages to refresh data when this purchase is updated in other tabs
   useEffect(() => {
     const unsubscribe = subscribeBroadcast((msg) => {
-      if (msg.resource === 'purchases' && msg.type === 'updated' && msg.id && msg.id.toString() === id?.toString()) {
-        console.log(`🔄 Purchase ${msg.id} updated in another tab, refreshing view page...`);
+      // Senders put the id in msg.data (PU-30).
+      if (msg.resource === 'purchases' && msg.type === 'updated' && msg.data?.id?.toString() === id?.toString()) {
         queryClient.invalidateQueries({ queryKey: ['purchase', id] });
       }
     });
@@ -634,7 +634,11 @@ export default function PurchaseView() {
                     {enableTax && <td></td>}
                     {enableTax && <td></td>}
                     {enableTax && <td className="text-white font-bold text-left px-1 py-3 bg-slate-700/20">₹{purchase.total_tax?.toLocaleString('en-IN') || '0'}</td>}
-                    <td className="text-white font-bold text-left px-1 py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items_total?.toLocaleString('en-IN')}</td>
+                    {/* Sum of the column above (taxable + tax), not items_total, which is pre-tax (PU-31). */}
+                    <td className="text-white font-bold text-left px-1 py-3 bg-blue-600/10 border-l border-blue-500/30">₹{purchase.items.reduce((sum, item) => {
+                      const taxable = item.qty * (item.rate || 0);
+                      return sum + taxable + (taxable * (item.gst_percentage || 0)) / 100;
+                    }, 0).toLocaleString('en-IN')}</td>
                   </tr>
                 </tfoot>
               )}
