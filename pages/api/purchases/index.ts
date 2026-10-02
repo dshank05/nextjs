@@ -6,6 +6,7 @@ import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
 import { getLocalDateString, convertDateToTimestamp } from '../../../lib/date-utils'
 import { validatePurchase, computePurchaseTotals, getBusinessGstin, num } from '../../../lib/purchase'
+import { parseStateCode } from '../../../lib/purchase-edit'
 
 async function handler(
   req: NextApiRequest,
@@ -529,14 +530,19 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
     // comparison is the vendor's state against ours - ours coming from
     // business_details.gstin, which is the only place it exists (F-30).
     const businessGstin = await getBusinessGstin();
+    // The bill's own state - the one written to bill_to below - with the
+    // vendor master as the fallback. Same rule as edit (PU-18).
+    const billStateCode = req.body.state_code !== undefined && req.body.state_code !== null && req.body.state_code !== ''
+      ? parseStateCode(req.body.state_code)
+      : (existingVendor?.state_code ?? null);
     const totals = computePurchaseTotals({
       items,
       packingQty: packing_forwarding_qty,
       packingRate: packing_forwarding_rate,
       packingTotal: packing_forwarding_total,
-      vendorStateCode: existingVendor?.state_code ?? null,
+      vendorStateCode: billStateCode,
       businessGstin,
-      hasVendorState: existingVendor?.state_code != null
+      hasVendorState: billStateCode != null
     });
 
     // A supply type we cannot resolve is a configuration error, not something
@@ -633,7 +639,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
           address2: req.body.address_2 ?? existingVendor?.address_2 ?? '',
           city: req.body.city ?? existingVendor?.city ?? '',
           state: req.body.state ?? existingVendor?.state ?? '',
-          state_code: req.body.state_code ?? existingVendor?.state_code ?? null,
+          state_code: billStateCode,
           gstin: req.body.gst_number ?? existingVendor?.tax_id ?? '',
           pin_code: req.body.pin_code ?? existingVendor?.pin_code ?? ''
         }

@@ -215,15 +215,34 @@ design), and the edit form always resends the loaded status. Every save of a par
 a 400. Absorbed by Blocks A + B: the server keeps the stored status unless the user changed it,
 and the form only sends a status the user picked.
 
+### Done — Block B: edit API (2026-10-01)
+
+`api/purchases/[id].ts` 1,256 → 105 lines; the work is in `lib/purchase-read.ts` (270) and
+`lib/purchase-edit.ts` (417). Net −464.
+
+| Finding | How |
+|---|---|
+| PU-14, PU-15, PU-16 | every kept line is written in full: server qty/rate/GST/tax split, company, model, part, bill date |
+| PU-17 (and L-24) | lines reconciled by row (`line_id`, else first unmatched row of that product); two lines of one product can be edited; duplicates in a payload are two rows |
+| PU-18 | GST split from the bill's state (`state_code` sent, else bill_to, else vendor master) — create path aligned |
+| PU-19 | absent header / bill-to fields keep stored values; absent status keeps stored status |
+| PU-20 | one payment-mode default (Cash) |
+| PU-21 | GET: no N+1, bill count by `(invoice_no, fy)`, empty bill not "fully returned", no raw error text; `bill_reference_date` from the UTC date |
+| PU-35 | a resent Partial (2) means "unchanged", no longer a 400 |
+| delete | also refused when a return header points at the purchase (`purchase_returns.purchase_id`) |
+
+Checked: `tsc`, `next build`, and `~/harness/delcheck/editcheck` 27/27 (two lines of one
+product, GST-only change, model/part edit, date, absent fields, part-paid resend, returns
+guards, bill-state IGST, payload duplicates, line removal, foreign line id, vendor change,
+GET shape). Ledger / allocation / balance rules are unchanged — the same handler call.
+
 ### Resume here — remaining, in order
 
-1. **Block B** — `[id].ts` → `lib/purchase-read.ts` + `lib/purchase-edit.ts` (reconcile by
-   line id, every column saved, absent fields keep stored values). Absorbs PU-14…PU-21.
-2. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
-   Absorbs PU-05…PU-13.
-3. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
+1. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
+   Absorbs PU-05…PU-13 and PU-32. The form must send `line_id` for loaded lines.
+2. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
    `PurchaseTable.tsx` in full first.
-4. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
-5. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+3. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
+4. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
 
 Each block: commit after, `tsc` + `next build`.
