@@ -3,7 +3,6 @@ import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { Edit, Eye, DollarSign } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import SessionStorageService from '../../../lib/sessionStorage';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
 import PaymentHistoryModal from '../../../components/PaymentHistoryModal';
@@ -181,12 +180,6 @@ export default function PurchaseView() {
     return unsubscribe;
   }, [id, queryClient]);
 
-  const handleEditPurchase = () => {
-    if (purchase) {
-      SessionStorageService.set('purchases', id.toString(), purchase);
-    }
-    router.push(`/purchases/create?edit=${id}`);
-  };
 
   // Enhanced PDF export using new layout system
   const handlePrintOrPDF = async (output: 'print' | 'pdf' = 'print') => {
@@ -562,7 +555,6 @@ export default function PurchaseView() {
             ) : (
               <Link
                 href={`/purchases/create?edit=${id}`}
-                onClick={handleEditPurchase}
                 className="btn-primary flex items-center gap-2"
                 title="Edit Purchase"
               >

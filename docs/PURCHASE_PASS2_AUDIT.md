@@ -236,13 +236,41 @@ product, GST-only change, model/part edit, date, absent fields, part-paid resend
 guards, bill-state IGST, payload duplicates, line removal, foreign line id, vendor change,
 GET shape). Ledger / allocation / balance rules are unchanged — the same handler call.
 
+### Done — Block A: create / edit page (2026-10-01)
+
+`purchases/create.tsx` 3,075 → 625 lines, plus `components/purchases/PurchaseLines.tsx` (485)
+and `lib/line-math.ts` (44): 3,075 → 1,154. Also deleted as dead: `hooks/useBarcodeScanner.ts`
+(its toggle was commented out, so scanning could never be switched on),
+`api/barcode/lookup.ts` (only that hook called it), `types/purchase-form.ts` (imported nowhere),
+and the unused `PurchaseItem` / `PurchaseFormData` types. Net about −2,300.
+
+| Finding | How |
+|---|---|
+| PU-05 | one GST-aware total → rate (`rateFromTotal`), paise kept, used by template and inline edit |
+| PU-06 | a bill with GST opens with Enable Tax on; with tax off the lines are sent with 0% — what the screen shows is what is saved |
+| PU-07 | a blank rate is an error, not the selling price |
+| PU-08 | lines hold qty / rate / GST only; tax and totals are derived on render, so a row cannot disagree with itself |
+| PU-09 | each line keeps its own model; nothing reads the template row at submit |
+| PU-10 | totals → rate no longer rounded to the rupee |
+| PU-11 | Partially Paid shown when the bill is part-paid, never offered |
+| PU-12 | "no changes" compares the payload with the one the bill loaded as |
+| PU-13 | no product-id fallbacks, no render logging |
+| PU-32 | edit always loads from the server; the SessionStorage hand-off (and the view's half) removed |
+| PU-35 | a loaded status is not resent; only a status the user picked |
+| **PU-36** (new) | the edit form showed the bill date via `toISOString()` (UTC). For a bill stored at IST midnight that is the previous day, and saving wrote that earlier date back. Now the browser's own date |
+| new | company was "required" with its column hidden, so a product without one could not be added; it now comes from the product. Vendor select is locked on edit (the server refuses a change). P&F total with no quantity was saved as 0; it is now one unit at that price, and an old bill with a total but no rate keeps its total |
+
+Checked: `tsc`, `next build`, jsdom page check (`~/harness/test3.jsx`, 15/15, run in
+Asia/Kolkata): taxed bill opens with tax on and the grand total includes it; date not shifted;
+save disabled until a change; inline total 236 at 18% → rate 200; PUT carries `line_id`, no
+status for a part-paid bill, no client totals; create mode takes the next number and waits
+for a vendor.
+
 ### Resume here — remaining, in order
 
-1. **Block A** — `PurchaseLines` + `lib/line-math.ts` (copy sale's GST-aware total→rate).
-   Absorbs PU-05…PU-13 and PU-32. The form must send `line_id` for loaded lines.
-2. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
+1. **Block C** — list onto `useListQuery` / `list-query`. Absorbs PU-22…PU-25. Read
    `PurchaseTable.tsx` in full first.
-3. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
-4. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
+2. **Block D** — vendor reports. Absorbs PU-26…PU-29 (outstanding definition = F-47).
+3. Sale/salex rows in §4 not covered by Step 1 are Phase 5.
 
 Each block: commit after, `tsc` + `next build`.

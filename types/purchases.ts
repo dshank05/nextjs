@@ -181,43 +181,6 @@ export interface ReturnItem {
 // PURCHASE FORM & ITEMS
 // ============================================================================
 
-export interface PurchaseItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  car_model: string;
-  category: string;
-  sub_category: string;
-  company: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number;
-  tax: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total: number;
-  original_qty?: number;
-  returned_qty?: number;
-  available_qty?: number;
-  is_fully_returned?: boolean;
-  return_history?: Array<{
-    return_id: string;
-    return_no: string;
-    qty: number;
-    date: number;
-    unit_price: number;
-    tax_amount: number;
-    cgst: number;
-    sgst: number;
-    igst: number;
-    reason_id: number;
-    notes: string;
-  }>;
-}
-
 export interface PurchaseReturnStatus {
   has_returns: boolean;
   fully_returned_items: number;
@@ -226,38 +189,3 @@ export interface PurchaseReturnStatus {
   status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
 }
 
-export interface PurchaseFormData {
-  invoice_number: string;
-  bill_reference: string;
-  bill_reference_date: string;
-  staff_id?: number | null;
-  date: string;
-  vendor_name: string;
-  contact_number: string;
-  email_id: string;
-  address: string;
-  address_2: string;
-  city: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  pin_code: string;
-  transport_name: string;
-  vehicle_number: string;
-  transport_cost: string;
-  bill: string;
-  tax: string;
-  tax_rate: string;
-  basic_value: string;
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  total_cgst: string;
-  total_sgst: string;
-  total_igst: string;
-  notes: string;
-  total_tax: string;
-  payment_status: number;
-  payment_mode: number;
-}
