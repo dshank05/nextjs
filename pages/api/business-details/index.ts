@@ -3,7 +3,7 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { isValidGstin } from '../../../lib/gst'
 import { fail, parseId } from '../../../lib/api/respond'
-import { isTenDigitPhone } from '../../../lib/validators'
+import { isTenDigitPhone, isValidEmail } from '../../../lib/validators'
 
 async function handler(
   req: NextApiRequest,
@@ -57,8 +57,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       terms
     } = req.body
 
-    // Required fields validation
-    if (!gstin || !name || !address_line_1) {
+    // Required fields validation (trimmed: a name of only spaces is none)
+    const blank = (v: unknown) => typeof v !== 'string' || !v.trim()
+    if (blank(gstin) || blank(name) || blank(address_line_1)) {
       return res.status(400).json({
         message: 'GSTIN, name, and address line 1 are required'
       })
@@ -92,6 +93,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    // Email was never checked here or on the page (the rule existed in lib/validators).
+    if (typeof email === 'string' && email.trim() && !isValidEmail(email)) {
+      return res.status(400).json({ message: 'Email address is not valid' })
+    }
+
     if (fax && !isTenDigits(fax)) {
       return res.status(400).json({
         message: 'Landline number must be exactly 10 digits'
@@ -106,7 +112,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     // An explicit `null` still clears a field. `undefined` - the key absent
     // altogether - leaves it alone.
     const data: any = {
-      gstin: gstin.trim(),
+      // Validated case-insensitively, so stored in the one case GSTINs are written in.
+      gstin: gstin.trim().toUpperCase(),
       name: name.trim(),
       address_line_1: address_line_1.trim()
     }
@@ -123,7 +130,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     ]
     for (const [key, value] of optional) {
       if (value !== undefined) {
-        data[key] = typeof value === 'string' ? (value.trim() || null) : null
+        // A number (pin code sent as 400001) is kept as text, not wiped to null.
+        data[key] = typeof value === 'string' ? (value.trim() || null)
+          : typeof value === 'number' && Number.isFinite(value) ? String(value) : null
       }
     }
 

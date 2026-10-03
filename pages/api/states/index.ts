@@ -60,7 +60,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ...(isDropdown ? {} : { skip: (pageNum - 1) * limitNum, take: limitNum })
     })
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
     const hasMore = pageNum < totalPages
 
     res.status(200).json({

@@ -105,7 +105,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Get total count for pagination
     const total = await prisma.financial_year.count({ where })
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
     const hasMore = pageNum < totalPages
 
     res.status(200).json({
@@ -186,29 +187,10 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Check if there's a current FY that hasn't ended yet
-    const currentDate = new Date()
-    const activeFy = await prisma.financial_year.findFirst({
-      where: {
-        AND: [
-          { start_date: { lte: currentDate } },
-          { end_date: { gte: currentDate } }
-        ]
-      }
-    })
-
-    // If there's an active FY and user is trying to create a FY that starts before current FY ends
-    if (activeFy && startDate < activeFy.end_date) {
-      // Format end date in local timezone for error message
-      const endYear = activeFy.end_date.getFullYear();
-      const endMonth = String(activeFy.end_date.getMonth() + 1).padStart(2, '0');
-      const endDay = String(activeFy.end_date.getDate()).padStart(2, '0');
-      const endDateString = `${endYear}-${endMonth}-${endDay}`;
-      
-      return res.status(409).json({
-        message: `Cannot create future financial year. Current FY ${activeFy.fy} is still active and ends on ${endDateString}`
-      })
-    }
+    // A past year that overlaps nothing may be added for back-entry (owner,
+    // 2026-10-03). The rule here refused any year starting before the open
+    // year's end - every past year - with a "Cannot create future financial
+    // year" message. Overlaps are refused above; that is the rule that matters.
 
     // Create new financial year
     const financialYear = await prisma.financial_year.create({
@@ -273,7 +255,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    if (currentDate > fyEnd) {
+    // The last day of the year is still the year: compare with the next midnight.
+    if (currentDate >= new Date(fyEnd.getFullYear(), fyEnd.getMonth(), fyEnd.getDate() + 1)) {
       return res.status(400).json({
         message: `Cannot set FY ${financialYear.fy} as current. This financial year has already ended (ended ${fyEnd.toLocaleDateString()})`
       })

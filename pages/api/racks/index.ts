@@ -34,7 +34,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   try {
     const list = parseListQuery(req, {
       // `warehouse_name` is not a column; it is handled below as a nested sort.
-      sortFields: ['id', 'rack_number', 'status', 'warehouse_id', 'warehouse_name'],
+      sortFields: ['id', 'rack_number', 'description', 'status', 'warehouse_id', 'warehouse_name'],
       defaultSort: 'rack_number',
       defaultOrder: 'asc',
     })

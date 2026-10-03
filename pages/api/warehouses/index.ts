@@ -80,7 +80,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.warehouse.count({ where })
     ])
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
 
     res.status(200).json({
       warehouses,
@@ -99,7 +100,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { name, location, status = 'Active' } = req.body
+    const { status = 'Active' } = req.body
+    // Trimmed, as PUT does: "   " is no name, and "Main " is "Main".
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : ''
+    const location = typeof req.body.location === 'string' ? req.body.location.trim() : ''
 
     // Validation
     if (!name || !location) {
@@ -229,11 +233,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       message: "Warehouse updated successfully"
     })
   } catch (error) {
-    console.error('Warehouse update error:', error)
-    res.status(500).json({
-      message: 'Failed to update warehouse',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update warehouse')
   }
 }
 
@@ -270,11 +270,7 @@ async function handleIndividualGet(req: NextApiRequest, res: NextApiResponse, wa
 
     res.status(200).json(warehouse)
   } catch (error) {
-    console.error('Get warehouse error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch warehouse',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch warehouse')
   }
 }
 
@@ -290,6 +286,9 @@ async function handleIndividualPut(req: NextApiRequest, res: NextApiResponse, wa
     // Validation - at least one field must be provided
     if (name === undefined && location === undefined && status === undefined) {
       return res.status(400).json({ message: 'At least one field (name, location, or status) must be provided' })
+    }
+    if (status !== undefined && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: "Status must be 'Active' or 'Inactive'" })
     }
 
     const updateData: any = {}
@@ -324,11 +323,7 @@ async function handleIndividualPut(req: NextApiRequest, res: NextApiResponse, wa
       message: "Warehouse updated successfully"
     })
   } catch (error) {
-    console.error('Update warehouse error:', error)
-    res.status(500).json({
-      message: 'Failed to update warehouse',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update warehouse')
   }
 }
 
@@ -355,11 +350,7 @@ async function handleIndividualDelete(req: NextApiRequest, res: NextApiResponse,
       message: "Warehouse deactivated successfully"
     })
   } catch (error) {
-    console.error('Delete warehouse error:', error)
-    res.status(500).json({
-      message: 'Failed to deactivate warehouse',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'deactivate warehouse')
   }
 }
 

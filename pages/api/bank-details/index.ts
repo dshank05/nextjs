@@ -62,7 +62,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       take: limitNum
     })
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
     const hasMore = pageNum < totalPages
 
     res.status(200).json({
@@ -86,7 +87,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     if (!bank_name || typeof bank_name !== 'string' || !bank_name.trim()) {
       return res.status(400).json({
-        message: 'Bank name is required and must be a non-empty string'
+        message: 'Account name is required'
       })
     }
 
@@ -125,7 +126,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       return res.status(409).json({
         message: existingAccount.account_number === trimmedAccount
           ? 'Account number already exists'
-          : 'Bank with this name already exists'
+          : 'An account with this name already exists'
       })
     }
 
@@ -167,7 +168,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
 
     if (!bank_name || typeof bank_name !== 'string' || !bank_name.trim()) {
       return res.status(400).json({
-        message: 'Bank name is required and must be a non-empty string'
+        message: 'Account name is required'
       })
     }
 
@@ -218,7 +219,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       return res.status(409).json({
         message: duplicate.account_number === trimmedAccount
           ? 'Account number already exists'
-          : 'Bank with this name already exists'
+          : 'An account with this name already exists'
       })
     }
 

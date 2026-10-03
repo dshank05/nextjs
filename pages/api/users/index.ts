@@ -4,6 +4,8 @@ import { randomBytes } from 'crypto'
 import { hashPassword, isAcceptablePassword, MIN_PASSWORD_LENGTH } from '../../../lib/password'
 import { withObservability } from '../../../lib/withObservability'
 import { USER_STATUS_ACTIVE, USER_STATUS_INACTIVE } from '../../../types/settings'
+import { fail } from '../../../lib/api/respond'
+import { deactivationRefusal } from '../../../lib/user-guard'
 
 /**
  * Parse the account status.
@@ -109,6 +111,11 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    if (parsedStatus === USER_STATUS_INACTIVE && existingUser.status !== USER_STATUS_INACTIVE) {
+      const refusal = await deactivationRefusal(req, res, userId)
+      if (refusal) return res.status(409).json({ message: refusal })
+    }
+
     const wantsPasswordChange = typeof password === 'string' && password !== ''
 
     if (wantsPasswordChange && !isAcceptablePassword(password)) {
@@ -135,11 +142,7 @@ async function handleUpdate(req: NextApiRequest, res: NextApiResponse) {
       message: "User updated successfully"
     })
   } catch (error) {
-    console.error('User update error:', error)
-    res.status(500).json({
-      message: 'Failed to update user',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update user')
   }
 }
 
@@ -207,7 +210,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ...(isDropdown ? {} : { skip: (pageNum - 1) * limitNum, take: limitNum })
     })
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
     const hasMore = pageNum < totalPages
 
     res.status(200).json({
@@ -221,11 +225,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Users fetch error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch users data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch users data')
   }
 }
 
@@ -335,11 +335,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       message: "User created successfully"
     })
   } catch (error) {
-    console.error('User creation error:', error)
-    res.status(500).json({
-      message: 'Failed to create user',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'create user')
   }
 }
 

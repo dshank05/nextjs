@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { fail } from '../../../lib/api/respond'
+import { isTenDigitPhone, isValidEmail } from '../../../lib/validators'
 
 async function handler(
   req: NextApiRequest,
@@ -38,11 +40,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, id: string |
 
     res.status(200).json(mechanic)
   } catch (error) {
-    console.error('Get mechanic error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch mechanic',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch mechanic')
   }
 }
 
@@ -67,6 +65,17 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
     }
     if (phone !== undefined && !phone.trim()) {
       return res.status(400).json({ message: 'Phone cannot be empty' })
+    }
+    // The rules POST and the form apply (they were skipped here).
+    if (phone !== undefined && !isTenDigitPhone(phone)) {
+      return res.status(400).json({ message: 'Phone number must be exactly 10 digits' })
+    }
+    if (status !== undefined && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
+    }
+    const current = await prisma.mechanic.findUnique({ where: { id: mechanicId } })
+    if (!current) {
+      return res.status(404).json({ message: 'Mechanic not found' })
     }
 
     // Check if phone already exists for different mechanic
@@ -99,11 +108,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
 
     res.status(200).json(updatedMechanic)
   } catch (error) {
-    console.error('Update mechanic error:', error)
-    res.status(500).json({
-      message: 'Failed to update mechanic',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update mechanic')
   }
 }
 
@@ -135,11 +140,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
       mechanic: deactivatedMechanic
     })
   } catch (error) {
-    console.error('Delete mechanic error:', error)
-    res.status(500).json({
-      message: 'Failed to deactivate mechanic',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'deactivate mechanic')
   }
 }
 

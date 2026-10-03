@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
+import { fail } from '../../../lib/api/respond'
+import { isTenDigitPhone, isValidEmail } from '../../../lib/validators'
 
 async function handler(
   req: NextApiRequest,
@@ -38,11 +40,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, id: string |
 
     res.status(200).json(staff)
   } catch (error) {
-    console.error('Get staff error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch staff member',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch staff member')
   }
 }
 
@@ -67,6 +65,20 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
     }
     if (phone !== undefined && !phone.trim()) {
       return res.status(400).json({ message: 'Phone cannot be empty' })
+    }
+    // The rules POST and the form apply (they were skipped here).
+    if (phone !== undefined && !isTenDigitPhone(phone)) {
+      return res.status(400).json({ message: 'Phone number must be exactly 10 digits' })
+    }
+    if (email && !isValidEmail(email)) {
+      return res.status(400).json({ message: 'Email address is not valid' })
+    }
+    if (status !== undefined && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
+    }
+    const current = await prisma.staff.findUnique({ where: { id: staffId } })
+    if (!current) {
+      return res.status(404).json({ message: 'Staff member not found' })
     }
 
     // Check if phone already exists for different staff member
@@ -99,11 +111,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, id: string |
 
     res.status(200).json(updatedStaff)
   } catch (error) {
-    console.error('Update staff error:', error)
-    res.status(500).json({
-      message: 'Failed to update staff member',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update staff member')
   }
 }
 
@@ -135,11 +143,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, id: strin
       staff: deactivatedStaff
     })
   } catch (error) {
-    console.error('Delete staff error:', error)
-    res.status(500).json({
-      message: 'Failed to deactivate staff member',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'deactivate staff member')
   }
 }
 

@@ -80,7 +80,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.gst_tax_rate.count({ where })
     ])
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is page 1 of 1.
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
 
     res.status(200).json({
       gstRates,
@@ -97,11 +98,22 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
   }
 }
 
+/** The rate rule POST and PUT share (PUT used to skip it: -5 or "abc" saved). */
+function rateProblem(rate: unknown): string | null {
+  const parsed = parseFloat(String(rate))
+  if (!Number.isFinite(parsed) || parsed < 0) return 'Rate must be a number of 0 or more'
+  if (parsed > 100) return 'Rate cannot be more than 100'
+  return null
+}
+const text = (v: unknown) => (typeof v === 'string' ? v.trim() : v)
+
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { description, rate, hsn_code, applicable_for, status } = req.body
+    const description = text(req.body.description) as string
+    const hsn_code = text(req.body.hsn_code) as string
+    const { rate, applicable_for, status } = req.body
 
-    // Validation.
+    // Validation (trimmed: a description of only spaces is none).
     //
     // `!rate` rejected a rate of 0, so a nil-rated slab could not be created by
     // any caller that sends rate as a number (F-31). The settings form happened
@@ -114,11 +126,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
+    const rateError = rateProblem(rate)
+    if (rateError) return res.status(400).json({ message: rateError })
     const parsedRate = parseFloat(rate)
-    if (!Number.isFinite(parsedRate) || parsedRate < 0) {
-      return res.status(400).json({
-        message: 'Rate must be a number of 0 or more'
-      })
+    if (status !== undefined && status !== null && status !== '' && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
     }
 
     // Check if GST rate with same description already exists
@@ -137,7 +149,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         description,
         rate: parsedRate,
         hsn_code,
-        applicable_for: applicable_for || '',
+        applicable_for: (text(applicable_for) as string) || '',
         status: status || 'Active'
       }
     })
@@ -150,7 +162,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
 async function handlePut(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const { id, description, rate, hsn_code, applicable_for, status } = req.body
+    const { id, rate, applicable_for, status } = req.body
+    const description = text(req.body.description) as string | undefined
+    const hsn_code = text(req.body.hsn_code) as string | undefined
+
+    if (status !== undefined && status !== null && status !== '' && status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
+    }
 
     // S-73: this went straight to parseInt(id). A missing id became
     // `where: { id: NaN }`, which Prisma throws on, so the caller got a 500
@@ -189,6 +207,8 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
         message: 'Description, rate, and HSN code are required'
       })
     }
+    const rateError = rateProblem(rate)
+    if (rateError) return res.status(400).json({ message: rateError })
 
     // Check if another GST rate with same description exists (excluding current one)
     const duplicateRate = await prisma.gst_tax_rate.findFirst({
@@ -208,7 +228,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       description,
       rate: parseFloat(rate),
       hsn_code, // Frontend sends snake_case, store as snake_case
-      applicable_for: applicable_for || '' // Frontend sends snake_case, store as snake_case
+      applicable_for: (text(applicable_for) as string) || '' // Frontend sends snake_case, store as snake_case
     }
 
     // Include status if provided

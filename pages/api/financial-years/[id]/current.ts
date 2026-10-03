@@ -35,7 +35,9 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     if (now < atMidnight(fy.start_date)) {
       return badRequest(res, `Cannot set FY ${fy.fy} as current: it has not started yet`)
     }
-    if (now > atMidnight(fy.end_date)) {
+    // 31 March is still the year: it ends at the next midnight, not this one.
+    const end = atMidnight(fy.end_date)
+    if (now >= new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1)) {
       return badRequest(res, `Cannot set FY ${fy.fy} as current: it ended on ${atMidnight(fy.end_date).toLocaleDateString()}`)
     }
 

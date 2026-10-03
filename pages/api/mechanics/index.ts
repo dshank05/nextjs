@@ -73,7 +73,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ...(isDropdown ? {} : { skip: offset, take: limitNum }),
     })
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is still page 1 of 1, not "Page 1 of 0".
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
     const hasMore = pageNum < totalPages
 
     res.status(200).json({
@@ -87,11 +88,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
   } catch (error) {
-    console.error('Get mechanics error:', error)
-    res.status(500).json({
-      message: 'Failed to fetch mechanics',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'fetch mechanics')
   }
 }
 
@@ -105,8 +102,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       status = 'Active'
     } = req.body
 
-    // Validation
-    if (!name || !phone) {
+    // Validation (a name of only spaces is no name)
+    if (!name || !String(name).trim() || !phone) {
       return res.status(400).json({
         message: 'Name and phone are required'
       })
@@ -118,9 +115,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Check if phone already exists
+    if (status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
+    }
+
+    // Check if phone already exists (as it will be stored: trimmed)
     const existingMechanic = await prisma.mechanic.findFirst({
-      where: { phone }
+      where: { phone: String(phone).trim() }
     })
 
     if (existingMechanic) {

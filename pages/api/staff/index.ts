@@ -73,7 +73,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       prisma.staff.count({ where })
     ])
 
-    const totalPages = Math.ceil(total / limitNum)
+    // Never 0: an empty list is still page 1 of 1, not "Page 1 of 0".
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
 
     res.status(200).json({
       staff,
@@ -100,8 +101,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       status = 'Active'
     } = req.body
 
-    // Validation
-    if (!name || !phone) {
+    // Validation (a name of only spaces is no name)
+    if (!name || !String(name).trim() || !phone) {
       return res.status(400).json({
         message: 'Name and phone are required'
       })
@@ -119,9 +120,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       })
     }
 
-    // Check if phone already exists
+    if (status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: 'Status must be Active or Inactive' })
+    }
+
+    // Check if phone already exists (as it will be stored: trimmed)
     const existingStaff = await prisma.staff.findFirst({
-      where: { phone }
+      where: { phone: String(phone).trim() }
     })
 
     if (existingStaff) {

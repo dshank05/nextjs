@@ -16,6 +16,10 @@ async function handler(
 ) {
   const { warehouseId } = req.query
   const warehouseIdNum = parseInt(warehouseId as string)
+  // "/api/warehouses//racks" (no warehouse picked) or junk: say so, not a 500.
+  if (!Number.isInteger(warehouseIdNum) || warehouseIdNum < 1) {
+    return res.status(400).json({ message: 'Please select a warehouse' })
+  }
 
   switch (req.method) {
     case 'GET':
@@ -96,7 +100,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, warehouseId:
       prisma.warehouse_racks.count({ where })
     ])
 
-    const totalPages = Math.ceil(total / limitNum)
+    const totalPages = Math.max(1, Math.ceil(total / limitNum))
 
     res.status(200).json({
       racks,
@@ -122,6 +126,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, warehouseId
       return res.status(400).json({
         message: 'Rack number is required'
       })
+    }
+    if (status !== 'Active' && status !== 'Inactive') {
+      return res.status(400).json({ message: "Status must be 'Active' or 'Inactive'" })
     }
 
     // Check if warehouse exists
@@ -255,8 +262,11 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       updateData.description = description?.trim() || null
     }
 
-    // Handle status updates
+    // Handle status updates (S-24 for racks: any string used to be stored)
     if (status !== undefined) {
+      if (status !== 'Active' && status !== 'Inactive') {
+        return res.status(400).json({ message: "Status must be 'Active' or 'Inactive'" })
+      }
       updateData.status = status
     }
 
@@ -277,11 +287,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, warehouseId:
       message: "Rack updated successfully"
     })
   } catch (error) {
-    console.error('Warehouse rack update error:', error)
-    res.status(500).json({
-      message: 'Failed to update warehouse rack',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'update warehouse rack')
   }
 }
 
@@ -333,11 +339,7 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, warehouse
       message: "Rack deleted successfully"
     })
   } catch (error) {
-    console.error('Warehouse rack delete error:', error)
-    res.status(500).json({
-      message: 'Failed to delete warehouse rack',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return fail(res, error, 'delete warehouse rack')
   }
 }
 

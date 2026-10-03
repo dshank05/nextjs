@@ -45,6 +45,10 @@ import { ok, fail, route } from '../../../lib/api/respond'
  * negative stock counts as low, which is what D-03 was.
  */
 const LOW_STOCK_WHERE = {
+  // Active products only, like Total Products beside it: an inactive product is
+  // not stocked any more, so it is not "low" (SETTINGS_PLAN 17; the minimum-stock
+  // report applies the same rule).
+  is_active: true,
   stock: { lt: prisma.product.fields.min_stock },
   min_stock: { not: null, gt: 0 },
 } as const

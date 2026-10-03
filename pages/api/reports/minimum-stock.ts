@@ -37,7 +37,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // `> 0` as well as `not null`: a minimum of 0 means none was set, so the
       // product cannot be below it. Matches the rule the products endpoint
       // applies, so this report and the Low Stock page cannot disagree (F-70).
-      min_stock: { not: null, gt: 0 }
+      min_stock: { not: null, gt: 0 },
+      // Active products only, as the dashboard's Low Stock card (SETTINGS_PLAN 17).
+      is_active: true
     };
 
     // Search filter

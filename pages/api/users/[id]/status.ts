@@ -7,6 +7,7 @@ import {
   USER_STATUS_INACTIVE,
   userStatusLabel,
 } from '../../../../types/settings'
+import { deactivationRefusal } from '../../../../lib/user-guard'
 
 /**
  * PATCH /api/users/[id]/status - activate or deactivate an account.
@@ -61,6 +62,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         message: `User is already ${userStatusLabel(next).toLowerCase()}.`,
         data: existing,
       })
+    }
+
+    if (next === USER_STATUS_INACTIVE) {
+      const refusal = await deactivationRefusal(req, res, id)
+      if (refusal) return res.status(409).json({ message: refusal })
     }
 
     const row = await prisma.user.update({
