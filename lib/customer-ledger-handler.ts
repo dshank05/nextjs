@@ -14,6 +14,13 @@ export interface ChangeSet {
   customerId: number;
   invoiceId?: number;
   returnId?: number;
+  /**
+   * Which family the document belongs to. Required by every sale/return
+   * operation: the type used to be guessed as `invoiceId ? 'sale' : 'salex'`,
+   * which is always 'sale' because both PUTs set invoiceId - so a salex edit
+   * read and wrote the ledger rows of the SALE with the same id (SA-01, L-8).
+   */
+  docType?: 'sale' | 'salex';
   invoiceNo?: string;
   creditNoteNo?: string;
   paymentMode?: number;
@@ -73,6 +80,17 @@ export interface LedgerDeleteOperation {
     transaction_type: 'SALE' | 'PAYMENT_RECEIVED' | 'CREDIT_NOTE' | 'REFUND';
     transaction_id?: number;
   };
+}
+
+function saleRef(changes: ChangeSet): 'sale' | 'salex' {
+  if (changes.docType !== 'sale' && changes.docType !== 'salex') {
+    throw new Error('ChangeSet.docType is required (sale or salex)');
+  }
+  return changes.docType;
+}
+
+function returnRef(changes: ChangeSet): 'sale_return' | 'salex_return' {
+  return saleRef(changes) === 'sale' ? 'sale_return' : 'salex_return';
 }
 
 export class CustomerLedgerHandler {
@@ -152,7 +170,7 @@ export class CustomerLedgerHandler {
           deletes.push({
             description: 'Delete payment entries (unmarking)',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'PAYMENT_RECEIVED'
             }
@@ -164,7 +182,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -182,7 +200,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount before marking paid',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -202,11 +220,11 @@ export class CustomerLedgerHandler {
               customer_id: changes.customerId,
               transaction_date: changes.paymentDate || timestamp,
               transaction_type: 'PAYMENT_RECEIVED',
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               reference_no: changes.invoiceNo!,
-              debit: breakdown01.newPayment,  // Only NEW payment, not full total
-              credit: 0,
+              debit: 0,
+              credit: breakdown01.newPayment,  // Only NEW payment, not full total
               payment_mode: changes.paymentMode,
               payment_status: 1,
               payment_date: changes.paymentDate || timestamp,
@@ -230,7 +248,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount before marking fully paid',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -250,11 +268,11 @@ export class CustomerLedgerHandler {
               customer_id: changes.customerId,
               transaction_date: changes.paymentDate || timestamp,
               transaction_type: 'PAYMENT_RECEIVED',
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               reference_no: changes.invoiceNo!,
-              debit: breakdown21.newPayment,  // Only NEW payment, not full remaining
-              credit: 0,
+              debit: 0,
+              credit: breakdown21.newPayment,  // Only NEW payment, not full remaining
               payment_mode: changes.paymentMode,
               payment_status: 1,
               payment_date: changes.paymentDate || timestamp,
@@ -287,7 +305,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount (unpaid to partial)',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -309,11 +327,11 @@ export class CustomerLedgerHandler {
               customer_id: changes.customerId,
               transaction_date: changes.paymentDate || timestamp,
               transaction_type: 'PAYMENT_RECEIVED',
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               reference_no: changes.invoiceNo!,
-              debit: breakdownSale02.newPayment,
-              credit: 0,
+              debit: 0,
+              credit: breakdownSale02.newPayment,
               payment_mode: changes.paymentMode,
               payment_status: 2,
               payment_date: changes.paymentDate || timestamp,
@@ -335,7 +353,7 @@ export class CustomerLedgerHandler {
           deletes.push({
             description: 'Delete all payment entries (unmarking partial)',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'PAYMENT_RECEIVED'
             }
@@ -347,7 +365,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount after unmarking',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -364,7 +382,7 @@ export class CustomerLedgerHandler {
         updates.push({
           description: 'Update sale amount (paid to partial)',
           where: {
-            reference_type: changes.invoiceId ? 'sale' : 'salex',
+            reference_type: saleRef(changes),
             reference_id: changes.invoiceId!,
             transaction_type: 'SALE'
           },
@@ -382,7 +400,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -400,7 +418,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update sale amount',
             where: {
-              reference_type: changes.invoiceId ? 'sale' : 'salex',
+              reference_type: saleRef(changes),
               reference_id: changes.invoiceId!,
               transaction_type: 'SALE'
             },
@@ -415,12 +433,12 @@ export class CustomerLedgerHandler {
             updates.push({
               description: 'Update payment amount for Type B sale',
               where: {
-                reference_type: changes.invoiceId ? 'sale' : 'salex',
+                reference_type: saleRef(changes),
                 reference_id: changes.invoiceId!,
                 transaction_type: 'PAYMENT_RECEIVED'
               },
               data: {
-                debit: changes.newTotal,
+                credit: changes.newTotal,
                 notes: `Payment updated to ₹${changes.newTotal} for sale ${changes.invoiceNo}`
               }
             });
@@ -457,7 +475,7 @@ export class CustomerLedgerHandler {
               customer_id: changes.customerId,
               transaction_date: returnDate,
               transaction_type: 'CREDIT_NOTE',
-              reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+              reference_type: returnRef(changes),
               reference_id: changes.returnId!,
               reference_no: changes.creditNoteNo!,
               debit: 0,
@@ -475,7 +493,7 @@ export class CustomerLedgerHandler {
         deletes.push({
           description: 'Delete refund reversal entries (unmarking)',
           where: {
-            reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+            reference_type: returnRef(changes),
             reference_id: changes.returnId!,
             transaction_type: 'CREDIT_NOTE'
           }
@@ -486,7 +504,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update CREDIT_NOTE amount',
             where: {
-              reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+              reference_type: returnRef(changes),
               reference_id: changes.returnId!,
               transaction_type: 'CREDIT_NOTE'
             },
@@ -504,7 +522,7 @@ export class CustomerLedgerHandler {
           deletes.push({
             description: 'Delete refund reversal entries (partial to incomplete)',
             where: {
-              reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+              reference_type: returnRef(changes),
               reference_id: changes.returnId!,
               transaction_type: 'CREDIT_NOTE'
             }
@@ -516,7 +534,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update CREDIT_NOTE amount',
             where: {
-              reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+              reference_type: returnRef(changes),
               reference_id: changes.returnId!,
               transaction_type: 'CREDIT_NOTE'
             },
@@ -538,7 +556,7 @@ export class CustomerLedgerHandler {
           updates.push({
             description: 'Update CREDIT_NOTE amount',
             where: {
-              reference_type: changes.returnId ? 'sale_return' : 'salex_return',
+              reference_type: returnRef(changes),
               reference_id: changes.returnId!,
               transaction_type: 'CREDIT_NOTE'
             },

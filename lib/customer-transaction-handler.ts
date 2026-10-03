@@ -110,6 +110,8 @@ export class CustomerTransactionHandler {
     paymentDate?: number;
     fy: number;
     totalAllocated?: number;
+    /** BILL_SPECIFIC money this bill brought in (L-30 twin, SA-12). */
+    paidByThisDocument?: number;
     isTypeA?: boolean;
     hasPaymentLedger?: boolean;  // Indicates if PAYMENT_RECEIVED exists
     currentBalance?: {
@@ -129,11 +131,13 @@ export class CustomerTransactionHandler {
       newTotal: params.newTotal,
       customerId: params.customerId,
       invoiceId: params.invoiceId,
+      docType: params.type,
       invoiceNo: params.invoiceNo,
       paymentMode: params.paymentMode,
       paymentDate: params.paymentDate,
       fy: params.fy,
       totalAllocated: params.totalAllocated,
+      paidByThisDocument: params.paidByThisDocument,
       isTypeA: params.isTypeA,
       hasPaymentLedger: params.hasPaymentLedger,
       amountChanged: params.oldTotal !== params.newTotal,
@@ -214,6 +218,7 @@ export class CustomerTransactionHandler {
       newTotal: params.newTotal,
       customerId: params.customerId,
       returnId: params.returnId,
+      docType: params.type,
       creditNoteNo: params.creditNoteNo,
       paymentMode: params.paymentMode,
       paymentDate: params.paymentDate,
@@ -284,7 +289,8 @@ export class CustomerTransactionHandler {
           transaction_type: 'PAYMENT_RECEIVED'
         },
         data: {
-          debit: params.newAmount,
+          // PAYMENT_RECEIVED is a credit everywhere it is created (SA-03).
+          credit: params.newAmount,
           notes: `Payment #${params.paymentId} updated to ₹${params.newAmount.toFixed(2)}${params.paymentType === 'MIXED' ? ' (Mixed: partial allocation + advance)' : params.paymentType === 'DIRECT' ? ' (Direct advance)' : ' (Bill specific)'}`
         }
       });
@@ -355,7 +361,8 @@ export class CustomerTransactionHandler {
           transaction_type: 'REFUND'
         },
         data: {
-          credit: params.newAmount,
+          // REFUND is a debit everywhere it is created (SA-03).
+          debit: params.newAmount,
           notes: `Refund #${params.refundId} updated to ₹${params.newAmount.toFixed(2)}${params.refundType === 'DIRECT' ? ' (Direct)' : ' (Return specific)'}`
         }
       });
@@ -553,7 +560,7 @@ export class CustomerTransactionHandler {
           
           // Update notes to include payment ID
           if (transactionId) {
-            updatedNotes = `Payment ₹${entryToCreate.debit} for bill ${entryToCreate.reference_no} via Payment #${transactionId}`;
+            updatedNotes = `Payment ₹${entryToCreate.credit} for bill ${entryToCreate.reference_no} via Payment #${transactionId}`;
           }
         } else if (entryToCreate.transaction_type === 'REFUND' && entryToCreate.reference_id) {
           transactionId = refundMap.get(entryToCreate.reference_id);
@@ -731,7 +738,7 @@ export class CustomerTransactionHandler {
           paymentType: paymentType,
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
-          type: changes.invoiceId ? 'sale' : 'salex',
+          type: changes.docType,
           notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`
         }
       });
@@ -752,7 +759,7 @@ export class CustomerTransactionHandler {
           paymentType: paymentType,
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
-          type: changes.invoiceId ? 'sale' : 'salex'
+          type: changes.docType
         }
       });
     }
@@ -793,7 +800,8 @@ export class CustomerTransactionHandler {
           action: 'DELETE',
           type: 'PAYMENT',
           where: {
-            invoiceId: changes.invoiceId
+            invoiceId: changes.invoiceId,
+            type: changes.docType
           }
         });
         break;
@@ -873,21 +881,22 @@ export class CustomerTransactionHandler {
       }
     } else if (change.action === 'DELETE') {
       if (change.type === 'PAYMENT') {
-        // Get allocations to delete
+        // One column or the other - an allocation never has both set, so
+        // requiring both matched nothing and unmarking a bill left its
+        // allocations behind (SA-02).
+        if (change.where.type !== 'sale' && change.where.type !== 'salex') {
+          throw new Error('Payment allocation delete needs a document type');
+        }
+        const allocWhere = change.where.type === 'sale'
+          ? { invoice_id: change.where.invoiceId }
+          : { invoicex_id: change.where.invoiceId };
         const allocations = await tx.customer_payment_allocations.findMany({
-          where: { 
-            invoice_id: change.where.invoiceId,
-            invoicex_id: change.where.invoiceId
-          },
+          where: allocWhere,
           select: { payment_id: true }
         });
         
-        // Delete allocations
         await tx.customer_payment_allocations.deleteMany({
-          where: { 
-            invoice_id: change.where.invoiceId,
-            invoicex_id: change.where.invoiceId
-          }
+          where: allocWhere
         });
         
         // Delete customer_payments if no other allocations exist

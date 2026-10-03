@@ -312,6 +312,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     })
 
     const transformedSale = {
+      id: sale.id,
       invoice_no: sale.invoice_no,
       invoice_date: sale.invoice_date,
       select_customer: sale.select_customer,

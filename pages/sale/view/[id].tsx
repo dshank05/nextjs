@@ -71,6 +71,7 @@ interface TransportDetails {
 }
 
 interface Invoice {
+  id: number;
   invoice_no: number;
   invoice_date: number;
   select_customer: number;
@@ -687,7 +688,7 @@ export default function InvoiceView() {
               refetch();
               setShowQuickPaymentModal(false);
             }}
-            invoiceId={invoice.invoice_no}
+            invoiceId={invoice.id}
             customerId={invoice.customer_id || 0}
             customerName={invoice.customer?.billing_name || ''}
             outstandingAmount={(invoice as any).payment_summary.remaining_amount}

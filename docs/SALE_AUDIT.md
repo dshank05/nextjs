@@ -39,7 +39,7 @@ written for sale and switches on `invoiceId ? 'sale' : 'salex'`. That test is al
 so **every salex edit reads and writes the ledger rows and payment allocations of the
 sale that happens to have the same id** (SA-01).
 
-Six Criticals are small, standalone fixes (SA-01 to SA-05, and SA-08's guard). They should
+Seven Criticals are small, standalone fixes (SA-01 to SA-05, SA-34, and SA-08's guard). They should
 go in first, before any rewrite, the same way the purchase delete keys did.
 
 | Block | What gets rewritten | Size now → est. after | Removes |
@@ -68,6 +68,7 @@ everything exists twice.
 | SA-06 | [C] | **Salex create takes every amount from the browser.** `items_total`, `total_taxable_value`, `total`, line `subtotal`, `discount`, `discountrate` and the header discount are stored as sent; the server computes nothing. `parseFloat(total)` is unchecked (NaN → 500) | `api/salex/index.ts` POST | B |
 | SA-07 | [C] | **Sale create ignores the discount** (already logged in AUDIT_PLAN Phase 5): `items_total = Σ qty × rate`, so a discounted sale is overcharged by the discount on create, and the form's total differs from the stored one | `api/sales/index.ts` POST | B |
 | SA-08 | [C] timing | **Editing a registered customer's sale or salex can erase its lines.** The edit loader calls `handleCustomerSelect(id)` in a `setTimeout`; that handler clears `selectedProducts` (right for a new pick). If the lines are already in place, they are wiped. Saving then sends no items; the PUT keeps the rows but recomputes `items_total = 0`, so the bill total collapses to P&F + tax and the handler moves money on that figure. It also overwrites the loaded bill address with the customer master | `sale/create.tsx` loader; `salex/create.tsx` loader | 0 guard, A properly |
+| SA-34 | [C] | **Marking a sale paid by editing it adds the payment to what the customer owes.** Found while fixing SA-01. The customer ledger handler writes PAYMENT_RECEIVED as a **debit** on the edit paths (0→1, 2→1, 0→2, and the Type B amount update); every create path, and the vendor twin, writes it as a credit. The running balance is debit − credit, so the bill shows as owed twice. Data repair: `scripts/repair-sale-data.js` part 2 | `customer-ledger-handler.ts` 0→1, 2→1, 0→2 creates; Type B update | 0 |
 
 ### High
 

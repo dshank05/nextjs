@@ -466,9 +466,16 @@ export default function InvoiceCreate() {
 
     // Set customer selection
     if (saleData.customer && saleData.customer.id && saleData.customer.id !== '0' && saleData.customer.id !== 0) {
-      setTimeout(() => {
-        handleCustomerSelect(saleData.customer.id.toString());
-      }, 0);
+      // Mark the customer as selected WITHOUT running the pick handler. That
+      // handler clears the lines and rewrites the address from the master -
+      // right for a new pick, wrong for a bill being loaded (SA-08).
+      const loadedId = saleData.customer.id.toString();
+      setSelectedCustomerId(loadedId);
+      setCustomerIdToSave(parseInt(loadedId));
+      const loadedCustomer = customers.find(c => c.id === loadedId) || saleData.customer;
+      setSelectedCustomer(loadedCustomer);
+      setIsOtherCustomerSelected(false);
+      setCustomerStateForTax(invoice.state || loadedCustomer?.billing_state || '');
     } else {
       setSelectedCustomerId('0');
       setCustomerIdToSave(0);
@@ -1063,7 +1070,6 @@ export default function InvoiceCreate() {
         // ===== MISC FIELDS =====
         notes: formData.notes,                                       // Invoice.notes
         descriptions: formData.descriptions,                         // Invoice.descriptions
-        fy: new Date().getFullYear(),                                // Invoice.fy (calculated)
         updated_at: new Date().toISOString(),                       // Invoice.updated_at
 
         // ===== ITEM DATA =====
@@ -1087,7 +1093,6 @@ export default function InvoiceCreate() {
           model_id: item.car_model_ids && item.car_model_ids.length > 0 ? parseInt(item.car_model_ids[0]) : null, // Invoiceitems.model_id (first car model)
           company_id: item.company_id,                                // Invoiceitems.company_id
           invoice_date: formData.date, // Invoiceitems.invoice_date - backend converts to timestamp
-          fy: new Date().getFullYear()                                // Invoiceitems.fy
         })),
 
         // ===== TRANSPORT DETAILS =====

@@ -371,9 +371,16 @@ export default function InvoiceCCreate() {
 
     // Set customer selection
     if (salexData.customer && salexData.customer.id && salexData.customer.id !== '0' && salexData.customer.id !== 0) {
-      setTimeout(() => {
-        handleCustomerSelect(salexData.customer.id.toString());
-      }, 0);
+      // Mark the customer as selected WITHOUT running the pick handler. That
+      // handler clears the lines and rewrites the address from the master -
+      // right for a new pick, wrong for a bill being loaded (SA-08).
+      const loadedId = salexData.customer.id.toString();
+      setSelectedCustomerId(loadedId);
+      setCustomerIdToSave(parseInt(loadedId));
+      const loadedCustomer = customers.find(c => c.id === loadedId) || salexData.customer;
+      setSelectedCustomer(loadedCustomer);
+      setIsOtherCustomerSelected(false);
+      setCustomerStateForTax(invoice.state || loadedCustomer?.billing_state || '');
     } else {
       setSelectedCustomerId('0');
       setCustomerIdToSave(0);

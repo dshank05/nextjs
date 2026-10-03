@@ -141,7 +141,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         invoice_date: Math.floor(invoiceDate),
         payment_status: parsedPaymentStatus,
         payment_mode: parsedPaymentMode,
-        fy: fy || currentFy,
+        // Always the current FY from Settings. The form sent the calendar year
+        // (2026) here, which is not a financial_year id (SA-04).
+        fy: currentFy,
         updated_at: updated_at || new Date().toISOString()
       }
 
