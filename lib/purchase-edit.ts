@@ -1,12 +1,12 @@
 import { prisma } from './db'
 import { transactionHandler } from './transaction-handler'
 import { paidWithBill } from './advance-allocation'
+import { assertStockCovers } from './purchase-delete'
 import { convertDateToTimestamp } from './date-utils'
 import {
   validatePurchase,
   computePurchaseTotals,
   getBusinessGstin,
-  num,
   lineQty,
   PAYMENT_STATUS
 } from './purchase'
@@ -31,6 +31,10 @@ import {
  *  - Partial (2) is derived from allocations. A form that loaded a part-paid
  *    bill sends 2 back, which means "leave payment alone" - it is not a request
  *    to set 2, and it used to fail validation on every save (PU-35).
+ *  - Freight is part of the total, as on a sale; P&F follows sale's rule
+ *    (owner, 2026-10-03, BILLS_PLAN Q1).
+ *  - Units the edit takes back out of stock must still be there - a line whose
+ *    units were sold cannot be lowered past what is left (BILLS_PLAN Q3).
  */
 
 export class PurchaseEditError extends Error {
@@ -177,13 +181,20 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     ? parseStateCode(body.state_code)
     : (billTo?.state_code ?? vendor?.state_code ?? null)
 
-  const packingQty = has('packing_forwarding_qty') ? body.packing_forwarding_qty : existing.packing_forwarding_qty
-  const packingRate = has('packing_forwarding_rate') ? body.packing_forwarding_rate : existing.packing_forwarding_rate
+  // P&F: what the request sends, else the stored figures (a legacy total with no
+  // qty / rate is kept rather than zeroed). Freight is in the total (owner, 2026-10-03).
+  const sentPacking = has('packing_forwarding_qty') || has('packing_forwarding_rate')
+  const packingQty = sentPacking ? body.packing_forwarding_qty : existing.packing_forwarding_qty
+  const packingRate = sentPacking ? body.packing_forwarding_rate : existing.packing_forwarding_rate
+  const packingTotal = sentPacking ? body.packing_forwarding_total : existing.packing_forwarding_total
+  const freight = has('transport_cost') ? body.transport_cost : existing.freight
 
   const totals = computePurchaseTotals({
     items: plan.map(p => ({ product_id: p.productId, qty: p.item.qty, rate: p.item.rate, gst_percentage: p.item.gst_percentage })),
     packingQty: packingQty ?? 0,
     packingRate: packingRate ?? 0,
+    packingTotal: packingTotal ?? 0,
+    freight: freight ?? 0,
     vendorStateCode: stateCode,
     businessGstin: await getBusinessGstin(),
     hasVendorState: stateCode != null
@@ -219,9 +230,10 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     invoice_date: finalDate,
     payment_status: finalStatus,
     payment_mode: paymentMode,
-    packing_forwarding_qty: num(packingQty),
-    packing_forwarding_rate: num(packingRate),
+    packing_forwarding_qty: totals.packingQty,
+    packing_forwarding_rate: totals.packingRate,
     packing_forwarding_total: totals.packingTotal,
+    freight: totals.freight,
     items_total: totals.itemsTotal,
     total_taxable_value: totals.itemsTotal,
     total_cgst: totals.totalCgst,
@@ -239,7 +251,6 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     headerData.transport_name = body.transport_name || null
   }
   if (has('vehicle_number')) headerData.vehicle_number = body.vehicle_number || null
-  if (has('transport_cost')) headerData.freight = num(body.transport_cost)
   if (has('staff_id')) {
     const staffId = intOrNull(body.staff_id)
     headerData.staff = staffId ? { connect: { id: staffId } } : { disconnect: true }
@@ -260,7 +271,24 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     pin_code: text('pin_code')
   }
 
+  // ---- Stock the edit takes back out, per product (lowered, removed or swapped
+  // lines), worked out before anything is written.
+  const planned = new Map<number, number>()
+  const plan2 = (productId: number | null, delta: number) => {
+    if (productId === null || !Number.isFinite(delta) || delta === 0) return
+    planned.set(productId, (planned.get(productId) || 0) + delta)
+  }
+  removed.forEach(r => plan2(r.product_id, -(r.qty || 0)))
+  plan.forEach((p, i) => plan2(p.productId, totals.lines[i].qty - (p.row ? (p.row.qty || 0) : 0)))
+  const takenOut = new Map<number, number>()
+  for (const [productId, delta] of Array.from(planned.entries())) if (Math.round(delta) < 0) takenOut.set(productId, -Math.round(delta))
+
   return prisma.$transaction(async (tx) => {
+    // Units this edit takes back out must still be in stock (owner, 2026-10-03):
+    // lowering or removing a line whose units were sold would go below zero.
+    await assertStockCovers(tx, takenOut, (name, have, need) =>
+      `Cannot reduce "${name}" by ${need}: only ${have} is in stock. Some of it has been sold.`)
+
     await tx.vendor_ledger.updateMany({
       where: { reference_type: 'purchase', reference_id: purchaseId, transaction_type: 'PURCHASE' },
       data: { transaction_date: finalDate }

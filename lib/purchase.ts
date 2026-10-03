@@ -1,6 +1,6 @@
 import { prisma } from './db';
 import { getBusinessStateCode, resolveSupplyType, SupplyType } from './gst';
-import { computeBill } from './line-math';
+import { computeBill, packingAmount } from './line-math';
 
 /**
  * Purchase business rules, in one place.
@@ -115,7 +115,10 @@ export interface PurchaseLineTotals {
 export interface PurchaseTotals {
   lines: PurchaseLineTotals[];
   itemsTotal: number;
+  packingQty: number;
+  packingRate: number;
   packingTotal: number;
+  freight: number;
   totalTax: number;
   totalCgst: number;
   totalSgst: number;
@@ -135,14 +138,17 @@ export interface PurchaseTotals {
  *
  * The arithmetic itself - including the F-34 rounding - is lib/line-math.ts
  * `computeBill`, the same function sale and salex use, so the documents
- * cannot round differently. Freight (transport_cost) is stored beside a
- * purchase and is NOT part of its total; that is existing, intended behaviour.
+ * cannot round differently. Freight (transport_cost) is part of the total, as
+ * on a sale (owner, 2026-10-03; it used to be stored beside the total).
+ * Packing is `packingAmount`, sale's rule: qty x rate, or a total typed with
+ * no quantity as one unit at that price.
  */
 export function computePurchaseTotals(params: {
   items: any[];
   packingQty?: any;
   packingRate?: any;
   packingTotal?: any;
+  freight?: any;
   vendorStateCode?: number | null;
   businessGstin?: string | null;
   hasVendorState?: boolean;
@@ -154,19 +160,13 @@ export function computePurchaseTotals(params: {
     params.hasVendorState
   );
 
-  // Packing is always derived from qty x rate when either is sent. Create used
-  // to store the client's packing_forwarding_total verbatim while update
-  // recomputed it (L-20); the derived one is the only one that cannot be wrong.
-  const packingTotal =
-    params.packingQty !== undefined || params.packingRate !== undefined
-      ? num(params.packingQty) * num(params.packingRate)
-      : num(params.packingTotal);
+  const packing = packingAmount(params.packingQty, params.packingRate, params.packingTotal);
 
   const items = params.items || [];
   // Purchases carry no discount (P4-21), so none is passed through.
   const bill = computeBill(
     items.map((item: any) => ({ qty: item.qty, rate: item.rate, gst_percentage: item.gst_percentage })),
-    { supplyType, packingTotal }
+    { supplyType, packingTotal: packing.total, freight: num(params.freight) }
   );
 
   return {
@@ -182,7 +182,10 @@ export function computePurchaseTotals(params: {
       igst: l.igst
     })),
     itemsTotal: bill.itemsTotal,
+    packingQty: packing.qty,
+    packingRate: packing.rate,
     packingTotal: bill.packingTotal,
+    freight: bill.freight,
     totalTax: bill.totalTax,
     totalCgst: bill.totalCgst,
     totalSgst: bill.totalSgst,
