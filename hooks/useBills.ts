@@ -240,12 +240,23 @@ const n = (v: any) => Number(v) || 0;
 /** lib/purchase-read.ts and lib/sale-read.ts, as one shape. */
 export function normalizeBill(kind: BillKind, d: any): Bill {
   const isPurchase = kind === 'purchase';
+  // Purchase: the bill's own snapshot (bill_to) first, the vendor block after, as the old form read it.
+  const b = d.bill_to || {};
   const v = d.vendor || {};
+  const pick = (snap: any, master: any) => (snap !== undefined && snap !== null ? snap : master);
   const party: BillParty = isPurchase
     ? {
-        id: d.vendor_id ?? 0, name: v.vendor_name || '', contact: v.contact_no || '', email: v.email || '', gstin: v.tax_id || '',
-        address: v.address || '', address_2: v.address_2 || '', city: v.city || '', state: v.state || '',
-        state_code: v.state_code ?? null, pin_code: v.pin_code || ''
+        id: d.vendor_id ?? 0,
+        name: pick(b.vendor_name, v.vendor_name) || '',
+        contact: pick(b.contact_no, v.contact_no) || '',
+        email: pick(b.email, v.email) || '',
+        gstin: pick(b.gstin, v.tax_id) || '',
+        address: pick(b.address, v.address) || '',
+        address_2: pick(b.address2, v.address_2) || '',
+        city: pick(b.city, v.city) || '',
+        state: pick(b.state, v.state) || '',
+        state_code: pick(b.state_code, v.state_code) ?? null,
+        pin_code: pick(b.pin_code, v.pin_code) || ''
       }
     : {
         id: d.customer_id ?? d.select_customer ?? 0, name: d.customer_name || '', contact: d.contact_number || '', email: d.email_id || '',
