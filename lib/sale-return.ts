@@ -1,5 +1,5 @@
 import { prisma } from './db';
-import { convertDateToTimestamp } from './date-utils';
+import { convertDateToTimestamp, paymentDateTs } from './date-utils';
 import { getCurrentFinancialYear } from './financial-year';
 import { customerLedgerService } from './customer-ledger-service';
 import { customerBalanceHandler } from './customer-balance-handler';
@@ -260,7 +260,7 @@ export async function createCustomerReturns(body: any) {
           refund_amount: r.refundAmount,
           payment_status: status,
           payment_mode: mode,
-          payment_date: status === 1 ? returnDate : null,
+          payment_date: status === 1 ? (paymentDateTs(body.payment_date) ?? returnDate) : null,
           notes: body.return_notes || '',
           fy
         };
@@ -354,7 +354,7 @@ export async function updateSaleReturn(kind: SaleKind, returnId: number, body: a
       notes: body.notes ?? body.return_notes ?? existing.notes ?? '',
       payment_status: newStatus,
       payment_mode: mode,
-      payment_date: newStatus === 1 ? (intOrNull(body.payment_date) ?? finalDate) : oldPaymentDate
+      payment_date: newStatus === 1 ? (paymentDateTs(body.payment_date) ?? oldPaymentDate ?? finalDate) : oldPaymentDate
     };
     if (kind === 'sale') data.total_tax = priced.totalTax;
     const updated = await tx[t.returns].update({ where: { id: returnId }, data });
@@ -385,7 +385,7 @@ export async function updateSaleReturn(kind: SaleKind, returnId: number, body: a
         returnId,
         creditNoteNo: returnNo(kind, returnId),
         paymentMode: mode ?? 1,
-        paymentDate: intOrNull(body.payment_date) ?? finalDate,
+        paymentDate: paymentDateTs(body.payment_date) ?? finalDate,
         returnDate: finalDate,
         fy: existing.fy,
         totalAllocated: allocs.reduce((s: number, a: any) => s + Number(a.allocated_amount), 0),

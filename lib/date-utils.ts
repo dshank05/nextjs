@@ -201,3 +201,17 @@ export function parseDateRange(dateFrom: string, dateTo: string): {
 
   return { startTimestamp, endTimestamp };
 }
+
+/**
+ * A payment date as the forms send it ('YYYY-MM-DD') or as stored (seconds).
+ * parseInt('2026-10-03') is 2026 - a date in January 1970 - which is what both
+ * return edits stored for a form-sent payment date.
+ */
+export function paymentDateTs(v: any): number | null {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? Math.floor(v) : null;
+  const s = String(v).trim();
+  if (/^\d{9,}$/.test(s)) return parseInt(s, 10);
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return convertDateToTimestamp(s.slice(0, 10));
+  return null;
+}
