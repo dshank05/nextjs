@@ -47,3 +47,18 @@ top customers or vendors, top products, day-by-day in India days.
 `rptcheck` (SQL run against an in-memory SQLite copy of the fixtures): 16/16 — month
 boundaries, GST split, returns and net, Invoice C lines by id, sale + Invoice C merge, purchase,
 ledger-sum outstanding against a deliberately wrong stored balance, advances negative.
+
+## R3 — Opening / Closing Stock (built)
+
+`lib/stock-report.ts`, `/api/reports/opening-closing`, `pages/reports/openingclosing.tsx`.
+Per product for a range: opening quantity, purchased, purchase returns, sold (sale + Invoice C),
+sale returns, dead stock, closing quantity; opening and closing value at the last purchase
+rate on or before each date (fallback: the product's latest purchase rate, then opening rate).
+
+Built from the documents, not from `product.stock` (stock is set only at creation and then
+moves only with documents, F-75). A product whose stored stock does not equal what its
+documents add up to is flagged with the difference — older data or a direct database change.
+A product created inside the range brings its opening stock in as "new products", not as
+opening.
+
+Checked: `stockcheck` 10/10.
