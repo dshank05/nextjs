@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
+import { PendingReturnsHint } from '../../components/transactions/PendingReturnsHint'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
@@ -179,7 +180,7 @@ export default function VendorTransactionEntry() {
     
     // Set mode
     const payMode = isExpense ? transaction.payment_mode : transaction.refund_mode
-    setMode(payMode || 1)
+    setMode(payMode ?? 1) // 0 is cash: `|| 1` turned it into bank
     
     // Set date
     const dateTimestamp = isExpense ? transaction.payment_date : transaction.refund_date
@@ -195,13 +196,16 @@ export default function VendorTransactionEntry() {
     
     // Load allocated bills/returns
     if (isExpense && transaction.allocations && transaction.allocations.length > 0) {
+      // What this payment may put on a bill: what is left on it plus what this
+      // payment already has there (other payments counted - the server checks).
+      const freshById = new Map((billsQuery.data || []).map(b => [b.purchase_id, b]))
       const allocatedBills: OutstandingBill[] = transaction.allocations.map((alloc: any) => ({
         purchase_id: alloc.purchase_id,
         invoice_no: alloc.invoice_no,
         invoice_date: alloc.invoice_date,
         total_bill: alloc.purchase_total,
-        total_paid: alloc.allocated_amount,
-        outstanding_amount: Math.max(0, alloc.purchase_total - alloc.allocated_amount),
+        total_paid: freshById.get(alloc.purchase_id)?.total_paid ?? alloc.allocated_amount,
+        outstanding_amount: Math.max(0, (freshById.get(alloc.purchase_id)?.outstanding_amount ?? 0) + alloc.allocated_amount),
         payment_status: alloc.payment_status,
         allocated: alloc.allocated_amount,
         isInCurrentPayment: true
@@ -278,9 +282,7 @@ export default function VendorTransactionEntry() {
         
         // ✅ FIX: In edit mode, bills in current payment can accept up to total_bill
         // Other bills can only accept up to outstanding_amount
-        const maxAllocation = bill.isInCurrentPayment 
-          ? bill.total_bill 
-          : bill.outstanding_amount
+        const maxAllocation = bill.outstanding_amount
         
         const toAllocate = Math.min(remaining, maxAllocation)
         remaining -= toAllocate
@@ -355,10 +357,8 @@ export default function VendorTransactionEntry() {
     if (paymentType === 'BILL_SPECIFIC') {
       // ✅ FIX: Check allocation against appropriate max per bill
       const hasOverAllocation = outstandingBills.some(bill => {
-        const maxAllowedAllocation = bill.isInCurrentPayment 
-          ? bill.total_bill           // Bills in current payment can reallocate up to full amount
-          : bill.outstanding_amount   // Other bills limited to outstanding
-        return (bill.allocated || 0) > maxAllowedAllocation
+        // outstanding_amount already includes this payment's own share on the bill
+        return (bill.allocated || 0) > bill.outstanding_amount + 0.005
       })
       if (hasOverAllocation) return true
       
@@ -408,16 +408,14 @@ export default function VendorTransactionEntry() {
     if (paymentType === 'BILL_SPECIFIC') {
       // ✅ FIX: Check for over-allocation against appropriate max per bill
       const overAllocatedBills = outstandingBills.filter(bill => {
-        const maxAllowedAllocation = bill.isInCurrentPayment 
-          ? bill.total_bill           // Bills in current payment can reallocate up to full amount
-          : bill.outstanding_amount   // Other bills limited to outstanding
-        return (bill.allocated || 0) > maxAllowedAllocation
+        // outstanding_amount already includes this payment's own share on the bill
+        return (bill.allocated || 0) > bill.outstanding_amount + 0.005
       })
       
       if (overAllocatedBills.length > 0) {
         const billsList = overAllocatedBills.map(b => {
-          const maxAllowed = b.isInCurrentPayment ? b.total_bill : b.outstanding_amount
-          const limitType = b.isInCurrentPayment ? 'Total Bill' : 'Outstanding'
+          const maxAllowed = b.outstanding_amount
+          const limitType = 'Outstanding'
           return `Bill #${b.invoice_no} (${limitType}: ₹${maxAllowed.toLocaleString('en-IN')}, Trying to allocate: ₹${(b.allocated || 0).toLocaleString('en-IN')})`
         }).join(', ')
         setError(
@@ -722,15 +720,18 @@ export default function VendorTransactionEntry() {
                   <p className="text-slate-300">
                     {operationType === 'EXPENSE' 
                       ? `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be added as advance payment to vendor`
-                      : `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be recorded as credit from vendor`
+                      : `₹${amountNum.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be recorded as a refund received from the vendor`
                     }
                   </p>
                   <p className="text-sm text-slate-400 mt-2">
                     {operationType === 'EXPENSE'
                       ? 'This creates a credit balance with the vendor that can be used for future purchases.'
-                      : 'The vendor owes you this amount, which can offset future purchases.'
+                      : 'Money the vendor paid back. It settles credit you have with the vendor (a completed return or an overpayment).'
                     }
                   </p>
+                  {operationType === 'INCOME' && vendorId && (
+                    <div className="text-left"><PendingReturnsHint party="vendor" partyId={vendorId} /></div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -800,7 +801,7 @@ export default function VendorTransactionEntry() {
                                   step="0.01"
                                   value={bill.allocated || ''}
                                   onChange={(e) => handleBillAllocationChange(bill.purchase_id, e.target.value)}
-                                  max={bill.isInCurrentPayment ? bill.total_bill : bill.outstanding_amount}
+                                  max={bill.outstanding_amount}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="0"

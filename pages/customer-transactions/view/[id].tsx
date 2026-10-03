@@ -222,7 +222,7 @@ export default function ViewCustomerTransactionPage() {
               }`}>
                 {Math.abs(summary.difference) < 0.01 
                   ? '✓ Fully Allocated'
-                  : `₹${summary.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Advance`
+                  : `₹${summary.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${isIncome ? 'Advance' : 'On account'}`
                 }
               </span>
             </div>
@@ -278,13 +278,24 @@ export default function ViewCustomerTransactionPage() {
                     <tr key={alloc.allocation_id}>
                       <td>{index + 1}</td>
                       <td className="font-mono text-white">
-                        {isIncome 
-                          ? `INV-${alloc.invoice_no}` 
-                          : alloc.credit_note_no || `RET-${alloc.return_id}`
-                        }
+                        {isIncome ? (
+                          <Link
+                            href={alloc.invoicex_id ? `/salex/view/${alloc.invoicex_id}` : `/sale/view/${alloc.invoice_id}`}
+                            className="text-blue-400 hover:underline"
+                          >
+                            {alloc.invoicex_id ? `C-${alloc.invoice_no}` : `INV-${alloc.invoice_no}`}
+                          </Link>
+                        ) : (
+                          <Link
+                            href={`/entry/salereturn/${alloc.return_id}?type=${alloc.type === 'salex' ? 'invoicex' : 'invoice'}`}
+                            className="text-blue-400 hover:underline"
+                          >
+                            {alloc.credit_note_no || `RET-${alloc.return_id}`}
+                          </Link>
+                        )}
                         {alloc.type && (
                           <span className="ml-2 text-xs text-slate-400">
-                            ({alloc.type === 'salex' ? 'Salex' : 'Sale'})
+                            ({alloc.type === 'salex' ? 'Invoice C' : 'Sale'})
                           </span>
                         )}
                       </td>

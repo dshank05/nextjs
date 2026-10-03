@@ -42,17 +42,16 @@ async function handleCreateRefund(
   try {
     const {
       vendor_id,
-      refund_amount,
-      refund_mode,
+      refund_amount: rawAmount,
+      refund_mode: rawMode,
       refund_date,
-      refund_type = 'RETURN_SPECIFIC',
       notes,
       allocations,
       fy
     } = req.body;
 
     // Validate required fields
-    if (!vendor_id || !refund_amount || refund_mode === undefined || !refund_date || !allocations) {
+    if (!vendor_id || !rawAmount || rawMode === undefined || !refund_date || !allocations) {
       return res.status(400).json({
         error: 'Missing required fields',
         required: ['vendor_id', 'refund_amount', 'refund_mode', 'refund_date', 'allocations']
@@ -61,6 +60,25 @@ async function handleCreateRefund(
 
     // Convert vendor_id to integer at the start
     const vendorId = parseInt(vendor_id);
+    // Always on account (below): a non-DIRECT type with no allocations wrote no
+    // ledger row at all. Amount and mode as numbers (mode 0 is cash).
+    const refund_type = 'DIRECT';
+    const refund_amount = Math.round(Number(rawAmount) * 100) / 100;
+    const refund_mode = parseInt(rawMode);
+
+    // On account only (owner decision 2026-10-03): a return's money is settled
+    // by marking the RETURN complete (debit note + balance). Allocating a refund
+    // to it as well would count the money twice.
+    if (!Array.isArray(allocations)) {
+      return res.status(400).json({ error: 'Allocations must be a list', message: 'Allocations must be a list' });
+    }
+    if (allocations.some((a: any) => Number(a?.allocated_amount) > 0)) {
+      const msg = 'A refund here is on account. To refund a return, open the return and mark it complete.';
+      return res.status(400).json({ error: msg, message: msg, error_code: 'REFUND_VIA_RETURN' });
+    }
+    if (!(Number(refund_amount) > 0)) {
+      return res.status(400).json({ error: 'Enter a refund amount above zero', message: 'Enter a refund amount above zero' });
+    }
 
     // Validate allocations (pass 'vendor' type for purchase returns)
     const validation = await validateRefundAllocation(

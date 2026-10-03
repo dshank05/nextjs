@@ -5,6 +5,7 @@ import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { DateRangeFilter } from '../../components/common/DateRangeFilter'
 import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
+import { TransactionTotals } from '../../components/transactions/TransactionTotals'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import { useVendors } from '../../hooks/useVendors'
@@ -427,6 +428,8 @@ export default function VendorTransactionsPage() {
             </div>
           ) : (
             <>
+              <TransactionTotals totals={transactionsData?.totals} incomeLabel="Refunds received (income)" expenseLabel="Paid (expense)" />
+
               {/* Summary */}
               <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
                 <div>Showing {transactions.length > 0 ? ((page - 1) * limit) + 1 : 0} to {Math.min(page * limit, pagination.total)} of {pagination.total} transactions</div>

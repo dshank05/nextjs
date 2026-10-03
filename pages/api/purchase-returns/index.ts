@@ -67,10 +67,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         searchConditions.push({ id: searchNum });
       }
 
-      // Search in notes
-      if (searchStr.trim()) {
-        searchConditions.push({ notes: { contains: searchStr } });
-      }
+      // Text (not a number, not PR-n) is matched against vendor name AND notes
+      // after the join, below. Filtering the database by notes first left the
+      // name search nothing to find.
 
       if (searchConditions.length > 0) {
         where.OR = searchConditions;
@@ -148,8 +147,18 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const sortField = validSortFields.includes(requestedSortField) ? requestedSortField : 'id'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
+    // A vendor id filters in the database. Name, text, invoice-number and
+    // item-count filters run after the join, so they need every row: they ran
+    // on the current page only, with the total of all rows.
+    const vendorOne = Array.isArray(vendor) ? vendor[0] : vendor
+    const vendorIdFilter = vendorOne && /^\d+$/.test(String(vendorOne)) ? parseInt(String(vendorOne)) : null
+    if (vendorIdFilter !== null) where.vendor_id = vendorIdFilter
+    const searchOne = String((Array.isArray(search) ? search[0] : search) || '').trim()
+    const textSearch = !!searchOne && !/^PR-/i.test(searchOne) && isNaN(parseInt(searchOne))
+    const postFilters = (!!vendorOne && vendorIdFilter === null) || textSearch || !!uid || !!itemCount
+
     // For computed fields, we need to fetch all data first and sort in JavaScript
-    const needsPostSorting = ['vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount'].includes(sortField)
+    const needsPostSorting = postFilters || ['vendor_name', 'invoice_no', 'item_count', 'payment_mode', 'packing_forwarding_amount'].includes(sortField)
 
     let returns: any[] = []
     let total: number = 0
@@ -337,7 +346,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     })
 
     // Apply additional filters (after data enhancement)
-    if (vendor && vendor !== '') {
+    if (vendor && vendor !== '' && vendorIdFilter === null) {
       const vendorStr = Array.isArray(vendor) ? vendor[0] : vendor;
       const vendorNum = parseInt(vendorStr);
 
@@ -391,6 +400,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // Apply post-sorting for computed fields if needed
     if (needsPostSorting) {
+      total = enhancedReturns.length
       enhancedReturns.sort((a, b) => {
         let aValue: any, bValue: any;
 
@@ -416,8 +426,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
             bValue = b.packing_forwarding_total || 0;
             break;
           default:
-            aValue = '';
-            bValue = '';
+            // Database columns (id, return_date, total_amount ...) when the
+            // whole set was loaded for a filter
+            aValue = (a as any)[sortField] ?? 0;
+            bValue = (b as any)[sortField] ?? 0;
         }
 
         // Handle string comparison

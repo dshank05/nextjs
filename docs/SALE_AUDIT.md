@@ -303,3 +303,27 @@ created allocations in parallel with deleting them.
 `tsc` and `next build` clean. New harnesses: sale returns 29/29, purchase returns 15/15,
 payments / refunds 17/17, advance 9/9 + 5/5; all earlier suites still pass (out 16, edit 27,
 list 10, report 10, num 10, sale0 13, saleB 49, custreport 12, page tests 3–6).
+
+## 9. Customer and vendor transaction screens (2026-10-03)
+
+Scope (owner): through returns, plus the two transaction screens — Customer Transaction
+(income = payment received, expense = refund paid) and Vendor Transaction (expense =
+payment made, income = refund received). Owner decision: **a refund on these screens is on
+account**; a return's money is settled by marking the **return** complete (credit / debit
+note + balance). Letting the refund screen also pay a return would count it twice.
+
+| ID | Sev | Side | Finding / fix |
+|---|---|---|---|
+| SA-57 | High | C+V | List: the payment-mode filter was applied as `payment_mode` to refunds (column is `refund_mode`) — filtering by mode with "All" types was a 500. Both lists now come from `lib/party-transactions.ts` |
+| SA-58 | High | C+V | List routes ended every request with `prisma.$disconnect()`; since they share the client (`4f74fc0`) that closed it under other requests. Removed |
+| SA-59 | Medium | C+V | Lists showed a count only; totals (income / expense / net) now over the whole filtered period, shown above both tables. A date range with one end works |
+| SA-60 | High | C+V | Refunds to returns refused on create (`REFUND_VIA_RETURN`); an older refund may keep or reduce what it has on a return, not add. The refund forms list the party's returns still waiting, with links |
+| SA-61 | High | V | Vendor refund defaulted to `RETURN_SPECIFIC`; with nothing allocated that branch wrote **no ledger row**. On-account refunds are stored DIRECT on both sides |
+| SA-62 | Medium | C+V | Refund edit stored the form's date / amount / mode as sent; normalised (timestamp, number, 0 = cash). Vendor refund edit replaced allocations in parallel with deleting them |
+| SA-63 | Medium | V | Vendor transaction edit turned cash (0) into bank with `\|\| 1`; allocated bills capped at the bill total instead of what is left (other payments counted) — now as the customer screen |
+| SA-64 | Medium | V | Purchase-return list filtered by vendor, name, invoice number and item count **after** paging (and matched text against notes in the database first). Vendor id now filters in the database; the rest load every row |
+| SA-65 | Low | C+V | Hooks threw `result.error`, but the routes answer `message`: every refusal showed a generic text. Payment / refund changes now refresh the bill, return and party lists too |
+| SA-66 | Low | C+V | View: Invoice C allocations shown as `INV-n`; refunds' credit notes as `RET-n`; "Advance" on refunds. Labels fixed, rows link to the bill / return |
+
+Checked: `tsc` and `next build` clean; new suite `txcheck` 12/12; all earlier suites pass
+(payments suite updated: refunds no longer allocate).

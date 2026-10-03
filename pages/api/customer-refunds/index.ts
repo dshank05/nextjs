@@ -232,9 +232,23 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     } = req.body
 
     // Validation
-    if (!customer_id || !refund_amount || !allocations) {
+    if (!customer_id || !refund_amount || !Array.isArray(allocations)) {
       return res.status(400).json({
         message: 'Customer ID, refund amount, and allocations are required'
+      })
+    }
+    if (!(Number(refund_amount) > 0)) {
+      return res.status(400).json({ message: 'Enter a refund amount above zero' })
+    }
+
+    // A refund screen entry is on account only (owner decision, 2026-10-03):
+    // a return's money is settled by marking the RETURN complete, which writes
+    // the credit note and moves the balance. Allocating a refund to a return as
+    // well would count the money twice.
+    if (allocations.some((a: any) => Number(a?.allocated_amount) > 0)) {
+      return res.status(400).json({
+        message: 'A refund here is on account. To refund a return, open the return and mark it complete.',
+        error_code: 'REFUND_VIA_RETURN'
       })
     }
 
@@ -395,7 +409,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           refund_date: refundDateTimestamp,
           refund_amount: parseFloat(refund_amount),
           refund_mode: (Number.isInteger(parseInt(refund_mode)) ? parseInt(refund_mode) : 1),
-          refund_type: refund_type,
+          refund_type: validatedAllocations.length ? refund_type : 'DIRECT',
           notes: notes || '',
           fy: financialYear
         }

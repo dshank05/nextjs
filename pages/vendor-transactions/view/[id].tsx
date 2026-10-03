@@ -181,7 +181,7 @@ export default function ViewVendorTransactionPage() {
               }`}>
                 {Math.abs(transaction.summary.difference) < 0.01 
                   ? '✓ Fully Allocated'
-                  : `₹${transaction.summary.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Advance`
+                  : `₹${transaction.summary.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${isExpense ? 'Advance' : 'On account'}`
                 }
               </span>
             </div>

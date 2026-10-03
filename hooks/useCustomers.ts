@@ -138,6 +138,16 @@ export function useCurrentFY() {
   });
 }
 
+/**
+ * A payment or refund changes bill statuses, return statuses and the
+ * customer's balance: refresh every list that shows them, not only this one.
+ */
+function invalidateCustomerMoney(queryClient: ReturnType<typeof useQueryClient>) {
+  for (const key of ['sales', 'salex', 'sale', 'salex-item', 'saleReturns', 'saleReturn', 'customers', 'customer']) {
+    queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
+
 // ============================================================================
 // CUSTOMER PAYMENT/REFUND MUTATIONS
 // ============================================================================
@@ -153,7 +163,7 @@ async function createCustomerPayment(payload: any) {
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'Failed to create customer payment');
+    throw new Error(result.message || result.error || (result.errors && result.errors.join('; ')) || 'Failed to create customer payment');
   }
 
   return result;
@@ -166,6 +176,7 @@ export function useCreateCustomerPayment() {
     mutationFn: createCustomerPayment,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customerTransactions'] });
+      invalidateCustomerMoney(queryClient);
       queryClient.invalidateQueries({ queryKey: ['customerPayment'] });
     },
   });
@@ -182,7 +193,7 @@ async function updateCustomerPayment({ id, payload }: { id: number; payload: any
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'Failed to update customer payment');
+    throw new Error(result.message || result.error || (result.errors && result.errors.join('; ')) || 'Failed to update customer payment');
   }
 
   return result;
@@ -194,8 +205,9 @@ export function useUpdateCustomerPayment() {
   return useMutation({
     mutationFn: updateCustomerPayment,
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['customerPayment', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['customerPayment'] });
       queryClient.invalidateQueries({ queryKey: ['customerTransactions'] });
+      invalidateCustomerMoney(queryClient);
     },
   });
 }
@@ -211,7 +223,7 @@ async function createCustomerRefund(payload: any) {
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'Failed to create customer refund');
+    throw new Error(result.message || result.error || (result.errors && result.errors.join('; ')) || 'Failed to create customer refund');
   }
 
   return result;
@@ -224,6 +236,7 @@ export function useCreateCustomerRefund() {
     mutationFn: createCustomerRefund,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customerTransactions'] });
+      invalidateCustomerMoney(queryClient);
       queryClient.invalidateQueries({ queryKey: ['customerRefund'] });
     },
   });
@@ -240,7 +253,7 @@ async function updateCustomerRefund({ id, payload }: { id: number; payload: any 
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'Failed to update customer refund');
+    throw new Error(result.message || result.error || (result.errors && result.errors.join('; ')) || 'Failed to update customer refund');
   }
 
   return result;
@@ -252,8 +265,9 @@ export function useUpdateCustomerRefund() {
   return useMutation({
     mutationFn: updateCustomerRefund,
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['customerRefund', variables.id] });
+      queryClient.invalidateQueries({ queryKey: ['customerRefund'] });
       queryClient.invalidateQueries({ queryKey: ['customerTransactions'] });
+      invalidateCustomerMoney(queryClient);
     },
   });
 }
@@ -304,7 +318,7 @@ async function deleteCustomerTransaction({ id, type }: { id: number; type: 'inco
   const result = await response.json();
 
   if (!response.ok || !result.success) {
-    throw new Error(result.error || 'Failed to delete transaction');
+    throw new Error(result.message || result.error || (result.errors && result.errors.join('; ')) || 'Failed to delete transaction');
   }
 
   return result;
@@ -317,6 +331,7 @@ export function useDeleteCustomerTransaction() {
     mutationFn: deleteCustomerTransaction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customerTransactions'] });
+      invalidateCustomerMoney(queryClient);
     },
   });
 }

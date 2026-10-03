@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { convertDateToTimestamp } from '../../../lib/date-utils';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import { ledgerService } from '../../../lib/ledger-service';
@@ -152,20 +153,24 @@ async function handleUpdateRefund(
   try {
     const { id } = req.query;
     const {
-      refund_amount,
-      refund_date,
-      refund_mode,
-      refund_type,
+      refund_amount: rawAmount,
+      refund_date: rawDate,
+      refund_mode: rawMode,
+      refund_type: rawType,
       notes,
       allocations
     } = req.body;
+    // Normalised: a timestamp or YYYY-MM-DD; mode 0 is cash.
+    const refund_amount = Math.round(Number(rawAmount) * 100) / 100;
+    const refund_date = rawDate !== undefined && rawDate !== null && rawDate !== '' ? convertDateToTimestamp(rawDate) : rawDate;
+    const refund_mode = rawMode === undefined || rawMode === null || rawMode === '' ? rawMode : parseInt(rawMode);
 
     if (!id) {
       return res.status(400).json({ error: 'Refund ID is required' });
     }
 
     // Validate required fields
-    if (!refund_amount || !refund_date || refund_mode === undefined || !allocations) {
+    if (!(refund_amount > 0) || !refund_date || refund_mode === undefined || !Array.isArray(allocations)) {
       return res.status(400).json({
         error: 'Missing required fields',
         required: ['refund_amount', 'refund_date', 'refund_mode', 'allocations']
@@ -186,6 +191,20 @@ async function handleUpdateRefund(
       return res.status(404).json({ error: 'Refund not found' });
     }
 
+    // On account only (owner decision 2026-10-03; see the create route): an
+    // older refund may keep or reduce what it has on a return, not add to it.
+    const had = new Map<number, number>();
+    for (const a of existingRefund.allocations) had.set(a.return_id, (had.get(a.return_id) || 0) + Number(a.allocated_amount));
+    const kept = (allocations as any[]).filter(a => Number(a?.allocated_amount) > 0);
+    if (kept.some(a => Number(a.allocated_amount) > (had.get(parseInt(a.return_id)) || 0) + 0.005)) {
+      const msg = 'A refund here is on account. To refund a return, open the return and mark it complete.';
+      return res.status(400).json({ error: msg, message: msg, error_code: 'REFUND_VIA_RETURN' });
+    }
+    if (kept.reduce((s, a) => s + Number(a.allocated_amount), 0) > refund_amount + 0.005) {
+      return res.status(400).json({ error: 'Allocated more than the refund amount', message: 'Allocated more than the refund amount' });
+    }
+    const refund_type = kept.length ? (rawType || existingRefund.refund_type || 'RETURN_SPECIFIC') : 'DIRECT';
+
     // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
     const handlerParams = {
       refundId,
@@ -196,7 +215,7 @@ async function handleUpdateRefund(
         return_id: a.return_id,
         allocated_amount: Number(a.allocated_amount)
       })),
-      newAllocations: allocations.map((a: any) => ({
+      newAllocations: kept.map((a: any) => ({
         return_id: a.return_id,
         allocated_amount: Number(a.allocated_amount)
       })),
@@ -240,23 +259,19 @@ async function handleUpdateRefund(
         });
       }
 
-      // 4. ⚡ OPTIMIZATION: Parallel allocation updates
-      await Promise.all([
-        // Delete old allocations
-        tx.refund_allocations.deleteMany({
-          where: { refund_id: refundId }
-        }),
-        // Create new allocations - using createMany for bulk insert
-        tx.refund_allocations.createMany({
-          data: allocations.map((alloc: any) => ({
+      // 4. Replace the allocations, in order (delete, then create).
+      await tx.refund_allocations.deleteMany({ where: { refund_id: refundId } });
+      if (kept.length) {
+        await tx.refund_allocations.createMany({
+          data: kept.map((alloc: any) => ({
             refund_id: refundId,
-            return_id: alloc.return_id,
-            allocated_amount: alloc.allocated_amount,
+            return_id: parseInt(alloc.return_id),
+            allocated_amount: Number(alloc.allocated_amount),
             allocation_date: refund_date,
             notes: alloc.notes || null
           }))
-        })
-      ]);
+        });
+      }
 
       // 5. ⚡ OPTIMIZATION: Recalculate return statuses in parallel
       const returnsToUpdate = handlerResult.metadata?.returnsToUpdate || [];

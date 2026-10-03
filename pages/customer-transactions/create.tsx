@@ -3,6 +3,7 @@ import { useRouter } from 'next/router'
 import { DollarSign, FileText, CheckCircle, Loader2 } from 'lucide-react'
 import { SearchableSelect } from '../../components/common/SearchableSelect'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
+import { PendingReturnsHint } from '../../components/transactions/PendingReturnsHint'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import SessionStorageService from '../../lib/sessionStorage'
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
@@ -885,9 +886,12 @@ export default function CustomerTransactionEntry() {
                   <p className="text-sm text-slate-400 mt-2">
                     {operationType === 'INCOME'
                       ? 'This creates a credit balance with the customer that can be used for future sales.'
-                      : 'You owe the customer this amount, which can offset future sales.'
+                      : 'Money paid back to the customer. It settles credit the customer has with you (a completed return or an overpayment).'
                     }
                   </p>
+                  {operationType === 'EXPENSE' && parseInt(selectedCustomer) > 0 && (
+                    <div className="text-left"><PendingReturnsHint party="customer" partyId={parseInt(selectedCustomer)} /></div>
+                  )}
                 </div>
               ) : (
                 <>

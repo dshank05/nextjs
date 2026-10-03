@@ -34,6 +34,8 @@ export interface CustomerTransactionsResponse {
   data: CustomerTransaction[];
   pagination: Pagination;
   success: boolean;
+  /** income / expense / net over the whole filtered period */
+  totals?: { income: number; expense: number; net: number; count: number };
 }
 
 // Transaction detail view types

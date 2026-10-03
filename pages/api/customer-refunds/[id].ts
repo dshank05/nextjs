@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import { customerLedgerService } from '../../../lib/customer-ledger-service';
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler';
+import { convertDateToTimestamp } from '../../../lib/date-utils';
 
 
 export default async function handler(
@@ -118,6 +119,8 @@ async function handleGetRefund(
           allocation_id: alloc.id,
           return_id: alloc.sale_return_id || alloc.salex_return_id,
           return_type: alloc.sale_return_id ? 'sale' : 'salex',
+          type: alloc.sale_return_id ? 'sale' : 'salex',
+          credit_note_no: `${alloc.sale_return_id ? 'SR' : 'SXR'}-${String(alloc.sale_return_id || alloc.salex_return_id).padStart(3, '0')}`,
           return_date: returnData?.return_date || 0,
           allocated_amount: Number(alloc.allocated_amount),
           return_total: Number(returnData?.refund_amount || returnData?.total_amount || 0),
@@ -163,20 +166,24 @@ async function handleUpdateRefund(
   try {
     const { id } = req.query;
     const {
-      refund_amount,
-      refund_date,
-      refund_mode,
-      refund_type,
+      refund_amount: rawAmount,
+      refund_date: rawDate,
+      refund_mode: rawMode,
+      refund_type: rawType,
       notes,
       allocations
     } = req.body;
+    // Normalised: the form sends a timestamp, other callers a YYYY-MM-DD; mode 0 is cash.
+    const refund_amount = Math.round(Number(rawAmount) * 100) / 100;
+    const refund_date = rawDate !== undefined && rawDate !== null && rawDate !== '' ? convertDateToTimestamp(rawDate) : rawDate;
+    const refund_mode = rawMode === undefined || rawMode === null || rawMode === '' ? rawMode : parseInt(rawMode);
 
     if (!id) {
       return res.status(400).json({ error: 'Refund ID is required' });
     }
 
     // Validate required fields
-    if (!refund_amount || !refund_date || refund_mode === undefined || !allocations) {
+    if (!(refund_amount > 0) || !refund_date || refund_mode === undefined || !Array.isArray(allocations)) {
       return res.status(400).json({
         error: 'Missing required fields',
         required: ['refund_amount', 'refund_date', 'refund_mode', 'allocations']
@@ -212,9 +219,25 @@ async function handleUpdateRefund(
       }
       newAllocs.push({ return_id: rid, type, allocated_amount: amt, notes: a.notes || null })
     }
+    // On account only (see the create route): an older refund may keep or
+    // reduce what it already has on a return, but not add returns or money.
+    const had = new Map<string, number>();
+    for (const a of existingRefund.allocations) {
+      const k = a.sale_return_id ? `sale-${a.sale_return_id}` : `salex-${a.salex_return_id}`;
+      had.set(k, (had.get(k) || 0) + Number(a.allocated_amount));
+    }
+    if (newAllocs.some(a => a.allocated_amount > (had.get(`${a.type}-${a.return_id}`) || 0) + 0.005)) {
+      return res.status(400).json({
+        error: 'A refund here is on account. To refund a return, open the return and mark it complete.',
+        message: 'A refund here is on account. To refund a return, open the return and mark it complete.',
+        error_code: 'REFUND_VIA_RETURN'
+      })
+    }
     if (newAllocs.reduce((s, a) => s + a.allocated_amount, 0) > Number(refund_amount) + 0.005) {
       return res.status(400).json({ error: 'Allocated more than the refund amount' })
     }
+
+    const refund_type = newAllocs.length ? (rawType || existingRefund.refund_type || 'RETURN_SPECIFIC') : 'DIRECT';
 
     // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
     const handlerParams = {

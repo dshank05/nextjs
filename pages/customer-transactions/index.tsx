@@ -6,6 +6,7 @@ import { DateRangeFilter } from '../../components/common/DateRangeFilter'
 import { ExportMenu } from '../../components/common/ExportMenu'
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils'
 import { ConfirmationModal } from '../../components/ConfirmationModal'
+import { TransactionTotals } from '../../components/transactions/TransactionTotals'
 import { useSnackbar } from '../../components/SnackbarProvider'
 import { useCustomers } from '../../hooks/useCustomers'
 import { useCustomerTransactions, useDeleteCustomerTransaction } from '../../hooks/useCustomers'
@@ -426,6 +427,8 @@ export default function CustomerTransactionsPage() {
             </div>
           ) : (
             <>
+              <TransactionTotals totals={transactionsData?.totals} incomeLabel="Received (income)" expenseLabel="Refunded (expense)" />
+
               {/* Summary */}
               <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
                 <div>Showing {transactions.length > 0 ? ((page - 1) * limit) + 1 : 0} to {Math.min(page * limit, total)} of {total} transactions</div>

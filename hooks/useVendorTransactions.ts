@@ -39,11 +39,12 @@ async function fetchVendorTransactions(
   const data = await response.json();
 
   if (!data.success) {
-    throw new Error(data.error || 'Failed to fetch vendor transactions');
+    throw new Error(data.message || data.error || (data.errors && data.errors.join('; ')) || 'Failed to fetch vendor transactions');
   }
 
   return {
     transactions: data.data || [],
+    totals: data.totals,
     pagination: data.pagination || {
       page: filters.page,
       limit: filters.limit,
@@ -85,7 +86,7 @@ async function fetchVendorTransaction(
   const data = await response.json();
 
   if (!data.success) {
-    throw new Error(data.error || 'Failed to fetch transaction');
+    throw new Error(data.message || data.error || (data.errors && data.errors.join('; ')) || 'Failed to fetch transaction');
   }
 
   return data.data;
@@ -126,7 +127,7 @@ async function deleteVendorTransaction({ id, type }: DeleteTransactionParams) {
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to delete transaction');
+    throw new Error(data.message || data.error || (data.errors && data.errors.join('; ')) || 'Failed to delete transaction');
   }
 
   return data;
@@ -140,6 +141,9 @@ export function useDeleteVendorTransaction() {
     onSuccess: () => {
       // Invalidate vendor transactions list
       queryClient.invalidateQueries({ queryKey: ['vendorTransactions'] });
+      for (const key of ['purchases', 'purchase', 'vendorPurchaseBills', 'purchaseReturns', 'purchaseReturn', 'vendors', 'vendor']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
     },
   });
 }
@@ -292,7 +296,7 @@ async function createVendorTransaction(payload: CreateVendorTransactionPayload) 
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to create transaction');
+    throw new Error(data.message || data.error || (data.errors && data.errors.join('; ')) || 'Failed to create transaction');
   }
 
   return data;
@@ -316,7 +320,7 @@ async function updateVendorTransaction(
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to update transaction');
+    throw new Error(data.message || data.error || (data.errors && data.errors.join('; ')) || 'Failed to update transaction');
   }
 
   return data;
@@ -329,6 +333,9 @@ export function useCreateVendorTransaction() {
     mutationFn: createVendorTransaction,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vendorTransactions'] });
+      for (const key of ['purchases', 'purchase', 'vendorPurchaseBills', 'purchaseReturns', 'purchaseReturn', 'vendors', 'vendor']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
       queryClient.invalidateQueries({ queryKey: ['outstandingBills'] });
       queryClient.invalidateQueries({ queryKey: ['outstandingReturns'] });
     },
@@ -343,7 +350,10 @@ export function useUpdateVendorTransaction() {
       updateVendorTransaction(id, payload, isExpense),
     onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['vendorTransactions'] });
-      queryClient.invalidateQueries({ queryKey: ['vendorTransaction', variables.id] });
+      for (const key of ['purchases', 'purchase', 'vendorPurchaseBills', 'purchaseReturns', 'purchaseReturn', 'vendors', 'vendor']) {
+        queryClient.invalidateQueries({ queryKey: [key] });
+      }
+      queryClient.invalidateQueries({ queryKey: ['vendorTransaction'] });
       queryClient.invalidateQueries({ queryKey: ['outstandingBills'] });
       queryClient.invalidateQueries({ queryKey: ['outstandingReturns'] });
     },

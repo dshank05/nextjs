@@ -34,6 +34,8 @@ export interface VendorTransactionFilters {
 
 export interface VendorTransactionsResponse {
   transactions: VendorTransaction[];
+  /** income / expense / net over the whole filtered period */
+  totals?: { income: number; expense: number; net: number; count: number };
   pagination: {
     page: number;
     limit: number;
