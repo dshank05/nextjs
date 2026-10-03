@@ -3,6 +3,7 @@ import { getNextInvoiceNumber } from './invoice-counter';
 import { convertDateToTimestamp, getLocalDateString } from './date-utils';
 import { customerLedgerService } from './customer-ledger-service';
 import { customerBalanceHandler } from './customer-balance-handler';
+import { allocateFromAdvance } from './advance-allocation';
 import { getBusinessGstin, PAYMENT_STATUS } from './purchase';
 import {
   SaleKind, SaleError, saleTables, validateSale, computeSaleTotals, assertStock,
@@ -255,8 +256,13 @@ async function recordPaymentOnCreate(tx: any, p: {
     ? (Number(customer.total_paid) - Number(customer.total_allocated)) +
       (Number(customer.total_refunded) - Number(customer.total_refund_allocated))
     : 0;
-  const advanceUsed = Math.min(Math.max(0, advance), p.total);
-  const newPayment = p.total - advanceUsed;
+  // The advance is allocated from the customer's existing payments - no new
+  // row for money paid earlier (SA-28). What the rows cannot cover is new money.
+  const advanceUsed = await allocateFromAdvance(
+    tx, 'customer', p.customerId, { [t.allocFk]: p.docId }, Math.min(Math.max(0, advance), p.total), p.date,
+    { mode: p.mode, fy: p.fy }
+  );
+  const newPayment = Math.round((p.total - advanceUsed) * 100) / 100;
 
   const allocate = async (amount: number, notes: string, paymentNotes: string) => {
     const payment = await tx.customer_payments.create({
@@ -276,9 +282,6 @@ async function recordPaymentOnCreate(tx: any, p: {
     return payment.id as number;
   };
 
-  if (advanceUsed > 0) {
-    await allocate(advanceUsed, 'Allocated from existing advance balance', `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`);
-  }
   if (newPayment > 0) {
     const paymentId = await allocate(
       newPayment,

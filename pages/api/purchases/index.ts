@@ -10,6 +10,7 @@ import { balanceHandler } from '../../../lib/balance-handler'
 import { getLocalDateString, convertDateToTimestamp } from '../../../lib/date-utils'
 import { validatePurchase, computePurchaseTotals, getBusinessGstin, num } from '../../../lib/purchase'
 import { parseStateCode } from '../../../lib/purchase-edit'
+import { allocateFromAdvance } from '../../../lib/advance-allocation'
 
 async function handler(
   req: NextApiRequest,
@@ -378,8 +379,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
           (Number(vendor.total_refunded) - Number(vendor.total_refund_allocated))
           : 0;
 
-        advanceUsed = Math.min(Math.max(0, advanceBalance), calculatedGrandTotal);
-        newPayment = calculatedGrandTotal - advanceUsed;
+        // Allocated from the vendor's existing payments, oldest first - no new
+        // payment row for money paid earlier (SA-28). What the rows cannot
+        // cover is new money.
+        advanceUsed = await allocateFromAdvance(
+          tx, 'vendor', parseInt(vendor_id), { purchase_id: purchase.id },
+          Math.min(Math.max(0, advanceBalance), calculatedGrandTotal), Math.floor(invoiceDate),
+          { mode: payment_mode, fy: currentFy }
+        );
+        newPayment = Math.round((calculatedGrandTotal - advanceUsed) * 100) / 100;
 
         if (advanceUsed >= calculatedGrandTotal) {
           purchaseNotes = `Paid using ₹${advanceUsed.toFixed(2)} from advance balance`;
@@ -473,34 +481,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
         // second vendor_details read and the duplicate arithmetic that used to
         // sit here are gone.
 
-        // ✅ CREATE PAYMENT/ALLOCATION RECORDS FOR ADVANCE PORTION (CREATE FIRST!)
-        let advancePaymentId: number | undefined;
-        if (advanceUsed > 0) {
-          console.log(`[PURCHASE CREATE] Creating advance allocation: ₹${advanceUsed.toFixed(2)}`);
-          const advancePayment = await tx.vendor_payments.create({
-            data: {
-              vendor_id: parseInt(vendor_id),
-              payment_date: Math.floor(invoiceDate),
-              payment_amount: advanceUsed,
-              payment_mode: payment_mode,
-              payment_type: 'BILL_SPECIFIC',
-              notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`,
-              fy: currentFy
-            }
-          });
-
-          advancePaymentId = advancePayment.id;
-
-          await tx.payment_allocations.create({
-            data: {
-              payment_id: advancePayment.id,
-              purchase_id: purchase.id,
-              allocated_amount: advanceUsed,
-              allocation_date: Math.floor(invoiceDate),
-              notes: 'Allocated from existing advance balance'
-            }
-          });
-        }
+        // The advance portion was allocated from the vendor's existing payments
+        // above; only the new money gets a payment row (SA-28).
 
         // ✅ CREATE PAYMENT/ALLOCATION RECORDS FOR NEW PAYMENT PORTION (CREATE FIRST!)
         let newPaymentId: number | undefined;

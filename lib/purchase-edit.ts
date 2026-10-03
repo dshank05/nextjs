@@ -1,5 +1,6 @@
 import { prisma } from './db'
 import { transactionHandler } from './transaction-handler'
+import { paidWithBill } from './advance-allocation'
 import { convertDateToTimestamp } from './date-utils'
 import {
   validatePurchase,
@@ -384,12 +385,7 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     })
     // What THIS purchase paid in (BILL_SPECIFIC), as opposed to what it
     // allocated from a pre-existing advance (L-30).
-    const paidByThisDocument = isTypeA
-      ? (await tx.payment_allocations.findMany({
-          where: { purchase_id: purchaseId, payment: { payment_type: 'BILL_SPECIFIC' } },
-          select: { allocated_amount: true }
-        })).reduce((s: number, a: any) => s + Number(a.allocated_amount), 0)
-      : undefined
+    const paidByThisDocument = isTypeA ? await paidWithBill(tx, 'vendor', { purchase_id: purchaseId }) : undefined
 
     const ops = await transactionHandler.handlePurchaseEdit({
       oldStatus,

@@ -7,6 +7,7 @@ import {
   intOrNull, requestedCustomer, requestedFreight, requestedItems, billStateCode, requestedDate
 } from './sale';
 import { shippingFrom, transportFrom } from './sale-create';
+import { paidWithBill } from './advance-allocation';
 
 /**
  * Editing a sale or salex (PUT /api/sales/[id], PUT /api/salex/[id]).
@@ -312,12 +313,7 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
       const hasPaymentLedger = await tx.customer_ledger.findFirst({
         where: { customer_id: customerId, reference_type: kind, reference_id: docId, transaction_type: 'PAYMENT_RECEIVED' }
       });
-      const paidByThisDocument = isTypeA
-        ? (await tx.customer_payment_allocations.findMany({
-            where: { [t.allocFk]: docId, payment: { payment_type: 'BILL_SPECIFIC' } },
-            select: { allocated_amount: true }
-          })).reduce((s: number, a: any) => s + Number(a.allocated_amount), 0)
-        : undefined;
+      const paidByThisDocument = isTypeA ? await paidWithBill(tx, 'customer', { [t.allocFk]: docId }) : undefined;
 
       const ops = await customerTransactionHandler.handleSaleEdit({
         type: kind,

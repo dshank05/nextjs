@@ -5,6 +5,7 @@
  */
 
 import { ledgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDeleteOperation, ChangeSet } from './ledger-handler';
+import { allocateFromAdvance, releaseAllocations } from './advance-allocation';
 import { balanceHandler, BalanceOperation } from './balance-handler';
 import { ledgerService } from './ledger-service';
 
@@ -460,32 +461,8 @@ export class TransactionHandler {
     for (const change of result.allocationChanges) {
       if (change.action === 'CREATE') {
         if (change.type === 'PAYMENT') {
-          // Create payment record
-          const payment = await tx.vendor_payments.create({
-            data: {
-              vendor_id: change.data.vendorId,
-              payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-              payment_amount: change.data.amount,
-              payment_mode: change.data.paymentMode || 1,
-              payment_type: change.data.paymentType || 'BILL_SPECIFIC',
-              notes: change.data.notes || `Payment for purchase ${change.data.invoiceNo}`,
-              fy: change.data.fy
-            }
-          });
-          
-          // Store payment ID for this purchase
-          paymentMap.set(change.data.purchaseId, payment.id);
-          
-          // Create allocation record
-          await tx.payment_allocations.create({
-            data: {
-              payment_id: payment.id,
-              purchase_id: change.data.purchaseId,
-              allocated_amount: change.data.amount,
-              allocation_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-              notes: 'Allocated during purchase edit'
-            }
-          });
+          const paymentId = await this.createPaymentForChange(tx, change);
+          if (paymentId !== null) paymentMap.set(change.data.purchaseId, paymentId);
         } else if (change.type === 'REFUND') {
           // Create refund record
           const refund = await tx.vendor_refunds.create({
@@ -706,10 +683,10 @@ export class TransactionHandler {
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
     const newPayment = amount - advanceUsed;
     
-    // ✅ FIX: Determine payment type based on allocation mix
-    // - MIXED: Both advance and new payment used
-    // - BILL_SPECIFIC: Only advance OR only new payment (both are bill-specific)
-    const paymentType = (advanceUsed > 0 && newPayment > 0) ? 'MIXED' : 'BILL_SPECIFIC';
+    // The advance portion is allocated from existing payments when executed
+    // (fromAdvance); only new money becomes a payment row, always
+    // BILL_SPECIFIC - a MIXED row made here would survive the purchase's
+    // deletion as a phantom advance (SA-28 / L-26).
     
     // Create allocation for advance portion
     if (advanceUsed > 0) {
@@ -721,9 +698,9 @@ export class TransactionHandler {
           vendorId: changes.vendorId,
           purchaseId: changes.purchaseId,
           amount: advanceUsed,
+          fromAdvance: true,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: paymentType,  // ✅ Use MIXED or BILL_SPECIFIC
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
           notes: `Allocated from advance balance: ₹${advanceUsed.toFixed(2)}`
@@ -743,7 +720,6 @@ export class TransactionHandler {
           amount: newPayment,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: paymentType,  // ✅ Use MIXED or BILL_SPECIFIC
           fy: changes.fy,
           invoiceNo: changes.invoiceNo
         }
@@ -843,35 +819,48 @@ export class TransactionHandler {
   /**
    * Execute a single allocation change
    */
+  /**
+   * Create what a CREATE PAYMENT change asks for. The advance portion is
+   * allocated from the vendor's existing payments (no new row, SA-28); new
+   * money is one BILL_SPECIFIC payment. Returns the new payment's id, if any.
+   */
+  private async createPaymentForChange(tx: any, change: AllocationChange): Promise<number | null> {
+    const date = change.data.paymentDate || Math.floor(Date.now() / 1000);
+    if (change.data.fromAdvance) {
+      await allocateFromAdvance(tx, 'vendor', change.data.vendorId, { purchase_id: change.data.purchaseId }, change.data.amount, date,
+        { mode: change.data.paymentMode, fy: change.data.fy });
+      return null;
+    }
+    const payment = await tx.vendor_payments.create({
+      data: {
+        vendor_id: change.data.vendorId,
+        payment_date: date,
+        payment_amount: change.data.amount,
+        payment_mode: change.data.paymentMode ?? 1,
+        payment_type: 'BILL_SPECIFIC',
+        notes: change.data.notes || `Payment for purchase ${change.data.invoiceNo}`,
+        fy: change.data.fy
+      }
+    });
+    await tx.payment_allocations.create({
+      data: {
+        payment_id: payment.id,
+        purchase_id: change.data.purchaseId,
+        allocated_amount: change.data.amount,
+        allocation_date: date,
+        notes: 'Allocated during purchase edit'
+      }
+    });
+    return payment.id;
+  }
+
   private async executeAllocationChange(
     tx: any,
     change: AllocationChange
   ): Promise<void> {
     if (change.action === 'CREATE') {
       if (change.type === 'PAYMENT') {
-        // Create payment record
-        const payment = await tx.vendor_payments.create({
-          data: {
-            vendor_id: change.data.vendorId,
-            payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-            payment_amount: change.data.amount,
-            payment_mode: change.data.paymentMode || 1,
-            payment_type: change.data.paymentType || 'BILL_SPECIFIC',
-            notes: change.data.notes || `Payment for purchase ${change.data.invoiceNo}`,
-            fy: change.data.fy
-          }
-        });
-        
-        // Create allocation record
-        await tx.payment_allocations.create({
-          data: {
-            payment_id: payment.id,
-            purchase_id: change.data.purchaseId,
-            allocated_amount: change.data.amount,
-            allocation_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-            notes: 'Allocated during purchase edit'
-          }
-        });
+        await this.createPaymentForChange(tx, change);
       } else if (change.type === 'REFUND') {
         // Create refund record
         const refund = await tx.vendor_refunds.create({
@@ -899,29 +888,10 @@ export class TransactionHandler {
       }
     } else if (change.action === 'DELETE') {
       if (change.type === 'PAYMENT') {
-        // Get allocations to delete
-        const allocations = await tx.payment_allocations.findMany({
-          where: { purchase_id: change.where.purchaseId },
-          select: { payment_id: true }
-        });
-        
-        // Delete allocations
-        await tx.payment_allocations.deleteMany({
-          where: { purchase_id: change.where.purchaseId }
-        });
-        
-        // Delete vendor_payments if no other allocations exist
-        for (const alloc of allocations) {
-          const remainingAllocs = await tx.payment_allocations.count({
-            where: { payment_id: alloc.payment_id }
-          });
-          
-          if (remainingAllocs === 0) {
-            await tx.vendor_payments.delete({
-              where: { id: alloc.payment_id }
-            });
-          }
-        }
+        // Only payments this purchase created are deleted; an advance it used
+        // is released, not destroyed (it used to delete every payment left
+        // without allocations, the vendor's own advance included).
+        await releaseAllocations(tx, 'vendor', { purchase_id: change.where.purchaseId });
       } else if (change.type === 'REFUND') {
         // Get allocations to delete
         const allocations = await tx.refund_allocations.findMany({
@@ -972,7 +942,9 @@ export class TransactionHandler {
     });
     
     // Operation 2: Delete allocations if paid
-    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+    // Always: a bill marked Unpaid can still hold allocations (SA-02 data);
+    // with none, both operations are no-ops.
+    {
       operations.push({
         type: 'DELETE_ALLOCATIONS',
         data: { 
@@ -1010,7 +982,9 @@ export class TransactionHandler {
     });
     
     // Operation 5: Update balance if paid
-    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+    // Always: a bill marked Unpaid can still hold allocations (SA-02 data);
+    // with none, both operations are no-ops.
+    {
       operations.push({
         type: 'BALANCE_UPDATE',
         data: {
@@ -1339,56 +1313,12 @@ export class TransactionHandler {
   
   private async executeDeleteAllocations(tx: any, data: any, context: any): Promise<void> {
     if (data.entityType === 'purchase') {
-      const allocations = await tx.payment_allocations.findMany({
-        where: { purchase_id: data.entityId },
-        select: { payment_id: true, allocated_amount: true }
-      });
-      
-      const totalPaid = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
-      
-      // Delete allocations
-      await tx.payment_allocations.deleteMany({
-        where: { purchase_id: data.entityId }
-      });
-      
-      const paymentIds = Array.from(new Set(allocations.map(a => a.payment_id)));
-
-      // Track the payments actually DELETED, separately from the amount
-      // deallocated.
-      //
-      // The two are not the same, and conflating them is what left a phantom
-      // advance behind (L-26). A BILL_SPECIFIC payment was created BY this
-      // purchase, so deleting the purchase deletes it and the money was never
-      // paid - total_paid has to come down with it. A DIRECT or MIXED payment
-      // is a real advance that existed before this purchase and still exists
-      // after it; only its ALLOCATION reverses, and total_paid must not move.
-      let paymentsRemoved = 0;
-
-      for (const paymentId of paymentIds) {
-        const remainingAllocs = await tx.payment_allocations.count({
-          where: { payment_id: paymentId }
-        });
-        
-        if (remainingAllocs === 0) {
-          const payment = await tx.vendor_payments.findUnique({
-            where: { id: paymentId },
-            select: { payment_type: true, payment_amount: true }
-          });
-          
-          if (payment?.payment_type === 'BILL_SPECIFIC') {
-            paymentsRemoved += Number(payment.payment_amount);
-            await tx.vendor_payments.delete({ where: { id: paymentId } });
-          } else if (payment?.payment_type === 'MIXED') {
-            await tx.vendor_payments.update({
-              where: { id: paymentId },
-              data: { payment_type: 'DIRECT' }
-            });
-          }
-        }
-      }
-      
-      data.totalPaid = totalPaid;
-      context.totalPaid = totalPaid;
+      // Payments created by this purchase go with it and total_paid comes down
+      // by them; a pre-existing advance is only deallocated (L-26). Shared with
+      // the customer side: lib/advance-allocation.ts releaseAllocations.
+      const { deallocated, paymentsRemoved } = await releaseAllocations(tx, 'vendor', { purchase_id: data.entityId });
+      data.totalPaid = deallocated;
+      context.totalPaid = deallocated;
       data.paymentsRemoved = paymentsRemoved;
       context.paymentsRemoved = paymentsRemoved;
       
@@ -1692,6 +1622,8 @@ export class TransactionHandler {
       // created by this purchase. A pre-existing advance stays paid; only its
       // allocation reverses.
       const paymentsRemoved = Number(context.paymentsRemoved || 0);
+      // Nothing was allocated (an unpaid bill): nothing to move.
+      if (!Number(context.totalPaid) && !paymentsRemoved) return;
 
       await balanceHandler.incrementBalanceInTransaction(
         tx, 

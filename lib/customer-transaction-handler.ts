@@ -8,6 +8,7 @@ import { customerLedgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDe
 import { customerBalanceHandler, BalanceOperation } from './customer-balance-handler';
 import { customerLedgerService } from './customer-ledger-service';
 import { saleTables } from './sale';
+import { allocateFromAdvance, releaseAllocations } from './advance-allocation';
 
 export interface AllocationChange {
   action: 'CREATE' | 'DELETE';
@@ -444,67 +445,16 @@ export class CustomerTransactionHandler {
     const refundMap = new Map<number, number>(); // return_id -> refund_id
     
     for (const change of result.allocationChanges) {
-      if (change.action === 'CREATE') {
-        if (change.type === 'PAYMENT') {
-          // Create payment record
-          const payment = await tx.customer_payments.create({
-            data: {
-              customer_id: change.data.customerId,
-              payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-              payment_amount: change.data.amount,
-              payment_mode: change.data.paymentMode || 1,
-              payment_type: change.data.paymentType || 'BILL_SPECIFIC',
-              notes: change.data.notes || `Payment for ${change.data.type} ${change.data.invoiceNo}`,
-              fy: change.data.fy
-            }
-          });
-          
-          // Store payment ID for this invoice
-          paymentMap.set(change.data.invoiceId, payment.id);
-          
-          // Create allocation record
-          await tx.customer_payment_allocations.create({
-            data: {
-              payment_id: payment.id,
-              invoice_id: change.data.type === 'sale' ? change.data.invoiceId : undefined,
-              invoicex_id: change.data.type === 'salex' ? change.data.invoiceId : undefined,
-              allocated_amount: change.data.amount,
-              allocation_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-              notes: 'Allocated during sale edit'
-            }
-          });
-        } else if (change.type === 'REFUND') {
-          // Create refund record
-          const refund = await tx.customer_refunds.create({
-            data: {
-              customer_id: change.data.customerId,
-              refund_date: change.data.refundDate || Math.floor(Date.now() / 1000),
-              refund_amount: change.data.amount,
-              refund_mode: change.data.refundMode || 1,
-              refund_type: 'RETURN_SPECIFIC',
-              notes: `Refund for return ${change.data.creditNoteNo}`,
-              fy: change.data.fy
-            }
-          });
-          
-          // Store refund ID for this return
-          refundMap.set(change.data.returnId, refund.id);
-          
-          // Create allocation record
-          await tx.customer_refund_allocations.create({
-            data: {
-              refund_id: refund.id,
-              return_id: change.data.returnId,
-              allocated_amount: change.data.amount,
-              allocation_date: change.data.refundDate || Math.floor(Date.now() / 1000),
-              notes: 'Allocated during return edit'
-            }
-          });
-        }
+      if (change.action === 'CREATE' && change.type === 'PAYMENT') {
+        const paymentId = await this.createPaymentAllocation_execute(tx, change);
+        if (paymentId !== null) paymentMap.set(change.data.invoiceId, paymentId);
       } else if (change.action === 'DELETE') {
-        // Handle deletions
         await this.executeAllocationChange(tx, change);
       }
+      // Return-side allocation changes: none are produced (refunds are not
+      // allocated on a return edit - see getReturnAllocationChanges). The
+      // branch that would have run wrote `return_id`, a column that does not
+      // exist on customer_refund_allocations, and was removed.
     }
 
     // 1. Execute ledger operations and track adjustment entries
@@ -686,8 +636,10 @@ export class CustomerTransactionHandler {
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
     const newPayment = amount - advanceUsed;
     
-    // Determine payment type based on allocation mix
-    const paymentType = (advanceUsed > 0 && newPayment > 0) ? 'MIXED' : 'BILL_SPECIFIC';
+    // The advance portion is allocated from existing payments when executed
+    // (fromAdvance); only new money becomes a payment row, always
+    // BILL_SPECIFIC - a MIXED row made here would survive the bill's deletion
+    // as a phantom advance (SA-28 / L-26).
     
     // Create allocation for advance portion
     if (advanceUsed > 0) {
@@ -699,9 +651,9 @@ export class CustomerTransactionHandler {
           customerId: changes.customerId,
           invoiceId: changes.invoiceId,
           amount: advanceUsed,
+          fromAdvance: true,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: paymentType,
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
           type: changes.docType,
@@ -722,7 +674,6 @@ export class CustomerTransactionHandler {
           amount: newPayment,
           paymentMode: changes.paymentMode,
           paymentDate: changes.paymentDate,
-          paymentType: paymentType,
           fy: changes.fy,
           invoiceNo: changes.invoiceNo,
           type: changes.docType
@@ -788,123 +739,54 @@ export class CustomerTransactionHandler {
   }
   
   /**
-   * Execute a single allocation change
+   * Create what a CREATE PAYMENT change asks for. The advance portion is
+   * allocated from the customer's existing payments (no new row, SA-28); new
+   * money is one BILL_SPECIFIC payment. Returns the new payment's id, if any.
    */
-  private async executeAllocationChange(
-    tx: any,
-    change: AllocationChange
-  ): Promise<void> {
-    if (change.action === 'CREATE') {
-      if (change.type === 'PAYMENT') {
-        // Create payment record
-        const payment = await tx.customer_payments.create({
-          data: {
-            customer_id: change.data.customerId,
-            payment_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-            payment_amount: change.data.amount,
-            payment_mode: change.data.paymentMode || 1,
-            payment_type: change.data.paymentType || 'BILL_SPECIFIC',
-            notes: change.data.notes || `Payment for ${change.data.type} ${change.data.invoiceNo}`,
-            fy: change.data.fy
-          }
-        });
-        
-        // Create allocation record
-        await tx.customer_payment_allocations.create({
-          data: {
-            payment_id: payment.id,
-            invoice_id: change.data.type === 'sale' ? change.data.invoiceId : undefined,
-            invoicex_id: change.data.type === 'salex' ? change.data.invoiceId : undefined,
-            allocated_amount: change.data.amount,
-            allocation_date: change.data.paymentDate || Math.floor(Date.now() / 1000),
-            notes: 'Allocated during sale edit'
-          }
-        });
-      } else if (change.type === 'REFUND') {
-        // Create refund record
-        const refund = await tx.customer_refunds.create({
-          data: {
-            customer_id: change.data.customerId,
-            refund_date: change.data.refundDate || Math.floor(Date.now() / 1000),
-            refund_amount: change.data.amount,
-            refund_mode: change.data.refundMode || 1,
-            refund_type: 'RETURN_SPECIFIC',
-            notes: `Refund for return ${change.data.creditNoteNo}`,
-            fy: change.data.fy
-          }
-        });
-        
-        // Create allocation record
-        await tx.customer_refund_allocations.create({
-          data: {
-            refund_id: refund.id,
-            return_id: change.data.returnId,
-            allocated_amount: change.data.amount,
-            allocation_date: change.data.refundDate || Math.floor(Date.now() / 1000),
-            notes: 'Allocated during return edit'
-          }
-        });
-      }
-    } else if (change.action === 'DELETE') {
-      if (change.type === 'PAYMENT') {
-        // One column or the other - an allocation never has both set, so
-        // requiring both matched nothing and unmarking a bill left its
-        // allocations behind (SA-02).
-        if (change.where.type !== 'sale' && change.where.type !== 'salex') {
-          throw new Error('Payment allocation delete needs a document type');
-        }
-        const allocWhere = change.where.type === 'sale'
-          ? { invoice_id: change.where.invoiceId }
-          : { invoicex_id: change.where.invoiceId };
-        const allocations = await tx.customer_payment_allocations.findMany({
-          where: allocWhere,
-          select: { payment_id: true }
-        });
-        
-        await tx.customer_payment_allocations.deleteMany({
-          where: allocWhere
-        });
-        
-        // Delete customer_payments if no other allocations exist
-        for (const alloc of allocations) {
-          const remainingAllocs = await tx.customer_payment_allocations.count({
-            where: { payment_id: alloc.payment_id }
-          });
-          
-          if (remainingAllocs === 0) {
-            await tx.customer_payments.delete({
-              where: { id: alloc.payment_id }
-            });
-          }
-        }
-      } else if (change.type === 'REFUND') {
-        // Get allocations to delete
-        const allocations = await tx.customer_refund_allocations.findMany({
-          where: { return_id: change.where.returnId },
-          select: { refund_id: true }
-        });
-        
-        // Delete allocations
-        await tx.customer_refund_allocations.deleteMany({
-          where: { return_id: change.where.returnId }
-        });
-        
-        // Delete customer_refunds if no other allocations exist
-        for (const alloc of allocations) {
-          const remainingAllocs = await tx.customer_refund_allocations.count({
-            where: { refund_id: alloc.refund_id }
-          });
-          
-          if (remainingAllocs === 0) {
-            await tx.customer_refunds.delete({
-              where: { id: alloc.refund_id }
-            });
-          }
-        }
-      }
+  private async createPaymentAllocation_execute(tx: any, change: AllocationChange): Promise<number | null> {
+    const t = invoiceTables(change.data.type);
+    const date = change.data.paymentDate || Math.floor(Date.now() / 1000);
+    if (change.data.fromAdvance) {
+      await allocateFromAdvance(tx, 'customer', change.data.customerId, { [t.allocFk]: change.data.invoiceId }, change.data.amount, date,
+        { mode: change.data.paymentMode, fy: change.data.fy });
+      return null;
     }
+    const payment = await tx.customer_payments.create({
+      data: {
+        customer_id: change.data.customerId,
+        payment_date: date,
+        payment_amount: change.data.amount,
+        payment_mode: change.data.paymentMode ?? 1,
+        payment_type: 'BILL_SPECIFIC',
+        notes: change.data.notes || `Payment for ${change.data.type} ${change.data.invoiceNo}`,
+        fy: change.data.fy
+      }
+    });
+    await tx.customer_payment_allocations.create({
+      data: {
+        payment_id: payment.id,
+        [t.allocFk]: change.data.invoiceId,
+        allocated_amount: change.data.amount,
+        allocation_date: date,
+        notes: 'Allocated during sale edit'
+      }
+    });
+    return payment.id;
   }
-  
+
+  /**
+   * DELETE PAYMENT: release the bill's allocations. Only payments this bill
+   * created are deleted; an advance it used stays (it used to be deleted too).
+   */
+  private async executeAllocationChange(tx: any, change: AllocationChange): Promise<void> {
+    if (change.action !== 'DELETE' || change.type !== 'PAYMENT') return;
+    if (change.where.type !== 'sale' && change.where.type !== 'salex') {
+      throw new Error('Payment allocation delete needs a document type');
+    }
+    // One column or the other - an allocation never has both set (SA-02).
+    await releaseAllocations(tx, 'customer', { [invoiceTables(change.where.type).allocFk]: change.where.invoiceId });
+  }
+
   /**
    * Handle sale/salex deletion
    * Returns all operations needed to delete a sale
@@ -931,7 +813,9 @@ export class CustomerTransactionHandler {
     });
     
     // Operation 2: Delete allocations if paid
-    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+    // Always: a bill marked Unpaid can still hold allocations (SA-02 data);
+    // with none, both operations are no-ops.
+    {
       operations.push({
         type: 'DELETE_ALLOCATIONS',
         data: { 
@@ -967,7 +851,9 @@ export class CustomerTransactionHandler {
     });
     
     // Operation 5: Update balance if paid
-    if (params.paymentStatus === 1 || params.paymentStatus === 2) {
+    // Always: a bill marked Unpaid can still hold allocations (SA-02 data);
+    // with none, both operations are no-ops.
+    {
       operations.push({
         type: 'BALANCE_UPDATE',
         data: {
@@ -1309,49 +1195,15 @@ export class CustomerTransactionHandler {
 
   private async executeDeleteAllocations(tx: any, data: any, context: any): Promise<void> {
     if (data.entityType === 'sale' || data.entityType === 'salex') {
-      const allocations = await tx.customer_payment_allocations.findMany({
-        where: { 
-          invoice_id: data.entityType === 'sale' ? data.entityId : undefined,
-          invoicex_id: data.entityType === 'salex' ? data.entityId : undefined
-        },
-        select: { payment_id: true, allocated_amount: true }
-      });
-      
-      const totalPaid = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
-      
-      // Delete allocations
-      await tx.customer_payment_allocations.deleteMany({
-        where: { 
-          invoice_id: data.entityType === 'sale' ? data.entityId : undefined,
-          invoicex_id: data.entityType === 'salex' ? data.entityId : undefined
-        }
-      });
-      
-      const paymentIds = Array.from(new Set(allocations.map(a => a.payment_id)));
-      for (const paymentId of paymentIds) {
-        const remainingAllocs = await tx.customer_payment_allocations.count({
-          where: { payment_id: paymentId }
-        });
-        
-        if (remainingAllocs === 0) {
-          const payment = await tx.customer_payments.findUnique({
-            where: { id: paymentId },
-            select: { payment_type: true, payment_amount: true }
-          });
-          
-          if (payment?.payment_type === 'BILL_SPECIFIC') {
-            await tx.customer_payments.delete({ where: { id: paymentId } });
-          } else if (payment?.payment_type === 'MIXED') {
-            await tx.customer_payments.update({
-              where: { id: paymentId },
-              data: { payment_type: 'DIRECT' }
-            });
-          }
-        }
-      }
-      
-      data.totalPaid = totalPaid;
-      context.totalPaid = totalPaid;
+      // Payments made with this bill go with it, and total_paid comes down by
+      // them; an advance it used is only deallocated (L-26, ported from the
+      // vendor side - the customer side left a phantom advance).
+      const { deallocated, paymentsRemoved } = await releaseAllocations(
+        tx, 'customer', { [invoiceTables(data.entityType).allocFk]: data.entityId }
+      );
+      data.totalPaid = deallocated;
+      context.totalPaid = deallocated;
+      context.paymentsRemoved = paymentsRemoved;
       
     } else if (data.entityType === 'return') {
       const allocations = await tx.customer_refund_allocations.findMany({
@@ -1636,17 +1488,23 @@ export class CustomerTransactionHandler {
       
     } else if (context.totalPaid !== undefined) {
       // Sale deletion - use context.totalPaid shared from DELETE_ALLOCATIONS
+      const paymentsRemoved = Number(context.paymentsRemoved || 0);
+      // Nothing was allocated (an unpaid bill): nothing to move.
+      if (!Number(context.totalPaid) && !paymentsRemoved) return;
       await customerBalanceHandler.incrementBalanceInTransaction(
         tx, 
         data.customerId, 
         {
-          total_allocated: -context.totalPaid
+          total_allocated: -context.totalPaid,
+          ...(paymentsRemoved > 0 ? { total_paid: -paymentsRemoved } : {})
         },
         {
           type: 'sale_delete',
           id: data.invoiceId || 0,
           reference_no: `INV-${data.invoiceNo || '?'}`,
-          notes: `Sale deleted: deallocated ₹${context.totalPaid}`
+          notes: paymentsRemoved > 0
+            ? `Sale deleted: deallocated ₹${context.totalPaid}, removed ₹${paymentsRemoved} of payments made with it`
+            : `Sale deleted: deallocated ₹${context.totalPaid} (advance payments left intact)`
         }
       );
       
