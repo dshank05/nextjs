@@ -8,7 +8,8 @@ import { customerLedgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDe
 import { customerBalanceHandler, BalanceOperation } from './customer-balance-handler';
 import { customerLedgerService } from './customer-ledger-service';
 import { saleTables } from './sale';
-import { allocateFromAdvance, releaseAllocations } from './advance-allocation';
+import { allocateFromAdvance, releaseAllocations, returnCounterAmounts } from './advance-allocation';
+import { recalculateSaleStatus, recalculateSaleReturnRefundStatus } from './payment-allocation-service';
 
 export interface AllocationChange {
   action: 'CREATE' | 'DELETE';
@@ -885,6 +886,8 @@ export class CustomerTransactionHandler {
     totalAmount?: number;
     totalTax?: number;
     creditNoteNo?: string;
+    /** The return's refund amount: the fallback for a completion with no log rows. */
+    refundAmount?: number;
   }): Promise<DeleteResult> {
     const operations: DeleteOperation[] = [];
     
@@ -905,6 +908,7 @@ export class CustomerTransactionHandler {
         data: { 
           entityType: 'return',
           entityId: params.returnId,
+          returnType: params.type,
           paymentStatus: params.paymentStatus
         },
         parallel: false
@@ -941,7 +945,16 @@ export class CustomerTransactionHandler {
         data: {
           customerId: params.customerId,
           paymentStatus: params.paymentStatus,
-          returnId: params.returnId
+          returnId: params.returnId,
+          returnType: params.type,
+          // The note numbers the completion was logged under (create path and
+          // edit path spell them differently).
+          references: [
+            `${params.type === 'sale' ? 'SR' : 'SXR'}-${params.returnId}`,
+            `${params.type === 'sale' ? 'SR' : 'SXR'}-${String(params.returnId).padStart(3, '0')}`,
+            ...(params.creditNoteNo ? [params.creditNoteNo] : [])
+          ],
+          returnRefundAmount: params.refundAmount ?? 0
         },
         parallel: false
       });
@@ -1206,30 +1219,23 @@ export class CustomerTransactionHandler {
       context.paymentsRemoved = paymentsRemoved;
       
     } else if (data.entityType === 'return') {
+      // The column is sale_return_id or salex_return_id; `return_id` does not
+      // exist, so deleting a completed customer return threw here.
+      const fk = data.returnType === 'salex' ? 'salex_return_id' : 'sale_return_id';
       const allocations = await tx.customer_refund_allocations.findMany({
-        where: { return_id: data.entityId },
+        where: { [fk]: data.entityId },
         select: { refund_id: true, allocated_amount: true }
       });
-      
-      const totalRefunded = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
-      
-      // Delete allocations
-      await tx.customer_refund_allocations.deleteMany({
-        where: { return_id: data.entityId }
-      });
-      
-      // Delete customer_refunds records (they were auto-created with return)
-      const refundIds = Array.from(new Set(allocations.map(a => a.refund_id)));
+      const totalRefunded = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0);
+      await tx.customer_refund_allocations.deleteMany({ where: { [fk]: data.entityId } });
+      // Only refunds made FOR this return go with it; a direct refund keeps
+      // standing and is only deallocated.
+      const refundIds: number[] = Array.from(new Set(allocations.map((a: any) => a.refund_id as number)));
       for (const refundId of refundIds) {
-        const remainingAllocs = await tx.customer_refund_allocations.count({
-          where: { refund_id: refundId }
-        });
-        
-        if (remainingAllocs === 0) {
-          await tx.customer_refunds.delete({ where: { id: refundId } });
-        }
+        if ((await tx.customer_refund_allocations.count({ where: { refund_id: refundId } })) > 0) continue;
+        const refund = await tx.customer_refunds.findUnique({ where: { id: refundId }, select: { refund_type: true } });
+        if (refund?.refund_type === 'RETURN_SPECIFIC') await tx.customer_refunds.delete({ where: { id: refundId } });
       }
-      
       data.totalRefunded = totalRefunded;
       context.totalRefunded = totalRefunded;
       
@@ -1240,6 +1246,9 @@ export class CustomerTransactionHandler {
         select: { invoice_id: true, invoicex_id: true, allocated_amount: true }
       });
       const invoiceIds = allocations.map(a => a.invoice_id || a.invoicex_id).filter(Boolean);
+      context.allocatedBills = allocations.map((a: any) => a.invoice_id
+        ? { type: 'sale' as const, id: a.invoice_id }
+        : { type: 'salex' as const, id: a.invoicex_id }).filter((b: any) => b.id);
       const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
       data.allocatedInvoiceIds = invoiceIds;
@@ -1252,11 +1261,15 @@ export class CustomerTransactionHandler {
       
     } else if (data.entityType === 'refund') {
       // Store allocated return IDs AND amounts before deletion
+      // sale_return_id / salex_return_id - there is no `return_id` column here.
       const allocations = await tx.customer_refund_allocations.findMany({
         where: { refund_id: data.entityId },
-        select: { return_id: true, allocated_amount: true }
+        select: { sale_return_id: true, salex_return_id: true, allocated_amount: true }
       });
-      const returnIds = allocations.map(a => a.return_id);
+      const returnIds = allocations.map((a: any) => a.sale_return_id || a.salex_return_id).filter(Boolean);
+      context.allocatedReturns = allocations.map((a: any) => a.sale_return_id
+        ? { type: 'sale' as const, id: a.sale_return_id }
+        : { type: 'salex' as const, id: a.salex_return_id }).filter((r: any) => r.id);
       const totalAllocated = allocations.reduce((sum, a) => sum + Number(a.allocated_amount), 0);
       
       data.allocatedReturnIds = returnIds;
@@ -1339,25 +1352,14 @@ export class CustomerTransactionHandler {
   private async executeRecalculateStatus(tx: any, data: any, context: any): Promise<void> {
     if (data.entityType === 'payment') {
       // Use invoice IDs from shared context (already captured before deletion)
-      const invoiceIds = context.allocatedInvoiceIds || [];
-      
-      // Recalculate in parallel
-      await Promise.all(
-        invoiceIds.map(invoiceId => 
-          require('./payment-allocation-service').recalculateInvoiceStatus(invoiceId, tx)
-        )
-      );
+      // Each with its own table: sale and salex ids overlap.
+      const bills: Array<{ type: 'sale' | 'salex'; id: number }> = context.allocatedBills || [];
+      for (const b of bills) await recalculateSaleStatus(b.type, b.id, tx);
       
     } else if (data.entityType === 'refund') {
       // Use return IDs from shared context (already captured before deletion)
-      const returnIds = context.allocatedReturnIds || [];
-      
-      // Recalculate in parallel
-      await Promise.all(
-        returnIds.map(returnId => 
-          require('./payment-allocation-service').recalculateSaleReturnStatus(returnId, tx)
-        )
-      );
+      const returns: Array<{ type: 'sale' | 'salex'; id: number }> = context.allocatedReturns || [];
+      for (const r of returns) await recalculateSaleReturnRefundStatus(r.type, r.id, tx);
     }
   }
 
@@ -1508,21 +1510,22 @@ export class CustomerTransactionHandler {
         }
       );
       
-    } else if (context.totalRefunded !== undefined) {
-      // Return deletion - use context.totalRefunded shared from DELETE_ALLOCATIONS
-      await customerBalanceHandler.incrementBalanceInTransaction(
-        tx, 
-        data.customerId, 
-        {
-          total_refund_allocated: -context.totalRefunded
-        },
-        {
+    } else if (data.returnId !== undefined) {
+      // Return deletion: take back what completing it added, plus any refund
+      // allocated to it from the refund screen.
+      const done = await returnCounterAmounts(tx, 'customer', data.customerId, data.references || [], Number(data.returnRefundAmount) || 0);
+      const deallocated = Number(context.totalRefunded || 0);
+      const update: any = {};
+      if (done.refunded) update.total_refunded = -done.refunded;
+      if (done.allocated + deallocated) update.total_refund_allocated = -(done.allocated + deallocated);
+      if (Object.keys(update).length) {
+        await customerBalanceHandler.incrementBalanceInTransaction(tx, data.customerId, update, {
           type: 'return_delete',
           id: data.returnId || 0,
-          reference_no: `CN-${data.returnId || '?'}`,
-          notes: `Return deleted: deallocated ₹${context.totalRefunded}`
-        }
-      );
+          reference_no: (data.references || [])[1] || `CN-${data.returnId}`,
+          notes: `Return deleted: refund counters reversed`
+        });
+      }
     }
   }
 }

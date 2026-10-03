@@ -257,6 +257,24 @@ export async function recalculatePurchaseReturnStatus(
 }
 
 /**
+ * Recalculate and store a sale's or Invoice C's payment_status from its
+ * allocations. The customer handler called `recalculateInvoiceStatus`, which
+ * did not exist, so deleting a customer payment threw before it finished.
+ */
+export async function recalculateSaleStatus(type: 'sale' | 'salex', invoiceId: number, tx: any): Promise<void> {
+  const status = await calculatePaymentStatus(invoiceId, type, tx);
+  const table = type === 'sale' ? tx.invoice : tx.invoicex;
+  await table.update({ where: { id: invoiceId }, data: { payment_status: status } });
+}
+
+/** The same for a sale / salex return's refund status (`recalculateSaleReturnStatus` did not exist). */
+export async function recalculateSaleReturnRefundStatus(type: 'sale' | 'salex', returnId: number, tx: any): Promise<void> {
+  const status = await calculateRefundStatus(returnId, type, tx);
+  const table = type === 'sale' ? tx.sale_returns : tx.salex_returns;
+  await table.update({ where: { id: returnId }, data: { payment_status: status } });
+}
+
+/**
  * Validate refund allocation (supports both customer and vendor returns)
  */
 export async function validateRefundAllocation(

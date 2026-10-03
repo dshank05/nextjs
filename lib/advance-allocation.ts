@@ -139,3 +139,39 @@ export async function paidWithBill(tx: any, party: Party, where: Record<string, 
   const own = new Set(billPayments.map((p: any) => p.id));
   return round2(allocations.filter((a: any) => own.has(a.payment_id)).reduce((s: number, a: any) => s + Number(a.allocated_amount), 0));
 }
+
+const LOGS = {
+  vendor: { table: 'vendor_balance_logs', partyFk: 'vendor_id' },
+  customer: { table: 'customer_balance_logs', partyFk: 'customer_id' }
+} as const;
+
+/**
+ * What a completed return added to the party's refund counters, so deleting
+ * the return can take exactly that back off.
+ *
+ * Completing a return raises total_refunded and total_refund_allocated with no
+ * refund row behind it; deleting it only reversed refund ALLOCATIONS (none),
+ * so both counters stayed up forever (both sides). The amounts come from the
+ * balance log rows written under the return's note number; a return older
+ * than the logs falls back to its refund amount on both columns.
+ */
+export async function returnCounterAmounts(
+  tx: any,
+  party: Party,
+  partyId: number,
+  references: string[],
+  fallback: number
+): Promise<{ refunded: number; allocated: number }> {
+  const l = LOGS[party];
+  const refs = references.filter(Boolean);
+  const rows = refs.length
+    ? await tx[l.table].findMany({
+        where: { [l.partyFk]: partyId, reference_no: { in: refs }, column_name: { in: ['total_refunded', 'total_refund_allocated'] } },
+        select: { column_name: true, change_amount: true, source_type: true }
+      })
+    : [];
+  const live = rows.filter((r: any) => r.source_type !== 'return_delete');
+  if (!live.length) return { refunded: round2(fallback), allocated: round2(fallback) };
+  const sum = (c: string) => round2(live.filter((r: any) => r.column_name === c).reduce((s: number, r: any) => s + Number(r.change_amount), 0));
+  return { refunded: sum('total_refunded'), allocated: sum('total_refund_allocated') };
+}

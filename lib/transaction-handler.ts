@@ -5,7 +5,7 @@
  */
 
 import { ledgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDeleteOperation, ChangeSet } from './ledger-handler';
-import { allocateFromAdvance, releaseAllocations } from './advance-allocation';
+import { allocateFromAdvance, releaseAllocations, returnCounterAmounts } from './advance-allocation';
 import { balanceHandler, BalanceOperation } from './balance-handler';
 import { ledgerService } from './ledger-service';
 
@@ -1011,6 +1011,10 @@ export class TransactionHandler {
     returnId: number;
     vendorId: number;
     paymentStatus: number;
+    /** The note number the completion was logged under. */
+    debitNoteNo?: string | null;
+    /** Fallback for a completion with no balance-log rows. */
+    refundAmount?: number;
   }): Promise<DeleteResult> {
     const operations: DeleteOperation[] = [];
     
@@ -1064,7 +1068,9 @@ export class TransactionHandler {
         data: {
           vendorId: params.vendorId,
           paymentStatus: params.paymentStatus,
-          returnId: params.returnId  // ✅ FIX: Add returnId
+          returnId: params.returnId,
+          references: params.debitNoteNo ? [params.debitNoteNo] : [],
+          returnRefundAmount: params.refundAmount ?? 0
         },
         parallel: false
       });
@@ -1344,8 +1350,11 @@ export class TransactionHandler {
           where: { refund_id: refundId }
         });
         
+        // Only a refund made FOR this return goes with it; a direct refund
+        // keeps standing and is only deallocated.
         if (remainingAllocs === 0) {
-          await tx.vendor_refunds.delete({ where: { id: refundId } });
+          const refund = await tx.vendor_refunds.findUnique({ where: { id: refundId }, select: { refund_type: true } });
+          if (refund?.refund_type === 'RETURN_SPECIFIC') await tx.vendor_refunds.delete({ where: { id: refundId } });
         }
       }
       
@@ -1642,21 +1651,24 @@ export class TransactionHandler {
         }
       );
       
-    } else if (context.totalRefunded !== undefined) {
-      // ✅ Return deletion - use context.totalRefunded shared from DELETE_ALLOCATIONS
-      await balanceHandler.incrementBalanceInTransaction(
-        tx, 
-        data.vendorId, 
-        {
-          total_refund_allocated: -context.totalRefunded
-        },
-        {
+    } else if (data.returnId !== undefined) {
+      // Return deletion: take back what completing it added (total_refunded
+      // and total_refund_allocated, with no refund row behind them - they used
+      // to stay up forever), plus any refund allocated to it. Customer twin
+      // is the same (lib/advance-allocation.ts returnCounterAmounts).
+      const done = await returnCounterAmounts(tx, 'vendor', data.vendorId, data.references || [], Number(data.returnRefundAmount) || 0);
+      const deallocated = Number(context.totalRefunded || 0);
+      const update: any = {};
+      if (done.refunded) update.total_refunded = -done.refunded;
+      if (done.allocated + deallocated) update.total_refund_allocated = -(done.allocated + deallocated);
+      if (Object.keys(update).length) {
+        await balanceHandler.incrementBalanceInTransaction(tx, data.vendorId, update, {
           type: 'return_delete',
-          id: data.returnId || 0,  // ✅ FIX: Use data.returnId instead of context
-          reference_no: `DN-${data.returnId || '?'}`,
-          notes: `Return deleted: deallocated ₹${context.totalRefunded}`
-        }
-      );
+          id: data.returnId || 0,
+          reference_no: (data.references || [])[0] || `DN-${data.returnId}`,
+          notes: 'Return deleted: refund counters reversed'
+        });
+      }
     }
   }
 }

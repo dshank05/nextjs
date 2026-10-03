@@ -764,7 +764,9 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       where: { id: returnId },
       select: {
         vendor_id: true,
-        payment_status: true
+        payment_status: true,
+        debit_note_no: true,
+        refund_amount: true
       }
     })
 
@@ -776,7 +778,9 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
     const deleteOps = await transactionHandler.handleReturnDelete({
       returnId,
       vendorId: returnRecord.vendor_id,
-      paymentStatus: returnRecord.payment_status
+      paymentStatus: returnRecord.payment_status,
+      debitNoteNo: returnRecord.debit_note_no,
+      refundAmount: Number(returnRecord.refund_amount) || 0
     })
 
     // Execute in transaction
