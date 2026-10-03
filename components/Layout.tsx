@@ -8,6 +8,15 @@ import SidebarItem from './Sidebar'; // Ensure this import path is correct
 export interface Subpage {
   name: string;
   href: string;
+  /** Other screens of the same section (create / edit pages outside href/...). */
+  also?: string[];
+}
+
+const under = (pathname: string, base: string) => pathname === base || pathname.startsWith(base + '/');
+
+/** The section's list, view, create and edit screens all light up its entry. */
+export function subpageMatches(sub: Subpage, pathname: string) {
+  return under(pathname, sub.href) || (sub.also || []).some(a => under(pathname, a));
 }
 
 export interface NavigationItem {
@@ -72,13 +81,13 @@ const Layout = ({ children }: LayoutProps) => {
       name: 'ENTRY',
       icon: '📝',
       subpages: [
-        { name: 'SALE RETURN', href: '/entry/salereturn' },
-        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor' },
+        { name: 'SALE RETURN', href: '/entry/salereturn', also: ['/entry/salereturn-create'] },
+        { name: 'PURCHASE RETURN', href: '/entry/purchasereturn-vendor', also: ['/entry/purchasereturn-vendor-create'] },
         { name: 'CUSTOMER TRANSACTION', href: '/customer-transactions' },
-        { name: 'VENDOR TRANSACTION', href: '/vendor-transactions' },
+        { name: 'VENDOR TRANSACTION', href: '/vendor-transactions', also: ['/entry/vendor-transaction'] },
         { name: 'DEAD STOCK', href: '/entry/deadstock' },
-        { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails' },
-        { name: 'VENDOR DETAILS', href: '/entry/vendordetails' },
+        { name: 'CUSTOMER DETAILS', href: '/entry/customerdetails', also: ['/customers'] },
+        { name: 'VENDOR DETAILS', href: '/entry/vendordetails', also: ['/vendors'] },
       ],
     },
     {
@@ -142,7 +151,7 @@ const Layout = ({ children }: LayoutProps) => {
   useEffect(() => {
     // Find the parent item whose subpages match the current URL
     const activeParent = navigation.find(item =>
-      item.subpages?.some(sub => router.pathname.startsWith(sub.href))
+      item.subpages?.some(sub => subpageMatches(sub, router.pathname))
     );
 
     if (activeParent) {
@@ -162,10 +171,13 @@ const Layout = ({ children }: LayoutProps) => {
 
 
   const isActive = (href?: string, subpages?: Subpage[]) => {
-    if (subpages?.some(sub => router.pathname == sub.href)) {
-      return true;
-    }
-    return href ? router.pathname == href : false;
+    if (subpages) return subpages.some(sub => subpageMatches(sub, router.pathname));
+    if (!href) return false;
+    if (router.pathname === href) return true;
+    // /purchases/create and /purchases/view/1 belong to PURCHASE - unless a
+    // menu entry claims the screen (/products/category is under SETTINGS).
+    return href !== '/' && router.pathname.startsWith(href + '/') &&
+      !navigation.some(item => item.subpages?.some(sub => subpageMatches(sub, router.pathname)));
   };
 
   const getPageTitle = () => {

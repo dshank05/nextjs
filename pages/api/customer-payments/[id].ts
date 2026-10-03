@@ -45,7 +45,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, paymentId: s
           }
         },
         customer: {
-          select: { id: true, billing_name: true }
+          select: { id: true, billing_name: true, contact_no: true, email: true }
         }
       }
     })
@@ -96,7 +96,9 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, paymentId: s
       id: payment.id,
       customer: {
         id: payment.customer_id,
-        name: payment.customer?.billing_name || 'Unknown Customer'
+        name: payment.customer?.billing_name || 'Unknown Customer',
+        contact: payment.customer?.contact_no ?? null,
+        email: payment.customer?.email ?? null
       },
       payment_date: payment.payment_date,
       formattedDate: formattedDate,

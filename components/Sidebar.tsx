@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ChevronDown } from 'lucide-react';
 import { useRouter } from 'next/router'; // Keep for isActive logic on sub-items
-import { NavigationItem, Subpage } from './Layout'; // Import types from Layout
+import { NavigationItem, Subpage, subpageMatches } from './Layout'; // Import types from Layout
 
 // Define the component's props
 interface SidebarItemProps {
@@ -52,7 +52,7 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
               {(
                 // Show only active submenu
                 item.subpages
-                  .filter(subpage => router.pathname === subpage.href)
+                  .filter(subpage => subpageMatches(subpage, router.pathname))
                   .map((subpage) => (
                     <div key={subpage.name} className="text-xs text-blue-400 font-medium">
                       ● {subpage.name}
@@ -69,7 +69,7 @@ const SidebarItem = ({ item, sidebarOpen, isOpen, toggleMenu, isActive, onMenuCl
               <Link
                 key={subpage.name}
                 href={subpage.href}
-                className={`flex items-center px-3 py-3 text-sm font-medium transition-colors duration-200 rounded-md mx-2 my-1 ${router.pathname === subpage.href
+                className={`flex items-center px-3 py-3 text-sm font-medium transition-colors duration-200 rounded-md mx-2 my-1 ${subpageMatches(subpage, router.pathname)
                     ? 'text-white bg-slate-700' // Active sub-item style
                     : 'text-slate-400 hover:bg-slate-700 hover:text-white'
                   }`}

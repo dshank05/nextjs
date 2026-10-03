@@ -1,6 +1,6 @@
 # Rewrite plan — transactions, returns, unvisited sections
 
-Status: **plan, awaiting go-ahead** (2026-10-03). Same method as the sale / purchase rewrite:
+Status: **in progress** (2026-10-03) — T1–T4 done (see the table at the end). Same method as the sale / purchase rewrite:
 one shared implementation for the customer and vendor twins, thin page and route files,
 behaviour unchanged unless a bug is named, every existing test suite passing after each
 step, one commit per step with line counts before and after.
@@ -18,6 +18,27 @@ step, one commit per step with line counts before and after.
   refunded by marking it complete.
 - Each step: type-check, `next build`, all server suites (out … out-tx, rpt, stock), page
   suites (test3–test7) and a new page suite for the step.
+
+## Database changes still to run
+
+Each section is checked against the database as it is **now**, not only after the
+pending scripts. `node scripts/migration-status.js` (read only) prints which have run.
+As of 2026-10-03 the generated Prisma client on the owner's machine has P4-11
+(`purchase_items.purchase_id`) and not SA-16.
+
+| Script | What depends on it | If not run yet |
+|---|---|---|
+| `migrate-p4-11.js` + `prisma generate` | purchases, purchase returns, stock / GST / profit reports (`purchase_items.purchase_id`, `bill_to.purchase_id`) | those screens fail — must be run |
+| `repair-sale-data.js --apply` | old sale `fy` values, customer ledger rows written in the wrong column | screens work; old bills can show the wrong year and the ledger balance is off until repaired |
+| `migrate-sa-16.js` + `prisma generate` | unique sale number per year, sale lines tied to their bill | screens work; no code uses the new relations or the unique key, so two saves at once could still take the same number |
+
+## Every section: four entry points
+
+For each section the sidebar entry, the list, the view and the create / edit screen are
+checked together. The sidebar now lights up the section on all four (it matched only the
+list URL; `/entry/vendor-transaction`, `/entry/salereturn-create`,
+`/entry/purchasereturn-vendor-create`, `/customers/...`, `/vendors/...`,
+`/purchases/view/...` were unlit or closed the menu).
 
 ## Size today
 
@@ -118,3 +139,9 @@ Expected: ~3,600 screen lines → ~1,400; purchase-return routes ~2,000 → ~800
   a page test that drives create and edit end to end before the old file is deleted.
 - **Not testable here:** the real MySQL server and the look of the pages. The owner's own
   click-through after each step is the final check.
+
+## Progress
+
+| Step | Commit | Lines before → after | Checked by |
+|---|---|---|---|
+| T1–T4 transactions: hooks, list, view, form | (this commit) | 6 pages 3,847 + hooks ~730 + types 251 = 4,825 → 1,359 (pages are 5–6 lines each) | tsc, `next build`, 17 server suites, test3–7, new test8 (43 checks: list, view, create, edit, refund, both parties, real API handlers) |
