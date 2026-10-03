@@ -1,6 +1,7 @@
 /**
- * Reconciliation assertions (Phase 4; A7-A10 added 2026-10-03 for the
- * customer side, sale payments, returns and payments / refunds).
+ * Reconciliation assertions (Phase 4; A7-A11 added 2026-10-03 for the
+ * customer side, sale payments, returns, payments / refunds, dead stock and
+ * the party masters).
  *
  * Run after EVERY step. These are the definition of "the step was clean".
  * Read-only: this script never writes.
@@ -462,8 +463,57 @@ async function A10() {
   report('A10', 'payments and refunds: allocations fit the amount and the type, same party, no orphans', failures, checked);
 }
 
+/* ------------------------------------------------------------------ A11 */
+/**
+ * Dead stock and the party masters:
+ *  - every dead stock entry is a positive whole number of units of a product
+ *    that exists, with a reason (fractions predate the whole-unit rule and are
+ *    listed so they can be looked at);
+ *  - customer / vendor status is Active or Inactive;
+ *  - no bill, return, payment, refund or ledger row points at a customer or
+ *    vendor that no longer exists (0 is the "Other" party and is skipped).
+ */
+async function A11() {
+  const q = (sql) => prisma.$queryRawUnsafe(sql);
+  const failures = [];
+  let checked = 0;
+  const dead = await q(`SELECT d.id, d.product_id, d.quantity, d.reason, p.id AS pid FROM deadstock d LEFT JOIN product p ON p.id = d.product_id`);
+  for (const d of dead) {
+    checked++;
+    const n = num(d.quantity);
+    if (!(n > 0)) failures.push(`dead stock ${d.id}: quantity ${n}`);
+    else if (!Number.isInteger(n)) failures.push(`dead stock ${d.id}: ${n} is not a whole number of units`);
+    if (d.pid === null || d.pid === undefined) failures.push(`dead stock ${d.id}: product ${d.product_id} does not exist`);
+    if (!String(d.reason || '').trim()) failures.push(`dead stock ${d.id}: no reason`);
+  }
+  for (const t of ['customer_details', 'vendor_details']) {
+    const rows = await q(`SELECT id, status FROM ${t}`);
+    for (const r of rows) {
+      checked++;
+      if (r.status !== 'Active' && r.status !== 'Inactive') failures.push(`${t} ${r.id}: status "${r.status}"`);
+    }
+  }
+  const refs = [
+    ['invoice', 'select_customer', 'customer_details', 'sale'],
+    ['invoicex', 'select_customer', 'customer_details', 'Invoice C bill'],
+    ['customer_payments', 'customer_id', 'customer_details', 'customer payment'],
+    ['customer_refunds', 'customer_id', 'customer_details', 'customer refund'],
+    ['customer_ledger', 'customer_id', 'customer_details', 'customer ledger row'],
+    ['purchase', 'vendor_id', 'vendor_details', 'purchase'],
+    ['purchase_returns', 'vendor_id', 'vendor_details', 'purchase return'],
+    ['vendor_payments', 'vendor_id', 'vendor_details', 'vendor payment'],
+    ['vendor_refunds', 'vendor_id', 'vendor_details', 'vendor refund'],
+    ['vendor_ledger', 'vendor_id', 'vendor_details', 'vendor ledger row']
+  ];
+  for (const [table, col, owner, label] of refs) {
+    const rows = await q(`SELECT x.id, x.${col} AS party FROM ${table} x WHERE x.${col} IS NOT NULL AND x.${col} <> 0 AND NOT EXISTS (SELECT 1 FROM ${owner} o WHERE o.id = x.${col})`);
+    for (const r of rows) failures.push(`${label} ${r.id}: party ${r.party} does not exist`);
+  }
+  report('A11', 'dead stock entries valid; status words; nothing points at a missing customer or vendor', failures, checked);
+}
+
 /* ------------------------------------------------------------------ run */
-const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10 };
+const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 };
 
 (async () => {
   const want = process.argv.slice(2).filter((a) => ALL[a]);

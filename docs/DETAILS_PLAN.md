@@ -1,6 +1,6 @@
 # Customer / vendor details and dead stock — plan
 
-Status: **in progress** (2026-10-03). Owner away ("do dead stock and details screen");
+Status: **done** (2026-10-03). Owner away ("do dead stock and details screen");
 where the twins differ I chose, and every choice is in section 4 to overrule. Every screen
 below was read in full first, with its API routes and hooks.
 
@@ -99,3 +99,29 @@ Routes become thin; response shapes stay (`{customers|vendors, pagination}`, str
 D1 server (lib + routes) → D2 hooks → D3 list / view / form for parties → D4 dead stock →
 D5 tests: server suite `out-party`, page suite test10, `audit-assert` A11 (dead stock
 sanity) → docs, line counts, commit per step.
+
+## 6. Progress
+
+| Step | Commit | Lines |
+|---|---|---|
+| D1 server: `lib/party-details.ts`, `lib/deadstock.ts`, thin routes | 5da3df1 | +531 −1,324 |
+| D2–D3 customer / vendor: `hooks/useParties.ts`, `components/parties/*`, six thin pages | 65a2c7a | +721 −2,895 |
+| D4 dead stock: `hooks/useDeadstock.ts`, `components/deadstock/*`, thin page | 02a794c | +363 −763 |
+| D5 `audit-assert` A11, this note | (this commit) | |
+
+Customer / vendor details and dead stock together: 4,982 lines removed, 1,615 added.
+
+Bugs 1–16 above are all fixed. Checks run:
+- `tsc --noEmit` clean; `next build` passes.
+- Server suite `out-party` (22 checks) and every earlier server suite pass.
+- Page test test10 (58 checks): customer and vendor lists (server sort, S.No across pages,
+  State column), views (outstanding, Ledger / Transactions links, status change shown),
+  create / edit (first failed save lists its errors, Phone 2 saved, copy-from-billing,
+  inactive vendor stays inactive on edit, server refusal closes the confirm), dead stock
+  (fraction refused, stock checks, summary, add / edit / delete move stock).
+  Page tests 3–9 still pass (3 and 5 need `TZ=Asia/Kolkata`, as before).
+- `audit-assert` A11 (read-only): dead stock entries are positive whole units of an
+  existing product with a reason; customer / vendor status is Active or Inactive; no bill,
+  return, payment, refund or ledger row points at a missing customer or vendor. Checked
+  against seeded good and broken data. Dead stock entered as a fraction before the
+  whole-unit rule will be listed by A11 — those are for a look, nothing is changed.
