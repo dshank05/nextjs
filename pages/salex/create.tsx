@@ -1,6 +1,6 @@
-import { SaleForm } from '../../components/bills/SaleForm';
+import { BillForm } from '../../components/bills/BillForm'
 
-/** Create (and, with ?edit=id, edit) an Invoice C. The form is components/bills/SaleForm.tsx, shared with sale. */
+/** Create / edit (?edit=id) an Invoice C (components/bills/BillForm.tsx, shared with Purchase and Sale). */
 export default function SalexCreate() {
-  return <SaleForm kind="salex" />;
+  return <BillForm kind="salex" />
 }
