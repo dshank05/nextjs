@@ -1,6 +1,6 @@
 # Settings and Dashboard — test plan and fixes
 
-Status: **plan** (2026-10-03). Owner asked to start the test phase with the Settings screens and
+Status: **S1–S3 done** (2026-10-03). Owner asked to start the test phase with the Settings screens and
 the Dashboard ("CRUD tests"). Every screen below was read in full with its API routes and libs;
 the per-screen inventories (exact UI strings, request / response shapes, seed fields, ~150
 candidate checks) are in `docs/settings/inventory-{A,B,C}.md`. The headline findings were
@@ -76,12 +76,14 @@ Lists share `hooks/useListQuery` (search 300 ms, server sort, paging, export, UR
 
 | # | Question | Today | Recommended |
 |---|---|---|---|
-| D1 | Users: may someone deactivate their own login, or the last active user? | Allowed (no check) | Refuse both |
-| D2 | Financial year: allow creating a **past** year (back-entry)? | Refused, with a "Cannot create future financial year" message | Allow past years that don't overlap; the message was wrong either way |
-| D3 | GST form labels: the box labelled "Applicable" is the required `description`; the one labelled "Description" is `applicable_for` | Swapped, required one unmarked | Label them by what they store: "Description *" and "Applicable For" |
-| D4 | Renaming a state that customers / bills use (they store the name) | Allowed; breaks the link and lets the state be deleted | Refuse while in use, like delete |
+| D1 | Users: may someone deactivate their own login, or the last active user? | Allowed (no check) | **Refuse both** |
+| D2 | Financial year: allow creating a **past** year (back-entry)? | Refused, with a "Cannot create future financial year" message | **Allow** past years that don't overlap |
+| D3 | GST form labels (the box labelled "Applicable" is the required `description`) | Swapped, required one unmarked | **Relabel**: "Description *" and "Applicable For" |
+| D4 | Renaming a state that customers / bills use | Allowed; breaks the link, lets it be deleted | **Refuse** while in use |
 
-Defaults I'll take unless overruled: Low Stock counts active products only (17); GST rate box
+(Owner answers, 2026-10-03.)
+
+Defaults taken: Low Stock counts active products only (17); GST rate box
 steps by 0.01 (8); bank server messages name "Account name" (16).
 
 ## 4. Order and checks
@@ -98,3 +100,25 @@ Each test: list loads and shows seeded rows, search, sort (URL keeps it), empty 
 (validation message, confirm, saved row, success message, list refreshed), edit (saved, status
 kept), activate / deactivate or delete, one server refusal shown. Server suites, tsc and
 `next build` after each step; commit per step.
+
+## 5. Progress
+
+| Step | Commit | What |
+|---|---|---|
+| S1 server | 60cd88f | pagination floor, `fail()`, validation parity, trims, status checks, state in-use check (vendors by name), FY past years and last day, user deactivation guard (`lib/user-guard.ts`), business GSTIN / email, bank messages, active-only low stock (dashboard and minimum-stock report) |
+| S2 pages | 02ee1f0 | sort kept in the URL on all 15 `useListQuery` lists, GST labels / step / no stale status, FY overlap check, states form kept on refusal, success messages, racks warehouse check, warehouse load error, business required fields and email |
+| fix | 6d263c1 | bill edit form reads a purchase's `bill_to` snapshot first (found by page test 3) |
+| S3 tests | (harness) | test12 lookups, mechanics, staff, GST, states (61 checks); test13 financial year, users, warehouse, racks (36); test14 business, bank, dashboard (26) |
+
+Found while fixing, beyond section 2: the state delete guard looked for vendors by the state's
+**id**, which vendors never store (they store the name), so a state used only by vendors could
+be deleted.
+
+Checks run: `tsc` clean and `next build` passes; every server suite and page tests 3–14 pass.
+The in-memory store used by the tests now applies `contains` / `startsWith` / `endsWith`
+(case-insensitive, as MySQL), relation filters and relation sorts, and `not` beside a range;
+it used to ignore them, so earlier tests passed over filters they never exercised. Older tests
+adjusted for deliberate changes: test4 (shared list wording), test7 (low stock needs an active
+product), test3 (the extra "Select a vendor first" line is gone), listcheck (`billListParams`).
+
+Not done: the page tests live in the harness beside the repo, not in the repo.
