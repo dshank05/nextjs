@@ -117,8 +117,13 @@ export default function FinancialYear() {
     }
     const { startDate, endDate } = checked.value;
 
-    const parseDate = (dateString: string): Date => {
-      const [year, month, day] = dateString.split('-').map(Number);
+    // The API returns ISO timestamps ("2026-04-01T00:00:00.000Z": a DATE column
+    // read back as UTC midnight). Splitting that on "-" gave a NaN day, so every
+    // comparison below was false and this check never ran. The date part is the
+    // stored day.
+    const parseDate = (value: Date | string): Date => {
+      const text = value instanceof Date ? value.toISOString() : String(value);
+      const [year, month, day] = text.slice(0, 10).split('-').map(Number);
       return new Date(year, month - 1, day);
     };
 
@@ -126,8 +131,8 @@ export default function FinancialYear() {
     const hasOverlap = financialYears.some(fy => {
       if (!fy.start_date || !fy.end_date) return false;
 
-      const existingStart = parseDate(fy.start_date as string);
-      const existingEnd = parseDate(fy.end_date as string);
+      const existingStart = parseDate(fy.start_date);
+      const existingEnd = parseDate(fy.end_date);
 
       // Check if new FY overlaps with existing FY
       return (
@@ -142,20 +147,9 @@ export default function FinancialYear() {
       return;
     }
 
-    // Check if trying to create future FY while current FY is still active
-    const currentDate = new Date();
-    const activeFy = financialYears.find(fy => {
-      if (!fy.start_date || !fy.end_date) return false;
-      const fyStart = parseDate(fy.start_date as string);
-      const fyEnd = parseDate(fy.end_date as string);
-      return currentDate >= fyStart && currentDate <= fyEnd;
-    });
-
-    if (activeFy && startDate < parseDate(activeFy.end_date as string)) {
-      const activeFyEnd = parseDate(activeFy.end_date as string).toLocaleDateString();
-      showSnackbar('error', `Cannot create future financial year. Current FY ${activeFy.fy} is active until ${activeFyEnd}`);
-      return;
-    }
+    // A past year that overlaps nothing may be added for back-entry (owner,
+    // 2026-10-03); the "Cannot create future financial year" check that refused
+    // it is gone here and on the server.
 
     // Show confirmation modal before saving
     setPendingData({

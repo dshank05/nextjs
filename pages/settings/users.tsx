@@ -109,6 +109,8 @@ export default function Users() {
 
       setShowModal(false);
       fetchUsers(); // Refresh the list
+      // Every other settings screen confirms a save; this one just closed.
+      showSnackbar('success', editingUser ? 'User updated successfully' : 'User created successfully');
     } catch (error) {
       console.error('Error saving user:', error);
       showSnackbar('error', error instanceof Error ? error.message : 'Could not save the user');

@@ -132,6 +132,11 @@ export default function WarehouseRacks() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // No warehouse posted to /api/warehouses//racks and failed with no reason.
+    if (!formData.warehouse_id) {
+      showSnackbar('error', 'Please select a warehouse');
+      return;
+    }
     // Show confirmation modal before saving
     setPendingData(formData);
     setShowConfirmModal(true);

@@ -122,11 +122,17 @@ export default function States() {
 
       setShowConfirmModal(false);
       setPendingFormData(null);
+      showSnackbar('success', editingState ? 'State updated successfully' : 'State created successfully');
     } catch (error) {
       console.error('Error saving state:', error);
       // Every other settings page reports through the snackbar; this was the
       // only one still using a blocking window.alert (S-15).
       showSnackbar('error', error instanceof Error ? error.message : 'Could not save the state');
+      // Back to the form with what was typed, so it can be corrected rather
+      // than retyped (the form used to stay closed).
+      setShowConfirmModal(false);
+      setFormData(pendingFormData);
+      setShowModal(true);
       setConfirmLoading(false);
     } finally {
       setConfirmLoading(false);

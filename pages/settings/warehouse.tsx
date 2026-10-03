@@ -54,10 +54,13 @@ export default function Warehouse() {
         setWarehouses(data.warehouses);
         list.setPagination(data.pagination);
       } else {
-        console.error('Failed to fetch warehouses');
+        // A failed load used to leave the table as it was, with no word why.
+        const body = await response.json().catch(() => ({}));
+        if (isCurrent()) showSnackbar('error', body.message || 'Could not load the warehouses');
       }
     } catch (error) {
       console.error('Error fetching warehouses:', error);
+      if (isCurrent()) showSnackbar('error', 'Could not load the warehouses');
     } finally {
       if (isCurrent()) setLoading(false);
     }

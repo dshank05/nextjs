@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
 import { isValidGstin } from '../../lib/gst';
-import { isTenDigitPhone } from '../../lib/validators';
+import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 
 interface BusinessDetailsData {
   id: number;
@@ -94,6 +94,18 @@ export default function BusinessDetails() {
   const isTenDigits = (value?: string) => isTenDigitPhone(value || '');
 
   const validatePhoneNumbers = () => {
+    // Save sits outside the <form>, so the inputs' `required` never ran: the
+    // required fields and the email are checked here, as the server does.
+    if (!String(editedData.name || '').trim() || !String(editedData.address_line_1 || '').trim()) {
+      showSnackbar('error', 'Company name and address line 1 are required');
+      return false;
+    }
+
+    if (editedData.email && String(editedData.email).trim() && !isValidEmail(editedData.email)) {
+      showSnackbar('error', 'Email address is not valid');
+      return false;
+    }
+
     if (editedData.phone && !isTenDigits(editedData.phone)) {
       showSnackbar('error', 'Phone number must be exactly 10 digits');
       return false;

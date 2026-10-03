@@ -21,6 +21,9 @@ import { useRouter } from 'next/router';
  * - A value equal to its default is removed from the query, so an untouched
  *   page keeps a clean URL.
  */
+/** Query writes made in the same tick, replaced together (see `set`). */
+let pendingQuery: Record<string, any> | null = null;
+
 export function useUrlState<T extends string | number>(
   key: string,
   defaultValue: T
@@ -53,16 +56,26 @@ export function useUrlState<T extends string | number>(
 
       if (!router.isReady) return;
 
-      const query: Record<string, any> = { ...router.query };
+      // Several setters can run in one event (a new sort column sets sortBy AND
+      // sortOrder). Each used to copy the same stale router.query, so the second
+      // replace wiped the first and the URL lost sortBy. Writes made in the same
+      // tick are merged into one pending query and replaced once.
+      const query = pendingQuery ?? { ...router.query };
       if (next === defaultValue || next === '') {
         delete query[key];
       } else {
         query[key] = String(next);
       }
-
-      router.replace({ pathname: router.pathname, query }, undefined, {
-        shallow: true,
-        scroll: false,
+      if (pendingQuery) return;
+      pendingQuery = query;
+      const pathname = router.pathname;
+      Promise.resolve().then(() => {
+        const merged = pendingQuery;
+        pendingQuery = null;
+        router.replace({ pathname, query: merged }, undefined, {
+          shallow: true,
+          scroll: false,
+        });
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

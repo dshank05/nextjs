@@ -116,7 +116,9 @@ export default function GSTTaxRate() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(pendingData),
+        // An edit does not send status: the row's status when the form opened
+        // would overwrite a change made since (the Deactivate button owns it).
+        body: JSON.stringify(editingRate ? (({ status: _status, ...rest }) => rest)(pendingData) : pendingData),
       });
 
       if (response.ok) {
@@ -223,10 +225,10 @@ export default function GSTTaxRate() {
         <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between mb-4">
           <div className="flex flex-col sm:flex-row gap-4 flex-1 max-w-md">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-slate-300 mb-2">HSN Code</label>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Search</label>
               <ClearableInput
                 type="text"
-                placeholder="Search"
+                placeholder="Description, HSN code, rate"
                 value={list.search}
                 onChange={(e) => list.setSearch(e.target.value)}
               />
@@ -247,7 +249,8 @@ export default function GSTTaxRate() {
                 { key: 'id', label: 'ID', enabled: true },
                 { key: 'hsn_code', label: 'HSN Code', enabled: true },
                 { key: 'rate', label: 'Rate (%)', enabled: true },
-                { key: 'applicable_for', label: 'Description', enabled: true },
+                { key: 'description', label: 'Description', enabled: true },
+                { key: 'applicable_for', label: 'Applicable For', enabled: true },
                 { key: 'status', label: 'Status', enabled: true },
               ]}
               config={{
@@ -281,8 +284,11 @@ export default function GSTTaxRate() {
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('rate')}>
                       Rate (%) <SortIcon field="rate" {...sortProps} />
                     </th>
+                    <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('description')}>
+                      Description <SortIcon field="description" {...sortProps} />
+                    </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('applicable_for')}>
-                      Description <SortIcon field="applicable_for" {...sortProps} />
+                      Applicable For <SortIcon field="applicable_for" {...sortProps} />
                     </th>
                     <th className="cursor-pointer hover:bg-slate-700/50" onClick={() => list.toggleSort('status')}>
                       Status <SortIcon field="status" {...sortProps} />
@@ -301,6 +307,7 @@ export default function GSTTaxRate() {
                           {rate.rate}%
                         </span>
                       </td>
+                      <td className="text-white">{rate.description}</td>
                       <td className="text-slate-300">{rate.applicable_for}</td>
                       <td>
                         <span className={`px-2 py-1 rounded-full text-xs ${
@@ -348,12 +355,14 @@ export default function GSTTaxRate() {
                 </div>
               )}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Applicable</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Description *</label>
                 <ClearableInput
                   type="text"
+                  name="description"
                   value={formData.description}
                   onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Enter applicable information"
+                  placeholder="e.g. GST 18%"
+                  required
                 />
               </div>
               <div className="mb-6">
@@ -362,7 +371,7 @@ export default function GSTTaxRate() {
                   type="number"
                   min="0"
                   max="100"
-                  step="0.1"
+                  step="0.01"
                   value={formData.rate}
                   onChange={(e) => setFormData(prev => ({ ...prev, rate: e.target.value }))}
                   placeholder="Enter GST rate"
@@ -380,12 +389,12 @@ export default function GSTTaxRate() {
                 />
               </div>
               <div className="mb-6">
-                <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Applicable For</label>
                 <ClearableTextarea
                   value={formData.applicable_for}
                   onChange={(e) => setFormData(prev => ({ ...prev, applicable_for: e.target.value }))}
                   rows={3}
-                  placeholder="Enter rate description"
+                  placeholder="What this rate applies to (optional)"
                 />
               </div>
 
