@@ -1,6 +1,6 @@
-import { SaleBillsPage } from '../../components/bills/SaleBillsPage';
+import { BillList } from '../../components/bills/BillList'
 
-/** The sale list (components/bills/SaleBillsPage.tsx, shared with Invoice C). */
+/** The sale list (components/bills/BillList.tsx, shared with Purchase and Invoice C). */
 export default function SalesPage() {
-  return <SaleBillsPage kind="sale" />;
+  return <BillList kind="sale" />
 }
