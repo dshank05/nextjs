@@ -3,44 +3,43 @@
 import { BaseFilters, Pagination, PaymentStatus, PaymentMode } from './common';
 
 // ============================================================================
-// SALE TYPES
+// SALE / INVOICE C BILLS - one shape for both kinds (lib/sale-query.ts)
 // ============================================================================
 
-export interface Sale {
+export type SaleKind = 'sale' | 'salex';
+
+/** A row of the sale or Invoice C list. */
+export interface SaleBillRow {
   id: number;
+  type: SaleKind;
   invoice_no: number;
-  select_customer?: number;
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
+  select_customer: number;
+  customer_name: string;
+  customer_address: string;
+  customer_gstin: string;
+  bill_reference: string;
   items_total: number;
-  freight?: number;
+  discount: number;
+  freight: number;
   total_taxable_value: number;
-  taxrate?: number;
-  total_cgst?: number;
-  total_sgst?: number;
-  total_igst?: number;
-  total_tax?: number;
+  total_tax: number;
+  packing_forwarding_total: number;
   total: number;
-  notes?: string;
-  invoice_date: number | string;
-  status?: number;
-  payment_status?: PaymentStatus;
-  payment_mode?: PaymentMode;
+  notes: string;
+  invoice_date: number;
+  formattedDate: string;
+  payment_status: PaymentStatus;
+  payment_mode: PaymentMode;
+  return_status: number;
   fy: number;
-  transport?: string;
-  item_count?: number;
-  formattedDate?: string;
-  bill_reference?: string;
-  return_status?: number;
-  packing_forwarding_total?: number;
-  type?: 'sale';
-  customer_vendor_name?: string;
-  customer_vendor_address?: string;
-  customer_vendor_gstin?: string;
+  item_count: number;
+  total_paid: number;
+  remaining_amount: number;
+  outstanding_amount: number;
 }
 
-export interface SaleFilters extends BaseFilters {
+/** List filters, named as lib/sale-query.ts reads them. */
+export interface SaleListFilters extends BaseFilters {
   customerFilter?: string;
   statusFilter?: string;
   amountMin?: string;
@@ -52,62 +51,7 @@ export interface SaleFilters extends BaseFilters {
   total?: string;
   totalTax?: string;
   packingForwardingTotal?: string;
-}
-
-export interface SalesResponse {
-  sales: Sale[];
-  pagination: Pagination;
-}
-
-// ============================================================================
-// SALEX TYPES (Tax-Exempt Sales)
-// ============================================================================
-
-export interface Salex {
-  id: number;
-  invoice_no: number; // Changed to number only to match component expectations
-  customer_id?: number;
-  select_customer?: number; // Alias for customer_id
-  customer_name?: string;
-  customer_address?: string;
-  customer_gstin?: string;
-  items_total: number;
-  freight?: number;
-  total_taxable_value: number;
-  total: number;
   notes?: string;
-  date: number | string;
-  invoice_date: number | string; // Made required to match component expectations
-  payment_status?: PaymentStatus;
-  payment_mode?: PaymentMode;
-  fy: number;
-  transport?: string;
-  item_count?: number;
-  formattedDate?: string;
-  bill_reference?: string;
-  packing_forwarding_total?: number;
-  type?: 'salex';
-  customer_vendor_name?: string;
-  customer_vendor_address?: string;
-  customer_vendor_gstin?: string;
-}
-
-export interface SalexFilters extends BaseFilters {
-  customerFilter?: string;
-  statusFilter?: string;
-  amountMin?: string;
-  amountMax?: string;
-  uidFilter?: string;
-  billReference?: string;
-  itemCount?: string;
-  paymentMode?: string;
-  total?: string;
-  packingForwardingTotal?: string;
-}
-
-export interface SalexResponse {
-  salex: Salex[];
-  pagination: Pagination;
 }
 
 // ============================================================================
@@ -221,143 +165,4 @@ export interface SelectedReturnItem extends SaleItemForReturn {
   sgst: number;
   igst: number;
   total: number;
-}
-
-// ============================================================================
-// SALEX CREATE/EDIT TYPES (Tax-Exempt Sales)
-// ============================================================================
-
-export interface SalexInvoiceItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  car_model_ids: string[];
-  car_model_names: string[];
-  category_id: number;
-  category_name: string;
-  subcategory_id: number;
-  subcategory_name: string;
-  company_id: number;
-  company_name: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number; // Kept for display but not used in calculations
-  discount_percentage: number;
-  tax: number; // Always 0 for salex
-  discount_amount: number;
-  total: number;
-  hsn: string;
-  mrp: number;
-  discount: number;
-  margin: number;
-  cgst: number; // Always 0 for salex
-  sgst: number; // Always 0 for salex
-  igst: number; // Always 0 for salex
-}
-
-export interface SalexFormData {
-  invoice_number: string;
-  bill_reference: string;
-  staff_id?: number | null;
-  date: string;
-  customer_name: string;
-  contact_number: string;
-  mechanic_name: string;
-  vehicle_number: string;
-  commission: string;
-  address: string;
-  address_2: string;
-  transport_name: string;
-  city: string;
-  email_id: string;
-  discount: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  tax: string;
-  notes: string;
-  payment_status: number;
-  payment_mode: number;
-  total_discount: string;
-  subtotal: string;
-  total_tax: string;
-  grand_total: string;
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  tax_rate: string;
-  basic_value: string;
-  pin_code: string;
-}
-
-
-export interface SaleInvoiceItem {
-  id: string;
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  car_model_ids: string[];
-  car_model_names: string[];
-  category_id: number;
-  category_name: string;
-  subcategory_id: number;
-  subcategory_name: string;
-  company_id: number;
-  company_name: string;
-  part_number: string;
-  qty: number;
-  rate: number;
-  gst_percentage: number;
-  discount_percentage: number;
-  tax: number;
-  discount_amount: number;
-  total: number;
-  hsn: string;
-  mrp: number;
-  discount: number;
-  margin: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-}
-
-export interface SaleFormData {
-  invoice_number: string;
-  bill_reference: string;
-  staff_id?: number | null;
-  date: string;
-  customer_name: string;
-  contact_number: string;
-  mechanic_name: string;
-  mechanic_id?: number | null;
-  vehicle_number: string;
-  commission: string;
-  address: string;
-  address_2: string;
-  transport_name: string;
-  city: string;
-  email_id: string;
-  discount: string;
-  state: string;
-  state_code?: number;
-  gst_number: string;
-  tax: string;
-  notes: string;
-  payment_status: number;
-  payment_mode: number;
-  total_discount: string;
-  subtotal: string;
-  total_tax: string;
-  grand_total: string;
-  descriptions: string;
-  packing_forwarding_qty: string;
-  packing_forwarding_rate: string;
-  packing_forwarding_total: string;
-  total_cgst: string;
-  total_sgst: string;
-  total_igst: string;
-  pin_code: string;
 }

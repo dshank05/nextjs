@@ -44,6 +44,8 @@ export const saleViewExportLayout: ExportLayout = {
           title: 'Financial Summary',
           fields: [
             { label: 'Items Total', key: 'items_total', format: 'currency' },
+            { label: 'Discount', key: 'discount', format: 'currency' },
+            { label: 'P&F', key: 'packing_forwarding_total', format: 'currency' },
             { label: 'Freight', key: 'freight', format: 'currency' },
             { label: 'Taxable Value', key: 'total_taxable_value', format: 'currency' },
             { label: 'CGST', key: 'total_cgst', format: 'currency' },
@@ -66,7 +68,10 @@ export const saleViewExportLayout: ExportLayout = {
         { label: 'HSN', key: 'hsn', format: 'text', width: 15 },
         { label: 'Qty', key: 'qty', format: 'number', width: 10 },
         { label: 'Rate', key: 'rate', format: 'currency', width: 20 },
-        { label: 'Subtotal', key: 'subtotal', format: 'currency', width: 25 },
+        { label: 'Discount', key: 'discount', format: 'currency', width: 20 },
+        { label: 'Taxable', key: 'subtotal', format: 'currency', width: 25 },
+        { label: 'Tax', key: 'tax', format: 'currency', width: 20 },
+        { label: 'Total', key: 'total', format: 'currency', width: 25 },
       ]
     },
     {

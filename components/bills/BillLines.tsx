@@ -8,17 +8,18 @@ import { lineAmounts, rateFromTotal, parseNum, wholeQty, money, round2 } from '.
 import type { Product, FilterOptions } from '../../types/products';
 
 /**
- * The purchase form's line table: a template row to add a product, the added
- * lines with one inline editor, and the product panel.
+ * The line table every bill form uses - purchase, sale and Invoice C: a
+ * template row to add a product, the added lines with one inline editor, and
+ * the product panel.
  *
- * Replaces ~1,500 lines of create.tsx in which the inline editor existed twice
- * (with and without tax), the line maths a dozen times, and two effects kept
- * rewriting the lines from themselves (PURCHASE_PASS2_AUDIT Block A).
- * Lines hold only what the user decides - product, model, company, part, qty,
- * rate, GST %. Tax and totals are derived on render.
+ * Purchase Block A built it as PurchaseLines; Phase 5 Block A generalised it
+ * so the sale forms (2,694 + 2,368 lines, the editor written out several times
+ * in each) use the same code. Lines hold only what the user decides - product,
+ * model, part, qty, rate, discount, GST %. Tax and totals are derived on render
+ * by lib/line-math, the function the server stores with.
  */
 
-export interface PurchaseLine {
+export interface BillLine {
   key: string;
   /** Database row, for a line loaded from a saved bill; sent back so the save reconciles by row. */
   line_id?: number;
@@ -31,6 +32,8 @@ export interface PurchaseLine {
   part: string;
   qty: number;
   rate: number;
+  /** Fixed amount off the line, before tax. */
+  discount: number;
   gst_percentage: number;
   original_qty?: number;
   returned_qty: number;
@@ -38,19 +41,27 @@ export interface PurchaseLine {
 }
 
 interface Props {
-  lines: PurchaseLine[];
-  onChange: (lines: PurchaseLine[]) => void;
+  lines: BillLine[];
+  onChange: (lines: BillLine[]) => void;
   enableTax: boolean;
+  enableDiscount?: boolean;
   filterOptions: FilterOptions;
-  /** No vendor yet: products cannot be added. */
+  /** No party yet: products cannot be added. */
   disabled: boolean;
+  disabledHint?: string;
   isEditMode: boolean;
   onEditingChange?: (editing: boolean) => void;
+  /** The rate a newly picked product starts at. */
+  defaultRate: (p: Product) => number;
+  /** Sale: show the shelf stock and warn when a line asks for more. */
+  showStock?: boolean;
+  /** "purchase", "sale", "Invoice C" - for messages. */
+  noun?: string;
 }
 
 const newKey = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const emptyTemplate = { qty: '', rate: '', gst: '0', total: '', modelId: '', part: '' };
+const emptyTemplate = { qty: '', rate: '', gst: '0', discount: '', total: '', modelId: '', part: '' };
 
 /** Car models a product fits; all models when it lists none or is not loaded. */
 function modelsFor(product: Product | undefined, filterOptions: FilterOptions) {
@@ -58,10 +69,12 @@ function modelsFor(product: Product | undefined, filterOptions: FilterOptions) {
   return ids.length ? filterOptions.models.filter(m => ids.includes(m.id.toString())) : filterOptions.models;
 }
 
-const defaultRate = (p: Product) => p.latest_purchase_rate || p.opening_rate || p.rate || 0;
 const defaultGst = (p: Product) => p.gst_rate_percentage ?? p.gst_rate ?? 0;
 
-export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disabled, isEditMode, onEditingChange }: Props) {
+export function BillLines({
+  lines, onChange, enableTax, enableDiscount = false, filterOptions, disabled, disabledHint = 'Select a party first',
+  isEditMode, onEditingChange, defaultRate, showStock = false, noun = 'bill'
+}: Props) {
   // ---- product panel
   const [panelOpen, setPanelOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -87,12 +100,21 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
 
   // ---- inline edit
   const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [edit, setEdit] = useState({ qty: '', rate: '', gst: '', total: '', modelId: '' });
-  const [toDelete, setToDelete] = useState<PurchaseLine | null>(null);
+  const [edit, setEdit] = useState({ qty: '', rate: '', gst: '', discount: '', total: '', modelId: '' });
+  const [toDelete, setToDelete] = useState<BillLine | null>(null);
 
   const gstOf = (gst: number) => (enableTax ? gst : 0);
+  const discOf = (d: number) => (enableDiscount ? d : 0);
   const modelName = (id: string | number | null) =>
     filterOptions.models.find(m => m.id.toString() === String(id))?.name || '';
+  const productOf = (id: number) => knownProducts[id] || products.find(p => p.id === id);
+  /** Stock left for a product once this bill's other lines are counted. */
+  const stockLeft = (productId: number, exceptKey?: string) => {
+    const p = productOf(productId);
+    if (!p || p.stock === undefined || p.stock === null) return null;
+    const onBill = lines.filter(l => l.product_id === productId && l.key !== exceptKey && !l.line_id).reduce((s, l) => s + l.qty, 0);
+    return p.stock - onBill;
+  };
 
   const resetTemplate = () => {
     setPicked(null);
@@ -103,7 +125,7 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
   const remember = (list: Product[]) =>
     setKnownProducts(prev => ({ ...prev, ...Object.fromEntries(list.map(p => [p.id, p])) }));
 
-  const lineFromProduct = (p: Product, overrides: Partial<PurchaseLine> = {}): PurchaseLine => {
+  const lineFromProduct = (p: Product, overrides: Partial<BillLine> = {}): BillLine => {
     const modelId = modelsFor(p, filterOptions)[0]?.id ?? null;
     return {
       key: newKey(),
@@ -116,12 +138,16 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
       part: p.part_no || '',
       qty: 1,
       rate: defaultRate(p),
+      discount: 0,
       gst_percentage: defaultGst(p),
       returned_qty: 0,
       is_fully_returned: false,
       ...overrides
     };
   };
+
+  const totalFor = (qty: number, rate: number, gst: number, discount: number) =>
+    String(round2(lineAmounts(qty, rate, gstOf(gst), discOf(discount)).total));
 
   // ---- panel selection: one product fills the template, several are added as they are
   const onProductSelect = (chosen: Product[]) => {
@@ -130,18 +156,18 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
     if (chosen.length === 1) {
       const p = fresh[0];
       if (!p) {
-        setError(`${chosen[0].product_name} is already on this bill`);
+        setError(`${chosen[0].product_name} is already on this ${noun}`);
         return;
       }
-      const qty = 1;
       const rate = defaultRate(p);
       const gst = defaultGst(p);
       setPicked(p);
       setTpl({
-        qty: String(qty),
+        qty: '1',
         rate: rate ? String(rate) : '',
         gst: String(gst),
-        total: rate ? String(round2(lineAmounts(qty, rate, gstOf(gst)).total)) : '',
+        discount: '',
+        total: rate ? totalFor(1, rate, gst, 0) : '',
         modelId: String(modelsFor(p, filterOptions)[0]?.id ?? ''),
         part: p.part_no || ''
       });
@@ -154,32 +180,39 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
     if (fresh.length) onChange([...lines, ...fresh.map(p => lineFromProduct(p))]);
   };
 
-  // ---- template arithmetic: whichever of qty / rate / total was typed last drives the others
-  const setTplField = (field: 'qty' | 'rate' | 'gst' | 'total', value: string) => {
-    setTpl(prev => {
-      const next = { ...prev, [field]: value };
-      const qty = wholeQty(next.qty);
-      const gst = gstOf(parseNum(next.gst));
-      if (field === 'total') {
-        next.rate = qty > 0 && value !== '' ? String(rateFromTotal(parseNum(value), qty, gst)) : next.rate;
-      } else if (next.rate !== '' && qty > 0) {
-        next.total = String(round2(lineAmounts(qty, parseNum(next.rate), gst).total));
-      }
-      return next;
-    });
+  // ---- whichever of qty / rate / discount / total was typed last drives the others
+  const recalc = <T extends { qty: string; rate: string; gst: string; discount: string; total: string }>(prev: T, field: string, value: string): T => {
+    const next = { ...prev, [field]: value };
+    const qty = wholeQty(next.qty);
+    const gst = gstOf(parseNum(next.gst));
+    const discount = discOf(parseNum(next.discount));
+    if (field === 'total') {
+      if (qty > 0 && value !== '') next.rate = String(rateFromTotal(parseNum(value), qty, gst, discount));
+    } else if (next.rate !== '' && qty > 0) {
+      next.total = String(round2(lineAmounts(qty, parseNum(next.rate), gst, discount).total));
+    }
+    return next;
+  };
+  const setTplField = (field: 'qty' | 'rate' | 'gst' | 'discount' | 'total', value: string) => setTpl(prev => recalc(prev, field, value));
+  const setEditField = (field: 'qty' | 'rate' | 'gst' | 'discount' | 'total', value: string) => setEdit(prev => recalc(prev, field, value));
+
+  const lineProblems = (qty: number, rate: string, discount: number) => {
+    const problems: string[] = [];
+    if (qty < 1) problems.push('quantity must be at least 1');
+    // A blank rate is an error, not a default (PU-07). 0 must be typed.
+    if (rate.trim() === '') problems.push('enter a rate');
+    else if (parseNum(rate) < 0) problems.push('rate cannot be negative');
+    if (discount < 0) problems.push('discount cannot be negative');
+    else if (discount > qty * parseNum(rate) + 0.005) problems.push('discount is more than the line amount');
+    return problems;
   };
 
   const addFromTemplate = () => {
     if (!picked) return;
-    const problems: string[] = [];
-    if (!tpl.modelId) problems.push('car model is required');
-    // Company comes from the product. It was "required" with no way to set it -
-    // the column is hidden - so a product without one could never be added.
     const qty = wholeQty(tpl.qty);
-    if (qty < 1) problems.push('quantity must be at least 1');
-    // A blank rate is an error, not the selling price (PU-07). 0 must be typed.
-    if (tpl.rate.trim() === '') problems.push('enter a rate');
-    else if (parseNum(tpl.rate) < 0) problems.push('rate cannot be negative');
+    const discount = discOf(parseNum(tpl.discount));
+    const problems = lineProblems(qty, tpl.rate, discount);
+    if (!tpl.modelId) problems.unshift('car model is required');
     if (problems.length) {
       setError(problems.join(', '));
       return;
@@ -192,6 +225,7 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
         part: tpl.part,
         qty,
         rate: parseNum(tpl.rate),
+        discount,
         gst_percentage: parseNum(tpl.gst)
       })
     ]);
@@ -199,31 +233,18 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
   };
 
   // ---- inline edit
-  const startEdit = (line: PurchaseLine) => {
+  const startEdit = (line: BillLine) => {
     setEditingKey(line.key);
     setEdit({
       qty: String(line.qty),
       rate: String(line.rate),
       gst: String(line.gst_percentage),
-      total: String(round2(lineAmounts(line.qty, line.rate, gstOf(line.gst_percentage)).total)),
+      discount: line.discount ? String(line.discount) : '',
+      total: totalFor(line.qty, line.rate, line.gst_percentage, line.discount),
       modelId: line.model_id !== null ? String(line.model_id) : ''
     });
     setError('');
     onEditingChange?.(true);
-  };
-
-  const setEditField = (field: 'qty' | 'rate' | 'gst' | 'total', value: string) => {
-    setEdit(prev => {
-      const next = { ...prev, [field]: value };
-      const qty = wholeQty(next.qty);
-      const gst = gstOf(parseNum(next.gst));
-      if (field === 'total') {
-        if (qty > 0 && value !== '') next.rate = String(rateFromTotal(parseNum(value), qty, gst));
-      } else if (qty > 0) {
-        next.total = String(round2(lineAmounts(qty, parseNum(next.rate), gst).total));
-      }
-      return next;
-    });
   };
 
   const stopEdit = () => {
@@ -231,11 +252,11 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
     onEditingChange?.(false);
   };
 
-  const saveEdit = (line: PurchaseLine) => {
+  const saveEdit = (line: BillLine) => {
     const qty = wholeQty(edit.qty);
-    const rate = parseNum(edit.rate);
-    if (qty < 1) return setError('Quantity must be at least 1');
-    if (rate < 0) return setError('Rate cannot be negative');
+    const discount = discOf(parseNum(edit.discount));
+    const problems = lineProblems(qty, edit.rate, discount);
+    if (problems.length) return setError(problems.join(', '));
     if (line.returned_qty > 0 && qty < line.returned_qty) {
       return setError(`${line.returned_qty} of "${line.display_name || line.product_name}" have been returned; quantity cannot go below that`);
     }
@@ -243,7 +264,8 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
       ? {
           ...l,
           qty,
-          rate,
+          rate: parseNum(edit.rate),
+          discount,
           gst_percentage: parseNum(edit.gst),
           model_id: edit.modelId ? parseInt(edit.modelId, 10) : null,
           car_model: edit.modelId ? modelName(edit.modelId) : ''
@@ -253,15 +275,15 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
     stopEdit();
   };
 
-  const remove = (line: PurchaseLine) => {
+  const remove = (line: BillLine) => {
     if (editingKey === line.key) stopEdit();
     onChange(lines.filter(l => l.key !== line.key));
   };
 
   const totals = useMemo(() => lines.reduce(
-    (acc, l) => ({ qty: acc.qty + l.qty, taxable: acc.taxable + l.qty * l.rate }),
+    (acc, l) => ({ qty: acc.qty + l.qty, taxable: acc.taxable + l.qty * l.rate - discOf(l.discount) }),
     { qty: 0, taxable: 0 }
-  ), [lines]);
+  ), [lines, enableDiscount]);
 
   const numInput = 'w-full px-2 py-2 bg-slate-700 border border-slate-600 rounded text-xs text-white text-center';
   const noWheel = {
@@ -272,6 +294,7 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
   };
   const th = 'px-2 py-2 text-xs font-medium text-slate-300 uppercase tracking-wider';
   const cell = 'px-2 py-2 text-center text-xs text-slate-200';
+  const tplLeft = picked && showStock ? stockLeft(picked.id) : null;
 
   return (
     <>
@@ -285,6 +308,7 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
               <th className={`${th} text-left`}>PART NO</th>
               <th className={`${th} text-center w-24`}>QTY</th>
               <th className={`${th} text-center w-24`}>RATE</th>
+              {enableDiscount && <th className={`${th} text-center w-24`}>DISC (₹)</th>}
               {enableTax && <th className={`${th} text-center w-20`}>TAX (%)</th>}
               <th className={`${th} text-center w-24`}>TOTAL</th>
               <th className={`${th} text-center w-20`}>ACTION</th>
@@ -303,12 +327,15 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
                     onClick={() => { if (!picked && !disabled) { setError(''); setSearch(''); setPanelOpen(true); } }}
                     disabled={disabled}
                     className={`w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded text-sm text-white placeholder-slate-400 ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
-                    placeholder={disabled ? 'Select vendor first' : 'Click to search products...'}
+                    placeholder={disabled ? disabledHint : 'Click to search products...'}
                   />
                   {picked && (
                     <button type="button" onClick={resetTemplate} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" title="Clear selection">✕</button>
                   )}
                 </div>
+                {tplLeft !== null && (
+                  <div className={`text-[11px] mt-1 ${wholeQty(tpl.qty) > tplLeft ? 'text-red-400' : 'text-slate-400'}`}>In stock: {tplLeft}</div>
+                )}
               </td>
               <td className="px-2 py-2">
                 <SearchableMultiSelect
@@ -328,6 +355,11 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
               <td className="px-2 py-2 w-24">
                 <input type="number" step="0.01" min="0" className={numInput} placeholder="0" value={tpl.rate} onChange={(e) => setTplField('rate', e.target.value)} {...noWheel} />
               </td>
+              {enableDiscount && (
+                <td className="px-2 py-2 w-24">
+                  <input type="number" step="0.01" min="0" className={numInput} placeholder="0" value={tpl.discount} onChange={(e) => setTplField('discount', e.target.value)} {...noWheel} />
+                </td>
+              )}
               {enableTax && (
                 <td className="px-2 py-2 w-20">
                   <input type="number" className={numInput} placeholder="0%" value={tpl.gst} onChange={(e) => setTplField('gst', e.target.value)} {...noWheel} />
@@ -354,8 +386,8 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
             {lines.map((line, index) => {
               const editing = editingKey === line.key;
               const hasReturns = line.returned_qty > 0;
-              const amounts = lineAmounts(line.qty, line.rate, gstOf(line.gst_percentage));
-              const product = knownProducts[line.product_id] || products.find(p => p.id === line.product_id);
+              const amounts = lineAmounts(line.qty, line.rate, gstOf(line.gst_percentage), discOf(line.discount));
+              const product = productOf(line.product_id);
               return (
                 <tr key={line.key} className={`${editing ? 'bg-yellow-900' : line.is_fully_returned ? 'bg-red-900/20' : hasReturns ? 'bg-orange-900/20' : 'bg-slate-800 hover:bg-slate-750'} border-t border-slate-600`}>
                   <td className="px-2 py-2 text-center text-xs text-slate-300">
@@ -380,13 +412,14 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
                         onSelectionChange={(v) => setEdit(prev => ({ ...prev, modelId: v || '' }))}
                         placeholder="Select car model..."
                       />
-                    ) : line.car_model}
+                    ) : (line.car_model || modelName(line.model_id))}
                   </td>
                   <td className="px-2 py-2 text-xs text-slate-200">{line.part || 'N/A'}</td>
                   {editing ? (
                     <>
                       <td className="px-2 py-2 w-24"><input type="number" step="1" min="1" className={numInput} value={edit.qty} onChange={(e) => setEditField('qty', e.target.value)} {...noWheel} /></td>
                       <td className="px-2 py-2 w-24"><input type="number" step="0.01" min="0" className={numInput} value={edit.rate} onChange={(e) => setEditField('rate', e.target.value)} {...noWheel} /></td>
+                      {enableDiscount && <td className="px-2 py-2 w-24"><input type="number" step="0.01" min="0" className={numInput} value={edit.discount} onChange={(e) => setEditField('discount', e.target.value)} {...noWheel} /></td>}
                       {enableTax && <td className="px-2 py-2 w-20"><input type="number" className={numInput} value={edit.gst} onChange={(e) => setEditField('gst', e.target.value)} {...noWheel} /></td>}
                       <td className="px-2 py-2 w-24"><input type="number" step="0.01" className={numInput} value={edit.total} onChange={(e) => setEditField('total', e.target.value)} {...noWheel} /></td>
                       <td className="px-2 py-2 text-center">
@@ -400,7 +433,8 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
                     <>
                       <td className={cell}>{line.qty}</td>
                       <td className={cell}>₹{money(line.rate)}</td>
-                      {enableTax && <td className={cell}>₹{money(amounts.tax)}</td>}
+                      {enableDiscount && <td className={cell}>{line.discount ? `₹${money(line.discount)}` : '-'}</td>}
+                      {enableTax && <td className={cell}>{line.gst_percentage}% · ₹{money(amounts.tax)}</td>}
                       <td className={`${cell} font-medium`}>₹{money(amounts.total)}</td>
                       <td className="px-2 py-2 text-center">
                         <div className="flex items-center justify-center space-x-1">
@@ -436,8 +470,9 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
                 <td colSpan={4} />
                 <td className="px-2 py-2 text-center text-xs font-semibold text-white">{totals.qty}</td>
                 <td />
+                {enableDiscount && <td />}
                 {enableTax && <td />}
-                <td className="px-2 py-2 text-center text-xs font-semibold text-white" title="Before tax">₹{money(totals.taxable)}</td>
+                <td className="px-2 py-2 text-center text-xs font-semibold text-white" title="After discount, before tax">₹{money(totals.taxable)}</td>
                 <td />
               </tr>
             </tfoot>
@@ -473,7 +508,7 @@ export function PurchaseLines({ lines, onChange, enableTax, filterOptions, disab
       <ConfirmationModal
         isOpen={toDelete !== null}
         title="Delete Product?"
-        message={`Are you sure you want to delete "${toDelete?.display_name || toDelete?.product_name}" from this purchase?`}
+        message={`Are you sure you want to delete "${toDelete?.display_name || toDelete?.product_name}" from this ${noun}?`}
         confirmText="Delete Product"
         cancelText="Cancel"
         showLoading={false}

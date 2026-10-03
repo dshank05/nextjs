@@ -4,7 +4,8 @@ import { Loader, Calculator } from 'lucide-react';
 import { SearchableSelect } from '../../components/common/SearchableSelect';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
-import { PurchaseLines, type PurchaseLine } from '../../components/purchases/PurchaseLines';
+import { BillLines, type BillLine } from '../../components/bills/BillLines';
+import type { Product } from '../../types/products';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import { getLocalDateString } from '../../lib/date-utils';
 import { getBusinessStateCode, resolveSupplyType } from '../../lib/gst';
@@ -28,6 +29,9 @@ import type { PurchaseReturnStatus } from '../../types/purchases';
  */
 
 const OTHER_VENDOR = '0';
+
+/** A new purchase line starts at the product's last purchase rate. */
+const purchaseRate = (p: Product) => p.latest_purchase_rate || p.opening_rate || p.rate || 0;
 
 const emptyVendor = {
   vendor_name: '', contact_number: '', email_id: '', address: '', address_2: '',
@@ -68,7 +72,7 @@ export default function PurchaseCreate() {
   });
   const [vendorId, setVendorId] = useState('');
   const [vendor, setVendor] = useState(emptyVendor);
-  const [lines, setLines] = useState<PurchaseLine[]>([]);
+  const [lines, setLines] = useState<BillLine[]>([]);
   const [enableTax, setEnableTax] = useState(false);
   const [packing, setPacking] = useState({ qty: '', rate: '', total: '' });
   const [paymentStatus, setPaymentStatus] = useState(0);
@@ -127,7 +131,7 @@ export default function PurchaseCreate() {
       gst_number: v.gstin ?? master.tax_id ?? '',
       pin_code: v.pin_code ?? ''
     });
-    const loadedLines: PurchaseLine[] = (p.items || []).map((item: any) => ({
+    const loadedLines: BillLine[] = (p.items || []).map((item: any) => ({
       key: `line-${item.line_id ?? item.id}`,
       line_id: item.line_id ?? item.id,
       product_id: item.product_id,
@@ -140,6 +144,7 @@ export default function PurchaseCreate() {
       qty: Number(item.qty) || 0,
       rate: Number(item.rate) || 0,
       gst_percentage: Number(item.gst_percentage) || 0,
+      discount: 0,
       original_qty: item.original_qty,
       returned_qty: Number(item.returned_qty) || 0,
       is_fully_returned: !!item.is_fully_returned
@@ -181,7 +186,7 @@ export default function PurchaseCreate() {
   // ---- preview of the server's arithmetic
   const businessState = getBusinessStateCode(business?.gstin);
   const supplyType = resolveSupplyType(vendor.state_code, businessState, vendor.state_code != null);
-  const effectiveGst = (l: PurchaseLine) => (enableTax ? l.gst_percentage : 0);
+  const effectiveGst = (l: BillLine) => (enableTax ? l.gst_percentage : 0);
 
   const packingOut = useMemo(() => {
     const qty = parseNum(packing.qty);
@@ -487,7 +492,7 @@ export default function PurchaseCreate() {
 
             {/* Lines */}
             <div className="mb-5 border-t border-slate-600 pt-4">
-              <PurchaseLines
+              <BillLines
                 lines={lines}
                 onChange={(next) => { setLines(next); if (errors.products) setErrors(prev => ({ ...prev, products: '' })); }}
                 enableTax={enableTax}
@@ -495,6 +500,9 @@ export default function PurchaseCreate() {
                 disabled={vendorId === ''}
                 isEditMode={isEditMode}
                 onEditingChange={setLineEditing}
+                defaultRate={purchaseRate}
+                disabledHint="Select vendor first"
+                noun="purchase"
               />
               {errors.products && <p className="text-red-400 text-xs mt-1">{errors.products}</p>}
               {vendorId === '' && <p className="text-xs text-amber-400 mt-1">Select a vendor first</p>}
