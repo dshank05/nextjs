@@ -251,3 +251,55 @@ list 5/5; purchase delete/edit/list/report/page suites all still pass.
   not exist (dead today: `getReturnAllocationChanges` returns nothing).
 - SA-28 [V]: the advance portion of a paid-on-create bill is a BILL_SPECIFIC payment — the
   same on purchase; check with the live harness.
+
+## 8. Phase 6 carry list — done (2026-10-03)
+
+Owner: "Fix all". Every item below was fixed on **both** sides where the twin had it.
+
+| Commit | What | Closes |
+|---|---|---|
+| `c1e2ccb` | `lib/advance-allocation.ts`: advance is allocated from existing payments, never a new BILL_SPECIFIC row; release deletes only money paid with the bill; unmark keeps the party's own advance | SA-28 (both), L-26, L-30 |
+| `efe3731` | Customer payment/refund delete called recalc functions that did not exist; return delete looked up refund allocations by a non-existent `return_id`; return delete never reversed `total_refunded` / `total_refund_allocated` (both ledgers) | SA-38, 39, 40 |
+| `8223d5d` | `lib/sale-return.ts`: returns priced at the line's **net** price, server tax, over-return guard, kind-explicit ids, status by header id, one return per bill; list, credit-note report and forms | SA-41 … 47 |
+| `3ccb1d2` | `lib/purchase-return.ts`: the same guards and pricing for purchase returns | SA-48, 49 |
+| `4f74fc0` | `lib/payment-allocations.ts`: one allocation check for customer and vendor, create and edit; Invoice C on the payment screen; refunds kind-explicit; refund ledger rows | SA-50 … 56 |
+
+### Findings
+
+| ID | Sev | Side | Finding |
+|---|---|---|---|
+| SA-38 | High | C | Payment / refund delete called `recalculateInvoiceStatus` / `recalculateSaleReturnStatus`, which did not exist: the delete threw |
+| SA-39 | High | C+V | Return delete removed refund allocations by `return_id` (no such column); vendor side also deleted DIRECT refunds |
+| SA-40 | High | C+V | Completing a return raised the refund counters; deleting it never lowered them. Now reversed from the balance log rows under the note number (net, so a reused id is safe); a return older than the logs falls back to its refund amount |
+| SA-41 | Critical | C | Sale returns refunded the gross **rate**; a discounted line refunded more than was paid. Now rate less discount, per unit, paise kept; the form may lower it, never raise it |
+| SA-42 | High | C | The return form sent `unit_price: Math.floor(rate)` and `tax_rate: 0`: sale returns carried no GST. Tax is now the line's own %, split as on the bill, F-34 rounding |
+| SA-43 | High | C+V | No over-return guard: a line could be returned again and again (only stock was checked on purchase) |
+| SA-44 | High | C | Sale and Invoice C line / return ids overlap. Create looked an id up in **both** tables and returned it twice; GET / DELETE opened the sale return for an Invoice C id; edit never sent its type, so Invoice C returns were edited as sale returns. Every id now carries its kind; an ambiguous id is refused |
+| SA-45 | Medium | C | Return status recomputed by the printed number (other years' bills); never recomputed on delete. Now by header id, on create, edit and delete (both sides) |
+| SA-46 | Medium | C | Return list paged each table separately: up to twice the page size, wrong total, customer filter after paging |
+| SA-47 | Medium | C | Credit-note report: search and customer filters used columns that do not exist (every search a 500); note numbers were bare ids |
+| SA-48 | High | V | Purchase return edit split tax on `item.vendor_state_code`, which the form never sends: every edit became IGST. Edit compared a total without P&F to one with it |
+| SA-49 | Medium | V | Purchase return delete left the bill marked returned; edit could take out more than stock |
+| SA-50 | Critical | C | Payment edit: the form folded Invoice C allocations into sale ones; the route guessed the kind by looking the id up in the sale table. Statuses landed on the wrong bill |
+| SA-51 | High | C | The customer-payment screen listed sale bills only; Invoice C could be paid only with the bill |
+| SA-52 | High | C+V | Allocations unchecked: customer create capped at the bill **total** (a bill could be paid twice); vendor create ran the customer validator, which checks invoice ids, so nothing; edits checked nothing. Now: the party's bill, at most what is left after other payments, at most the payment |
+| SA-53 | High | C+V | Payment type taken from the form (`'RECEIPT'` by default on the customer side) though the counters, ledger and advance model branch on it. Now derived from the allocations |
+| SA-54 | High | C | Refund delete and edit matched ledger rows `REFUND` by `transaction_id` — what a **completed return** writes with the return's id. The refund's own `REFUND_PAID` row stayed; a return's row went |
+| SA-55 | Medium | C | Refund create resolved a bare `return_id` to the sale return; edit defaulted the kind to sale and destructured bare ids (no status recalculated) |
+| SA-56 | Medium | C | `payment_mode` / `refund_mode` 0 (cash) became 1 through `\|\| 1` |
+
+Also: five routes made their own `PrismaClient` (connection leak in dev); vendor payment edit
+created allocations in parallel with deleting them.
+
+### Still open (owner)
+
+- **Return completion** through create writes CREDIT_NOTE **and** REFUND; through edit,
+  CREDIT_NOTE only. Which is right? (Counters move the same either way.)
+- **Purchase freight**: sale totals include freight; purchase totals still do not.
+- Sale returns: a completed return cannot be edited; purchase returns can. Kept as is.
+
+### Checked
+
+`tsc` and `next build` clean. New harnesses: sale returns 29/29, purchase returns 15/15,
+payments / refunds 17/17, advance 9/9 + 5/5; all earlier suites still pass (out 16, edit 27,
+list 10, report 10, num 10, sale0 13, saleB 49, custreport 12, page tests 3–6).
