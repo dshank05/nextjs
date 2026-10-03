@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
-import { useQuery } from '@tanstack/react-query'
 import { ConfirmationModal } from '../ConfirmationModal'
 import { useSnackbar } from '../SnackbarProvider'
 import { SearchableSelect, ClearableInput } from '../common'
 import { broadcast } from '../../lib/broadcast'
 import { PARTY_UI, useParty, useSaveParty, type PartyKind } from '../../hooks/useParties'
+import { useStates } from '../../hooks/useStates'
 
 /**
  * Create / edit a customer or vendor (one component; DETAILS_PLAN D3).
@@ -90,11 +90,8 @@ export function PartyForm({ kind }: { kind: PartyKind }) {
   const isEditing = !!id
   const { data: existing, isLoading } = useParty(kind, id)
   const save = useSaveParty(kind)
-  const { data: states = [] } = useQuery({
-    queryKey: ['states'],
-    queryFn: async () => { const r = await fetch('/api/states'); return r.ok ? ((await r.json()).states || []) as { state_name: string; code: number }[] : [] },
-    staleTime: Infinity
-  })
+  // The shared states query (['states'] is also used by the bill forms, same shape).
+  const { data: states = [] } = useStates()
 
   const [form, setForm] = useState<Record<string, string>>(() => blank(kind))
   const [copy, setCopy] = useState(false)
@@ -124,7 +121,7 @@ export function PartyForm({ kind }: { kind: PartyKind }) {
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }))
   }
   const setState = (key: string, name: string | null) => {
-    const code = name ? String(states.find(s => s.state_name === name)?.code ?? '') : ''
+    const code = name ? String(states.find(s => s.name === name)?.code ?? '') : ''
     setForm(prev => ({ ...prev, [key]: name || '', [`${key}_code`]: code }))
     if (errors[key]) setErrors(prev => ({ ...prev, [key]: '' }))
   }
@@ -183,7 +180,7 @@ export function PartyForm({ kind }: { kind: PartyKind }) {
     return <div className="card h-96 flex items-center justify-center"><div className="animate-spin rounded-full h-24 w-24 border-b-2 border-blue-500"></div></div>
   }
 
-  const stateOptions = [{ id: '', name: 'Select State' }, ...states.map(s => ({ id: s.state_name, name: s.state_name }))]
+  const stateOptions = [{ id: '', name: 'Select State' }, ...states.map(s => ({ id: s.name, name: s.name }))]
   const input = (f: Field, locked = false) => {
     const value = values[f.key] || ''
     const err = errors[f.key]
