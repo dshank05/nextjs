@@ -81,7 +81,7 @@ const line = (o) => ({ product_id: PRODUCT, model_id: null, company_id: null, ca
     expect('total_tax = 18% of 200', near(p.total_tax, 36), true);
     expect('stock +3', await stockOf(PRODUCT), stock0 + 3);
     const rejected = await api('POST', '/api/purchases', { vendor_id: VENDOR, date: today(), payment_status: 0, items: [line({ qty: '12abc', rate: 1 })] });
-    expect('qty "12abc" refused (PU-34)', rejected.status, 400);
+    expect('qty "12abc" refused (PU-34)', rejected.status, 400) || console.log('    ' + rejected.text);
 
     // ---------------- read ----------------
     console.log('\nGET');
@@ -109,7 +109,13 @@ const line = (o) => ({ product_id: PRODUCT, model_id: null, company_id: null, ca
     expect('part / car model saved (PU-15)', `${r2?.part}|${r2?.car_model}`, `${TAG}-B|EDITED`);
     const p2 = await prisma.purchase.findUnique({ where: { id: pid } });
     expect('every line carries the new bill date (PU-16)', rows.every(r => r.invoice_date === p2.invoice_date), true);
-    expect('header tax = sum of line tax', near(p2.total_tax, rows.reduce((s, r) => s + (r.tax || 0), 0)), true);
+    // F-34 (owner decision 2026-10-02): each of CGST / SGST / IGST is the sum of
+    // its line amounts rounded to the rupee, and the header tax is their sum.
+    const rupee = (n) => Math.round(Math.round(n * 100) / 100);
+    const part = (k) => rupee(rows.reduce((s, r) => s + (r[k] || 0), 0));
+    expect('header CGST / SGST / IGST = line sums rounded to the rupee (F-34)',
+      `${p2.total_cgst}|${p2.total_sgst}|${p2.total_igst}`, `${part('cgst')}|${part('sgst')}|${part('igst')}`);
+    expect('header tax = CGST + SGST + IGST', near(p2.total_tax, part('cgst') + part('sgst') + part('igst')), true);
     expect('stock +3 more (qty 1 -> 4)', await stockOf(PRODUCT), stock0 + 6);
     expect('untouched fields kept: notes / descriptions / transport / freight (PU-19)',
       `${p2.notes}|${p2.descriptions}|${p2.transport_name}|${p2.freight}`, 'keep-notes|keep-desc|keep-transport|30');
