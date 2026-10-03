@@ -566,7 +566,7 @@ Explicitly **not** pulled forward: G-03, G-04 (carries F-06), G-05.
 |---|---|
 | **Last updated** | 2026-09-23 — **completion pass: Phase 4 was NOT complete.** The status column was stale and 16 of 22 read-queue files were unread. The service layer is now read and carries one reproduced **Critical** (L-36). See "Phase 4 — the completion pass" at the end of this document. Previously 2026-09-21 — **Phase 4 code work complete.** All five suites clean; assertions at baseline (only A5's pre-existing F-73). Only owner decisions and the deferred read queue remain |
 | **Branch / HEAD** | **`audit/phase-4-completion`** (forked from `dev_akaash`, which is preserved untouched for reference) / **`0c61ea0`**. Previously `dev_akaash` / `efba4df` — working tree clean, database at baseline |
-| **Next action** | **Phase 5 stage 2** — Block 0 of `docs/SALE_AUDIT.md` (SA-01…05, SA-08 guard; money, needs approval), then Blocks B, A, C, D. Phase 5 stage 1 (audit) done 2026-10-02. Still open from Phase 4: run `scripts/audit-p4-15.js` and `scripts/audit-assert.js` after the P4-11 migration; P4-17 later |
+| **Next action** | Owner: run `scripts/repair-sale-data.js` (dry run, then `--apply`), `scripts/migrate-sa-16.js`, `npx prisma generate`, then `audit-p4-15.js` and `audit-assert.js`. Phase 5 (Sale & Salex) is done — SALE_AUDIT.md §7. Next phase: 6 (Returns), starting from the §7 carry list. P4-17 later |
 | **Server** | `npm run dev` on :3000, log in `admin` / `admin123`. Kill stray node processes first — a second server silently takes :3001 and you end up testing stale code |
 | **Blocked on owner** | P4-11, P4-21, F-73, F-74, the `created_at` backfill |
 

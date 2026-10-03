@@ -187,3 +187,67 @@ rule applies there.
 2. **Block B** (server first), then **A**, then **C**, then **D**. Commit per block;
    `tsc` + `next build` after each.
 3. Live: the SA-04 count, SA-28 with the harness, and P4-17 (later, as agreed).
+
+## 7. Stage 2 — done (2026-10-02)
+
+Owner decisions: Block 0 go; keep sale and purchase in sync; freight **added** to the sale
+total (and a freight field on the form); customer change on edit **blocked** (as vendor
+change on purchase); SA-04 data **repaired by script**; F-34 rounding as §5.
+
+| Commit | Block | Findings closed |
+|---|---|---|
+| `b25216d` | 0 — handler type, allocations, payment columns, sale fy, view id, loader | SA-01, 02, 03, 04, 05, 08 (guard), **34** |
+| `b274fa7` | B — `lib/sale*.ts`, one route factory, schema + migration | SA-06, 07, 09–16, 21, 22, 27, 31, 33, **35** |
+| `c1a23b7` | A + C — `components/bills/*` (form, lines, view, list), `hooks/useSaleBills.ts` | SA-08, 20, 23, 24, 25, 26, 30 |
+| `fbeb254` | D — shared ledger / balance-log routes and pages, bill-ref UNION, dead code | SA-17 (orphan removed), 18, 19, 29, **36** |
+
+Net across Phase 5: **68 files, +5,286 / −16,233 lines.**
+
+### New findings while fixing
+
+| ID | Sev | Finding | Fix |
+|---|---|---|---|
+| SA-34 | Critical | Edit paths wrote PAYMENT_RECEIVED as a **debit** (0→1, 2→1, 0→2, Type B update): marking a bill paid by editing it doubled what the customer owed | Block 0; data: `repair-sale-data.js` part 2 |
+| SA-35 | High | The sale list had no `remaining_amount`; the customer-payment screen filters on it, so it offered no sale bills | Block B (list returns both names) |
+| SA-36 | Low | Customer ledger note edit called `/api/customer-ledger/[id]`, which did not exist | Block D |
+| SA-37 | Medium | Vendor balance-log page (Block D of purchase) audited only the 50 loaded rows against the counters → false discrepancies | Block D (server totals) |
+
+SA-32 was already right (`orderBy: { id: 'asc' }` is there) — no change.
+
+### Kept in sync with purchase
+
+- One bill engine, `lib/line-math.ts computeBill`, used by the purchase API, the sale API and
+  every form preview: lines keep paise, CGST/SGST/IGST and the grand total round to the
+  rupee half up (F-34). **Purchase totals now round too.**
+- One line editor, `components/bills/BillLines.tsx` (purchase passes no discount).
+- Party change on edit refused on both sides; Partial derived on both; reconcile by line id
+  on both; delete refused with returns on both; `oldTotal/oldStatus` captured before the
+  update on both.
+- Reports: one ledger route, one balance-log route, one ledger page, one balance-log page.
+
+The one intentional difference: **freight** is in the sale total and outside the purchase
+total (purchase unchanged until the owner says otherwise).
+
+### What the owner runs (in order)
+
+1. `node scripts/repair-sale-data.js` — dry run; read it.
+2. `node scripts/repair-sale-data.js --apply` (add `--renumber` only to reassign colliding sale numbers).
+3. `node scripts/migrate-sa-16.js` — stops and lists if duplicates or orphan lines remain.
+4. `npx prisma generate`, restart dev.
+5. Then the Phase 4 leftovers: `node scripts/audit-p4-15.js`, `node scripts/audit-assert.js`.
+
+### Checked
+
+`tsc` and `next build` clean. Harnesses (outside the repo): Block 0 14/14 (11 fail on the old
+code), server create/edit/read/delete 48/48, customer reports 12/12, sale form 17/17, sale
+list 5/5; purchase delete/edit/list/report/page suites all still pass.
+
+### Carried to Phase 6 (returns, payments)
+
+- Sale returns refund at the line **rate**, ignoring the line discount.
+- `handleCustomerPaymentEdit` puts sale and salex ids in one `invoicesToUpdate` list.
+- The customer-payment screen lists sale bills only, never Invoice C.
+- Refund-allocation branches in the customer handler write `return_id`, a column that does
+  not exist (dead today: `getReturnAllocationChanges` returns nothing).
+- SA-28 [V]: the advance portion of a paid-on-create bill is a BILL_SPECIFIC payment — the
+  same on purchase; check with the live harness.
