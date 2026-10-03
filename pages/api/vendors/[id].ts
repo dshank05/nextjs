@@ -1,125 +1,27 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { prisma } from '../../../lib/db'
+import { withObservability } from '../../../lib/withObservability'
+import { parseId } from '../../../lib/api/respond'
+import { getParty, updateParty, deleteParty, answerPartyError } from '../../../lib/party-details'
 
-export default async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse
-) {
-  const { id } = req.query
-
-  if (req.method === 'GET') {
-    try {
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ message: 'Vendor ID is required' })
-      }
-
-      const vendor = await prisma.vendor_details.findUnique({
-        where: { id: parseInt(id) }
-      })
-
-      if (!vendor) {
-        return res.status(404).json({ message: 'Vendor not found' })
-      }
-
-      const formattedVendor = {
-        id: vendor.id.toString(),
-        vendor_name: vendor.vendor_name,
-        address: vendor.address,
-        address_2: vendor.address_2,
-        city: vendor.city,
-        pin_code: vendor.pin_code,
-        state: vendor.state, // State name is now directly stored
-        state_code: vendor.state_code, // State ID is now directly stored
-        contact_no: vendor.contact_no,
-        contact_no_2: vendor.contact_no_2 || null,
-        contact_no_3: vendor.contact_no_3 || null,
-        email: vendor.email,
-        status: vendor.status,
-        tax_id: vendor.tax_id
-      }
-
-      res.status(200).json(formattedVendor)
-    } catch (error) {
-      console.error('Vendor fetch error:', error)
-      res.status(500).json({
-        message: 'Failed to fetch vendor',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      })
+/** One vendor: read (with outstanding), edit, delete (refused with history). lib/party-details.ts. */
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const id = parseId(req.query.id)
+  if (id === null) return res.status(400).json({ message: 'Vendor ID is required' })
+  try {
+    switch (req.method) {
+      case 'GET':
+        return res.status(200).json(await getParty('vendor', id))
+      case 'PUT':
+        return res.status(200).json({ message: 'Vendor updated successfully', vendor: await updateParty('vendor', id, req.body || {}) })
+      case 'DELETE':
+        await deleteParty('vendor', id)
+        return res.status(200).json({ message: 'Vendor deleted successfully' })
+      default:
+        return res.status(405).json({ message: 'Method not allowed' })
     }
-  } else if (req.method === 'PUT') {
-    // Update vendor
-    try {
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ message: 'Vendor ID is required' })
-      }
-
-      const vendorData = {
-        vendor_name: req.body.vendor_name,
-        address: req.body.address,
-        address_2: req.body.address_2 || null,
-        city: req.body.city || null,
-        pin_code: req.body.pin_code || null,
-        state: req.body.state || null,
-        state_code: req.body.state_code ? parseInt(req.body.state_code) : null,
-        contact_no: req.body.contact_no || null,
-        contact_no_2: req.body.contact_no_2 || null,
-        contact_no_3: req.body.contact_no_3 || null,
-        email: req.body.email || null,
-        status: req.body.status || 'Active',
-        tax_id: req.body.tax_id || null,
-      };
-
-      const vendor = await prisma.vendor_details.update({
-        where: { id: parseInt(id) },
-        data: vendorData
-      });
-
-      const formattedVendor = {
-        id: vendor.id.toString(),
-        vendor_name: vendor.vendor_name,
-        address: vendor.address,
-        address_2: vendor.address_2,
-        city: vendor.city,
-        state: vendor.state, // State name is now directly stored
-        state_code: vendor.state_code, // State ID is now directly stored
-        contact_no: vendor.contact_no,
-        contact_no_2: vendor.contact_no_2 || null,
-        contact_no_3: vendor.contact_no_3 || null,
-        email: vendor.email,
-        status: vendor.status,
-        tax_id: vendor.tax_id
-      }
-
-      res.status(200).json({
-        message: 'Vendor updated successfully',
-        vendor: formattedVendor
-      });
-    } catch (error) {
-      console.error('Vendor update error:', error);
-      res.status(500).json({
-        message: 'Failed to update vendor',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  } else if (req.method === 'DELETE') {
-    try {
-      if (!id || typeof id !== 'string') {
-        return res.status(400).json({ message: 'Vendor ID is required' })
-      }
-
-      await prisma.vendor_details.delete({
-        where: { id: parseInt(id) }
-      });
-
-      res.status(200).json({ message: 'Vendor deleted successfully' });
-    } catch (error) {
-      console.error('Vendor delete error:', error);
-      res.status(500).json({
-        message: 'Failed to delete vendor',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  } else {
-    return res.status(405).json({ message: 'Method not allowed' })
+  } catch (error) {
+    return answerPartyError(res, error, req.method === 'GET' ? 'fetch vendor' : req.method === 'PUT' ? 'update vendor' : 'delete vendor')
   }
 }
+
+export default withObservability(handler)
