@@ -79,7 +79,7 @@ export default function CustomerReportsPage() {
 
   const fetchCustomerOptions = async () => {
     try {
-      const response = await fetch('/api/customers');
+      const response = await fetch('/api/customers?dropdown=true');
       if (response.ok) {
         const data = await response.json();
         setCustomerOptions([

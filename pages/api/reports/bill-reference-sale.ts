@@ -1,132 +1,65 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import type { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { fail, methodNotAllowed } from '../../../lib/api/respond';
+import { withObservability } from '../../../lib/withObservability';
+import { queryString, reportPage, reportPagination, reportDayRange } from '../../../lib/api/report-query';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
+/**
+ * Sales and Invoice C bills by bill reference - the bill-reference-purchase
+ * fix for the customer side (SA-19).
+ *
+ * The search used `mode: 'insensitive'`, which Prisma refuses on MySQL, so
+ * every search was a 500; the end date was 00:00 UTC, so the last day was
+ * left out; both tables were loaded whole and paged in memory. Now one UNION
+ * query pages in the database. The customer name is the bill's own snapshot.
+ */
+async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') return methodNotAllowed(res, ['GET']);
   try {
-    const {
-      page = '1',
-      limit = '50',
-      billReference = '',
-      dateFrom = '',
-      dateTo = ''
-    } = req.query;
+    const { page, limit, skip } = reportPage(req);
+    const billReference = queryString(req, 'billReference');
+    const range = reportDayRange(req);
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const skip = (pageNum - 1) * limitNum;
+    const conds: string[] = [];
+    const params: unknown[] = [];
+    if (billReference) { conds.push('d.bill_reference LIKE ?'); params.push(`%${billReference}%`); }
+    if (range?.start != null) { conds.push('d.invoice_date >= ?'); params.push(range.start); }
+    if (range?.end != null) { conds.push('d.invoice_date <= ?'); params.push(range.end); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
-    // Build where clause
-    const saleWhere: any = {};
-    const salexWhere: any = {};
+    const branch = (header: string, billTo: string, type: string) => `
+      SELECT d.id, d.invoice_no, d.bill_reference, d.total, d.invoice_date, d.payment_status, '${type}' AS type,
+        COALESCE(NULLIF(b.billing_name, ''), c.billing_name, 'Other') AS customer_name
+      FROM ${header} d
+      LEFT JOIN customer_details c ON c.id = d.select_customer AND d.select_customer <> 0
+      LEFT JOIN ${billTo} b ON b.invoice_no = d.id
+      ${where}`;
+    const union = `${branch('invoice', 'bill_tosales', 'sale')} UNION ALL ${branch('invoicex', 'bill_tosalesx', 'salex')}`;
+    const both = [...params, ...params];
 
-    if (billReference) {
-      saleWhere.bill_reference = { contains: billReference as string, mode: 'insensitive' };
-      salexWhere.bill_reference = { contains: billReference as string, mode: 'insensitive' };
-    }
-
-    if (dateFrom) {
-      const fromTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000);
-      saleWhere.invoice_date = { gte: fromTimestamp };
-      salexWhere.invoice_date = { gte: fromTimestamp };
-    }
-    if (dateTo) {
-      const toTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000);
-      saleWhere.invoice_date = { ...saleWhere.invoice_date, lte: toTimestamp };
-      salexWhere.invoice_date = { ...salexWhere.invoice_date, lte: toTimestamp };
-    }
-
-    // Fetch from both tables
-    const [saleData, salexData] = await Promise.all([
-      prisma.invoice.findMany({
-        where: saleWhere,
-        select: {
-          id: true,
-          invoice_no: true,
-          bill_reference: true,
-          select_customer: true,
-          total: true,
-          invoice_date: true,
-          payment_status: true
-        }
-      }),
-      prisma.invoicex.findMany({
-        where: salexWhere,
-        select: {
-          id: true,
-          invoice_no: true,
-          bill_reference: true,
-          select_customer: true,
-          total: true,
-          invoice_date: true,
-          payment_status: true
-        }
-      })
+    const [countRows, rows] = await Promise.all([
+      prisma.$queryRawUnsafe(`SELECT COUNT(*) AS n FROM (${union}) t`, ...both) as Promise<any[]>,
+      prisma.$queryRawUnsafe(`SELECT * FROM (${union}) t ORDER BY t.invoice_date DESC, t.id DESC LIMIT ? OFFSET ?`, ...both, limit, skip) as Promise<any[]>
     ]);
-
-    // Get unique customer IDs
-    const customerIds = Array.from(new Set([
-      ...saleData.map(s => s.select_customer),
-      ...salexData.map(s => s.select_customer)
-    ].filter(id => id !== 0)));
-
-    // Fetch customer details
-    const customers = await prisma.customer_details.findMany({
-      where: { id: { in: customerIds } },
-      select: { id: true, billing_name: true }
-    });
-
-    const customerMap = new Map(customers.map(c => [c.id, c.billing_name || 'Unknown']));
-
-    // Combine and format
-    const allSales = [
-      ...saleData.map(s => ({
-        id: s.id,
-        invoice_no: s.invoice_no,
-        bill_reference: s.bill_reference || '',
-        customer_name: s.select_customer === 0 ? 'Other' : customerMap.get(s.select_customer) || 'Unknown',
-        total: Number(s.total),
-        invoice_date: s.invoice_date,
-        payment_status: s.payment_status,
-        formattedDate: new Date(s.invoice_date * 1000).toLocaleDateString('en-IN'),
-        type: 'sale' as const
-      })),
-      ...salexData.map(s => ({
-        id: s.id,
-        invoice_no: s.invoice_no,
-        bill_reference: s.bill_reference || '',
-        customer_name: s.select_customer === 0 ? 'Other' : customerMap.get(s.select_customer) || 'Unknown',
-        total: Number(s.total),
-        invoice_date: s.invoice_date,
-        payment_status: s.payment_status,
-        formattedDate: new Date(s.invoice_date * 1000).toLocaleDateString('en-IN'),
-        type: 'salex' as const
-      }))
-    ];
-
-    // Sort by date descending
-    allSales.sort((a, b) => b.invoice_date - a.invoice_date);
-
-    // Paginate
-    const total = allSales.length;
-    const paginatedSales = allSales.slice(skip, skip + limitNum);
 
     return res.status(200).json({
       success: true,
-      sales: paginatedSales,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
-      }
+      sales: rows.map(r => ({
+        id: Number(r.id),
+        invoice_no: Number(r.invoice_no),
+        bill_reference: r.bill_reference || '',
+        customer_name: r.customer_name,
+        total: Number(r.total),
+        invoice_date: Number(r.invoice_date),
+        payment_status: r.payment_status === null ? null : Number(r.payment_status),
+        formattedDate: new Date(Number(r.invoice_date) * 1000).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        type: r.type
+      })),
+      pagination: reportPagination(page, limit, Number(countRows[0]?.n ?? 0))
     });
-
   } catch (error) {
-    console.error('Error fetching bill reference sales:', error);
-    return res.status(500).json({ error: 'Failed to fetch bill reference sales' });
+    return fail(res, error, 'fetch bill reference sales');
   }
 }
+
+export default withObservability(handler);

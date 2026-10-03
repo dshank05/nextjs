@@ -2,7 +2,6 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
-import { recordRefundPaidTransaction } from '../../../lib/customer-ledger-service'
 import { parseDateRange } from '../../../lib/date-utils'
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
