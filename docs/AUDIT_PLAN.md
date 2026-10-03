@@ -11,7 +11,7 @@
 | 2 · Settings | **mostly done** — F-28 fixed, F-29 fixed, F-30 partial. 6 pages left |
 | 3 · Products | **done** — 3a, 3b and a second pass (3c) over list/view/add/edit. F-101, F-107, F-111, F-112 left open; F-73/F-74 need the owner |
 | 4 · Purchase | **in progress** — create/edit/delete fixed and guarded by five suites, but the 2026-09-23 pass found the status table stale, 16 of 22 read-queue files unread, and **L-36 (Critical, reproduced): a purchase edit corrupts the vendor ledger balance**. **P4-27–P4-32 are now fixed** (L-36 verified by reproduction). Still open: **P4-15** (the §11 sweep, the largest item), P4-17, P4-22, P4-23, P4-11/P4-21 (owner), L-24, L-25 (Phase 7), and L-28/L-35/L-39 held for Phase 6 |
-| 5 · Sale & Salex | **blocked** — carry L-8, L-24 and L-25 in; P4-11 should land first. Also blocked on P4-28/29/31: **L-29, L-30, L-33 and L-36 all have customer twins**, so opening Phase 5 first means fixing each of them twice |
+| 5 · Sale & Salex | **stage 1 (audit) done 2026-10-02** — `docs/SALE_AUDIT.md`: 8 Critical, 12 High (SA-01…SA-33). Stage 2 (Block 0 fix-now, then B/A/C/D) waits on owner approval and the §5 questions |
 | 6 · Returns | not started |
 | 7 · Reports | not started — runs last, needs journey data |
 
