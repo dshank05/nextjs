@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { prisma } from '../../../lib/db';
-import { parseDateRange } from '../../../lib/date-utils';
+import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -27,9 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         sortOrder = 'desc'
       } = req.query;
 
-      const pageNum = parseInt(page as string);
-      const limitNum = parseInt(limit as string);
-      const offset = (pageNum - 1) * limitNum;
+      // NaN-safe and capped (lib/api/report-query.ts)
+      const { page: pageNum, limit: limitNum, skip: offset } = reportPage(req, 10);
 
       // Build optimized WHERE conditions for Prisma
       const whereConditions: any = {
@@ -45,25 +44,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       }
 
-      // Filter by vendor name
+      // The vendor dropdown sends the vendor's id; it was matched against the
+      // NAME, so picking a vendor found nothing. A non-number is still a name.
       if (vendorFilter) {
-        whereConditions.AND.push({
-          vendor: {
-            vendor_name: { contains: vendorFilter }
-          }
-        });
+        const v = String(vendorFilter);
+        whereConditions.AND.push(/^\d+$/.test(v)
+          ? { vendor_id: parseInt(v) }
+          : { vendor: { vendor_name: { contains: v } } });
       }
 
-      // Filter by date range (convert to timestamps)
-      if (dateFrom && dateTo) {
-        const { startTimestamp, endTimestamp } = parseDateRange(
-          dateFrom as string,
-          dateTo as string
-        );
+      // Either end of the range alone works; both ends inclusive.
+      const range = reportDayRange(req);
+      if (range) {
         whereConditions.AND.push({
           return_date: {
-            gte: startTimestamp,
-            lte: endTimestamp
+            ...(range.start != null ? { gte: range.start } : {}),
+            ...(range.end != null ? { lte: range.end } : {})
           }
         });
       }
@@ -101,26 +97,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         payment_status: { payment_status: sortDirection }
       };
 
-      // Debug: Log the query conditions
-      console.log('Debit Notes API - Query conditions:', JSON.stringify(whereConditions, null, 2));
-      console.log('Debit Notes API - Sort field:', sortField, 'Direction:', sortDirection);
-
-      // Debug: Check what's actually in the purchase_returns table
-      const allReturns = await prisma.purchase_returns.findMany({
-        select: {
-          id: true,
-          debit_note_no: true,
-          vendor_id: true,
-          return_date: true,
-          total_amount: true,
-          status: true
-        },
-        take: 10
-      });
-      console.log('Debit Notes API - All purchase_returns records:', JSON.stringify(allReturns, null, 2));
-
       // Execute optimized queries in parallel for better performance
-      const [total, debitNoteRecords] = await Promise.all([
+      const [total, debitNoteRecords, sums] = await Promise.all([
         // Count total records with same where conditions
         prisma.purchase_returns.count({
           where: whereConditions
@@ -159,20 +137,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               select: { id: true } // Only fetch IDs for counting
             }
           },
-          orderBy: sortFieldMap[sortField as keyof typeof sortFieldMap],
+          orderBy: [sortFieldMap[sortField as keyof typeof sortFieldMap], { id: sortDirection }],
           skip: offset,
           take: limitNum
+        }),
+        prisma.purchase_returns.aggregate({
+          where: whereConditions,
+          _sum: { total_amount: true, total_tax: true, refund_amount: true }
         })
       ]);
 
       // Debug: Log results
-      console.log('Debit Notes API - Total count:', total);
-      console.log('Debit Notes API - Records found:', debitNoteRecords.length);
       if (debitNoteRecords.length > 0) {
-        console.log('Debit Notes API - Sample record:', JSON.stringify(debitNoteRecords[0], null, 2));
       }
 
-      const totalPages = Math.ceil(total / limitNum);
 
       // Format the results with optimized data transformation
       const debitNotes = debitNoteRecords.map((record) => ({
@@ -207,12 +185,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       return res.status(200).json({
         debitNotes,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          totalPages
-        }
+        // Over every matching note, not this page
+        totals: {
+          taxable: Number(sums._sum.total_amount || 0),
+          tax: Number(sums._sum.total_tax || 0),
+          refund: Number(sums._sum.refund_amount || 0)
+        },
+        pagination: reportPagination(pageNum, limitNum, total)
       });
     } catch (error) {
       console.error('Error fetching debit notes:', error);

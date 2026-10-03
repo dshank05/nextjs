@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { reportDayRange, reportPage } from '../../../lib/api/report-query';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -20,22 +21,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'notesSearch is required' });
     }
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = reportPage(req, 50, 1000);
 
-    // Build where clauses
-    const notesCondition = { contains: notesSearch as string, mode: 'insensitive' as const };
-    
-    let dateCondition: any = {};
-    if (dateFrom) {
-      const fromTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000);
-      dateCondition.gte = fromTimestamp;
-    }
-    if (dateTo) {
-      const toTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000);
-      dateCondition.lte = toTimestamp;
-    }
+    // `mode: 'insensitive'` is PostgreSQL-only: the MySQL connector rejects it,
+    // so every search was a 500. MySQL's collation is already case-insensitive.
+    const notesCondition = { contains: notesSearch as string };
+
+    // Whole local days, both ends inclusive (was UTC midnight, last day lost).
+    const range = reportDayRange(req);
+    const dateCondition: any = {};
+    if (range?.start != null) dateCondition.gte = range.start;
+    if (range?.end != null) dateCondition.lte = range.end;
 
     const hasDateFilter = Object.keys(dateCondition).length > 0;
 

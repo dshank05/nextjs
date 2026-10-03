@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { returnNo } from '../../../lib/sale-return';
+import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -22,9 +23,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sortOrder = 'desc'
     } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = reportPage(req, 10);
 
     // Build where clause for sale_returns
     const saleWhere: any = {};
@@ -50,16 +49,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       salexWhere.invoicex = { select_customer: cid };
     }
 
-    // Date filters
-    if (dateFrom) {
-      const fromTimestamp = Math.floor(new Date(dateFrom as string).getTime() / 1000);
-      saleWhere.return_date = { gte: fromTimestamp };
-      salexWhere.return_date = { gte: fromTimestamp };
-    }
-    if (dateTo) {
-      const toTimestamp = Math.floor(new Date(dateTo as string).getTime() / 1000);
-      saleWhere.return_date = { ...saleWhere.return_date, lte: toTimestamp };
-      salexWhere.return_date = { ...salexWhere.return_date, lte: toTimestamp };
+    // Local whole days, both ends inclusive. `new Date('YYYY-MM-DD')` is UTC
+    // midnight, so the last day was left out (as PU-28 on the purchase side).
+    const range = reportDayRange(req);
+    if (range) {
+      const d = { ...(range.start != null ? { gte: range.start } : {}), ...(range.end != null ? { lte: range.end } : {}) };
+      saleWhere.return_date = d;
+      salexWhere.return_date = d;
     }
 
     // Amount filters
@@ -175,15 +171,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       : allReturns;
 
     // Sort
-    matching.sort((a, b) => {
-      const aVal = a[sortBy as keyof typeof a];
-      const bVal = b[sortBy as keyof typeof b];
-      
-      if (sortOrder === 'asc') {
-        return aVal > bVal ? 1 : -1;
-      } else {
-        return aVal < bVal ? 1 : -1;
-      }
+    // An unknown field (the page sends 'balance' from its other view) sorted
+    // on undefined, and equal values never compared equal: the order was random.
+    const field = ['return_date', 'refund_amount', 'total_amount', 'customer_name', 'payment_status', 'id'].includes(String(sortBy))
+      ? String(sortBy) : 'return_date';
+    const dir = sortOrder === 'asc' ? 1 : -1;
+    matching.sort((a: any, b: any) => {
+      const x = typeof a[field] === 'string' ? a[field].toLowerCase() : a[field] ?? 0;
+      const y = typeof b[field] === 'string' ? b[field].toLowerCase() : b[field] ?? 0;
+      return dir * (x < y ? -1 : x > y ? 1 : (a.return_date - b.return_date) || (a.id - b.id));
     });
 
     // Paginate
@@ -193,12 +189,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       success: true,
       creditNotes: paginatedReturns,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
-      }
+      totals: {
+        taxable: Math.round(matching.reduce((s, r) => s + (r.total_amount || 0), 0) * 100) / 100,
+        refund: Math.round(matching.reduce((s, r) => s + (r.refund_amount || 0), 0) * 100) / 100
+      },
+      pagination: reportPagination(pageNum, limitNum, total)
     });
 
   } catch (error) {

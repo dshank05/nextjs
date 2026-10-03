@@ -63,6 +63,8 @@ export default function VendorLedgerPage() {
   const [outstandingVendors, setOutstandingVendors] = useState<OutstandingVendor[]>([]);
   const [debitNotes, setDebitNotes] = useState<DebitNote[]>([]);
   const [loading, setLoading] = useState(true);
+  // Over every matching party / note, not the page (server-computed)
+  const [totals, setTotals] = useState<any>(null);
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 10,
@@ -148,6 +150,7 @@ export default function VendorLedgerPage() {
           setDebitNotes(data.debitNotes || []);
         }
         setPagination(data.pagination);
+        setTotals(data.totals || null);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -340,6 +343,15 @@ export default function VendorLedgerPage() {
         )}
 
         {/* Table Section */}
+        {totals && activeView === 'outstanding' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 text-sm">
+            <div className="rounded border border-slate-600 p-3"><div className="text-slate-400">We owe vendors</div><div className="text-lg font-semibold text-white">₹{Number(totals.owed || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
+            <div className="rounded border border-slate-600 p-3"><div className="text-slate-400">Vendors owe us / advances</div><div className="text-lg font-semibold text-white">₹{Number(totals.credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div></div>
+          </div>
+        )}
+        {totals && activeView !== 'outstanding' && (
+          <div className="mb-4 text-sm text-slate-300">Total of matching notes: <span className="font-semibold text-white">₹{Number(totals.refund || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span></div>
+        )}
         <div className="overflow-x-auto relative">
           {loading && (
             <div className="absolute inset-0 bg-slate-900/50 flex items-center justify-center z-10 rounded-lg">

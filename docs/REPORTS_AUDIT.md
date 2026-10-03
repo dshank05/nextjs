@@ -1,0 +1,49 @@
+# Reports audit (Phase 7)
+
+Owner request 2026-10-03: "the reports section built" — audit every report, build the
+missing ones (Purchase, Opening / Closing Stock), and add return registers, a GST summary,
+a cash / bank book and profit by period.
+
+## Inventory (before)
+
+| Sidebar entry | State before | After |
+|---|---|---|
+| Customer Ledger / Vendor Ledger | working (Phase 5 Block D: one route, opening balance, F-03 fixed) | unchanged |
+| Vendor Balance Logs | working (Block D) | unchanged |
+| Customer Balance Logs, Customer Reports | working, **not in the sidebar** | in the sidebar |
+| Vendor Reports (outstanding + debit notes) | outstanding from the stored balance of the latest row; debit-note vendor filter broken | R-01, R-03 |
+| Sale | **showed nothing**: page and API had different contracts | rebuilt (R-04) |
+| Sale X | lines matched by printed number | rebuilt as Invoice C (R-05) |
+| Purchase | **404** — no page | built (R-06) |
+| Debit Notes | vendor filter, dates, debug query | R-03 |
+| Minimum Stock | fixed in Phase 3 | unchanged |
+| Mechanic / Staff Sale, Commissions, Transport Cost, Packing / Forwarding | **any date range returned nothing** | R-07 |
+| Bill Reference Sale / Purchase | fixed in Block D | unchanged |
+| Notes Mentioned | **every search a 500** | R-08 |
+| Opening / Closing Stock | "under works" stub | to build (R3) |
+| Dead Stock, Inactive Products | entry / settings pages linked here | unchanged |
+
+## Findings fixed (R1)
+
+| ID | Sev | Report | Finding |
+|---|---|---|---|
+| R-01 | Critical | Customer / vendor outstanding | **F-47 settled**: balance = `SUM(debit) - SUM(credit)` of the party's ledger up to the end of the range (`lib/party-outstanding.ts`), the same rows the ledger report shows. The customer report used the payment counters, which never include a bill's total — an unpaid bill did not appear and an advance showed as a debt. The vendor report used the stored running balance of the latest row. Negative balances (advances, unrefunded returns) are shown; totals owed / credit over all matching parties |
+| R-02 | Medium | Customer outstanding | Last-transaction links used transaction types that are never written (`SALEX`, `PAYMENT`, `RETURN`): no link ever appeared |
+| R-03 | High | Debit notes | The vendor dropdown sends an id, matched against the vendor NAME: picking a vendor found nothing. A debug query of the whole table ran on every request. Dates needed both ends. Totals added |
+| R-04 | Critical | Sale | Page sent `dateFrom/dateTo/sale|salex|both` and read `summary`; the API read `startDate/endDate/summary|customer|product|detailed` and answered `data`: the report was always empty. The API's product query used PostgreSQL syntax and a non-existent join; its customer query interpolated SQL as a bound value; end dates excluded the last day |
+| R-05 | High | Invoice C | Lines were fetched by the printed number (`invoice_no IN bill.invoice_no`) instead of the bill id: other years' and other bills' lines. UTC dates |
+| R-06 | High | Purchase | The sidebar link was a 404 |
+| R-07 | Critical | Mechanic, Staff, Commissions, Transport, Packing | The date picker sends `YYYY-MM-DD`; the APIs did `parseInt()` on it (2026), so any date range matched nothing |
+| R-08 | Critical | Notes Mentioned | `mode: 'insensitive'` is PostgreSQL-only: every search was a 500. UTC dates |
+| R-09 | Medium | Credit notes | Sort on an unknown field (`balance`, sent by the page) and a comparator that never returned 0: random order. UTC dates. Totals added |
+
+Sale, Invoice C and Purchase now share `lib/bill-report.ts` and
+`components/reports/BillReport.tsx`: bills, total, taxable value, GST (CGST / SGST / IGST),
+returns dated in the period and the net, cash / bank by bill mode, paid / partial / unpaid,
+top customers or vendors, top products, day-by-day in India days.
+
+## Checked
+
+`rptcheck` (SQL run against an in-memory SQLite copy of the fixtures): 16/16 — month
+boundaries, GST split, returns and net, Invoice C lines by id, sale + Invoice C merge, purchase,
+ledger-sum outstanding against a deliberately wrong stored balance, advances negative.

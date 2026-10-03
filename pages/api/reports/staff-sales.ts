@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { reportDayRange, reportPage } from '../../../lib/api/report-query';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -18,17 +19,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       sortOrder = 'desc'
     } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
-    const skip = (pageNum - 1) * limitNum;
+    const { page: pageNum, limit: limitNum, skip } = reportPage(req, 50, 1000);
 
+    // The date picker sends YYYY-MM-DD; this did parseInt() on it (2026), so
+    // any date range matched nothing. Whole local days, either end alone.
+    const range = reportDayRange(req);
     const dateFilter: any = {};
-    if (dateFrom) {
-      dateFilter.gte = parseInt(dateFrom as string);
-    }
-    if (dateTo) {
-      dateFilter.lte = parseInt(dateTo as string);
-    }
+    if (range?.start != null) dateFilter.gte = range.start;
+    if (range?.end != null) dateFilter.lte = range.end;
 
     const results: any[] = [];
 
