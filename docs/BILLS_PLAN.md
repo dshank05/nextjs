@@ -1,6 +1,6 @@
 # Purchase, Sale and Invoice C bills — plan
 
-Status: **plan approved, owner answers in section 4** (2026-10-03).
+Status: **B1–B6 done** (2026-10-03); page test test11 next. Owner answers in section 4.
 Every screen below was read in full first, with its API routes, hooks, modals and the
 libs behind them. Database: nothing to run, no data changes.
 
@@ -65,8 +65,9 @@ going below what was returned.
 3. Lowering a line, removing a line or deleting a purchase takes the units back out of stock
    with no check, so stock goes negative when they were already sold (sale checks stock before
    it takes any out). Likely how product 211 reached −1 on the test DB. *(Q3)*
-4. P&F total is not rounded to paise on purchase (qty 3, total ₹100 is stored as
-   100.00000000000001); sale rounds it (`packingAmount`).
+4. ~~P&F total is not rounded to paise on purchase.~~ **Wrong** — `computeBill` already rounded
+   the stored total; only the rule differed from sale's in form. Purchase now uses
+   `packingAmount` too.
 5. Changing the vendor on a new purchase wipes every line; sale keeps them.
 6. Staff dropdown shows "Name - null" for staff without a phone (sale fixed this).
 7. View recomputes each line's tax and total in the browser from qty × rate × GST instead of
@@ -75,8 +76,8 @@ going below what was returned.
 8. View offers Mark as Paid on an "Other" purchase; the payment API then refuses it with
    "Missing required fields". Sale hides the button for "Other".
 9. View money shows without paise ("₹1,180.5"); sale formats ₹1,180.50.
-10. List export: the Vendor column reads `customer_vendor_name`, which does not exist — the
-    exported vendor column is blank.
+10. ~~List export: the Vendor column is blank.~~ **Wrong** — `usePurchases` added
+    `customer_vendor_name` to every row. (Found when reading the hooks for B2.)
 11. List: the vendor filter has no "Other" option (sale's customer filter has).
 12. Create route: a missing product is a 500 "Failed to create purchase" instead of a 400 that
     names the problem; 600 lines of logic live in the route (sale's are in a lib).
@@ -182,10 +183,33 @@ suites, commit per step:
 
 | Finding | Action |
 |---|---|
-| `useUrlState` (73) and `useExport` (19) — nothing imports them | delete (bills step B6) |
+| `useExport` (19) — nothing imports it. (`useUrlState` is used by `useListQuery` through a relative import the first check missed.) | deleted in B6 |
 | `readJson` written three times (`useParties`, `usePartyTransactions`, `useReturns`) | one copy |
 | Customer / vendor dropdown fetched by four hooks under the same key (`useCustomers`, `useVendors`, `usePartyOptions`, `useReturnParties`) | one `usePartyOptions(kind)`; the others become one-line aliases |
 | `useCurrentFY` falls back to fy **2024** (a year, where an fy *id* is expected) and the transaction form sends it; the server ignores the field and uses Settings | drop the hook and the field |
 | `PartyForm` cached `/api/states` under `['states']` in a different shape from `useStates` — coming from a bill form, the customer form showed blank state names (my bug, today) | **fixed** in b7dbeeb |
 | `usePurchases` + `useSaleBills` | become `useBills` (B2) |
 | `useProducts`: the product query key is `['product', id]` with the router's string id, but update invalidates with the numeric id, so an edited product's view can stay stale | products phase |
+
+## 7. Progress
+
+| Step | Commit | Lines |
+|---|---|---|
+| B1 server: `lib/purchase-create.ts`, `lib/purchase-delete.ts`, `lib/api/purchase-routes.ts`, freight in total, no negative stock | 4900405 | +530 −749 |
+| B2 `hooks/useBills.ts` | e5f9f6c | +383 |
+| B3 `BillList` (three list pages thin) | 31873f6 | +299 −805 |
+| B4 `BillView` + `BillPaymentModal` | 7a1f095 | +290 −1,513 |
+| B5 `BillForm`; `usePurchases`, `useSaleBills`, `types/purchases`, `types/sales` removed | f1c9c38 | +675 −1,779 |
+| B6 hooks: one `readJson`, one dropdown fetch, `useCurrentFY` gone, four unused files | 1ef2f1c | +57 −453 |
+
+Bills and hooks together: 5,305 lines removed, 2,237 added (net −3,068).
+
+Checks run: `tsc` clean and `next build` passes after every step; new server suite `out-bill`
+(17: freight in the total, counter numbering, refused duplicate, missing product 400, "Other"
+purchase on vendor 0, edit / delete refused when stock would go negative and allowed when it
+would not); every earlier server suite passes (`out-edit` expectation 228 → 258: that bill
+carries ₹30 freight); page tests 3–10 pass. The harness's `findFirst` now honours `orderBy`
+(it returned the first row, so the invoice counter repeated a number in the harness only).
+
+Not yet covered by a page test: the three bill screens themselves — test11 (list, view,
+create, edit, Mark as Paid, delete, for all three kinds) is the next step.
