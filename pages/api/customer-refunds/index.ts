@@ -273,16 +273,32 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       let returnType = ''
       let returnNo = ''
 
-      // Determine if it's sale or salex return
-      const saleReturn = await prisma.sale_returns.findUnique({
-        where: { id: parseInt(allocation.return_id) },
-        select: { id: true, refund_amount: true, payment_status: true }
-      })
-
-      const salexReturn = !saleReturn ? await prisma.salex_returns.findUnique({
-        where: { id: parseInt(allocation.return_id) },
-        select: { id: true, refund_amount: true, payment_status: true }
-      }) : null
+      // The return's kind: sale and Invoice C returns share ids, and a bare
+      // return_id was always taken as the sale return. Named by
+      // sale_return_id / salex_return_id or return_id + type; a bare id that
+      // names both is refused.
+      const kindAsked = allocation.salex_return_id ? 'salex' : allocation.sale_return_id ? 'sale'
+        : (allocation.type || allocation.return_type) === 'salex' ? 'salex'
+        : (allocation.type || allocation.return_type) === 'sale' ? 'sale' : null
+      allocation.return_id = allocation.salex_return_id || allocation.sale_return_id || allocation.return_id
+      const [saleFound, salexFound] = await Promise.all([
+        kindAsked !== 'salex' ? prisma.sale_returns.findUnique({
+          where: { id: parseInt(allocation.return_id) },
+          select: { id: true, refund_amount: true, payment_status: true }
+        }) : null,
+        kindAsked !== 'sale' ? prisma.salex_returns.findUnique({
+          where: { id: parseInt(allocation.return_id) },
+          select: { id: true, refund_amount: true, payment_status: true }
+        }) : null
+      ])
+      if (saleFound && salexFound) {
+        return res.status(409).json({
+          message: `Return ${allocation.return_id} is both a sale and an Invoice C return; say which (type)`,
+          error_code: 'AMBIGUOUS_RETURN'
+        })
+      }
+      const saleReturn = saleFound
+      const salexReturn = salexFound
 
       const returnRecord = saleReturn || salexReturn
 
@@ -378,7 +394,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           customer_id: parseInt(customer_id),
           refund_date: refundDateTimestamp,
           refund_amount: parseFloat(refund_amount),
-          refund_mode: parseInt(refund_mode) || 1,
+          refund_mode: (Number.isInteger(parseInt(refund_mode)) ? parseInt(refund_mode) : 1),
           refund_type: refund_type,
           notes: notes || '',
           fy: financialYear
@@ -423,7 +439,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         reference_no: `REF-${String(refund.id).padStart(3, '0')}`,
         debit: parseFloat(refund_amount),
         credit: 0,
-        payment_mode: parseInt(refund_mode) || 1,
+        payment_mode: (Number.isInteger(parseInt(refund_mode)) ? parseInt(refund_mode) : 1),
         payment_status: 1,
         payment_date: refundDateTimestamp,
         notes: notes || `Customer refund payment`,

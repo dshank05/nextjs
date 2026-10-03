@@ -3,6 +3,9 @@ import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
+import { checkPaymentAllocations, allocationRow } from '../../../lib/payment-allocations'
+import { recalculateSaleStatus } from '../../../lib/payment-allocation-service'
+import { answerError } from '../../../lib/api/sale-routes'
 
 async function handler(
   req: NextApiRequest,
@@ -138,7 +141,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
     } = req.body
 
     // Validate required fields
-    if (!payment_amount || !payment_date || payment_mode === undefined || !allocations) {
+    if (!payment_amount || !payment_date || payment_mode === undefined || !Array.isArray(allocations)) {
       return res.status(400).json({
         message: 'Missing required fields',
         required: ['payment_amount', 'payment_date', 'payment_mode', 'allocations']
@@ -158,6 +161,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
     // F-01: financial year comes from Settings, never from the calendar.
     const financialYear = await getCurrentFinancialYear()
 
+    // Checked against what is left on each bill apart from this payment; each
+    // allocation keeps its kind (sale / Invoice C ids overlap, and the edit
+    // form folded Invoice C allocations into sale ones).
+    const checked = await checkPaymentAllocations(prisma, 'customer', existingPayment.customer_id, payment_amount, allocations,
+      { requestedType: payment_type ?? existingPayment.payment_type, excludePaymentId: existingPayment.id })
+
     // Convert payment date to Unix timestamp
     const paymentDateTimestamp = payment_date ? convertDateToTimestamp(payment_date) : existingPayment.payment_date
 
@@ -166,20 +175,20 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
       paymentId: parseInt(paymentId),
       customerId: existingPayment.customer_id,
       oldAmount: Number(existingPayment.payment_amount),
-      newAmount: Number(payment_amount),
+      newAmount: checked.amount,
       oldAllocations: existingPayment.allocations.map(a => ({
         invoice_id: a.invoice_id,
         invoicex_id: a.invoicex_id,
         allocated_amount: Number(a.allocated_amount)
       })),
-      newAllocations: allocations.map((a: any) => ({
-        invoice_id: a.invoice_id,
-        invoicex_id: a.invoicex_id,
-        allocated_amount: Number(a.allocated_amount)
+      newAllocations: checked.allocations.map(a => ({
+        invoice_id: a.kind === 'sale' ? a.id : undefined,
+        invoicex_id: a.kind === 'salex' ? a.id : undefined,
+        allocated_amount: a.amount
       })),
       paymentMode: parseInt(payment_mode),
       paymentDate: paymentDateTimestamp,
-      paymentType: payment_type,
+      paymentType: checked.paymentType,
       fy: financialYear
     }
 
@@ -207,22 +216,19 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
       })
       
       if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[PAYMENT EDIT] Ledger updates to execute:', JSON.stringify(handlerResult.ledgerUpdates, null, 2))
       }
 
       // 2. Update payment record
-      console.log('[PAYMENT EDIT] Updating payment record...')
       const updatedPayment = await tx.customer_payments.update({
         where: { id: parseInt(paymentId) },
         data: {
-          payment_amount: Number(payment_amount),
+          payment_amount: checked.amount,
           payment_date: paymentDateTimestamp,
           payment_mode: parseInt(payment_mode),
-          payment_type,
+          payment_type: checked.paymentType,
           notes: notes || null
         }
       })
-      console.log('[PAYMENT EDIT] Payment record updated')
 
       // 3. If payment_date changed, sync all related ledger entries
       if (existingPayment.payment_date !== paymentDateTimestamp) {
@@ -245,51 +251,25 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
       })
       
       // Create new allocations - using createMany for bulk insert
-      await tx.customer_payment_allocations.createMany({
-        data: allocations.map((alloc: any) => ({
-          payment_id: parseInt(paymentId),
-          invoice_id: alloc.invoice_id || null,
-          invoicex_id: alloc.invoicex_id || null,
-          allocated_amount: Number(alloc.allocated_amount),
-          allocation_date: paymentDateTimestamp,
-          notes: alloc.notes || null
-        }))
-      })
-
-      // 5. ⚡ OPTIMIZATION: Recalculate invoice statuses in parallel
-      if (handlerResult.metadata?.invoicesToUpdate && handlerResult.metadata.invoicesToUpdate.length > 0) {
-        console.log('[PAYMENT EDIT] Recalculating invoice statuses for:', handlerResult.metadata.invoicesToUpdate)
-        
-        // Separate sale and salex invoices
-        const saleInvoiceIds: number[] = []
-        const salexInvoiceIds: number[] = []
-        
-        for (const invoiceId of handlerResult.metadata.invoicesToUpdate) {
-          // Check if it's a sale or salex invoice
-          const saleInvoice = await tx.invoice.findUnique({
-            where: { id: invoiceId },
-            select: { id: true }
-          })
-          
-          if (saleInvoice) {
-            saleInvoiceIds.push(invoiceId)
-          } else {
-            salexInvoiceIds.push(invoiceId)
-          }
-        }
-        
-        // Update payment statuses
-        await Promise.all([
-          ...saleInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'sale')),
-          ...salexInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'salex'))
-        ])
-        
-        console.log('[PAYMENT EDIT] Invoice statuses recalculated')
+      if (checked.allocations.length) {
+        await tx.customer_payment_allocations.createMany({
+          data: checked.allocations.map(a => allocationRow(existingPayment.id, a, paymentDateTimestamp))
+        })
       }
+
+      // 5. Payment status of every bill before and after, by kind. The ids
+      // were looked up in the sale table to guess the kind, so an Invoice C
+      // bill whose id also named a sale bill updated the sale bill instead.
+      const touched = new Map<string, { kind: 'sale' | 'salex'; id: number }>()
+      for (const a of existingPayment.allocations) {
+        if (a.invoice_id) touched.set(`sale-${a.invoice_id}`, { kind: 'sale', id: a.invoice_id })
+        if (a.invoicex_id) touched.set(`salex-${a.invoicex_id}`, { kind: 'salex', id: a.invoicex_id })
+      }
+      for (const a of checked.allocations) touched.set(`${a.kind}-${a.id}`, { kind: a.kind as 'sale' | 'salex', id: a.id })
+      for (const t of Array.from(touched.values())) await recalculateSaleStatus(t.kind, t.id, tx)
 
       // 6. ✅ Execute ledger operations (UPDATE existing or CREATE new)
       if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[PAYMENT EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length)
         for (const update of handlerResult.ledgerUpdates) {
           console.log(`[LEDGER UPDATE] ${update.description}`, update.where)
           
@@ -326,21 +306,15 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
         }
       } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
         // Fallback: CREATE new entries (shouldn't happen for payment edits, but kept for safety)
-        console.log('[PAYMENT EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length)
         for (const ledgerOp of handlerResult.ledgerOps) {
           await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry(ledgerOp.entry, tx)
         }
-        console.log('[PAYMENT EDIT] Ledger entries created')
       } else {
-        console.log('[PAYMENT EDIT] No ledger operations to execute')
       }
 
       // 7. Update customer balance
-      console.log('[PAYMENT EDIT] Updating customer balance...')
       const amountDiff = handlerResult.metadata?.amountDiff || 0
       const allocDiff = handlerResult.metadata?.allocDiff || 0
-
-      console.log('[PAYMENT EDIT] Balance update:', { amountDiff, allocDiff })
 
       if (amountDiff !== 0 || allocDiff !== 0) {
         await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(
@@ -357,16 +331,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
             notes: `Payment edited: amount ${amountDiff !== 0 ? `₹${amountDiff > 0 ? '+' : ''}${amountDiff.toFixed(2)}` : 'unchanged'}, allocation ${allocDiff !== 0 ? `₹${allocDiff > 0 ? '+' : ''}${allocDiff.toFixed(2)}` : 'unchanged'}`
           }
         )
-        console.log('[PAYMENT EDIT] Customer balance updated')
       } else {
-        console.log('[PAYMENT EDIT] No balance update needed')
       }
-
-      console.log('[PAYMENT EDIT] ✅ Transaction complete')
 
       return {
         payment: updatedPayment,
-        allocations: allocations
+        allocations: checked.allocations
       }
     }, {
       timeout: 30000
@@ -379,11 +349,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
     })
 
   } catch (error) {
-    console.error('Customer payment update error:', error)
-    res.status(500).json({
-      message: 'Failed to update customer payment',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return answerError(res, error, 'update the customer payment')
   }
 }
 
@@ -434,56 +400,6 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse, paymentId
     res.status(500).json({
       message: 'Failed to delete customer payment',
       error: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-}
-
-// Helper function to update invoice payment status
-async function updateInvoicePaymentStatus(tx: any, invoiceId: number, type: 'sale' | 'salex') {
-  // Get total invoice amount and total allocated payments
-  let invoiceTotal = 0
-  let totalAllocated = 0
-
-  if (type === 'sale') {
-    const invoice = await tx.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { total: true }
-    })
-    invoiceTotal = invoice?.total || 0
-
-    const allocations = await tx.customer_payment_allocations.findMany({
-      where: { invoice_id: invoiceId },
-      select: { allocated_amount: true }
-    })
-    totalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0)
-  } else {
-    const invoicex = await tx.invoicex.findUnique({
-      where: { id: invoiceId },
-      select: { total: true }
-    })
-    invoiceTotal = invoicex?.total || 0
-
-    const allocations = await tx.customer_payment_allocations.findMany({
-      where: { invoicex_id: invoiceId },
-      select: { allocated_amount: true }
-    })
-    totalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0)
-  }
-
-  // Calculate payment status: 0=unpaid, 1=paid, 2=partial
-  const paymentStatus = totalAllocated === 0 ? 0 :
-    (totalAllocated >= invoiceTotal ? 1 : 2)  // Fixed: 1=Paid, 2=Partial
-
-  // Update the invoice
-  if (type === 'sale') {
-    await tx.invoice.update({
-      where: { id: invoiceId },
-      data: { payment_status: paymentStatus }
-    })
-  } else {
-    await tx.invoicex.update({
-      where: { id: invoiceId },
-      data: { payment_status: paymentStatus }
     })
   }
 }

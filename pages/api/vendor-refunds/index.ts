@@ -1,5 +1,5 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import {
@@ -11,7 +11,6 @@ import { balanceHandler } from '../../../lib/balance-handler';
 import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
-const prisma = new PrismaClient();
 
 export default async function handler(
   req: NextApiRequest,

@@ -4,6 +4,9 @@ import { withObservability } from '../../../lib/withObservability'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { parseDateRange } from '../../../lib/date-utils'
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
+import { checkPaymentAllocations, allocationRow } from '../../../lib/payment-allocations'
+import { recalculateSaleStatus } from '../../../lib/payment-allocation-service'
+import { answerError } from '../../../lib/api/sale-routes'
 
 async function handler(
   req: NextApiRequest,
@@ -256,106 +259,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Convert payment date to Unix timestamp
     const paymentDateTimestamp = payment_date ? convertDateToTimestamp(payment_date) : Math.floor(Date.now() / 1000)
 
-    // Validate allocations
-    let totalAllocated = 0
-    const validatedAllocations = []
-
-    for (const allocation of allocations) {
-      const allocatedAmount = parseFloat(allocation.allocated_amount)
-      if (allocatedAmount <= 0) {
-        return res.status(400).json({
-          message: 'Allocation amounts must be greater than 0'
-        })
-      }
-
-      // Check if invoice exists and get outstanding amount
-      let outstandingAmount = 0
-      let invoiceType = ''
-      let invoiceNo = ''
-
-      if (allocation.invoice_id) {
-        const invoice = await prisma.invoice.findUnique({
-          where: { id: parseInt(allocation.invoice_id) },
-          select: {
-            id: true,
-            invoice_no: true,
-            total: true,
-            payment_status: true,
-            select_customer: true
-          }
-        })
-
-        if (!invoice) {
-          return res.status(400).json({
-            message: `Invoice ${allocation.invoice_id} not found`
-          })
-        }
-
-        if (invoice.select_customer !== parseInt(customer_id)) {
-          return res.status(400).json({
-            message: `Invoice ${allocation.invoice_id} does not belong to selected customer`
-          })
-        }
-
-        // Calculate outstanding amount (simplified - would need payment allocation logic)
-        outstandingAmount = invoice.total || 0
-        invoiceType = 'sale'
-        invoiceNo = invoice.invoice_no.toString()
-      } else if (allocation.invoicex_id) {
-        const invoicex = await prisma.invoicex.findUnique({
-          where: { id: parseInt(allocation.invoicex_id) },
-          select: {
-            id: true,
-            invoice_no: true,
-            total: true,
-            payment_status: true,
-            select_customer: true
-          }
-        })
-
-        if (!invoicex) {
-          return res.status(400).json({
-            message: `Invoicex ${allocation.invoicex_id} not found`
-          })
-        }
-
-        if (invoicex.select_customer !== parseInt(customer_id)) {
-          return res.status(400).json({
-            message: `Invoicex ${allocation.invoicex_id} does not belong to selected customer`
-          })
-        }
-
-        // Calculate outstanding amount (simplified - would need payment allocation logic)
-        outstandingAmount = invoicex.total || 0
-        invoiceType = 'salex'
-        invoiceNo = invoicex.invoice_no.toString()
-      } else {
-        return res.status(400).json({
-          message: 'Each allocation must specify either invoice_id or invoicex_id'
-        })
-      }
-
-      if (allocatedAmount > outstandingAmount) {
-        return res.status(400).json({
-          message: `Allocation amount ₹${allocatedAmount} exceeds outstanding amount ₹${outstandingAmount} for ${invoiceType} invoice ${invoiceNo}`
-        })
-      }
-
-      totalAllocated += allocatedAmount
-      validatedAllocations.push({
-        invoice_id: allocation.invoice_id ? parseInt(allocation.invoice_id) : null,
-        invoicex_id: allocation.invoicex_id ? parseInt(allocation.invoicex_id) : null,
-        allocated_amount: allocatedAmount,
-        allocation_date: paymentDateTimestamp,
-        notes: allocation.notes || ''
-      })
-    }
-
-    if (totalAllocated > parseFloat(payment_amount)) {
-      return res.status(400).json({
-        message: `Total allocated amount ₹${totalAllocated} exceeds payment amount ₹${payment_amount}`
-      })
-    }
+    // Allocations checked against what is left on each bill (other payments
+    // counted), the bill's owner and kind; the type follows from them.
+    const checked = await checkPaymentAllocations(prisma, 'customer', customer.id, payment_amount, allocations, { requestedType: payment_type })
+    const totalAllocated = checked.allocated
+    const amount = checked.amount
 
     // Use database transaction for payment creation and allocations
     const result = await prisma.$transaction(async (tx) => {
@@ -364,39 +272,24 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         data: {
           customer_id: parseInt(customer_id),
           payment_date: paymentDateTimestamp,
-          payment_amount: parseFloat(payment_amount),
-          payment_mode: parseInt(payment_mode) || 1,
-          payment_type: payment_type,
+          payment_amount: amount,
+          payment_mode: Number.isInteger(parseInt(payment_mode)) ? parseInt(payment_mode) : 1,
+          payment_type: checked.paymentType,
           notes: notes || '',
           fy: financialYear
         }
       })
 
-      if (validatedAllocations.length > 0) {
+      if (checked.allocations.length > 0) {
         await tx.customer_payment_allocations.createMany({
-          data: validatedAllocations.map(allocation => ({
-            payment_id: payment.id,
-            invoice_id: allocation.invoice_id,
-            invoicex_id: allocation.invoicex_id,
-            allocated_amount: allocation.allocated_amount,
-            allocation_date: allocation.allocation_date,
-            notes: allocation.notes
-          }))
+          data: checked.allocations.map(a => allocationRow(payment.id, a, paymentDateTimestamp))
         })
       }
 
-      // ⚡ OPTIMIZED: Batch update payment status (sequential → parallel)
-      const saleInvoiceIds = validatedAllocations
-        .filter(a => a.invoice_id)
-        .map(a => a.invoice_id)
-      const salexInvoiceIds = validatedAllocations
-        .filter(a => a.invoicex_id)
-        .map(a => a.invoicex_id)
-
-      await Promise.all([
-        ...saleInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'sale')),
-        ...salexInvoiceIds.map(id => updateInvoicePaymentStatus(tx, id, 'salex'))
-      ])
+      // Each bill's payment status, by kind and id
+      for (const a of checked.allocations) {
+        await recalculateSaleStatus(a.kind as 'sale' | 'salex', a.id, tx)
+      }
 
       // Create customer ledger entry for receipt (inside transaction)
       await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
@@ -407,8 +300,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         reference_id: payment.id,
         reference_no: `PAY-${String(payment.id).padStart(3, '0')}`,
         debit: 0,
-        credit: parseFloat(payment_amount),
-        payment_mode: parseInt(payment_mode) || 1,
+        credit: amount,
+        payment_mode: Number.isInteger(parseInt(payment_mode)) ? parseInt(payment_mode) : 1, // 0 is cash: `|| 1` made it bank
         payment_status: 1,
         payment_date: paymentDateTimestamp,
         notes: notes || `Customer payment receipt`,
@@ -421,7 +314,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         tx,
         parseInt(customer_id),
         {
-          total_paid: parseFloat(payment_amount),
+          total_paid: amount,
           total_allocated: totalAllocated
         },
         {
@@ -446,146 +339,16 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_amount: result.payment_amount,
           payment_mode: result.payment_mode,
           total_allocated: totalAllocated,
-          allocations_count: validatedAllocations.length,
+          allocations_count: checked.allocations.length,
+          payment_type: checked.paymentType,
           notes: result.notes
         }
       }
     })
 
   } catch (error) {
-    console.error('Customer payment creation error:', error)
-    res.status(500).json({
-      message: 'Failed to record customer payment',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return answerError(res, error, 'record the customer payment')
   }
 }
 
-// Helper function to update invoice payment status
-async function updateInvoicePaymentStatus(tx: any, invoiceId: number, type: 'sale' | 'salex') {
-  // Get total invoice amount and total allocated payments
-  let invoiceTotal = 0
-  let totalAllocated = 0
-
-  if (type === 'sale') {
-    const invoice = await tx.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { total: true }
-    })
-    invoiceTotal = invoice?.total || 0
-
-    const allocations = await tx.customer_payment_allocations.findMany({
-      where: { invoice_id: invoiceId },
-      select: { allocated_amount: true }
-    })
-    totalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0)
-  } else {
-    const invoicex = await tx.invoicex.findUnique({
-      where: { id: invoiceId },
-      select: { total: true }
-    })
-    invoiceTotal = invoicex?.total || 0
-
-    const allocations = await tx.customer_payment_allocations.findMany({
-      where: { invoicex_id: invoiceId },
-      select: { allocated_amount: true }
-    })
-    totalAllocated = allocations.reduce((sum: number, a: any) => sum + Number(a.allocated_amount), 0)
-  }
-
-  // Calculate payment status: 0=unpaid, 1=partial, 2=paid
-  const paymentStatus = totalAllocated === 0 ? 0 :
-    (totalAllocated >= invoiceTotal ? 1 : 2)  // Fixed: 1=Paid, 2=Partial
-
-  // Update the invoice
-  if (type === 'sale') {
-    await tx.invoice.update({
-      where: { id: invoiceId },
-      data: { payment_status: paymentStatus }
-    })
-  } else {
-    await tx.invoicex.update({
-      where: { id: invoiceId },
-      data: { payment_status: paymentStatus }
-    })
-  }
-}
-
-
-// ? OPTIMIZED: Batch update payment status for multiple invoices
-async function batchUpdateInvoicePaymentStatus(
-  tx: any,
-  saleInvoiceIds: number[],
-  salexInvoiceIds: number[]
-) {
-  const saleInvoices = saleInvoiceIds.length > 0
-    ? await tx.invoice.findMany({
-        where: { id: { in: saleInvoiceIds } },
-        select: { id: true, total: true }
-      })
-    : []
-
-  const salexInvoices = salexInvoiceIds.length > 0
-    ? await tx.invoicex.findMany({
-        where: { id: { in: salexInvoiceIds } },
-        select: { id: true, total: true }
-      })
-    : []
-
-  const saleAllocations = saleInvoiceIds.length > 0
-    ? await tx.customer_payment_allocations.findMany({
-        where: { invoice_id: { in: saleInvoiceIds } },
-        select: { invoice_id: true, allocated_amount: true }
-      })
-    : []
-
-  const salexAllocations = salexInvoiceIds.length > 0
-    ? await tx.customer_payment_allocations.findMany({
-        where: { invoicex_id: { in: salexInvoiceIds } },
-        select: { invoicex_id: true, allocated_amount: true }
-      })
-    : []
-
-  const saleAllocMap = new Map<number, number>()
-  saleAllocations.forEach(a => {
-    const current = saleAllocMap.get(a.invoice_id) || 0
-    saleAllocMap.set(a.invoice_id, current + Number(a.allocated_amount))
-  })
-
-  const salexAllocMap = new Map<number, number>()
-  salexAllocations.forEach(a => {
-    const current = salexAllocMap.get(a.invoicex_id) || 0
-    salexAllocMap.set(a.invoicex_id, current + Number(a.allocated_amount))
-  })
-
-  if (saleInvoices.length > 0) {
-    const statusCases = saleInvoices.map(invoice => {
-      const totalAllocated = saleAllocMap.get(invoice.id) || 0
-      const paymentStatus = totalAllocated === 0 ? 0 :
-        (totalAllocated >= invoice.total ? 1 : 2)
-      return `WHEN ${invoice.id} THEN ${paymentStatus}`
-    }).join(' ')
-    
-    await tx.$executeRawUnsafe(`
-      UPDATE invoice 
-      SET payment_status = CASE id ${statusCases} ELSE payment_status END
-      WHERE id IN (${saleInvoiceIds.join(',')})
-    `)
-  }
-
-  if (salexInvoices.length > 0) {
-    const statusCases = salexInvoices.map(invoice => {
-      const totalAllocated = salexAllocMap.get(invoice.id) || 0
-      const paymentStatus = totalAllocated === 0 ? 0 :
-        (totalAllocated >= invoice.total ? 1 : 2)
-      return `WHEN ${invoice.id} THEN ${paymentStatus}`
-    }).join(' ')
-    
-    await tx.$executeRawUnsafe(`
-      UPDATE invoicex 
-      SET payment_status = CASE id ${statusCases} ELSE payment_status END
-      WHERE id IN (${salexInvoiceIds.join(',')})
-    `)
-  }
-}
 export default withObservability(handler)

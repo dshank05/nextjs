@@ -1,11 +1,14 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
+import { convertDateToTimestamp } from '../../../lib/date-utils';
+import { checkPaymentAllocations } from '../../../lib/payment-allocations';
+import { answerError } from '../../../lib/api/sale-routes';
+import { SaleError } from '../../../lib/sale';
 
-const prisma = new PrismaClient();
 
 export default async function handler(
   req: NextApiRequest,
@@ -188,23 +191,29 @@ async function handleUpdatePayment(
       return res.status(404).json({ error: 'Payment not found' });
     }
 
+    // Checked against what is left on each purchase apart from this payment.
+    const checked = await checkPaymentAllocations(prisma, 'vendor', existingPayment.vendor_id, payment_amount, allocations,
+      { requestedType: payment_type ?? existingPayment.payment_type, excludePaymentId: paymentId });
+    const allocs = checked.allocations.map(a => ({ purchase_id: a.id, allocated_amount: a.amount, notes: a.notes }));
+    const paymentTs = convertDateToTimestamp(payment_date);
+
     // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
     const handlerParams = {
       paymentId,
       vendorId: existingPayment.vendor_id,
       oldAmount: Number(existingPayment.payment_amount),
-      newAmount: Number(payment_amount),
+      newAmount: checked.amount,
       oldAllocations: existingPayment.allocations.map(a => ({
         purchase_id: a.purchase_id,
         allocated_amount: Number(a.allocated_amount)
       })),
-      newAllocations: allocations.map((a: any) => ({
+      newAllocations: allocs.map(a => ({
         purchase_id: a.purchase_id,
-        allocated_amount: Number(a.allocated_amount)
+        allocated_amount: a.allocated_amount
       })),
       paymentMode: payment_mode,
-      paymentDate: payment_date,
-      paymentType: payment_type,
+      paymentDate: paymentTs,
+      paymentType: checked.paymentType,
       fy: existingPayment.fy
     };
 
@@ -240,46 +249,43 @@ async function handleUpdatePayment(
       const updatedPayment = await tx.vendor_payments.update({
         where: { id: paymentId },
         data: {
-          payment_amount,
-          payment_date,
+          payment_amount: checked.amount,
+          payment_date: paymentTs,
           payment_mode,
-          payment_type,
+          payment_type: checked.paymentType,
           notes: notes || null
         }
       });
       console.log('[PAYMENT EDIT] Payment record updated');
 
       // 3. If payment_date changed, sync all related ledger entries
-      if (existingPayment.payment_date !== payment_date) {
+      if (existingPayment.payment_date !== paymentTs) {
         await tx.vendor_ledger.updateMany({
           where: {
             transaction_id: paymentId,
             transaction_type: 'PAYMENT'
           },
           data: {
-            transaction_date: payment_date,
-            payment_date: payment_date
+            transaction_date: paymentTs,
+            payment_date: paymentTs
           }
         });
       }
 
-      // 4. ⚡ OPTIMIZATION: Parallel allocation updates
-      await Promise.all([
-        // Delete old allocations
-        tx.payment_allocations.deleteMany({
-          where: { payment_id: paymentId }
-        }),
-        // Create new allocations - using createMany for bulk insert
-        tx.payment_allocations.createMany({
-          data: allocations.map((alloc: any) => ({
+      // 4. Replace the allocations: delete first, then create (in order -
+      // issuing both at once left the order to the driver), as the customer side does.
+      await tx.payment_allocations.deleteMany({ where: { payment_id: paymentId } });
+      if (allocs.length) {
+        await tx.payment_allocations.createMany({
+          data: allocs.map(alloc => ({
             payment_id: paymentId,
             purchase_id: alloc.purchase_id,
             allocated_amount: alloc.allocated_amount,
-            allocation_date: payment_date,
+            allocation_date: paymentTs,
             notes: alloc.notes || null
           }))
-        })
-      ]);
+        });
+      }
 
       // 5. ⚡ OPTIMIZATION: Recalculate purchase statuses in parallel
       if (handlerResult.metadata?.purchasesToUpdate && handlerResult.metadata.purchasesToUpdate.length > 0) {
@@ -373,7 +379,7 @@ async function handleUpdatePayment(
 
       return {
         payment: updatedPayment,
-        allocations: allocations
+        allocations: allocs
       };
     }, {
       timeout: 45000
@@ -385,6 +391,7 @@ async function handleUpdatePayment(
       data: result
     });
   } catch (error) {
+    if (error instanceof SaleError) return answerError(res, error, 'update the payment');
     console.error('Error updating payment:', error);
     return res.status(500).json({
       error: 'Failed to update payment',

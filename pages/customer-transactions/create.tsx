@@ -136,11 +136,21 @@ export default function CustomerTransactionEntry() {
       setLoading(true)
     }
     try {
-      const res = await fetch(`/api/sales?customer=${customerId}&limit=1000&sortOrder=asc`)
-      const data = await res.json()
-      
-      if (data.sales) {
-        const invoices: OutstandingInvoice[] = data.sales
+      // Sale and Invoice C bills both take customer payments; Invoice C was
+      // never listed here, so it could only be paid with the bill.
+      const [saleRes, salexRes] = await Promise.all([
+        fetch(`/api/sales?customer=${customerId}&limit=1000&sortOrder=asc`),
+        fetch(`/api/salex?customer=${customerId}&limit=1000&sortOrder=asc`)
+      ])
+      if (!saleRes.ok || !salexRes.ok) throw new Error('Failed to load bills')
+      const [saleData, salexData] = await Promise.all([saleRes.json(), salexRes.json()])
+      const rows = [
+        ...(saleData.data || saleData.sales || []).map((s: any) => ({ ...s, kind: 'sale' as const })),
+        ...(salexData.data || salexData.salexs || []).map((s: any) => ({ ...s, kind: 'salex' as const }))
+      ].sort((a: any, b: any) => (a.invoice_date || 0) - (b.invoice_date || 0))
+
+      {
+        const invoices: OutstandingInvoice[] = rows
           .filter((s: any) => {
             // In create mode, only show invoices with outstanding amounts
             // In edit mode with skipStateUpdate, return ALL invoices (will be filtered later)
@@ -153,6 +163,8 @@ export default function CustomerTransactionEntry() {
             return s.remaining_amount > 0
           })
           .map((s: any) => ({
+            kind: s.kind,
+            key: `${s.kind}-${s.id}`,
             invoice_id: s.id,
             invoice_no: s.invoice_no,
             invoice_date: s.invoice_date,
@@ -169,7 +181,6 @@ export default function CustomerTransactionEntry() {
         }
         return invoices
       }
-      return []
     } catch (error) {
       console.error('Error fetching outstanding invoices:', error)
       setError('Failed to load outstanding invoices')
@@ -199,6 +210,8 @@ export default function CustomerTransactionEntry() {
             return r.remaining_refund > 0
           })
           .map((r: any) => ({
+            kind: (r.invoice_type === 'invoicex' ? 'salex' : 'sale') as 'sale' | 'salex',
+            key: `${r.invoice_type === 'invoicex' ? 'salex' : 'sale'}-${r.id}`,
             return_id: r.id,
             credit_note_no: r.credit_note_no || `CR-${r.id}`,
             return_date: r.return_date,
@@ -292,25 +305,37 @@ export default function CustomerTransactionEntry() {
         // ✅ FIX: Load allocated invoices/returns for edit mode with proper merging
         if (isIncome && transaction.allocations && transaction.allocations.length > 0) {
           // Build list of allocated invoices with their data
-          const allocatedInvoices: OutstandingInvoice[] = transaction.allocations.map((alloc: any) => ({
-            invoice_id: alloc.invoice_id || alloc.invoicex_id,
-            invoice_no: alloc.invoice_no,
-            invoice_date: alloc.invoice_date,
-            total_bill: alloc.invoice_total || 0,
-            total_paid: alloc.allocated_amount,
-            // ✅ FIX 1: Cap outstanding at 0 to prevent showing negative amounts
-            outstanding_amount: Math.max(0, (alloc.invoice_total || 0) - alloc.allocated_amount),
-            payment_status: alloc.payment_status || 0,
-            allocated: alloc.allocated_amount,
-            isInCurrentPayment: true  // Mark as part of current payment
-          }))
-          
           // Fetch fresh invoices WITHOUT overwriting state
-          const freshInvoices = await fetchOutstandingInvoices(transaction.customer.id, true)
-          
+          const freshInvoices = (await fetchOutstandingInvoices(transaction.customer.id, true)) || []
+          const freshByKey = new Map(freshInvoices.map(i => [i.key, i]))
+
+          // Each allocation keeps its kind: an Invoice C allocation was folded
+          // into a sale one of the same id. What this payment may put on a bill
+          // is what is left on it plus what this payment already has there.
+          const allocatedInvoices: OutstandingInvoice[] = transaction.allocations.map((alloc: any) => {
+            const kind: 'sale' | 'salex' = alloc.invoicex_id ? 'salex' : 'sale'
+            const id = kind === 'salex' ? alloc.invoicex_id : alloc.invoice_id
+            const key = `${kind}-${id}`
+            const fresh = freshByKey.get(key)
+            const left = fresh ? fresh.outstanding_amount : 0
+            return {
+              kind,
+              key,
+              invoice_id: id,
+              invoice_no: alloc.invoice_no,
+              invoice_date: alloc.invoice_date,
+              total_bill: alloc.invoice_total || 0,
+              total_paid: fresh ? fresh.total_paid : alloc.allocated_amount,
+              outstanding_amount: Math.max(0, left + alloc.allocated_amount),
+              payment_status: alloc.payment_status || 0,
+              allocated: alloc.allocated_amount,
+              isInCurrentPayment: true  // Mark as part of current payment
+            }
+          })
+
           // Merge: Keep allocated invoices, add fresh invoices not in allocations
-          const allocatedIds = new Set(allocatedInvoices.map(i => i.invoice_id))
-          const otherInvoices = freshInvoices.filter(i => !allocatedIds.has(i.invoice_id))
+          const allocatedIds = new Set(allocatedInvoices.map(i => i.key))
+          const otherInvoices = freshInvoices.filter(i => !allocatedIds.has(i.key))
           
           // ✅ FIX 3: Filter to only show invoices that are either:
           // 1. In current payment, OR
@@ -323,6 +348,8 @@ export default function CustomerTransactionEntry() {
         } else if (!isIncome && transaction.allocations && transaction.allocations.length > 0) {
           // Build list of allocated returns with their data
           const allocatedReturns: OutstandingReturn[] = transaction.allocations.map((alloc: any) => ({
+            kind: (alloc.return_type === 'salex' ? 'salex' : 'sale') as 'sale' | 'salex',
+            key: `${alloc.return_type === 'salex' ? 'salex' : 'sale'}-${alloc.return_id}`,
             return_id: alloc.return_id,
             credit_note_no: alloc.credit_note_no || `CR-${alloc.return_id}`,
             return_date: alloc.allocation_date,
@@ -338,8 +365,8 @@ export default function CustomerTransactionEntry() {
           const freshReturns = await fetchOutstandingReturns(transaction.customer.id, true)
           
           // Merge: Keep allocated returns, add fresh returns not in allocations
-          const allocatedIds = new Set(allocatedReturns.map(r => r.return_id))
-          const otherReturns = freshReturns.filter(r => !allocatedIds.has(r.return_id))
+          const allocatedIds = new Set(allocatedReturns.map(r => r.key))
+          const otherReturns = freshReturns.filter(r => !allocatedIds.has(r.key))
           
           // Filter to only show returns with outstanding > 0 or in current payment
           const returnsToShow = [...allocatedReturns, ...otherReturns].filter(ret =>
@@ -361,19 +388,19 @@ export default function CustomerTransactionEntry() {
     }
   }
 
-  const handleInvoiceAllocationChange = (invoiceId: number, value: string) => {
+  const handleInvoiceAllocationChange = (key: string, value: string) => {
     const allocAmount = parseFloat(value) || 0
     setOutstandingInvoices(prev => prev.map(invoice => 
-      invoice.invoice_id === invoiceId 
+      invoice.key === key 
         ? { ...invoice, allocated: allocAmount }
         : invoice
     ))
   }
 
-  const handleReturnAllocationChange = (returnId: number, value: string) => {
+  const handleReturnAllocationChange = (key: string, value: string) => {
     const allocAmount = parseFloat(value) || 0
     setOutstandingReturns(prev => prev.map(ret => 
-      ret.return_id === returnId 
+ ret.key === key 
         ? { ...ret, allocated: allocAmount }
         : ret
     ))
@@ -386,11 +413,8 @@ export default function CustomerTransactionEntry() {
       const updated = outstandingInvoices.map(invoice => {
         if (remaining <= 0) return { ...invoice, allocated: 0 }
         
-        // ✅ FIX: In edit mode, invoices in current payment can accept up to total_bill
-        // Other invoices can only accept up to outstanding_amount
-        const maxAllocation = invoice.isInCurrentPayment 
-          ? invoice.total_bill 
-          : invoice.outstanding_amount
+        // outstanding_amount already includes what this payment has on the bill
+        const maxAllocation = invoice.outstanding_amount
         
         const toAllocate = Math.min(remaining, maxAllocation)
         remaining -= toAllocate
@@ -464,12 +488,7 @@ export default function CustomerTransactionEntry() {
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
       // ✅ FIX: Check allocation against appropriate max per invoice
-      const hasOverAllocation = outstandingInvoices.some(invoice => {
-        const maxAllowedAllocation = invoice.isInCurrentPayment 
-          ? invoice.total_bill           // Invoices in current payment can reallocate up to full amount
-          : invoice.outstanding_amount   // Other invoices limited to outstanding
-        return (invoice.allocated || 0) > maxAllowedAllocation
-      })
+      const hasOverAllocation = outstandingInvoices.some(invoice => (invoice.allocated || 0) > invoice.outstanding_amount + 0.005)
       if (hasOverAllocation) return true
       
       if (allocated === 0) return true
@@ -517,19 +536,12 @@ export default function CustomerTransactionEntry() {
     // BILL_SPECIFIC: Must allocate ALL
     if (paymentType === 'BILL_SPECIFIC') {
       // ✅ FIX: Check for over-allocation against appropriate max per invoice
-      const overAllocatedInvoices = outstandingInvoices.filter(invoice => {
-        const maxAllowedAllocation = invoice.isInCurrentPayment 
-          ? invoice.total_bill           // Invoices in current payment can reallocate up to full amount
-          : invoice.outstanding_amount   // Other invoices limited to outstanding
-        return (invoice.allocated || 0) > maxAllowedAllocation
-      })
+      const overAllocatedInvoices = outstandingInvoices.filter(invoice => (invoice.allocated || 0) > invoice.outstanding_amount + 0.005)
       
       if (overAllocatedInvoices.length > 0) {
-        const invoicesList = overAllocatedInvoices.map(i => {
-          const maxAllowed = i.isInCurrentPayment ? i.total_bill : i.outstanding_amount
-          const limitType = i.isInCurrentPayment ? 'Total Bill' : 'Outstanding'
-          return `Invoice #${i.invoice_no} (${limitType}: ₹${maxAllowed.toLocaleString('en-IN')}, Trying to allocate: ₹${(i.allocated || 0).toLocaleString('en-IN')})`
-        }).join(', ')
+        const invoicesList = overAllocatedInvoices.map(i =>
+          `${i.kind === 'salex' ? 'Invoice C' : 'Invoice'} #${i.invoice_no} (Outstanding: ₹${i.outstanding_amount.toLocaleString('en-IN')}, Trying to allocate: ₹${(i.allocated || 0).toLocaleString('en-IN')})`
+        ).join(', ')
         setError(
           `Cannot allocate more than allowed amount. Over-allocated invoices: ${invoicesList}. Options: 1) Reduce allocation, or 2) Switch to MIXED payment type.`
         )
@@ -579,9 +591,10 @@ export default function CustomerTransactionEntry() {
       const allocations = paymentType === 'DIRECT' ? [] : outstandingInvoices
         .filter(invoice => invoice.allocated && invoice.allocated > 0)
         .map(invoice => ({
-          invoice_id: invoice.invoice_id,
+          // The bill's kind decides the column: sale and Invoice C ids overlap.
+          ...(invoice.kind === 'salex' ? { invoicex_id: invoice.invoice_id } : { invoice_id: invoice.invoice_id }),
           allocated_amount: invoice.allocated,
-          notes: `Payment for Invoice ${invoice.invoice_no}`
+          notes: `Payment for ${invoice.kind === 'salex' ? 'Invoice C' : 'Invoice'} ${invoice.invoice_no}`
         }))
       
       payload = {
@@ -619,7 +632,10 @@ export default function CustomerTransactionEntry() {
       const allocations = paymentType === 'DIRECT' ? [] : outstandingReturns
         .filter(ret => ret.allocated && ret.allocated > 0)
         .map(ret => ({
+          // kind-explicit: sale and Invoice C returns share ids
           return_id: ret.return_id,
+          type: ret.kind,
+          ...(ret.kind === 'salex' ? { salex_return_id: ret.return_id } : { sale_return_id: ret.return_id }),
           allocated_amount: ret.allocated,
           notes: `Refund for ${ret.credit_note_no}`
         }))
@@ -927,8 +943,11 @@ export default function CustomerTransactionEntry() {
                       <tbody>
                         {operationType === 'INCOME' ? (
                           outstandingInvoices.map(invoice => (
-                            <tr key={invoice.invoice_id}>
-                              <td>SINV-{invoice.invoice_no}</td>
+                            <tr key={invoice.key}>
+                              <td>
+                                {invoice.kind === 'salex' ? `C-${invoice.invoice_no}` : `SINV-${invoice.invoice_no}`}
+                                {invoice.kind === 'salex' && <span className="ml-2 px-1.5 py-0.5 text-[10px] rounded bg-purple-600 text-white">Invoice C</span>}
+                              </td>
                               <td>{new Date(invoice.invoice_date * 1000).toLocaleDateString()}</td>
                               <td className="text-right">₹{invoice.total_bill?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                               <td className="text-right">₹{invoice.total_paid?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -940,8 +959,8 @@ export default function CustomerTransactionEntry() {
                                   type="number"
                                   step="0.01"
                                   value={invoice.allocated || ''}
-                                  onChange={(e) => handleInvoiceAllocationChange(invoice.invoice_id, e.target.value)}
-                                  max={invoice.isInCurrentPayment ? invoice.total_bill : invoice.outstanding_amount}
+                                  onChange={(e) => handleInvoiceAllocationChange(invoice.key, e.target.value)}
+                                  max={invoice.outstanding_amount}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"
                                   placeholder="0"
@@ -951,7 +970,7 @@ export default function CustomerTransactionEntry() {
                           ))
                         ) : (
                           outstandingReturns.map(ret => (
-                            <tr key={ret.return_id}>
+                            <tr key={ret.key}>
                               <td>{ret.credit_note_no}</td>
                               <td>{new Date(ret.return_date * 1000).toLocaleDateString()}</td>
                               <td className="text-right">₹{ret.total_return?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -964,7 +983,7 @@ export default function CustomerTransactionEntry() {
                                   type="number"
                                   step="0.01"
                                   value={ret.allocated || ''}
-                                  onChange={(e) => handleReturnAllocationChange(ret.return_id, e.target.value)}
+                                  onChange={(e) => handleReturnAllocationChange(ret.key, e.target.value)}
                                   max={ret.outstanding_refund}
                                   disabled={!amount || parseFloat(amount) <= 0}
                                   className="input w-24 text-right disabled:opacity-50 disabled:cursor-not-allowed"

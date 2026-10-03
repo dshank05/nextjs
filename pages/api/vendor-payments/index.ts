@@ -1,17 +1,15 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
-import {
-  validatePaymentAllocation,
-  calculatePaymentStatus
-} from '../../../lib/payment-allocation-service';
+import { checkPaymentAllocations } from '../../../lib/payment-allocations';
+import { answerError } from '../../../lib/api/sale-routes';
+import { SaleError } from '../../../lib/sale';
 import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
 import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
 
-const prisma = new PrismaClient();
 
 export default async function handler(
   req: NextApiRequest,
@@ -63,20 +61,13 @@ async function handleCreatePayment(
     // Convert vendor_id to integer at the start
     const vendorId = parseInt(vendor_id);
 
-    // Validate allocations
-    const validation = await validatePaymentAllocation(
-      vendorId,
-      payment_amount,
-      allocations,
-      payment_type
-    );
-
-    if (!validation.valid) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        errors: validation.errors
-      });
-    }
+    // Checked against what is left on each purchase (other payments counted)
+    // and its vendor; the type follows from them. This ran the customer
+    // validator, which looks for invoice ids and so checked nothing here.
+    const checked = await checkPaymentAllocations(prisma, 'vendor', vendorId, payment_amount, allocations, { requestedType: payment_type })
+    const amount = checked.amount
+    const paymentType = checked.paymentType
+    const allocs = checked.allocations.map(a => ({ purchase_id: a.id, allocated_amount: a.amount, notes: a.notes }))
 
     // F-01: financial year comes from Settings, never from the client and never
     // inherited from the allocated document. A payment made in the open period
@@ -93,18 +84,18 @@ async function handleCreatePayment(
         data: {
           vendor_id: parseInt(vendor_id),
           payment_date: paymentTimestamp,  // ✅ Use converted timestamp
-          payment_amount,
+          payment_amount: amount,
           payment_mode,
-          payment_type,
+          payment_type: paymentType,
           notes,
           fy: financialYear
         }
       });
 
       // 2. ⚡ OPTIMIZED: Parallel allocation processing
-      // Create all allocations at once
+      // Create all allocs at once
       await tx.payment_allocations.createMany({
-        data: allocations.map(a => ({
+        data: allocs.map(a => ({
           payment_id: payment.id,
           purchase_id: a.purchase_id,
           allocated_amount: a.allocated_amount,
@@ -113,8 +104,8 @@ async function handleCreatePayment(
         }))
       });
 
-      // Batch fetch all affected purchases and current allocations
-      const purchaseIds = allocations.map(a => a.purchase_id);
+      // Batch fetch all affected purchases and current allocs
+      const purchaseIds = allocs.map(a => a.purchase_id);
       const [purchases, allocSums] = await Promise.all([
         tx.purchase.findMany({
           where: { id: { in: purchaseIds } },
@@ -132,7 +123,7 @@ async function handleCreatePayment(
       const allocMap = new Map(allocSums.map(a => [a.purchase_id, Number(a._sum.allocated_amount || 0)]));
 
       // Calculate statuses for all purchases
-      const statusUpdates = allocations.map(allocation => {
+      const statusUpdates = allocs.map(allocation => {
         const purchase = purchaseMap.get(allocation.purchase_id)!;
         const totalPaid = allocMap.get(allocation.purchase_id) || 0;
         const totalBill = Number(purchase.total);
@@ -158,14 +149,14 @@ async function handleCreatePayment(
         )
       );
 
-      const createdAllocations = allocations;
-      const totalAllocated = allocations.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
-      const unallocatedAmount = payment_amount - totalAllocated;
+      const createdAllocations = allocs;
+      const totalAllocated = allocs.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
+      const unallocatedAmount = amount - totalAllocated;
 
-      if (payment_type === 'DIRECT') {
+      if (paymentType === 'DIRECT') {
         const directLedgerNotes = notes?.trim() 
           ? notes 
-          : `Direct advance payment ₹${payment_amount}`;
+          : `Direct advance payment ₹${amount}`;
         
         await ledgerService.createEntry({
           vendor_id: vendorId,
@@ -177,7 +168,7 @@ async function handleCreatePayment(
           payment_mode,
           payment_date: paymentTimestamp,
           debit: 0,
-          credit: payment_amount,
+          credit: amount,
           notes: directLedgerNotes,
           fy: financialYear,
           transaction_id: payment.id
@@ -186,18 +177,18 @@ async function handleCreatePayment(
         await balanceHandler.incrementBalanceInTransaction(
           tx, 
           vendorId, 
-          { total_paid: payment_amount },
+          { total_paid: amount },
           {
             type: 'payment_create',
             id: payment.id,
             reference_no: `PAY-${payment.id}`,
-            notes: `Direct payment: ₹${payment_amount}`
+            notes: `Direct payment: ₹${amount}`
           }
         );
-      } else if (payment_type === 'MIXED') {
+      } else if (paymentType === 'MIXED') {
         const mixedLedgerNotes = notes?.trim()
           ? notes
-          : `Payment ₹${payment_amount} (₹${totalAllocated} allocated, ₹${unallocatedAmount} advance)`;
+          : `Payment ₹${amount} (₹${totalAllocated} allocated, ₹${unallocatedAmount} advance)`;
         
         await ledgerService.createEntry({
           vendor_id: vendorId,
@@ -209,7 +200,7 @@ async function handleCreatePayment(
           payment_mode,
           payment_date: paymentTimestamp,
           debit: 0,
-          credit: payment_amount,
+          credit: amount,
           notes: mixedLedgerNotes,
           fy: financialYear,
           transaction_id: payment.id
@@ -219,14 +210,14 @@ async function handleCreatePayment(
           tx, 
           vendorId, 
           {
-            total_paid: payment_amount,
+            total_paid: amount,
             total_allocated: totalAllocated
           },
           {
             type: 'payment_create',
             id: payment.id,
             reference_no: `PAY-${payment.id}`,
-            notes: `Payment: ₹${payment_amount} (allocated: ₹${totalAllocated}, advance: ₹${unallocatedAmount})`
+            notes: `Payment: ₹${amount} (allocated: ₹${totalAllocated}, advance: ₹${unallocatedAmount})`
           }
         );
       } else {
@@ -259,14 +250,14 @@ async function handleCreatePayment(
           tx, 
           vendorId, 
           {
-            total_paid: payment_amount,
+            total_paid: amount,
             total_allocated: totalAllocated
           },
           {
             type: 'payment_create',
             id: payment.id,
             reference_no: `PAY-${payment.id}`,
-            notes: `Payment: ₹${payment_amount} (allocated: ₹${totalAllocated})`
+            notes: `Payment: ₹${amount} (allocated: ₹${totalAllocated})`
           }
         );
       }
@@ -285,6 +276,7 @@ async function handleCreatePayment(
       data: result
     });
   } catch (error) {
+    if (error instanceof SaleError) return answerError(res, error, 'create the payment');
     console.error('Error creating payment:', error);
     return res.status(500).json({
       error: 'Failed to create payment',

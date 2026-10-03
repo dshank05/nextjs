@@ -1,11 +1,10 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import { customerLedgerService } from '../../../lib/customer-ledger-service';
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler';
 
-const prisma = new PrismaClient();
 
 export default async function handler(
   req: NextApiRequest,
@@ -198,6 +197,25 @@ async function handleUpdateRefund(
       return res.status(404).json({ error: 'Refund not found' });
     }
 
+    // Each allocation names its return's kind (sale / Invoice C ids overlap);
+    // a missing kind defaulted to sale.
+    const newAllocs: { return_id: number; type: 'sale' | 'salex'; allocated_amount: number; notes: string | null }[] = []
+    for (const a of allocations as any[]) {
+      const type = a.salex_return_id ? 'salex' : a.sale_return_id ? 'sale' : (a.type || a.return_type)
+      if (type !== 'sale' && type !== 'salex') {
+        return res.status(400).json({ error: 'Each allocation must say whether it is a sale or an Invoice C return (type)' })
+      }
+      const rid = parseInt(a.salex_return_id || a.sale_return_id || a.return_id)
+      const amt = Number(a.allocated_amount)
+      if (!Number.isInteger(rid) || !Number.isFinite(amt) || amt <= 0) {
+        return res.status(400).json({ error: 'Each allocation needs a return and an amount above zero' })
+      }
+      newAllocs.push({ return_id: rid, type, allocated_amount: amt, notes: a.notes || null })
+    }
+    if (newAllocs.reduce((s, a) => s + a.allocated_amount, 0) > Number(refund_amount) + 0.005) {
+      return res.status(400).json({ error: 'Allocated more than the refund amount' })
+    }
+
     // ⚡ OPTIMIZATION: Prepare handler params OUTSIDE transaction
     const handlerParams = {
       refundId,
@@ -209,10 +227,10 @@ async function handleUpdateRefund(
         allocated_amount: Number(a.allocated_amount),
         type: a.sale_return_id ? 'sale' : 'salex'
       })),
-      newAllocations: allocations.map((a: any) => ({
+      newAllocations: newAllocs.map(a => ({
         return_id: a.return_id,
-        allocated_amount: Number(a.allocated_amount),
-        type: a.type || 'sale'
+        allocated_amount: a.allocated_amount,
+        type: a.type
       })),
       refundMode: refund_mode,
       refundDate: refund_date,
@@ -245,6 +263,7 @@ async function handleUpdateRefund(
         await tx.customer_ledger.updateMany({
           where: {
             transaction_id: refundId,
+            reference_type: 'refund',
             transaction_type: 'REFUND_PAID'
           },
           data: {
@@ -262,7 +281,7 @@ async function handleUpdateRefund(
       
       // Create new allocations - using createMany for bulk insert
       await tx.customer_refund_allocations.createMany({
-        data: allocations.map((alloc: any) => ({
+        data: newAllocs.map(alloc => ({
           refund_id: refundId,
           sale_return_id: alloc.type === 'sale' ? alloc.return_id : null,
           salex_return_id: alloc.type === 'salex' ? alloc.return_id : null,
@@ -273,11 +292,20 @@ async function handleUpdateRefund(
       });
 
       // 5. ⚡ OPTIMIZATION: Recalculate return statuses in parallel
-      const returnsToUpdate = handlerResult.metadata?.returnsToUpdate || [];
+      // Every return before and after, by kind (the handler's list was bare
+      // ids, destructured here as { returnId, type }: nothing was recalculated).
+      const touched = new Map<string, { returnId: number; type: 'sale' | 'salex' }>();
+      for (const a of existingRefund.allocations) {
+        if (a.sale_return_id) touched.set(`sale-${a.sale_return_id}`, { returnId: a.sale_return_id, type: 'sale' });
+        if (a.salex_return_id) touched.set(`salex-${a.salex_return_id}`, { returnId: a.salex_return_id, type: 'salex' });
+      }
+      for (const a of newAllocs) touched.set(`${a.type}-${a.return_id}`, { returnId: a.return_id, type: a.type });
+      const returnsToUpdate = Array.from(touched.values());
       if (returnsToUpdate.length > 0) {
         await Promise.all(
           returnsToUpdate.map(({ returnId, type }) =>
-            require('../../../lib/payment-allocation-service').recalculateSaleReturnStatus(returnId, type, tx)
+            // recalculateSaleReturnStatus did not exist: every edit that touched a return threw.
+            require('../../../lib/payment-allocation-service').recalculateSaleReturnRefundStatus(type, returnId, tx)
           )
         );
       }

@@ -1,10 +1,9 @@
 import { NextApiRequest, NextApiResponse } from 'next';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
 import { parseDateRange } from '../../../lib/date-utils';
 
-const prisma = new PrismaClient();
 
 interface UnifiedTransaction {
   id: number;

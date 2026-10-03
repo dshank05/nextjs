@@ -324,10 +324,13 @@ export class CustomerTransactionHandler {
     if (amountDiff !== 0) {
       ledgerUpdates.push({
         description: 'Update refund amount',
+        // The refund's own row (see executeLedgerReversal): REFUND_PAID,
+        // reference_type 'refund' - 'REFUND' by id matched nothing, or a return.
         where: {
           transaction_id: params.refundId,
-          transaction_type: 'REFUND'
-        },
+          reference_type: 'refund',
+          transaction_type: { in: ['REFUND_PAID', 'REFUND'] }
+        } as any,
         data: {
           // REFUND is a debit everywhere it is created (SA-03).
           debit: params.newAmount,
@@ -1382,10 +1385,15 @@ export class CustomerTransactionHandler {
     } else if (data.entityType === 'refund') {
       console.log(`[LEDGER REVERSAL] Deleting REFUND ledger entries for refund_id=${data.entityId}`);
       
+      // The refund screen writes REFUND_PAID (reference_type 'refund'); this
+      // looked for REFUND by transaction_id, which is what a COMPLETED RETURN
+      // writes with the return's id - so it left the refund's own row and
+      // deleted a return's row whenever the two ids matched.
       ledgerEntries = await tx.customer_ledger.findMany({
         where: {
           transaction_id: data.entityId,
-          transaction_type: 'REFUND'
+          reference_type: 'refund',
+          transaction_type: { in: ['REFUND_PAID', 'REFUND'] }
         }
       });
       

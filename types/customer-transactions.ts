@@ -90,6 +90,10 @@ export interface TransactionData {
 
 // Customer transaction create/edit page types
 export interface OutstandingInvoice {
+  /** 'sale' (invoice) or 'salex' (Invoice C): the two number their bills separately */
+  kind: 'sale' | 'salex';
+  /** `${kind}-${invoice_id}`: unique across both */
+  key: string;
   invoice_id: number;
   invoice_no: number;
   invoice_date: number;
@@ -102,6 +106,9 @@ export interface OutstandingInvoice {
 }
 
 export interface OutstandingReturn {
+  /** sale or Invoice C return: numbered separately, so the id needs its kind */
+  kind: 'sale' | 'salex';
+  key: string;
   return_id: number;
   credit_note_no: string;
   return_date: number;
