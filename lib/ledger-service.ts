@@ -223,12 +223,14 @@ export class LedgerService {
     packing_forwarding_amount: number
     freight_amount: number
     fy: number
+    /** The return's refund, rounded to the rupee (F-34); the parts' sum when absent. */
+    refund_amount?: number
   }, client: any) {
-    const totalCredit = 
-      purchaseReturn.total_amount + 
-      purchaseReturn.total_tax + 
-      purchaseReturn.packing_forwarding_amount + 
-      purchaseReturn.freight_amount
+    const totalCredit = purchaseReturn.refund_amount ??
+      (purchaseReturn.total_amount +
+      purchaseReturn.total_tax +
+      purchaseReturn.packing_forwarding_amount +
+      purchaseReturn.freight_amount)
 
     await this.createEntry({
       vendor_id: purchaseReturn.vendor_id || 0,

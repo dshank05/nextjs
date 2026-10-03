@@ -6,6 +6,9 @@ import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
+import { round2 } from '../../../lib/line-math'
+import { answerError } from '../../../lib/api/sale-routes'
+import { pricePurchaseReturnLines, purchaseReturnItemRow, recalcPurchaseReturnStatus } from '../../../lib/purchase-return'
 
 async function handler(
   req: NextApiRequest,
@@ -124,60 +127,23 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // Convert return date to Unix timestamp
     const returnDateTimestamp = return_date ? convertDateToTimestamp(return_date) : Math.floor(Date.now() / 1000)
 
-    // Calculate totals
-    let totalAmount = 0
-    let totalTax = 0
-
-    // Get vendor details for tax calculations
-    const vendor = await prisma.vendor_details.findUnique({
-      where: { id: parseInt(vendor_id) },
-      select: { state_code: true }
-    })
-
-    // Process items and calculate totals
-    const processedItems = []
-    for (const item of items) {
-      const subtotal = item.return_qty * item.unit_price
-      const taxAmount = (subtotal * item.tax_rate) / 100
-
-      // Calculate CGST/SGST/IGST breakdown based on vendor state
-      const BUSINESS_STATE_CODE = 9 // Uttar Pradesh
-      let cgst = 0, sgst = 0, igst = 0
-      if (vendor?.state_code === BUSINESS_STATE_CODE) {
-        // Intra-state: CGST + SGST
-        cgst = taxAmount / 2
-        sgst = taxAmount / 2
-      } else {
-        // Inter-state: IGST only
-        igst = taxAmount
-      }
-
-      totalAmount += subtotal
-      totalTax += taxAmount
-
-      processedItems.push({
-        purchase_item_id: parseInt(item.purchase_item_id),
-        return_qty: item.return_qty,
-        return_reason_id: parseInt(item.return_reason_id),
-        unit_price: item.unit_price,
-        tax_amount: taxAmount,
-        cgst: cgst,
-        sgst: sgst,
-        igst: igst,
-        subtotal: subtotal,
-        notes: item.notes || ''
-      })
-    }
+    // Priced and checked by the server (lib/purchase-return.ts): what is
+    // left of each line, this vendor's bills, the line's own GST, F-34 rounding.
+    const priced = await pricePurchaseReturnLines(prisma, parseInt(vendor_id), items)
+    const totalAmount = priced.totalAmount
+    const totalTax = priced.totalTax
+    const processedItems = priced.lines
 
     // Generate debit note number (outside transaction)
     const debitNoteNo = await generateNoteNumber('DEBIT', financialYear)
 
     // Use the provided P&F amount from UI (no calculation needed)
-    const packingForwardingAmount = packing_forwarding_amount || 0
+    const packingForwardingAmount = round2(Number(packing_forwarding_amount) || 0)
+    if (packingForwardingAmount < 0) return res.status(400).json({ message: 'P&F cannot be negative' })
     const freightAmount = 0 // Not used in new system
 
-    // Calculate refund amount (before transaction for use in ledger entry)
-    const refundAmount = totalAmount + totalTax + packingForwardingAmount + freightAmount
+    // Refund to the rupee (F-34)
+    const refundAmount = priced.refund(packingForwardingAmount)
 
     // ✅ Determine payment status from payment_status parameter
     const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status.toString()) : 0 // 0=Incomplete, 1=Complete
@@ -186,22 +152,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
 
     // Use database transaction with increased timeout for return processing
     const result = await prisma.$transaction(async (tx) => {
-      // Get affected purchase IDs from items
-      const purchaseItems = await tx.purchaseitems.findMany({
-        where: {
-          id: { in: items.map((item: any) => parseInt(item.purchase_item_id)) }
-        },
-        select: {
-          id: true,
-          purchase_id: true,
-          product_id: true
-        }
-      })
-
-      // The bills these lines belong to, by id (P4-11). Matching on invoice
-      // number also picked up other years' bills of the same number - the
-      // return could be attached to, and change the status of, the wrong bill.
-      const affectedPurchases = Array.from(new Set(purchaseItems.map(pi => pi.purchase_id))).map(id => ({ id }))
+      // The bills these lines belong to, by id (P4-11).
+      const affectedPurchases = priced.purchaseIds.map(id => ({ id }))
 
       // Create the main return record with debit note and P&F fields
       // ✅ FIX: Use Prisma relation syntax instead of direct field assignment
@@ -240,25 +192,13 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       await Promise.all([
         // Create all return items in bulk
         tx.purchase_return_items.createMany({
-          data: processedItems.map(item => ({
-            purchase_return_id: returnRecord.id,
-            purchase_item_id: item.purchase_item_id,
-            return_qty: item.return_qty,
-            return_reason_id: item.return_reason_id,
-            unit_price: item.unit_price,
-            tax_amount: item.tax_amount,
-            cgst: item.cgst,
-            sgst: item.sgst,
-            igst: item.igst,
-            notes: item.notes
-          }))
+          data: processedItems.map(item => purchaseReturnItemRow(returnRecord.id, item))
         }),
         // Update all product stocks in parallel
         ...processedItems.map(item => {
-          const purchaseItem = purchaseItems.find(pi => pi.id === item.purchase_item_id)
-          if (purchaseItem?.product_id) {
+          if (item.product_id) {
             return tx.product.update({
-              where: { id: purchaseItem.product_id },
+              where: { id: item.product_id },
               data: {
                 stock: {
                   decrement: item.return_qty
@@ -270,54 +210,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         })
       ])
 
-      // Update return_status for all affected purchases
-      // CRITICAL: We do NOT modify the original purchase amounts - they remain unchanged for accounting integrity
-      // Returns are tracked separately in purchase_returns and purchase_return_items tables
-      // Net amounts are calculated on-demand in reports/views when needed
-      for (const purchase of affectedPurchases) {
-        // Get all items for this purchase
-        const allPurchaseItems = await tx.purchaseitems.findMany({
-          where: { purchase_id: purchase.id },
-          select: { id: true, qty: true }
-        })
-
-        // Get all returns for these items
-        const allReturns = await tx.purchase_return_items.findMany({
-          where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
-          select: { purchase_item_id: true, return_qty: true }
-        })
-
-        // Calculate return status based on returned quantities
-        const returnMap = new Map()
-        allReturns.forEach(r => {
-          const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
-          existing.qty += r.return_qty
-          returnMap.set(r.purchase_item_id, existing)
-        })
-
-        let fullyReturnedCount = 0
-        let hasAnyReturns = false
-        for (const item of allPurchaseItems) {
-          const returnData = returnMap.get(item.id)
-          if (returnData && returnData.qty > 0) {
-            hasAnyReturns = true
-            if (returnData.qty >= (item.qty || 0)) {
-              fullyReturnedCount++
-            }
-          }
-        }
-
-        // Calculate return_status: 0=none, 1=partial, 2=full
-        const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
-
-        // ✅ ONLY update return_status - preserve original purchase amounts
-        await tx.purchase.update({
-          where: { id: purchase.id },
-          data: { 
-            return_status: returnStatus
-          }
-        })
-      }
+      // Return status of every bill the lines came from, by id.
+      await recalcPurchaseReturnStatus(tx, priced.purchaseIds)
 
       // ✅ ONLY CREATE LEDGER ENTRIES WHEN COMPLETE (Issue #6)
       if (paymentStatusValue === 1) {
@@ -331,6 +225,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           total_tax: totalTax,
           packing_forwarding_amount: packingForwardingAmount,
           freight_amount: freightAmount,
+          refund_amount: refundAmount,
           fy: financialYear
         }, tx)
 
@@ -442,7 +337,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           total_tax: totalTax,
           packing_forwarding_amount: packingForwardingAmount,
           freight_amount: freightAmount,
-          refund_amount: totalAmount + totalTax + packingForwardingAmount + freightAmount,
+          refund_amount: refundAmount,
           status: 'Completed',
           payment_status: result.payment_status,
           payment_mode: result.payment_mode,
@@ -452,11 +347,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     })
 
   } catch (error) {
-    console.error('Vendor return processing error:', error)
-    res.status(500).json({
-      message: 'Failed to process return',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return answerError(res, error, 'process the return')
   }
 }
 

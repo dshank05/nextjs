@@ -198,6 +198,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           available_qty: Math.max(0, availableQty), // Available for return
           is_fully_returned: availableQty <= 0, // ✅ Flag for UI
           unit_price: item.rate || 0,
+          net_unit_price: item.rate || 0,
           tax_rate: item.gst_percentage || 0,
           bill_reference: purchase.bill_reference || '',
           invoice_date: purchase.invoice_date ? (() => {

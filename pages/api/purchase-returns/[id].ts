@@ -5,6 +5,10 @@ import { ledgerService } from '../../../lib/ledger-service'
 import { balanceHandler } from '../../../lib/balance-handler'
 import { convertDateToTimestamp } from '../../../lib/date-utils'
 import { transactionHandler } from '../../../lib/transaction-handler'
+import { round2 } from '../../../lib/line-math'
+import { SaleError } from '../../../lib/sale'
+import { answerError } from '../../../lib/api/sale-routes'
+import { pricePurchaseReturnLines, purchaseReturnItemRow, recalcPurchaseReturnStatus } from '../../../lib/purchase-return'
 
 async function handler(
   req: NextApiRequest,
@@ -265,6 +269,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         available_qty: Math.max(0, availableQty), // Available for return (excluding current return since it's in returnedQtyMap)
         return_qty: returnQty, // 0 if not returned, actual qty if returned
         unit_price: unitPrice,
+        net_unit_price: originalItem.rate || 0,
         tax_rate: taxRate,
         tax_amount: taxAmount,
         cgst,
@@ -462,41 +467,16 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
     const result = await prisma.$transaction(async (tx) => {
       let finalPaymentStatus = payment_status !== undefined ? parseInt(payment_status.toString()) : existingReturn.payment_status
       
-      // Calculate totals
-      let totalAmount = 0
-      let totalTax = 0
+      // Priced and checked by the server, this return's own quantities
+      // available to it again (lib/purchase-return.ts).
+      const priced = await pricePurchaseReturnLines(tx, existingReturn.vendor_id as number, items, { excludeReturnId: returnId })
+      const totalAmount = priced.totalAmount
+      const totalTax = priced.totalTax
+      const processedItems = priced.lines
 
-      const processedItems = items.map((item: any) => {
-        const subtotal = item.return_qty * item.unit_price
-        const taxAmount = (subtotal * item.tax_rate) / 100
-
-        const BUSINESS_STATE_CODE = 9
-        let cgst = 0, sgst = 0, igst = 0
-        if (item.vendor_state_code === BUSINESS_STATE_CODE) {
-          cgst = taxAmount / 2
-          sgst = taxAmount / 2
-        } else {
-          igst = taxAmount
-        }
-
-        totalAmount += subtotal
-        totalTax += taxAmount
-
-        return {
-          purchase_item_id: parseInt(item.purchase_item_id),
-          return_qty: item.return_qty,
-          unit_price: item.unit_price,
-          tax_amount: taxAmount,
-          cgst,
-          sgst,
-          igst,
-          return_reason_id: item.return_reason_id,
-          notes: item.notes || ''
-        }
-      })
-
-      const pfAmount = parseFloat((packing_forwarding_amount || 0).toString())
-      const newTotal = totalAmount + totalTax + pfAmount
+      const pfAmount = round2(Number(packing_forwarding_amount) || 0)
+      if (pfAmount < 0) throw new SaleError(400, 'P&F cannot be negative', 'VALIDATION')
+      const newTotal = priced.refund(pfAmount)
 
       // For Type A returns, calculate status from allocations
       if (isTypeA) {
@@ -554,6 +534,18 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       }
 
       // Execute stock adjustments in parallel
+      // Taking more back out than is in stock is refused, as on create.
+      const short = Array.from(stockAdjustments.entries()).filter(([, adj]) => adj < 0)
+      if (short.length) {
+        const stocks = await tx.product.findMany({ where: { id: { in: short.map(([pid]) => pid) } }, select: { id: true, stock: true, product_name: true } })
+        for (const p of stocks) {
+          const adj = stockAdjustments.get(p.id) || 0
+          if ((p.stock || 0) + adj < 0) {
+            throw new SaleError(400, `Cannot return ${-adj} more of "${p.product_name}". Only ${p.stock} in stock.`, 'INSUFFICIENT_STOCK')
+          }
+        }
+      }
+
       const stockUpdatePromises = Array.from(stockAdjustments.entries())
         .filter(([_, adjustment]) => adjustment !== 0)
         .map(([productId, adjustment]) =>
@@ -570,7 +562,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       ])
 
       // Update return record and create new items in parallel
-      const refundAmount = totalAmount + totalTax + pfAmount
+      const refundAmount = newTotal
       const [updatedReturn] = await Promise.all([
         tx.purchase_returns.update({
           where: { id: returnId },
@@ -578,7 +570,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
             return_date: return_date ? convertDateToTimestamp(return_date) : undefined,
             total_amount: totalAmount,
             total_tax: totalTax,
-            refund_amount: parseFloat(refundAmount.toString()),
+            refund_amount: refundAmount,
             packing_forwarding_amount: pfAmount,
             notes: notes || '',
             payment_status: finalPaymentStatus,
@@ -588,70 +580,25 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           }
         }),
         tx.purchase_return_items.createMany({
-          data: processedItems.map(item => ({
-            purchase_return_id: returnId,
-            ...item
-          }))
+          data: processedItems.map(item => purchaseReturnItemRow(returnId, item))
         })
       ])
 
-        // Recalculate return_status for affected purchases
-        const returnWithPurchase = await tx.purchase_returns.findUnique({
-          where: { id: returnId },
-          select: { purchase_id: true }
-        })
-
-        if (returnWithPurchase?.purchase_id) {
-          const purchaseRecord = await tx.purchase.findUnique({
-            where: { id: returnWithPurchase.purchase_id },
-            select: { invoice_no: true }
-          })
-
-          if (purchaseRecord) {
-            // This bill's lines only (P4-11) - by number they included other years'.
-            const allPurchaseItems = await tx.purchaseitems.findMany({
-              where: { purchase_id: returnWithPurchase.purchase_id },
-              select: { id: true, qty: true }
-            })
-
-            const allReturns = await tx.purchase_return_items.findMany({
-              where: { purchase_item_id: { in: allPurchaseItems.map(pi => pi.id) } },
-              select: { purchase_item_id: true, return_qty: true }
-            })
-
-            const returnMap = new Map()
-            allReturns.forEach(r => {
-              const existing = returnMap.get(r.purchase_item_id) || { qty: 0 }
-              existing.qty += r.return_qty
-              returnMap.set(r.purchase_item_id, existing)
-            })
-
-            let fullyReturnedCount = 0
-            let hasAnyReturns = false
-            for (const item of allPurchaseItems) {
-              const returnData = returnMap.get(item.id)
-              if (returnData && returnData.qty > 0) {
-                hasAnyReturns = true
-                if (returnData.qty >= (item.qty || 0)) {
-                  fullyReturnedCount++
-                }
-              }
-            }
-
-            const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allPurchaseItems.length ? 2 : 1)
-
-            await tx.purchase.update({
-              where: { id: returnWithPurchase.purchase_id },
-              data: { return_status: returnStatus }
-            })
-          }
-        }
+      // Return status of every bill on the return, before and after, by id
+      // (only the first bill was recomputed).
+      const touchedBills = await tx.purchaseitems.findMany({
+        where: { id: { in: currentReturnItems.map(i => i.purchase_item_id) } },
+        select: { purchase_id: true }
+      })
+      await recalcPurchaseReturnStatus(tx, [...priced.purchaseIds, ...touchedBills.map(b => b.purchase_id)])
 
       // ✅ USE TRANSACTION HANDLER FOR ALL LEDGER/ALLOCATION/BALANCE OPERATIONS
       // ✅ REFACTORED: Handler now handles DEBIT_NOTE checks and updates internally
       const oldPaymentStatus = existingReturn.payment_status
       const newPaymentStatus = finalPaymentStatus
-      const oldTotal = (existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)
+      // The stored refund includes P&F, as newTotal does; total_amount + total_tax
+      // did not, so a return with P&F always looked changed.
+      const oldTotal = Number(existingReturn.refund_amount ?? ((existingReturn.total_amount || 0) + (existingReturn.total_tax || 0)))
 
       // ✅ Calculate final return date (like purchase PUT)
       const finalReturnDate = return_date
@@ -738,11 +685,7 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
       message: 'Return updated successfully'
     })
   } catch (error) {
-    console.error('Return update error:', error)
-    res.status(500).json({
-      message: 'Failed to update return',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return answerError(res, error, 'update the return')
   }
 }
 
@@ -783,9 +726,21 @@ async function handleDelete(req: NextApiRequest, res: NextApiResponse) {
       refundAmount: Number(returnRecord.refund_amount) || 0
     })
 
+    // The bills on the return, so their return status can be recomputed
+    // after (it stayed 'returned' when the return was deleted).
+    const returnLines = await prisma.purchase_return_items.findMany({
+      where: { purchase_return_id: returnId },
+      select: { purchase_item_id: true }
+    })
+    const billLines = returnLines.length
+      ? await prisma.purchaseitems.findMany({ where: { id: { in: returnLines.map(l => l.purchase_item_id) } }, select: { purchase_id: true } })
+      : []
+    const billIds = billLines.map(l => l.purchase_id)
+
     // Execute in transaction
     await prisma.$transaction(async (tx) => {
       await transactionHandler.executeDeleteInTransaction(tx, deleteOps)
+      await recalcPurchaseReturnStatus(tx, billIds)
     }, {
       timeout: 45000
     })

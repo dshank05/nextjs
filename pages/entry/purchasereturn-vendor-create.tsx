@@ -276,8 +276,9 @@ export default function PurchaseReturnVendorCreatePage() {
     const selectedItem = selectedItems.get(itemId);
     if (!selectedItem) return;
 
-    // Use new price
-    const price = Math.max(0, newPrice);
+    // Never above the purchase rate; the server refuses that too.
+    const ceiling = item.net_unit_price ?? item.unit_price;
+    const price = Math.min(Math.max(0, newPrice), ceiling);
 
     // Recalculate with new price
     const subtotal = selectedItem.return_qty * price;

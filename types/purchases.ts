@@ -135,6 +135,8 @@ export interface PurchaseReturnItem {
   available_qty: number;
   is_fully_returned?: boolean; // Flag for UI
   unit_price: number;
+  /** the purchase rate: the most a return can be priced at */
+  net_unit_price?: number;
   tax_rate: number;
   bill_reference: string;
   invoice_date: string;
