@@ -1,132 +1,65 @@
+import Link from 'next/link'
+
+/**
+ * Reports home. It was a grid of cards whose buttons went nowhere; it now
+ * lists every report, grouped.
+ */
+const GROUPS: { title: string; items: [string, string, string][] }[] = [
+  { title: 'Sales & purchases', items: [
+    ['Sale', '/reports/sale', 'Bills, GST, returns and net, top customers and products'],
+    ['Invoice C', '/reports/salex', 'The same for Invoice C bills'],
+    ['Purchase', '/reports/purchase', 'Bills, GST, returns, top vendors and products'],
+    ['Return Register', '/reports/returns', 'Sale, Invoice C and purchase returns'],
+    ['Profit by Period', '/reports/profit', 'Gross profit by month and product']
+  ] },
+  { title: 'Money & tax', items: [
+    ['Cash / Bank Book', '/reports/cash-book', 'Receipts and payments with a running balance'],
+    ['GST Summary', '/reports/gst', 'Output vs input tax, credit / debit notes, HSN summary'],
+    ['Customer Reports', '/reports/customer-reports', 'Customer balances and credit notes'],
+    ['Vendor Reports', '/reports/vendor-reports', 'Vendor balances and debit notes'],
+    ['Debit Notes', '/reports/debit-notes', 'Purchase return notes']
+  ] },
+  { title: 'Ledgers', items: [
+    ['Customer Ledger', '/reports/customer-ledger', 'One customer, with opening balance'],
+    ['Vendor Ledger', '/reports/vendor-ledger', 'One vendor, with opening balance'],
+    ['Customer Balance Logs', '/reports/customer-balance-logs', 'Every change to a customer’s counters'],
+    ['Vendor Balance Logs', '/reports/vendor-balance-logs', 'Every change to a vendor’s counters']
+  ] },
+  { title: 'Stock', items: [
+    ['Opening / Closing Stock', '/reports/openingclosing', 'Quantity and value for a period'],
+    ['Minimum Stock', '/reports/minimumstock', 'Products below their minimum'],
+    ['Dead Stock', '/entry/deadstock', 'Stock written off'],
+    ['Inactive Products', '/settings/inactive-products', 'Products switched off']
+  ] },
+  { title: 'People & charges', items: [
+    ['Mechanic Sale', '/reports/mechanic', 'Sales by mechanic'],
+    ['Staff Sale', '/reports/staff', 'Sales by staff'],
+    ['Commissions', '/reports/commissions', 'Commission on bills'],
+    ['Transport Cost', '/reports/transport', 'Freight on bills'],
+    ['Packing / Forwarding', '/reports/packing', 'P&F on bills'],
+    ['Bill Reference Sale', '/reports/billreferencesale', 'Sales by bill reference'],
+    ['Bill Reference Purchase', '/reports/billreferencepurchase', 'Purchases by bill reference'],
+    ['Notes Mentioned', '/reports/notes', 'Bills whose notes mention a word']
+  ] }
+]
+
 export default function Reports() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Reports & Analytics</h1>
-        <button className="btn-primary">
-          Generate Report
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Sales Reports */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">📈</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Sales Reports</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Monthly and yearly sales analysis
-            </p>
-            <button className="btn-primary w-full">View Sales Reports</button>
+      <h1 className="text-2xl font-bold text-white">Reports</h1>
+      {GROUPS.map(g => (
+        <div key={g.title} className="card">
+          <h2 className="text-lg font-semibold text-white mb-4">{g.title}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {g.items.map(([name, href, desc]) => (
+              <Link key={href} href={href} className="block rounded border border-slate-700 p-3 hover:bg-slate-700/50 transition-colors">
+                <div className="text-white font-medium">{name}</div>
+                <div className="text-xs text-slate-400">{desc}</div>
+              </Link>
+            ))}
           </div>
         </div>
-
-        {/* Purchase Reports */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">🛒</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Purchase Reports</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Purchase analysis and vendor performance
-            </p>
-            <button className="btn-primary w-full">View Purchase Reports</button>
-          </div>
-        </div>
-
-        {/* Inventory Reports */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">📊</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Inventory Reports</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Stock levels and movement analysis
-            </p>
-            <button className="btn-primary w-full">View Inventory Reports</button>
-          </div>
-        </div>
-
-        {/* Financial Reports */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">💰</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Financial Reports</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Profit, loss, and GST analysis
-            </p>
-            <button className="btn-primary w-full">View Financial Reports</button>
-          </div>
-        </div>
-
-        {/* Customer Reports */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">👥</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Customer Reports</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Customer analysis and purchase patterns
-            </p>
-            <button className="btn-primary w-full">View Customer Reports</button>
-          </div>
-        </div>
-
-        {/* Product Performance */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer">
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">🎯</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Product Performance</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Best selling products and trends
-            </p>
-            <button className="btn-primary w-full">View Performance Reports</button>
-          </div>
-        </div>
-
-        {/* Vendor Ledger Report */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer" onClick={() => window.location.href = '/reports/vendor-ledger'}>
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">📊</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Vendor Ledger</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Outstanding balances and debit notes tracking
-            </p>
-            <button className="btn-primary w-full">View Vendor Ledger</button>
-          </div>
-        </div>
-
-        {/* Debit Notes Report */}
-        <div className="card hover:bg-slate-700/50 transition-colors cursor-pointer" onClick={() => window.location.href = '/reports/debit-notes'}>
-          <div className="text-center">
-            <span className="text-4xl mb-3 block">📝</span>
-            <h3 className="text-lg font-semibold text-white mb-2">Debit Notes Report</h3>
-            <p className="text-slate-400 text-sm mb-4">
-              Vendor-wise debit note analysis and tracking
-            </p>
-            <button className="btn-primary w-full">View Debit Notes</button>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Report Actions */}
-      <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Quick Reports</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button className="flex items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-left">
-            <span className="text-2xl mr-4">📋</span>
-            <div>
-              <h4 className="font-medium text-white">Low Stock Report</h4>
-              <p className="text-slate-400 text-sm">Export current low stock items</p>
-            </div>
-          </button>
-          
-          <button className="flex items-center p-4 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-left">
-            <span className="text-2xl mr-4">📄</span>
-            <div>
-              <h4 className="font-medium text-white">Monthly Sales</h4>
-              <p className="text-slate-400 text-sm">Current month sales summary</p>
-            </div>
-          </button>
-        </div>
-      </div>
+      ))}
     </div>
   )
 }
