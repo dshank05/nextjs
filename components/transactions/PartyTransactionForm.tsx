@@ -9,7 +9,7 @@ import SessionStorageService, { useSessionStorage } from '../../lib/sessionStora
 import { getLocalDateString, convertDateToTimestamp } from '../../lib/date-utils'
 import {
   PARTY, isPaymentDirection, cachedDetail, usePartyTransaction, usePartyOpenBills, useSavePartyTransaction,
-  useCurrentFY, usePartyOptions, type Party, type Direction, type TxDetail
+  usePartyOptions, type Party, type Direction, type TxDetail
 } from '../../hooks/usePartyTransactions'
 
 /**
@@ -68,7 +68,6 @@ export function PartyTransactionForm({ party }: { party: Party }) {
   const detailQuery = usePartyTransaction(party, editId, editDirection, initial)
   const detail: TxDetail | undefined = detailQuery.data
   const { data: parties = [] } = usePartyOptions(party)
-  const { data: currentFY = 2024 } = useCurrentFY()
   const save = useSavePartyTransaction(party)
 
   const pid = parseInt(partyId) || 0
@@ -205,7 +204,7 @@ export function PartyTransactionForm({ party }: { party: Party }) {
   const confirm = () => {
     const allocations = payType === 'DIRECT' ? [] : chosen.map(r => allocationPayload(party, isPayment, r, alloc[r.key]))
     const when = convertDateToTimestamp(date)
-    const payload: any = { [P.idField]: partyId, notes, allocations, fy: currentFY }
+    const payload: any = { [P.idField]: partyId, notes, allocations }
     if (isPayment) Object.assign(payload, { payment_amount: amountNum, payment_mode: mode, payment_date: when, payment_type: payType })
     else Object.assign(payload, { refund_amount: amountNum, refund_mode: mode, refund_date: when, refund_type: payType === 'DIRECT' ? 'DIRECT' : 'RETURN_SPECIFIC' })
 

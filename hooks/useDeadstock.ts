@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { readJson } from './useParties';
+import { readJson } from './readJson';
 
 /**
  * Dead stock hooks (DETAILS_PLAN D4). Every change moves product stock, so after

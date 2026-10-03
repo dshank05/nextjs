@@ -1,4 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { usePartyRows } from './useParties';
+import { readJson } from './readJson';
 import SessionStorageService from '../lib/sessionStorage';
 
 /**
@@ -40,13 +43,7 @@ export const directionOf = (party: Party, isPayment: boolean): Direction =>
   isPayment ? PARTY[party].paymentDirection : PARTY[party].paymentDirection === 'income' ? 'expense' : 'income';
 
 /** The server's refusal text, whichever field it used. */
-export async function readJson(response: Response, fallback: string) {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.success === false) {
-    throw new Error(data.message || data.error || (Array.isArray(data.errors) && data.errors.join('; ')) || fallback);
-  }
-  return data;
-}
+export { readJson };
 
 // ---------------------------------------------------------------- list
 
@@ -281,30 +278,8 @@ export function useDeletePartyTransaction(party: Party) {
   });
 }
 
-export function useCurrentFY() {
-  return useQuery({
-    queryKey: ['currentFY'],
-    queryFn: async ({ signal }) => {
-      const r = await fetch('/api/financial-years', { signal });
-      if (!r.ok) throw new Error('Failed to fetch financial year');
-      return (await r.json()).currentFyId || 2024;
-    },
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false
-  });
-}
-
-/** The party dropdown, as { id, name }. */
 export function usePartyOptions(party: Party) {
-  const P = PARTY[party];
-  return useQuery({
-    queryKey: [P.plural],
-    queryFn: async ({ signal }) => {
-      const data = await readJson(await fetch(`/api/${P.plural}?dropdown=true`, { signal }), `Failed to fetch ${P.plural}`);
-      return (data[P.plural] || []) as any[];
-    },
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    select: (rows: any[]) => rows.map(r => ({ id: String(r.id), name: r[P.nameField] || r.name || '' }))
-  });
+  const q = usePartyRows(party);
+  const data = useMemo(() => (q.data || []).map((r: any) => ({ id: String(r.id), name: r[PARTY[party].nameField] || r.name || '' })), [q.data, party]);
+  return { ...q, data };
 }

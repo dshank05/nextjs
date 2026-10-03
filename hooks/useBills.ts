@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { readJson } from './useParties';
+import { readJson } from './readJson';
 
 /**
  * Purchase, Sale and Invoice C bills - one set of hooks (BILLS_PLAN B2).

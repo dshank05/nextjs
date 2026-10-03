@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { readJson } from './readJson';
 
 /**
  * Customer and vendor master records, one set of hooks (DETAILS_PLAN D2).
@@ -24,14 +25,7 @@ export const PARTY_UI = {
   }
 } as const;
 
-export async function readJson(response: Response, fallback: string) {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const list = Array.isArray(data.errors) && data.errors.length ? `: ${data.errors.join(', ')}` : '';
-    throw new Error((data.message || fallback) + list);
-  }
-  return data;
-}
+export { readJson };
 
 export interface PartyListFilters {
   page: number;
@@ -64,6 +58,24 @@ export function useParty(kind: PartyKind, id: string | undefined) {
     queryFn: async ({ signal }) => readJson(await fetch(`${P.api}/${id}`, { signal }), `${P.label} not found`),
     enabled: !!id,
     staleTime: 30000,
+    refetchOnWindowFocus: false
+  });
+}
+
+/**
+ * Every active customer or vendor, for dropdowns - the one fetch behind
+ * useCustomers, useVendors, usePartyOptions and useReturnParties (they were four
+ * copies on the same query key).
+ */
+export function usePartyRows(kind: PartyKind) {
+  const P = PARTY_UI[kind];
+  return useQuery({
+    queryKey: [P.plural],
+    queryFn: async ({ signal }) => {
+      const data = await readJson(await fetch(`${P.api}?dropdown=true`, { signal }), `Failed to fetch ${P.plural}`);
+      return (data[P.plural] || []) as any[];
+    },
+    staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: false
   });
 }

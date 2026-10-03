@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useSnackbar } from '../SnackbarProvider'
 import { getLocalDateString } from '../../lib/date-utils'
 import { money } from '../../lib/line-math'
-import { readJson } from '../../hooks/useParties'
+import { readJson } from '../../hooks/readJson'
 import { BILL, type Bill } from '../../hooks/useBills'
 
 /**

@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { usePartyRows } from './useParties';
+import { readJson } from './readJson';
 import SessionStorageService from '../lib/sessionStorage';
 
 /**
@@ -40,13 +42,7 @@ export const REFUND_STATUS: Record<number, { text: string; cls: string }> = {
   2: { text: 'Partly refunded', cls: 'bg-orange-600' }
 };
 
-export async function readJson(response: Response, fallback: string) {
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok || data.success === false || data.status === 'failure') {
-    throw new Error(data.message || data.error || fallback);
-  }
-  return data;
-}
+export { readJson };
 
 /** 'YYYY-MM-DD' in local time from a date string, ISO string or seconds. */
 export function toYmd(v: unknown): string {
@@ -317,16 +313,7 @@ export function useReturnReasons(party: ReturnParty) {
 
 /** The party dropdown: same cache as useCustomers / useVendors. */
 export function useReturnParties(party: ReturnParty) {
-  const R = RET[party];
-  return useQuery({
-    queryKey: [R.plural],
-    queryFn: async ({ signal }) => {
-      const data = await readJson(await fetch(`/api/${R.plural}?dropdown=true`, { signal }), `Failed to fetch ${R.plural}`);
-      return (data[R.plural] || []) as any[];
-    },
-    staleTime: 2 * 60 * 1000,
-    refetchOnWindowFocus: false
-  });
+  return usePartyRows(party);
 }
 
 // ---------------------------------------------------------------- mutations
