@@ -46,7 +46,7 @@ function schemaColumns(file) {
     const body = m[2];
     const table = (body.match(/@@map\("([^"]+)"\)/) || [])[1] || m[1];
     const cols = [];
-    for (const line of body.split('\n')) {
+    for (const line of body.split(/\r?\n/)) {
       const f = line.replace(/\/\/.*$/, '').trim().match(/^(\w+)\s+(\w+)(\[\])?(\?)?(.*)$/);
       if (!f || f[3] || !(scalar.has(f[2]) || enums.has(f[2]))) continue;
       cols.push((f[5].match(/@map\("([^"]+)"\)/) || [])[1] || f[1]);
@@ -56,7 +56,7 @@ function schemaColumns(file) {
   return out;
 }
 
-const normalise = (file) => fs.readFileSync(file, 'utf8').split('\n')
+const normalise = (file) => fs.readFileSync(file, 'utf8').split(/\r?\n/)
   .map(l => l.replace(/\/\/.*$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean).join('\n');
 
 (async () => {
