@@ -30,7 +30,8 @@ export const SALE_TABLES = {
     kind: 'sale' as SaleKind,
     label: 'Sale',
     header: 'invoice',
-    items: 'invoiceitems',
+    items: 'invoiceitems',          // Prisma model
+    itemsTable: 'invoice_items',    // MySQL table, for raw SQL
     returns: 'sale_returns',
     returnItems: 'sale_return_items',
     returnFk: 'sale_return_id',
@@ -49,6 +50,7 @@ export const SALE_TABLES = {
     label: 'Invoice C',
     header: 'invoicex',
     items: 'invoice_itemsx',
+    itemsTable: 'invoice_itemsx',
     returns: 'salex_returns',
     returnItems: 'salex_return_items',
     returnFk: 'salex_return_id',

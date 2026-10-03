@@ -127,7 +127,7 @@ export async function listSales(kind: SaleKind, q: SaleListQuery) {
       COALESCE(NULLIF(b.billing_name, ''), c.billing_name, 'Other') AS customer_name,
       COALESCE(NULLIF(b.billing_address, ''), c.billing_address, '') AS customer_address,
       COALESCE(NULLIF(b.billing_gstin, ''), c.billing_gstin, '') AS customer_gstin,
-      (SELECT COUNT(*) FROM ${t.items} i WHERE i.invoice_no = d.id) AS item_count,
+      (SELECT COUNT(*) FROM ${t.itemsTable} i WHERE i.invoice_no = d.id) AS item_count,
       (SELECT COALESCE(SUM(a.allocated_amount), 0) FROM customer_payment_allocations a WHERE a.${t.allocFk} = d.id) AS total_paid
     FROM ${t.header} d
     LEFT JOIN customer_details c ON c.id = d.select_customer AND d.select_customer <> 0
