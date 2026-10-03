@@ -1,6 +1,6 @@
 # Returns rewrite — plan
 
-Status: **plan, awaiting go-ahead** (2026-10-03). Step R of `docs/REWRITE_PLAN.md`, done the
+Status: **plan agreed** (2026-10-03), decisions in section 5. Step R of `docs/REWRITE_PLAN.md`, done the
 same way as the transaction screens: every screen read in full first (below), one shared
 implementation for the customer and vendor twins, behaviour kept unless a bug is named,
 each step type-checked, built and tested before its commit.
@@ -147,19 +147,14 @@ Every step: tsc, `next build`, all server suites, test3–test9. One commit per 
 Size today: screens 4,299 lines (six pages + `PurchaseReturnTable`), purchase-return routes
 2,141. Expected after: screens ~1,600, purchase routes ~500 plus ~400 in the lib.
 
-## 5. Decisions for the owner
+## 5. Owner decisions (2026-10-03)
 
-Where the two sides differ today, the rewrite needs one answer. My suggestion is first.
-
-1. **After saving a return** — go to the return's view (purchase today) / back to the list
-   (sale today).
-2. **Bill range on the create screen** — 3 months with "Load More" and paging, both sides
-   (sale today) / keep 1 month for purchase.
-3. **Payment date** — show the Payment Date field on both, enabled when the return is
-   marked complete (sale today) / purchase keeps "today" automatically.
-4. **Status words** — one set everywhere: "Pending refund" / "Refunded" (screens now say
-   Unpaid / Paid, Incomplete / Complete, Pending / Complete depending on the page).
-5. **Tax on the create screen** — show the tax column and the server's CGST / SGST / IGST
-   split on both when the bill has tax / keep it hidden on sale returns as now.
-6. **"Create return" button on a bill's view** (Sale, Invoice C, Purchase) that opens the
-   return screen with that bill expanded — add it / leave the `?invoice=` link unused.
+1. **After saving a return** → the return's view, both sides.
+2. **Bills on the create screen** → 3 months, "Load More" and paging, both sides.
+3. **Payment date** → the field on both, enabled when the return is marked refunded
+   (suggested; owner did not object).
+4. **Status words** → "Pending refund" / "Refunded" on every list, view and form.
+5. **Tax on the create screen** → the tax column and the server's CGST / SGST / IGST split on
+   both when the bill has tax (suggested; owner can still say keep it hidden on sale).
+6. **"Create return" button** on the Sale, Invoice C and Purchase views, opening the return
+   screen with that bill expanded (`?invoice=<id>&type=` / `?purchase=<id>`).
