@@ -39,11 +39,11 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     const others = purchases.filter(p => !p.vendor_id);
     const snapshots = others.length
       ? await prisma.bill_to.findMany({
-          where: { OR: others.map(p => ({ invoice_no: p.invoice_no, fy: p.fy })) },
-          select: { invoice_no: true, fy: true, vendor_name: true }
+          where: { purchase_id: { in: others.map(p => p.id) } },
+          select: { purchase_id: true, vendor_name: true }
         })
       : [];
-    const snapshotName = new Map(snapshots.map(s => [`${s.invoice_no}:${s.fy}`, s.vendor_name]));
+    const snapshotName = new Map(snapshots.map(s => [s.purchase_id, s.vendor_name]));
 
     return res.status(200).json({
       success: true,
@@ -51,7 +51,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
         id: p.id,
         invoice_no: p.invoice_no,
         bill_reference: p.bill_reference || '',
-        vendor_name: (p.vendor_id ? p.vendor?.vendor_name : snapshotName.get(`${p.invoice_no}:${p.fy}`)) || 'Other',
+        vendor_name: (p.vendor_id ? p.vendor?.vendor_name : snapshotName.get(p.id)) || 'Other',
         total: Number(p.total),
         invoice_date: p.invoice_date,
         payment_status: p.payment_status,

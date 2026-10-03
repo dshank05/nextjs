@@ -71,19 +71,13 @@ async function purchaseHistory(productId: number): Promise<ProductTransactionRow
   const items = await prisma.purchaseitems.findMany({
     where: { product_id: productId, qty: { gt: 0 } },
     orderBy: { invoice_date: 'desc' },
-    take: LIMIT
+    take: LIMIT,
+    // Each line's own bill, by id (P4-11).
+    include: { purchase: { select: { bill_reference: true, invoice_date: true } } }
   });
-  const headers = items.length
-    ? await prisma.purchase.findMany({
-        where: { OR: items.map((i) => ({ invoice_no: i.invoice_no, fy: i.fy })) },
-        select: { invoice_no: true, fy: true, bill_reference: true, invoice_date: true }
-      })
-    : [];
-  const key = (no: number, fy: number) => `${no}:${fy}`;
-  const byKey = new Map(headers.map((h) => [key(h.invoice_no, h.fy), h]));
   const names = await vendors(items.map((i) => i.vendor_id));
   return items.map((item, i) => {
-    const header = byKey.get(key(item.invoice_no, item.fy));
+    const header = item.purchase;
     return row(i, {
       invoice_number: item.invoice_no?.toString() || '-',
       bill_reference: header?.bill_reference || '-',

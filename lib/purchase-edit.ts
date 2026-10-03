@@ -79,8 +79,8 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     throw new PurchaseEditError(400, 'Cannot edit a fully returned purchase. All items have been returned.', 'FULLY_RETURNED')
   }
 
-  // A purchase is (invoice_no, fy): the printed number restarts every year.
-  const docKey = { invoice_no: existing.invoice_no, fy: existing.fy }
+  // Lines and the snapshot belong to the purchase by id (P4-11).
+  const docKey = { purchase_id: purchaseId }
 
   const [storedLines, billTo, vendor, allocations] = await Promise.all([
     prisma.purchaseitems.findMany({ where: docKey, orderBy: { id: 'asc' } }),
@@ -263,9 +263,10 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     })
 
     await tx.bill_to.upsert({
-      where: { invoice_no_fy: { invoice_no: existing.invoice_no, fy: existing.fy } },
+      where: { purchase_id: purchaseId },
       update: snapshot,
       create: {
+        purchase_id: purchaseId,
         invoice_no: existing.invoice_no,
         fy: existing.fy,
         vendor_name: snapshot.vendor_name ?? vendor?.vendor_name ?? 'Other',
@@ -329,6 +330,7 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
         const product = productById.get(p.productId)!
         newRows.push({
           ...money,
+          purchase_id: purchaseId,
           invoice_no: existing.invoice_no,
           fy: existing.fy,
           product_id: p.productId,

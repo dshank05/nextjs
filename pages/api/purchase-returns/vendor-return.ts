@@ -193,19 +193,15 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         },
         select: {
           id: true,
-          invoice_no: true,
+          purchase_id: true,
           product_id: true
         }
       })
 
-      // Get unique purchase IDs
-      const purchaseInvoiceNos = Array.from(new Set(purchaseItems.map(pi => pi.invoice_no)))
-      const affectedPurchases = await tx.purchase.findMany({
-        where: {
-          invoice_no: { in: purchaseInvoiceNos }
-        },
-        select: { id: true }
-      })
+      // The bills these lines belong to, by id (P4-11). Matching on invoice
+      // number also picked up other years' bills of the same number - the
+      // return could be attached to, and change the status of, the wrong bill.
+      const affectedPurchases = Array.from(new Set(purchaseItems.map(pi => pi.purchase_id))).map(id => ({ id }))
 
       // Create the main return record with debit note and P&F fields
       // ✅ FIX: Use Prisma relation syntax instead of direct field assignment
@@ -279,15 +275,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
       // Returns are tracked separately in purchase_returns and purchase_return_items tables
       // Net amounts are calculated on-demand in reports/views when needed
       for (const purchase of affectedPurchases) {
-        // Get purchase details
-        const purchaseRecord = await tx.purchase.findUnique({
-          where: { id: purchase.id },
-          select: { invoice_no: true }
-        })
-
         // Get all items for this purchase
         const allPurchaseItems = await tx.purchaseitems.findMany({
-          where: { invoice_no: purchaseRecord?.invoice_no },
+          where: { purchase_id: purchase.id },
           select: { id: true, qty: true }
         })
 

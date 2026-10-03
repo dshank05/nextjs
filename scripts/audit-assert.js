@@ -229,38 +229,29 @@ async function A5() {
 
 /* ------------------------------------------------------------------ A6 */
 /**
- * Orphans. Catches L-2 directly: a bill_to row keyed to an invoice number no
- * purchase carries means the billing snapshot was written with the wrong
- * number.
+ * Orphans and drift: allocations without a purchase, and lines / snapshots
+ * whose copied invoice number disagrees with the purchase they point at.
  */
 async function A6() {
   const failures = [];
 
-  const orphanItems = await prisma.$queryRaw`
-    SELECT pi.id, pi.invoice_no, pi.fy FROM purchase_items pi
-    WHERE NOT EXISTS (SELECT 1 FROM purchase p WHERE p.invoice_no = pi.invoice_no AND p.fy = pi.fy)`;
-  for (const r of orphanItems) {
-    failures.push(`purchase_items ${r.id}: invoice_no ${r.invoice_no} fy ${r.fy} matches no purchase`);
+  // Since P4-11 lines and snapshots point at their purchase by id with a
+  // foreign key, so an orphan cannot exist. What can still go wrong is the
+  // copied printed number drifting from the bill it belongs to.
+  const driftItems = await prisma.$queryRaw`
+    SELECT pi.id, pi.invoice_no, pi.fy, p.invoice_no AS p_no, p.fy AS p_fy
+    FROM purchase_items pi JOIN purchase p ON p.id = pi.purchase_id
+    WHERE pi.invoice_no <> p.invoice_no OR pi.fy <> p.fy`;
+  for (const r of driftItems) {
+    failures.push(`purchase_items ${r.id}: carries ${r.invoice_no}/${r.fy} but belongs to purchase ${r.p_no}/${r.p_fy}`);
   }
 
-  const orphanBillTo = await prisma.$queryRaw`
-    SELECT b.id, b.invoice_no, b.fy, b.vendor_name FROM bill_to b
-    WHERE b.invoice_no IS NOT NULL
-      AND NOT EXISTS (SELECT 1 FROM purchase p WHERE p.invoice_no = b.invoice_no AND p.fy <=> b.fy)`;
-  for (const r of orphanBillTo) {
-    failures.push(`bill_to ${r.id}: invoice_no ${r.invoice_no} fy ${r.fy} ("${r.vendor_name}") matches no purchase — L-2/L-19`);
-  }
-
-  // Joined on invoice_no AND fy. Joining on the number alone reported the
-  // legitimate case - the same bill number reused in a later financial year -
-  // as a fault. The real F-08 condition is two purchases sharing a number
-  // WITHIN one financial year, which is what the fixed lookups now scope to.
-  const sharedItems = await prisma.$queryRaw`
-    SELECT pi.invoice_no, pi.fy, COUNT(DISTINCT p.id) c
-    FROM purchase_items pi JOIN purchase p ON p.invoice_no = pi.invoice_no AND p.fy = pi.fy
-    GROUP BY pi.invoice_no, pi.fy HAVING c > 1`;
-  for (const r of sharedItems) {
-    failures.push(`invoice_no ${r.invoice_no} fy ${r.fy}: items reachable from ${r.c} purchases — F-08`);
+  const driftBillTo = await prisma.$queryRaw`
+    SELECT b.id, b.invoice_no, b.fy, p.invoice_no AS p_no, p.fy AS p_fy
+    FROM bill_to b JOIN purchase p ON p.id = b.purchase_id
+    WHERE b.invoice_no <> p.invoice_no OR NOT (b.fy <=> p.fy)`;
+  for (const r of driftBillTo) {
+    failures.push(`bill_to ${r.id}: carries ${r.invoice_no}/${r.fy} but belongs to purchase ${r.p_no}/${r.p_fy}`);
   }
 
   const orphanAlloc = await prisma.$queryRaw`

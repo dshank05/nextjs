@@ -49,8 +49,12 @@ export class LedgerService {
       // fell back to blank. And bill_to has been keyed on (invoice_no, fy)
       // since L-19, so without the fy filter this matches another year's
       // document, which is F-08's shape surviving in the ledger service.
+      // By purchase id when the entry names one (P4-11); the (number, fy)
+      // pair otherwise.
       const billToRecord = await client.bill_to.findFirst({
-        where: { invoice_no: parseInt(data.reference_no), fy: data.fy },
+        where: data.reference_type === 'purchase' && data.reference_id
+          ? { purchase_id: data.reference_id }
+          : { invoice_no: parseInt(data.reference_no), fy: data.fy },
         select: { vendor_name: true }
       })
       if (billToRecord) {

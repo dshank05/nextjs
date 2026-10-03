@@ -101,7 +101,7 @@ const line = (o) => ({ product_id: PRODUCT, model_id: null, company_id: null, ca
       ]
     });
     expect('PUT 200 with two lines of one product (was refused, L-24)', e.status, 200) || console.log('    ' + e.text);
-    const rows = await prisma.purchaseitems.findMany({ where: { invoice_no: p.invoice_no, fy: p.fy }, orderBy: { id: 'asc' } });
+    const rows = await prisma.purchaseitems.findMany({ where: { purchase_id: pid }, orderBy: { id: 'asc' } });
     const r2 = rows.find(r => r.id === l2.line_id);
     expect('second line qty 4', r2?.qty, 4);
     expect('GST-only change saved on the line (PU-14)', r2?.gst_percentage, 12);
@@ -174,7 +174,7 @@ const line = (o) => ({ product_id: PRODUCT, model_id: null, company_id: null, ca
     expect('stock back where it started', await stockOf(PRODUCT), stock0);
     expect('lines of the same invoice number in other years untouched (PU-01)',
       await prisma.purchaseitems.count({ where: { invoice_no: p.invoice_no, NOT: { fy: p.fy } } }), sameNumberOtherYears);
-    expect('no lines left for the deleted bill', await prisma.purchaseitems.count({ where: { invoice_no: p.invoice_no, fy: p.fy } }), 0);
+    expect('no lines left for the deleted bill', await prisma.purchaseitems.count({ where: { purchase_id: pid } }), 0);
   } finally {
     // Never leave test bills behind, whatever failed.
     for (const id of created) await api('DELETE', `/api/purchases/${id}`);

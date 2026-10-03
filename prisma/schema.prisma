@@ -217,6 +217,9 @@ model Purchase {
   vendor                   vendor_details?         @relation(fields: [vendor_id], references: [id], map: "purchase_vendor_fkey")
   purchase_returns         purchase_returns[]
   payment_allocations      payment_allocations[]
+  // P4-11: lines and the billing snapshot point at the purchase by id.
+  lines                    Purchaseitems[]
+  bill_to                  bill_to?
 
   // The constraint that actually makes purchase numbering safe (F-13, P4-05).
   //
@@ -240,6 +243,12 @@ model Purchase {
 
 model Purchaseitems {
   id                    Int                     @id @default(autoincrement())
+  // The purchase this line belongs to (P4-11). invoice_no + fy are kept as the
+  // printed number, but are no longer how a line finds its bill: the number
+  // restarts every year, and joining on it reached other years' bills (F-08,
+  // PU-01). Added by scripts/migrate-p4-11.js.
+  purchase_id           Int
+  purchase              Purchase                @relation(fields: [purchase_id], references: [id], onDelete: Restrict, map: "purchase_items_purchase_fkey")
   invoice_no            Int
   name_of_product       String                  @db.VarChar(255)
   category_id           Int?
@@ -278,6 +287,7 @@ model Purchaseitems {
   @@index([invoice_no, product_id], map: "idx_purchase_items_invoice_product")
   @@index([product_id], map: "idx_purchase_items_product_id")
   @@index([invoice_no], map: "idx_purchase_items_invoice_no")
+  @@index([purchase_id], map: "idx_purchase_items_purchase_id")
   @@map("purchase_items")
 }
 
@@ -323,8 +333,11 @@ model bill_to {
   // Scoping the key to (invoice_no, fy) matches how purchase_items already
   // identifies a document. The deeper fix is to reference purchase.id directly,
   // the way the sale family's satellites do (shipto, transport_details); that
-  // goes with P4-11, which migrates purchase_items the same way.
+  // goes with P4-11, which migrates purchase_items the same way. Done:
+  // purchase_id below is the key now (scripts/migrate-p4-11.js).
   fy          Int?
+  purchase_id Int     @unique(map: "bill_to_purchase_id")
+  purchase    Purchase @relation(fields: [purchase_id], references: [id], onDelete: Restrict, map: "bill_to_purchase_fkey")
   vendor_name String  @db.VarChar(255)
   contact_no  String? @db.VarChar(20)
   email       String? @db.VarChar(100)

@@ -12,8 +12,8 @@ export async function loadPurchaseDetail(purchaseId: number) {
   const purchase = await prisma.purchase.findUnique({ where: { id: purchaseId } })
   if (!purchase) return null
 
-  // A purchase is (invoice_no, fy): the printed number restarts every year.
-  const docKey = { invoice_no: purchase.invoice_no, fy: purchase.fy }
+  // Lines and the snapshot belong to the purchase by id (P4-11).
+  const docKey = { purchase_id: purchaseId }
 
   const [lines, billTo, staff, allocations] = await Promise.all([
     prisma.purchaseitems.findMany({ where: docKey, orderBy: { id: 'asc' } }),
@@ -143,14 +143,13 @@ export async function loadPurchaseDetail(purchaseId: number) {
     : [[], []] as [any[], any[]]
 
   const otherLineIds = Array.from(new Set(allReturnLines.map((r: any) => r.purchase_item_id as number)))
-  const billOfLine = new Map<number, string>()
+  const billOfLine = new Map<number, number>()
   if (otherLineIds.length) {
     const rows = await prisma.purchaseitems.findMany({
       where: { id: { in: otherLineIds } },
-      select: { id: true, invoice_no: true, fy: true }
+      select: { id: true, purchase_id: true }
     })
-    // A bill is (invoice_no, fy) - counting invoice_no alone merged years.
-    rows.forEach(r => billOfLine.set(r.id, `${r.invoice_no}:${r.fy}`))
+    rows.forEach(r => billOfLine.set(r.id, r.purchase_id))
   }
 
   const lineById = new Map(lines.map(l => [l.id, l]))

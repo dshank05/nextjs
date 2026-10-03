@@ -113,14 +113,17 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Get all purchase items for these purchases
     const purchaseIds = purchases.map(p => p.id)
     const purchaseItems = await prisma.purchaseitems.findMany({
+      // This vendor's bills by id (P4-11); by number they included other
+      // years' bills that share it.
       where: {
-        invoice_no: {
-          in: purchases.map(p => p.invoice_no)
+        purchase_id: {
+          in: purchaseIds
         }
       },
       select: {
         id: true,
         invoice_no: true,
+        purchase_id: true,
         product_id: true,
         name_of_product: true,
         part: true,
@@ -176,7 +179,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const billsMap = new Map()
 
     purchases.forEach(purchase => {
-      const billItems = purchaseItems.filter(item => item.invoice_no === purchase.invoice_no)
+      const billItems = purchaseItems.filter(item => item.purchase_id === purchase.id)
 
       const availableItems = billItems.map(item => {
         const alreadyReturned = returnedQtyMap.get(item.id) || 0
@@ -211,7 +214,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       // .filter(item => item.available_qty > 0)
 
       if (availableItems.length > 0) {
-        billsMap.set(purchase.invoice_no, {
+        billsMap.set(purchase.id, {
           id: purchase.id.toString(),
           invoice_no: purchase.invoice_no.toString(),
           bill_reference: purchase.bill_reference || `BILL-${purchase.invoice_no}`,

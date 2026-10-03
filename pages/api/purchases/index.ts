@@ -256,6 +256,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
       // (P4-03, lead L-2).
       await tx.bill_to.create({
         data: {
+          purchase_id: purchase.id,
           invoice_no: invoiceNumberToUse,
           fy: currentFy,
           vendor_name: req.body.vendor_name ?? existingVendor?.vendor_name ?? '',
@@ -335,6 +336,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse, attempt: nu
       await tx.purchaseitems.createMany({
         data: bulkInsertData.map(item => ({
           ...item,
+          purchase_id: purchase.id,
           invoice_no: invoiceNumberToUse
         }))
       });

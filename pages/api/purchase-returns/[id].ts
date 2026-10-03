@@ -141,13 +141,13 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     
     // ⚡ PERFORMANCE: Fetch invoice numbers and get returned quantities in parallel
     const [returnedPurchaseItems, returnedQuantities] = await Promise.all([
-      // Get the invoice numbers from returned items
+      // The bills the returned lines belong to, by purchase id (P4-11)
       prisma.purchaseitems.findMany({
         where: {
           id: { in: purchaseItemIds }
         },
         select: {
-          invoice_no: true
+          purchase_id: true
         }
       }),
       // Get already returned quantities (excluding current return) - run in parallel
@@ -163,13 +163,12 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       })
     ])
     
-    // Get ALL invoice numbers (unique)
-    const invoiceNos = Array.from(new Set(returnedPurchaseItems.map(pi => pi.invoice_no)))
-    
-    // ⚡ PERFORMANCE: Fetch ALL items from invoices first
+    // Every line of those bills. Matched by invoice number before, which pulled
+    // in other years' bills of the same number.
+    const purchaseIds = Array.from(new Set(returnedPurchaseItems.map(pi => pi.purchase_id)))
     const allPurchaseItems = await prisma.purchaseitems.findMany({
       where: {
-        invoice_no: { in: invoiceNos }
+        purchase_id: { in: purchaseIds }
       },
       select: {
         id: true,
@@ -179,7 +178,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         qty: true,
         rate: true,
         gst_percentage: true,
-        invoice_no: true
+        invoice_no: true,
+        purchase_id: true
       }
     })
     
@@ -313,30 +313,28 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 
     // ⚡ PERFORMANCE FIX: Fetch ALL purchase details in ONE query (not N queries in loop)
     const purchasesForBills = await prisma.purchase.findMany({
-      where: { invoice_no: { in: invoiceNos } },
+      where: { id: { in: purchaseIds } },
       select: {
         id: true,
         invoice_no: true,
         invoice_date: true
       }
     })
+    const purchaseMap = new Map(purchasesForBills.map(p => [p.id, p]))
     
-    // Create lookup map for O(1) access
-    const purchaseMap = new Map(purchasesForBills.map(p => [p.invoice_no, p]))
-    
-    // ✅ Group items by invoice_no to show multiple bills
+    // Group the returned lines by bill (purchase id - an invoice number alone
+    // repeats across years and merged two bills into one)
     const billsMap = new Map<number, any>()
     
     for (const item of returnItemsWithDetails) {
-      const invoiceNo = originalPurchaseItems.find(pi => pi.id === item.purchase_item_id)?.invoice_no
-      
+      const billId = originalPurchaseItems.find(pi => pi.id === item.purchase_item_id)?.purchase_id
+      if (!billId) continue
+      const purchaseForBill = purchaseMap.get(billId)
+      const invoiceNo = purchaseForBill?.invoice_no
       if (!invoiceNo) continue
       
-      if (!billsMap.has(invoiceNo)) {
-        // ⚡ Get purchase details from map (O(1)) instead of database query
-        const purchaseForBill = purchaseMap.get(invoiceNo)
-        
-        billsMap.set(invoiceNo, {
+      if (!billsMap.has(billId)) {
+        billsMap.set(billId, {
           id: purchaseForBill?.id?.toString() || invoiceNo.toString(),
           invoice_no: invoiceNo.toString(),
           bill_reference: invoiceNo.toString(),
@@ -355,7 +353,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         })
       }
       
-      const bill = billsMap.get(invoiceNo)
+      const bill = billsMap.get(billId)
       bill.items.push(item)
       bill.available_items++
       bill.total_items++
@@ -610,8 +608,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse) {
           })
 
           if (purchaseRecord) {
+            // This bill's lines only (P4-11) - by number they included other years'.
             const allPurchaseItems = await tx.purchaseitems.findMany({
-              where: { invoice_no: purchaseRecord.invoice_no },
+              where: { purchase_id: returnWithPurchase.purchase_id },
               select: { id: true, qty: true }
             })
 

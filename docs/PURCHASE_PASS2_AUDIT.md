@@ -318,3 +318,38 @@ All 38 findings are fixed except those owned elsewhere: F-34 (GST rounding) and 
 1. Click through purchases on the live database (create, edit a taxed / part-paid / returned
    bill, delete, list filters, the four vendor reports). Nothing here has run against MySQL.
 2. Phase 5: the sale/salex rows of §4 not covered by Step 1, and the customer ledger report.
+
+## 7. P4-11 — purchase lines keyed by `purchase.id` (2026-10-02)
+
+Owner approved. `purchase_items.purchase_id` and `bill_to.purchase_id` (unique) now point at
+the purchase with foreign keys; `invoice_no` / `fy` stay on both rows as the printed number,
+but nothing finds a bill by them any more. Sale already worked this way.
+
+**To apply (test database first, back up before live):**
+
+```
+node scripts/migrate-p4-11.js     # adds + fills purchase_id, then NOT NULL, index, FK
+npx prisma generate               # the client must know the new column
+```
+
+The script is safe to re-run and **stops before any constraint** if a line or snapshot cannot
+be matched to exactly one purchase, printing those rows. The code in this commit needs the
+column: run the migration before starting the app on this code.
+
+| Where | Was keyed on | Now |
+|---|---|---|
+| create / edit / read / delete (`api/purchases/*`, `lib/purchase-*.ts`, `lib/transaction-handler.ts`) | `(invoice_no, fy)` | `purchase_id` |
+| list query, bill-reference report, ledger note for "Other" vendor | `(invoice_no, fy)` | `purchase_id` |
+| product purchase history | `OR` of `(invoice_no, fy)` pairs | the line's own `purchase` relation |
+| **purchase-return view** (`purchase-returns/[id].ts` GET + status recalc) | **`invoice_no` only** | `purchase_id` |
+| **vendor return create** (`vendor-return.ts`) | **`invoice_no` only** | `purchase_id` |
+| **vendor return picker** (`vendor-items.ts`) | **`invoice_no` only** | `purchase_id` |
+| `scripts/audit-assert.js` A6 | orphan by number | drift between a row's copied number and its purchase |
+
+The three bold rows were live F-08 bugs on the returns side (Phase 6 territory), found while
+moving them: a return could pull in, attach to, or recompute the status of another year's
+bill with the same number. They are fixed by the move rather than separately.
+
+Checked: client regenerated from the new schema, `tsc` + `next build` clean, the in-memory
+suites re-keyed and passing (delete 16, edit 27, list 11, reports 10). The migration itself
+has not run here — no database access from this environment.

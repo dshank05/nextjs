@@ -71,7 +71,7 @@ async function deletePurchase(purchaseId: number, res: NextApiResponse) {
     // already took its qty out of stock and may carry a refund. Counted from
     // the return lines and the return headers, not return_status.
     const lines = await prisma.purchaseitems.findMany({
-      where: { invoice_no: purchase.invoice_no, fy: purchase.fy },
+      where: { purchase_id: purchaseId },
       select: { id: true }
     })
     const [returnLines, returnDocs] = await Promise.all([

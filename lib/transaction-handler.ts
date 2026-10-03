@@ -55,16 +55,13 @@ export interface DeleteResult {
 }
 
 /**
- * The rows that belong to one purchase. purchase_items and bill_to carry the
- * human invoice number, which restarts every financial year, so it is only a
- * key together with fy. Without fy a delete reached every year's bill of the
- * same number (PU-01). Refuses rather than guessing when fy is missing.
+ * The rows that belong to one purchase: its lines and billing snapshot, by
+ * purchase id (P4-11). The printed number restarts every year, and matching on
+ * it reached other years' bills (PU-01). Refuses rather than guessing.
  */
-function purchaseLinesOf(data: { invoiceNo?: number; fy?: number }) {
-  if (data.invoiceNo === undefined || data.fy === undefined || data.fy === null) {
-    throw new Error('Purchase delete needs both invoice_no and fy');
-  }
-  return { invoice_no: data.invoiceNo, fy: data.fy };
+function purchaseLinesOf(data: { purchaseId?: number }) {
+  if (!data.purchaseId) throw new Error('Purchase delete needs the purchase id');
+  return { purchase_id: data.purchaseId };
 }
 
 export class TransactionHandler {
@@ -961,7 +958,6 @@ export class TransactionHandler {
     purchaseId: number;
     vendorId: number;
     invoiceNo: number;
-    // A purchase is (invoice_no, fy); invoice_no alone repeats every year (PU-01).
     fy: number;
     paymentStatus: number;
     returnStatus: number;
@@ -971,7 +967,7 @@ export class TransactionHandler {
     // Operation 1: Get and restore stock (parallel)
     operations.push({
       type: 'STOCK_RESTORE',
-      data: { invoiceNo: params.invoiceNo, fy: params.fy },
+      data: { purchaseId: params.purchaseId },
       parallel: true
     });
     
@@ -1295,7 +1291,7 @@ export class TransactionHandler {
   // ✅ All methods now accept shared context for passing data between operations
   
   private async executeStockRestore(tx: any, data: any, context: any): Promise<void> {
-    if (data.invoiceNo !== undefined) {
+    if (data.purchaseId !== undefined) {
       // Purchase: restore stock for all items
       const items = await tx.purchaseitems.findMany({
         where: purchaseLinesOf(data),

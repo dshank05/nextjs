@@ -113,18 +113,18 @@ export async function listPurchases(q: PurchaseListQuery) {
   if (q.startDate !== null) add('t.invoice_date >= ?', q.startDate)
   if (q.endDate !== null) add('t.invoice_date <= ?', q.endDate)
 
-  // Vendor 0 is "Other": its name lives on the bill's own snapshot (bill_to),
-  // matched on (invoice_no, fy). Lines and the snapshot are keyed the same way.
+  // Vendor 0 is "Other": its name lives on the bill's own snapshot (bill_to).
+  // Lines and the snapshot point at the purchase by id (P4-11).
   const base = `
     SELECT p.*,
       COALESCE(v.vendor_name, b.vendor_name, 'Other') AS vendor_name,
       COALESCE(v.address, b.address, '') AS vendor_address,
       COALESCE(v.tax_id, b.gstin, '') AS vendor_gstin,
-      (SELECT COUNT(*) FROM purchase_items i WHERE i.invoice_no = p.invoice_no AND i.fy = p.fy) AS item_count,
+      (SELECT COUNT(*) FROM purchase_items i WHERE i.purchase_id = p.id) AS item_count,
       (SELECT COALESCE(SUM(a.allocated_amount), 0) FROM payment_allocations a WHERE a.purchase_id = p.id) AS total_paid
     FROM purchase p
     LEFT JOIN vendor_details v ON v.id = p.vendor_id AND p.vendor_id <> 0
-    LEFT JOIN bill_to b ON b.invoice_no = p.invoice_no AND b.fy = p.fy`
+    LEFT JOIN bill_to b ON b.purchase_id = p.id`
   const from = `FROM (${base}) t ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`
   // Column and direction come from SORT_COLUMNS and a two-value check, never user text.
   const order = `ORDER BY t.${q.sortBy} ${q.sortOrder}, t.id ${q.sortOrder}`
