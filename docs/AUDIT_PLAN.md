@@ -696,8 +696,8 @@ Answers change the work; recorded here rather than assumed.
 2. **Backdated documents.** Should a document dated outside the open FY be rejected,
    warned about, or stamped with the FY its date falls in? Today it is silently stamped
    with the current FY. `isWithinCurrentFinancialYear()` is ready if enforcement is wanted.
-3. **Purchase discounts.** Sale and salex support per-item discounts; purchase has no
-   discount concept at all. Intentional?
+3. ~~**Purchase discounts.**~~ — **ANSWERED (2026-10-02)**: intentional, purchase has no
+   per-line discount (P4-21).
 4. **Over-return policy.** Should a return ever be allowed to exceed the original
    quantity (e.g. a goodwill return)? Assuming no — validation will be strict.
 5. **Credit notes past the 30 November deadline (F-35).** Block the return outright, or
@@ -705,6 +705,9 @@ Answers change the work; recorded here rather than assumed.
    and matches the law; it needs a `is_commercial` flag on `sale_returns`.
 6. ~~**Obsolete GST slabs**~~ — **ANSWERED**: `gst_tax_rate` is empty, so there is nothing
    obsolete to clean up. It does need seeding at 0/5/18/40 before tax can be tested (F-39).
+8. **Rounding (F-34)** — **ANSWERED (2026-10-02)**: whole rupees, normal rounding (half up).
+   Exact scope (which figures are rounded, and where) to be confirmed before it lands.
+9. **P4-11** — **ANSWERED (2026-10-02)**: migrate purchase lines and `bill_to` to `purchase.id`.
 7. **Ledger source of truth.** Two implementations exist (§3). Recommendation: keep the
    stored tables for audit, compute the running balance at read time, and retire the
    orphaned `*-ledger-details` endpoints.
