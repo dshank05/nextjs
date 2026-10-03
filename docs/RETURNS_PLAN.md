@@ -1,6 +1,6 @@
 # Returns rewrite — plan
 
-Status: **plan agreed** (2026-10-03), decisions in section 5. Step R of `docs/REWRITE_PLAN.md`, done the
+Status: **done** (2026-10-03) — see Progress at the end; decisions in section 5. Step R of `docs/REWRITE_PLAN.md`, done the
 same way as the transaction screens: every screen read in full first (below), one shared
 implementation for the customer and vendor twins, behaviour kept unless a bug is named,
 each step type-checked, built and tested before its commit.
@@ -181,3 +181,18 @@ Size today: screens 4,299 lines (six pages + `PurchaseReturnTable`), purchase-re
    both when the bill has tax (suggested; owner can still say keep it hidden on sale).
 6. **"Create return" button** on the Sale, Invoice C and Purchase views, opening the return
    screen with that bill expanded (`?invoice=<id>&type=` / `?purchase=<id>`).
+
+## Progress
+
+| Step | Commit | Lines | Checked by |
+|---|---|---|---|
+| R0 + R5 server: one list for both kinds, purchase routes onto the lib | 427262e | routes 1,963 removed, 801 added (lib/return-list.ts, lib/purchase-return.ts) | new `out-rlist` (26), `out-ret`, `out-vret`, all suites |
+| R1–R4 hooks, list, view, form, bill picker; Create return buttons | (this commit) | 6 pages + PurchaseReturnTable + 2 modals + return hooks / types: 5,632 → 1,953 (pages are 5–6 lines) | tsc, `next build`, 17 server suites, test3–8, new test9 (49 checks: both sides, list / view / create / create-from-bill / edit / delete, real API handlers) |
+
+Notes on what changed on screen (all named above): one set of status words; sale save
+goes to the new return (several bills → the list); payment date on both sides; tax column
+and preview on both; Invoice C bills shown as C-n with a badge; party locked while editing;
+an edit shows only the return's own bills; a refunded sale return's Edit is disabled (the
+server refuses it); line notes carried through edits; every cache refreshed after a save
+or delete. The form shows tax as a total, not the CGST / SGST / IGST split — the view shows
+the stored split.

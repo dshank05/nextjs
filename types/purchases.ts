@@ -1,4 +1,4 @@
-// Purchase and Purchase Returns types
+// Purchase types (return types: hooks/useReturns.ts)
 
 import { BaseFilters, Pagination, PaymentStatus, PaymentMode } from './common';
 
@@ -66,123 +66,6 @@ export interface PurchasesResponse {
 }
 
 // ============================================================================
-// PURCHASE RETURN TYPES
-// ============================================================================
-
-export interface PurchaseReturn {
-  id: number;
-  return_no: string;
-  invoice_no?: string; // Invoice number from the original purchase
-  return_date: string;
-  vendor_id: number;
-  vendor_name: string;
-  vendor_address?: string;
-  vendor_gstin?: string;
-  total_amount: number;
-  total_tax: number;
-  refund_amount: number;
-  status: number;
-  payment_status: number;
-  payment_mode: number;
-  payment_date?: number;
-  fy: number;
-  notes?: string;
-  item_count: number;
-  formattedDate?: string;
-  statusText?: string;
-  packing_forwarding_total?: number; // P/F amount
-}
-
-export interface PurchaseReturnFilters extends BaseFilters {
-  returnNoFilter?: string;
-  vendorFilter?: string;
-  statusFilter?: string;
-  amountMin?: string;
-  amountMax?: string;
-  uidFilter?: string;
-  itemCount?: string;
-  paymentMode?: string;
-  packingForwardingTotal?: string;
-}
-
-export interface PurchaseReturnsResponse {
-  returns: PurchaseReturn[];
-  pagination: Pagination;
-}
-
-// Purchase Return Create/Edit Page Types
-export interface PurchaseBill {
-  id: string;
-  invoice_no: string;
-  bill_reference: string;
-  invoice_date: string;
-  total_amount: number;
-  has_tax: boolean;
-  items: PurchaseReturnItem[];
-  available_items: number;
-  total_items: number;
-}
-
-export interface PurchaseReturnItem {
-  id: string;
-  purchase_item_id?: number; // ID of the purchase item in purchaseitems table
-  product_id: number;
-  product_name: string;
-  display_name?: string;
-  part_number?: string;
-  original_qty?: number; // Original purchase quantity
-  already_returned?: number; // How much was already returned
-  available_qty: number;
-  is_fully_returned?: boolean; // Flag for UI
-  unit_price: number;
-  /** the purchase rate: the most a return can be priced at */
-  net_unit_price?: number;
-  tax_rate: number;
-  bill_reference: string;
-  invoice_date: string;
-  return_qty?: number; // Added for edit mode
-  return_reason_id?: number; // Added for edit mode
-  current_stock: number; // Current stock from product table
-}
-
-export interface ReturnReasons {
-  id: number;
-  reason_name: string;
-  type: string;
-}
-
-export interface SelectedReturnItem extends PurchaseReturnItem {
-  return_qty: number;
-  return_reason_id: number;
-  return_notes?: string;
-  // Calculated fields
-  subtotal: number;
-  tax_amount: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  total: number;
-}
-
-// Purchase Return View Page Types
-export interface ReturnItem {
-  id: number;
-  product_name: string;
-  part_number?: string;
-  return_qty: number;
-  unit_price: number;
-  tax_rate: number;
-  tax_amount: number;
-  subtotal: number;
-  total: number;
-  return_reason: string;
-  notes?: string;
-  bill_reference?: string;
-  bill_date?: string;
-  invoice_no?: string;
-}
-
-// ============================================================================
 // PURCHASE FORM & ITEMS
 // ============================================================================
 
@@ -193,4 +76,3 @@ export interface PurchaseReturnStatus {
   is_fully_returned: boolean;
   status: 'NO_RETURNS' | 'PARTIAL_RETURN' | 'FULLY_RETURNED';
 }
-

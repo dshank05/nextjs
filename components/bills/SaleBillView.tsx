@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Eye, DollarSign } from 'lucide-react';
+import { Edit, Eye, DollarSign, RotateCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { subscribeBroadcast } from '../../lib/broadcast';
 import { ExportMenu } from '../common/ExportMenu';
@@ -193,6 +193,15 @@ export function SaleBillView({ kind }: { kind: SaleKind }) {
               <button onClick={() => setShowPay(true)} className="btn-secondary flex items-center gap-2" title="Record a payment against this bill">
                 <DollarSign className="w-4 h-4" /> Mark as Paid
               </button>
+            )}
+            {!rs.is_fully_returned && bill.customer_id > 0 && (
+              <Link
+                href={`/entry/salereturn-create?invoice=${bill.id}&type=${kind === 'salex' ? 'invoicex' : 'invoice'}`}
+                className="btn-secondary flex items-center gap-2"
+                title="Return items from this bill"
+              >
+                <RotateCcw className="w-4 h-4" /> Create Return
+              </Link>
             )}
             {rs.is_fully_returned ? (
               <button disabled className="btn-secondary flex items-center gap-2 opacity-50 cursor-not-allowed" title="Fully returned bills cannot be edited">

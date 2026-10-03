@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { Edit, Eye, DollarSign } from 'lucide-react';
+import { Edit, Eye, DollarSign, RotateCcw } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { subscribeBroadcast } from '../../../lib/broadcast';
 import { ExportMenu } from '../../../components/common';
@@ -542,6 +542,16 @@ export default function PurchaseView() {
                 <DollarSign className="w-4 h-4" />
                 Mark as Paid
               </button>
+            )}
+            {!purchase.return_status?.is_fully_returned && Number((purchase as any).vendor_id) > 0 && (
+              <Link
+                href={`/entry/purchasereturn-vendor-create?purchase=${id}`}
+                className="btn-secondary flex items-center gap-2"
+                title="Return items from this bill"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Create Return
+              </Link>
             )}
             {purchase.return_status?.is_fully_returned ? (
               <button
