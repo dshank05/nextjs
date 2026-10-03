@@ -144,3 +144,48 @@ Q1–Q3 rules → B2 `hooks/useBills.ts` → B3 `BillList` → B4 `BillView` + `
 B5 `BillForm` → B6 thin pages, delete the old files → B7 checks: tsc, next build, every server
 suite, page tests 3–10 plus a new test11 (all three kinds: list, view, create, edit, pay,
 delete), `audit-assert` on seeded data → docs, line counts, commit per step.
+
+## 6. Handlers and hooks (checked 2026-10-03, after the owner asked)
+
+### Server handlers — the money core, all twins
+
+| Customer side | Vendor side | Lines | Differ (names aside) | Used by |
+|---|---|---|---|---|
+| `customer-balance-handler` | `balance-handler` | 595 + 612 | ~100 lines | bill create, payments, refunds, returns, adjustments |
+| `customer-balance-log-service` | `balance-log-service` | 66 + 64 | few | the balance handlers |
+| `customer-ledger-handler` | `ledger-handler` | 577 + 574 | ~265 lines | the transaction handlers |
+| `customer-ledger-service` | `ledger-service` | 167 + 341 | — | everything that writes a ledger row |
+| `customer-transaction-handler` | `transaction-handler` | 1,542 + 1,677 | ~930 lines | bill edit / delete, return edit / delete, payment and refund edit / delete |
+| payment / refund / adjustment routes (10 files) | | 4,296 | — | the transaction screens (logic still inline; T1–T4 rewrote only the screens and the list) |
+
+All in use. Dead: `ledger-service` getVendorLedger / getVendorOutstanding / getAllOutstanding,
+`customer-ledger-service` getEntries. 24 `console.log`s in the two transaction handlers (whole
+parameter sets dumped as JSON on every edit), 42 more in the payment / refund `[id]` routes.
+
+What the bills rewrite touches: purchase delete and edit go through
+`transactionHandler.handlePurchaseDelete / handlePurchaseEdit`, so Q3 (no negative stock) is
+added there and in `lib/purchase-edit.ts`, mirroring sale's `assertStock`. Nothing else in the
+handlers changes in this plan.
+
+Proposed as its own phase after the bills (H), because it is the code every money figure goes
+through — each step guarded by `audit-assert` A2–A4, A7, A8, A10 on seeded data and the server
+suites, commit per step:
+- H1 one balance handler + one balance-log service for both parties (~1,340 → ~700)
+- H2 one ledger handler (~1,150 → ~650); ledger services keep their per-party ordering rule,
+  dead methods go
+- H3 transaction handlers: shared executors (allocations, ledger reversal, status recalculation,
+  stock) in one place, per-party edit / delete rules kept apart (~3,200 → ~1,800)
+- H4 payment / refund / adjustment routes onto libs, as `lib/api/sale-routes` (4,296 → thin
+  routes + ~1,500 in libs); logs out
+
+### Hooks (`hooks/`, 18 files, 1,902 lines)
+
+| Finding | Action |
+|---|---|
+| `useUrlState` (73) and `useExport` (19) — nothing imports them | delete (bills step B6) |
+| `readJson` written three times (`useParties`, `usePartyTransactions`, `useReturns`) | one copy |
+| Customer / vendor dropdown fetched by four hooks under the same key (`useCustomers`, `useVendors`, `usePartyOptions`, `useReturnParties`) | one `usePartyOptions(kind)`; the others become one-line aliases |
+| `useCurrentFY` falls back to fy **2024** (a year, where an fy *id* is expected) and the transaction form sends it; the server ignores the field and uses Settings | drop the hook and the field |
+| `PartyForm` cached `/api/states` under `['states']` in a different shape from `useStates` — coming from a bill form, the customer form showed blank state names (my bug, today) | **fixed** in b7dbeeb |
+| `usePurchases` + `useSaleBills` | become `useBills` (B2) |
+| `useProducts`: the product query key is `['product', id]` with the router's string id, but update invalidates with the numeric id, so an edited product's view can stay stale | products phase |
