@@ -1,6 +1,6 @@
 # Purchase, Sale and Invoice C bills — plan
 
-Status: **plan, waiting on the owner's answers in section 4** (2026-10-03).
+Status: **plan approved, owner answers in section 4** (2026-10-03).
 Every screen below was read in full first, with its API routes, hooks, modals and the
 libs behind them. Database: nothing to run, no data changes.
 
@@ -126,12 +126,12 @@ modal ~200); purchase create route 631 → a thin route plus ~300 in `lib/purcha
 
 ## 4. Decisions for the owner
 
-| # | Question | Today | Recommended |
+| # | Question | Today | Owner answer (2026-10-03) |
 |---|---|---|---|
-| Q1 | Purchase freight in the bill total? | Stored, not in total | Ask — depends on whether freight is paid to the vendor or to the transporter |
-| Q2 | Purchase number | Prefilled, editable | Server-assigned and read-only like sale (fixes bug 1) |
-| Q3 | Lowering / deleting a purchase whose units are already sold | Allowed, stock goes negative | Refuse with "only N in stock", like sale |
-| Q4 | Purchase list default order | Number, oldest first | Date, newest first, like sale |
+| Q1 | Purchase freight in the bill total? | Stored, not in total | **Include in total**, as sale. Existing purchases keep their stored total (no data change); a purchase edited from now on is recomputed with its freight, and its ledger entry follows |
+| Q2 | Purchase number | Prefilled, editable | **Server-assigned, read-only**, as sale |
+| Q3 | Lowering / deleting a purchase whose units are already sold | Allowed, stock goes negative | **Refuse** ("only N in stock"), as sale |
+| Q4 | Purchase list default order | Number, oldest first | **Date, newest first**, as sale |
 
 Smaller defaults I will take unless overruled: vendor change keeps lines (5); P&F rounded like
 sale (4); "Other" option in the purchase vendor filter (11); after a save or delete every
