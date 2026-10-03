@@ -77,3 +77,19 @@ All four are in the sidebar under REPORTS. Checked: `rpt2check` 18/18.
 Limits stated on the pages: no opening cash entry exists (brought forward = earlier records);
 profit excludes freight, packing and expenses; GST rate / HSN tables add up lines and can
 differ from the heads by the F-34 rounding.
+
+## Page-level check (all 24 report pages)
+
+`harness/test7.jsx`: every report page rendered in jsdom with its fetches answered by the
+**real** API handlers (Prisma calls on the in-memory store, raw SQL on an SQLite copy of the
+fixtures). Each page must call its API, get no error, show no error text, and show the
+fixture's figures. Result: all 24 pass (ledgers, balance logs, customer / vendor reports,
+minimum stock, sale, Invoice C, purchase, debit notes, opening / closing, mechanic,
+commissions, transport, packing, staff, bill references, notes, returns, GST, cash book,
+profit). Balance-log pages need a party picked; their API is checked with one.
+
+Not covered: the real MySQL server (SQL is checked on SQLite, which shares the functions
+used), and visual layout.
+
+The Reports home (`/reports`) was a grid of cards whose buttons did nothing; it now lists
+every report, grouped.
