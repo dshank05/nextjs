@@ -62,3 +62,18 @@ A product created inside the range brings its opening stock in as "new products"
 opening.
 
 Checked: `stockcheck` 10/10.
+
+## R4–R7 — new reports
+
+| Report | Page / API | What it shows |
+|---|---|---|
+| Return Register | `/reports/returns`, `lib/return-register.ts` | Sale, Invoice C and purchase returns in a period: note no, party, bill, items, taxable, GST, P&F / freight, refund, status; totals per kind, settled vs waiting |
+| GST Summary | `/reports/gst`, `lib/gst-report.ts` | Output tax (bill heads, B2B by the bill's GSTIN / B2C), less credit notes; input tax less debit notes; net per head (payable or credit carried); sales and purchases by rate; HSN summary (export); Invoice C as non-GST supplies; line-vs-head rounding shown |
+| Cash / Bank Book | `/reports/cash-book`, `lib/cash-book.ts` | Every recorded receipt / payment (customer and vendor payments and refunds, returns marked complete) by day, cash, bank or both, running balance, brought forward from earlier records. Carried-advance bookkeeping rows are left out |
+| Profit by Period | `/reports/profit`, `lib/profit-report.ts` | Net sales (ex-GST, after discount, less returns) minus cost at the last purchase rate on or before each sale; by month; most profitable and below-cost products |
+
+All four are in the sidebar under REPORTS. Checked: `rpt2check` 18/18.
+
+Limits stated on the pages: no opening cash entry exists (brought forward = earlier records);
+profit excludes freight, packing and expenses; GST rate / HSN tables add up lines and can
+differ from the heads by the F-34 rounding.

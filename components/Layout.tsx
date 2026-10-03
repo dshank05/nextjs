@@ -116,6 +116,10 @@ const Layout = ({ children }: LayoutProps) => {
         { name: 'SALE', href: '/reports/sale' },
         { name: 'INVOICE C', href: '/reports/salex' },
         { name: 'PURCHASE', href: '/reports/purchase' },
+        { name: 'RETURN REGISTER', href: '/reports/returns' },
+        { name: 'GST SUMMARY', href: '/reports/gst' },
+        { name: 'CASH / BANK BOOK', href: '/reports/cash-book' },
+        { name: 'PROFIT BY PERIOD', href: '/reports/profit' },
         // { name: 'SALE RETURN', href: '/entry/salereturn' },
         { name: 'INACTIVE PRODUCTS', href: '/settings/inactive-products' },
         // { name: 'PURCHASE RETURN', href: '/entry/purchasereturn' }, // Hidden - using purchases/index.tsx instead
