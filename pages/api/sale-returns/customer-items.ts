@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { parseDateRange } from '../../../lib/date-utils'
+import { netUnitPrice } from '../../../lib/sale-return'
 
 async function handler(
   req: NextApiRequest,
@@ -139,8 +140,11 @@ async function handler(
         invoice_no: true,
         name_of_product: true,
         part: true,
+        product_id: true,
         qty: true,
-        rate: true
+        rate: true,
+        discount: true,
+        gst_percentage: true
       }
     }) : []
 
@@ -155,8 +159,11 @@ async function handler(
         invoice_no: true,
         name_of_product: true,
         part: true,
+        product_id: true,
         qty: true,
-        rate: true
+        rate: true,
+        discount: true,
+        gst_percentage: true
       }
     }) : []
 
@@ -194,18 +201,23 @@ async function handler(
           const returnedQty = invoiceReturnMap.get(item.id) || 0
           const availableQty = (item.qty || 0) - returnedQty
 
+          // Sale and Invoice C line ids overlap: the kind travels with the id.
+          // The refund price is what the line sold for (rate less its discount,
+          // paise kept) and the tax is the line's own GST %.
           return {
-            id: item.id.toString(),
+            id: `invoice-${item.id}`,
+            invoice_item_id: item.id,
             sale_item_id: item.id,
-            product_id: 0, // Not needed for return selection
+            invoice_type: 'invoice',
+            product_id: item.product_id || 0,
             product_name: item.name_of_product || '',
             part_number: item.part || '',
             original_qty: item.qty || 0,
             already_returned: returnedQty,
             available_qty: availableQty,
             is_fully_returned: availableQty <= 0,
-            unit_price: Math.floor(item.rate || 0),  // Convert to integer
-            tax_rate: 0, // Tax rate will be calculated from invoice level if needed
+            unit_price: netUnitPrice(item),
+            tax_rate: item.gst_percentage || 0,
             bill_reference: invoice.bill_reference || `INV-${invoice.invoice_no}`,
             invoice_date: invoice.invoice_date ? new Date(invoice.invoice_date * 1000).toISOString() : ''
           }
@@ -215,7 +227,8 @@ async function handler(
       const availableItems = items.filter(item => item.available_qty > 0)
 
       return {
-        id: invoice.id.toString(),
+        id: `invoice-${invoice.id}`,
+        invoice_id: invoice.id,
         invoice_no: invoice.invoice_no.toString(),
         bill_reference: invoice.bill_reference || `INV-${invoice.invoice_no}`,
         invoice_date: invoice.invoice_date ? new Date(invoice.invoice_date * 1000).toISOString() : '',
@@ -239,17 +252,19 @@ async function handler(
           const availableQty = (item.qty || 0) - returnedQty
 
           return {
-            id: item.id.toString(),
+            id: `invoicex-${item.id}`,
+            invoice_item_id: item.id,
             sale_item_id: item.id,
-            product_id: 0,
+            invoice_type: 'invoicex',
+            product_id: item.product_id || 0,
             product_name: item.name_of_product || '',
             part_number: item.part || '',
             original_qty: item.qty || 0,
             already_returned: returnedQty,
             available_qty: availableQty,
             is_fully_returned: availableQty <= 0,
-            unit_price: Math.floor(item.rate || 0),  // Convert to integer
-            tax_rate: 0, // No tax for salex
+            unit_price: netUnitPrice(item),
+            tax_rate: 0, // Invoice C carries no tax
             bill_reference: invoicex.bill_reference || `INVX-${invoicex.invoice_no}`,
             invoice_date: invoicex.invoice_date ? new Date(invoicex.invoice_date * 1000).toISOString() : ''
           }
@@ -259,7 +274,8 @@ async function handler(
       const availableItems = items.filter(item => item.available_qty > 0)
 
       return {
-        id: invoicex.id.toString(),
+        id: `invoicex-${invoicex.id}`,
+        invoice_id: invoicex.id,
         invoice_no: invoicex.invoice_no.toString(),
         bill_reference: invoicex.bill_reference || `INVX-${invoicex.invoice_no}`,
         invoice_date: invoicex.invoice_date ? new Date(invoicex.invoice_date * 1000).toISOString() : '',

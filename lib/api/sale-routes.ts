@@ -27,7 +27,7 @@ async function signedIn(req: NextApiRequest, res: NextApiResponse) {
 }
 
 /** A refusal with its own message; Prisma conflicts translated; anything else a bare 500. */
-function answerError(res: NextApiResponse, error: any, context: string) {
+export function answerError(res: NextApiResponse, error: any, context: string) {
   if (error instanceof SaleError) {
     return res.status(error.httpStatus).json({
       status: 'failure',

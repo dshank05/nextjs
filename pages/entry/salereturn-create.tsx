@@ -15,7 +15,9 @@ import type { Customer } from '../../types/staff';
 
 export default function SaleReturnCreatePage() {
   const router = useRouter();
-  const { customer: customerIdParam, invoice: invoiceIdParam, id: returnIdParam } = router.query;
+  const { customer: customerIdParam, invoice: invoiceIdParam, id: returnIdParam, type: returnTypeParam } = router.query;
+  // Sale and Invoice C returns share ids: the type names the table.
+  const returnType = typeof returnTypeParam === 'string' ? returnTypeParam : '';
   const { showSnackbar } = useSnackbar();
 
   // Mutation hooks
@@ -30,6 +32,7 @@ export default function SaleReturnCreatePage() {
   const returnReasons = returnReasonsData || [];
 
   const [isEditMode, setIsEditMode] = useState(false);
+  const [editReturnType, setEditReturnType] = useState<string>('');
   const [isLoadingEditData, setIsLoadingEditData] = useState(false);
   const [isInvoiceMode, setIsInvoiceMode] = useState(false);
   const [targetInvoiceId, setTargetInvoiceId] = useState<string | null>(null);
@@ -332,7 +335,7 @@ export default function SaleReturnCreatePage() {
       await loadCustomerBills(customerId, 1, '', fromDate, toDate, false);
 
       // Auto-expand the target invoice
-      setExpandedBills(new Set([invoiceId]));
+      setExpandedBills(new Set([`invoice-${invoiceId}`]));
 
       // Show success message
       showSnackbar('success', `Loaded invoice #${invoice.invoice_no} for return`);
@@ -350,17 +353,16 @@ export default function SaleReturnCreatePage() {
     setIsLoadingEditData(true);
     try {
       // Check session storage first (like purchase edit)
-      let returnData = SessionStorageService.get('sale-returns', returnId);
+      let returnData = returnType ? SessionStorageService.get('sale-returns', `${returnType}-${returnId}`) : null;
 
       // If not in session storage, fetch from API
       if (!returnData) {
-        console.log('📡 No cached data, fetching from API...');
-        const response = await fetch(`/api/sale-returns/${returnId}`);
+        const response = await fetch(`/api/sale-returns/${returnId}${returnType ? `?type=${returnType}` : ''}`);
+        const data = await response.json().catch(() => ({}));
         if (response.ok) {
-          const data = await response.json();
           returnData = data.data;
         } else {
-          throw new Error('Failed to load return data');
+          throw new Error(data.message || 'Failed to load return data');
         }
       } else {
         console.log('✅ Loaded return data from session storage');
@@ -403,16 +405,10 @@ export default function SaleReturnCreatePage() {
           return;
         }
 
-        // Set bills and items
-        // In edit mode, set available_qty to the original_qty (from original sale)
-        const adjustedBills = returnData.bills.map((bill: SaleBill) => ({
-          ...bill,
-          items: bill.items.map((item: SaleItemForReturn) => ({
-            ...item,
-            // In edit mode, available_qty should be the original_qty (original sale quantity)
-            available_qty: item.original_qty || item.available_qty
-          }))
-        }));
+        // Set bills and items. The server's available_qty is what is left of
+        // each line apart from this return (other returns already took theirs).
+        setEditReturnType(returnData.return.invoice_type || returnType || 'invoice');
+        const adjustedBills = returnData.bills;
 
         setBills(adjustedBills);
         setAllLoadedBills(adjustedBills);
@@ -466,7 +462,7 @@ export default function SaleReturnCreatePage() {
 
     } catch (error) {
       console.error('Error loading return for edit:', error);
-      showSnackbar('error', 'Failed to load return data for editing');
+      showSnackbar('error', error instanceof Error ? error.message : 'Failed to load return data for editing');
     } finally {
       setIsLoadingEditData(false);
     }
@@ -532,8 +528,9 @@ export default function SaleReturnCreatePage() {
     const selectedItem = selectedItems.get(itemId);
     if (!selectedItem) return;
 
-    // Use new price
-    const price = Math.max(0, newPrice);
+    // Never above what the line sold for; the server refuses that too.
+    const ceiling = item.net_unit_price ?? item.unit_price;
+    const price = Math.min(Math.max(0, newPrice), ceiling);
 
     // Recalculate with new price
     const subtotal = selectedItem.return_qty * price;
@@ -640,12 +637,13 @@ export default function SaleReturnCreatePage() {
       payment_status: paymentStatus,
       payment_mode: paymentMode,
       payment_date: paymentDate || undefined,
+      // Each line names its kind; the server prices and taxes it.
       items: Array.from(selectedItems.values()).map(item => ({
-        invoice_item_id: item.invoice_item_id || item.sale_item_id || item.id,
+        invoice_item_id: item.invoice_item_id ?? item.sale_item_id,
+        invoice_type: item.invoice_type,
         return_qty: item.return_qty,
         return_reason_id: item.return_reason_id,
         unit_price: item.unit_price,
-        tax_rate: item.tax_rate,
         notes: item.return_notes || ''
       }))
     };
@@ -653,7 +651,7 @@ export default function SaleReturnCreatePage() {
     if (isEditMode && returnIdParam) {
       // Edit mode - update existing return
       updateReturn.mutate(
-        { id: returnIdParam as string, data: returnData },
+        { id: returnIdParam as string, data: { ...returnData, invoice_type: editReturnType } },
         {
           onSuccess: () => {
             showSnackbar('success', `Return updated successfully! Return #${returnIdParam}`);
@@ -677,9 +675,7 @@ export default function SaleReturnCreatePage() {
       
       createReturn.mutate(createData, {
         onSuccess: (result) => {
-          const returnIds = [];
-          if (result.data.sale_return) returnIds.push(`SR-${result.data.sale_return.id}`);
-          if (result.data.salex_return) returnIds.push(`SRX-${result.data.salex_return.id}`);
+          const returnIds: string[] = (result.data.returns || []).map((r: any) => r.return_no);
           showSnackbar('success', `Return(s) created successfully! ${returnIds.join(', ')}`);
           router.push('/entry/salereturn');
         },

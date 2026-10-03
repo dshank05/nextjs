@@ -359,7 +359,7 @@ export default function CustomerReportsPage() {
               </thead>
               <tbody>
                 {creditNotes.map((note, idx) => (
-                  <tr key={note.id}>
+                  <tr key={`${note.type}-${note.id}`}>
                     <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                     <td className="font-medium text-white">{note.credit_note_no}</td>
                     <td className="text-slate-300">{note.customer_name}</td>
@@ -375,7 +375,7 @@ export default function CustomerReportsPage() {
                     </td>
                     <td>
                       <Link
-                        href={`/entry/salereturn/${note.id}`}
+                        href={`/entry/salereturn/${note.id}?type=${note.type === 'salex' ? 'invoicex' : 'invoice'}`}
                         title="View Credit Note Details"
                         className="btn-icon text-slate-300"
                       >

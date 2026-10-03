@@ -170,8 +170,9 @@ export async function returnCounterAmounts(
         select: { column_name: true, change_amount: true, source_type: true }
       })
     : [];
-  const live = rows.filter((r: any) => r.source_type !== 'return_delete');
-  if (!live.length) return { refunded: round2(fallback), allocated: round2(fallback) };
-  const sum = (c: string) => round2(live.filter((r: any) => r.column_name === c).reduce((s: number, r: any) => s + Number(r.change_amount), 0));
+  if (!rows.length) return { refunded: round2(fallback), allocated: round2(fallback) };
+  // Net of every row under the number, earlier reversals included: MySQL can
+  // hand a deleted return's id to a new one, and the old one's rows net to 0.
+  const sum = (c: string) => Math.max(0, round2(rows.filter((r: any) => r.column_name === c).reduce((s: number, r: any) => s + Number(r.change_amount), 0)));
   return { refunded: sum('total_refunded'), allocated: sum('total_refund_allocated') };
 }

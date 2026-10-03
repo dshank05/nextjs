@@ -129,12 +129,18 @@ export interface SaleBill {
   total_items: number;
   payment_status: number;
   outstanding_amount: number;
+  /** 'invoice' (sale) or 'invoicex' (Invoice C); ids alone collide across the two */
+  invoice_type?: 'invoice' | 'invoicex';
 }
 
 export interface SaleItemForReturn {
+  /** `${invoice_type}-${line id}`: unique across sale and Invoice C lines */
   id: string;
   invoice_item_id?: number;
   sale_item_id?: number;
+  invoice_type?: 'invoice' | 'invoicex';
+  /** what the line sold for per unit (rate less discount): the refund ceiling */
+  net_unit_price?: number;
   product_id: number;
   product_name: string;
   display_name?: string;

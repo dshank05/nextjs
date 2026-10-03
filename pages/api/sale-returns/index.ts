@@ -1,9 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
-import { generateNoteNumber } from '../../../lib/note-counter'
-import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils'
-import { getCurrentFinancialYear } from '../../../lib/financial-year'
+import { parseDateRange } from '../../../lib/date-utils'
 
 async function handler(
   req: NextApiRequest,
@@ -12,8 +10,6 @@ async function handler(
   switch (req.method) {
     case 'GET':
       return handleGet(req, res)
-    case 'POST':
-      return handlePost(req, res)
     default:
       return res.status(405).json({ message: 'Method not allowed' })
   }
@@ -95,93 +91,23 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'return_date'
     const sortDirection = (sortOrder as string) === 'desc' ? 'desc' : 'asc'
 
-    // For customer_name sorting, we need to fetch all data first and sort in JavaScript
-    const needsPostSorting = sortField === 'customer_name'
-
-    // Fetch from both sale_returns and salex_returns tables
+    // Sale and Invoice C returns are two tables; paging each separately
+    // returned up to twice the page size, counted only the page, skipped rows
+    // of the other table, and filtered by customer after paging. Both are read
+    // whole, merged, filtered, sorted and then paged.
     const [saleReturns, salexReturns] = await Promise.all([
-      needsPostSorting
-        ? prisma.sale_returns.findMany({
-            where,
-            select: {
-              id: true,
-              invoice_id: true,
-              return_date: true,
-              total_amount: true,
-              total_tax: true,
-              status: true,
-              notes: true,
-              fy: true,
-              payment_status: true,
-              payment_mode: true,
-              payment_date: true,
-              refund_amount: true,
-              created_at: true,
-              updated_at: true
-            }
-          })
-        : prisma.sale_returns.findMany({
-            where,
-            skip: needsPostSorting ? undefined : skip,
-            take: needsPostSorting ? undefined : limitNum,
-            orderBy: needsPostSorting ? undefined : { [sortField]: sortDirection },
-            select: {
-              id: true,
-              invoice_id: true,
-              return_date: true,
-              total_amount: true,
-              total_tax: true,
-              status: true,
-              notes: true,
-              fy: true,
-              payment_status: true,
-              payment_mode: true,
-              payment_date: true,
-              refund_amount: true,
-              created_at: true,
-              updated_at: true
-            }
-          }),
-      needsPostSorting
-        ? prisma.salex_returns.findMany({
-            where,
-            select: {
-              id: true,
-              invoicex_id: true,
-              return_date: true,
-              total_amount: true,
-              status: true,
-              notes: true,
-              fy: true,
-              payment_status: true,
-              payment_mode: true,
-              payment_date: true,
-              refund_amount: true,
-              created_at: true,
-              updated_at: true
-            }
-          })
-        : prisma.salex_returns.findMany({
-            where,
-            skip: needsPostSorting ? undefined : skip,
-            take: needsPostSorting ? undefined : limitNum,
-            orderBy: needsPostSorting ? undefined : { [sortField]: sortDirection },
-            select: {
-              id: true,
-              invoicex_id: true,
-              return_date: true,
-              total_amount: true,
-              status: true,
-              notes: true,
-              fy: true,
-              payment_status: true,
-              payment_mode: true,
-              payment_date: true,
-              refund_amount: true,
-              created_at: true,
-              updated_at: true
-            }
-          })
+      prisma.sale_returns.findMany({
+        where,
+        select: { id: true, invoice_id: true, total_tax: true, return_date: true, total_amount: true, status: true, notes: true, fy: true,
+        payment_status: true, payment_mode: true, payment_date: true, refund_amount: true,
+        created_at: true, updated_at: true }
+      }),
+      prisma.salex_returns.findMany({
+        where,
+        select: { id: true, invoicex_id: true, return_date: true, total_amount: true, status: true, notes: true, fy: true,
+        payment_status: true, payment_mode: true, payment_date: true, refund_amount: true,
+        created_at: true, updated_at: true }
+      })
     ])
 
     // Mark returns with their type
@@ -189,8 +115,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ...saleReturns.map(r => ({ ...r, invoice_type: 'invoice' as const, total_tax: r.total_tax || 0 })),
       ...salexReturns.map(r => ({ ...r, invoice_type: 'invoicex' as const, invoice_id: r.invoicex_id, total_tax: 0 }))
     ]
-
-    const total = returns.length
 
     // Get customer info and item counts
     const invoiceIds = Array.from(new Set(saleReturns.map(r => r.invoice_id).filter(Boolean)))
@@ -326,20 +250,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
-    // Apply post-sorting for customer_name if needed
-    if (needsPostSorting) {
-      enhancedReturns.sort((a, b) => {
-        const aValue = (a.customer_name || '').toString().toLowerCase()
-        const bValue = (b.customer_name || '').toString().toLowerCase()
-
-        if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
-        if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
-        return 0
-      })
-
-      // Apply pagination after sorting
-      enhancedReturns = enhancedReturns.slice(skip, skip + limitNum)
+    const key = (r: any) => {
+      const v = r[sortField]
+      return typeof v === 'string' ? v.toLowerCase() : (v ?? 0)
     }
+    enhancedReturns.sort((a, b) => {
+      const aValue = key(a)
+      const bValue = key(b)
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      // Same value: newest first, sale before Invoice C, for a stable order
+      return (b.id - a.id) || (a.invoice_type < b.invoice_type ? -1 : 1)
+    })
+    const total = enhancedReturns.length
+    enhancedReturns = enhancedReturns.slice(skip, skip + limitNum)
 
     const totalPages = Math.ceil(total / limitNum)
 
@@ -357,409 +281,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     console.error('Sale returns fetch error:', error)
     res.status(500).json({
       message: 'Failed to fetch sale returns data',
-      error: error instanceof Error ? error.message : 'Unknown error'
-    })
-  }
-}
-
-async function handlePost(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const {
-      invoice_id,
-      invoicex_id,
-      invoice_type, // 'invoice' or 'invoicex'
-      return_date,
-      return_notes,
-      payment_status, // 0=Unpaid/Pending Refund, 1=Paid/Refunded (optional, defaults to 0)
-      payment_mode,   // 0=Cash, 1=Bank (optional, defaults to 1)
-      payment_date,   // Unix timestamp (optional)
-      items, // Array of { invoice_item_id, return_qty, return_reason_id, unit_price, tax_rate?, notes? }
-      full_return // Boolean flag for full return
-    } = req.body
-
-    // Determine invoice type
-    const isInvoicex = invoicex_id || invoice_type === 'invoicex'
-    const invoiceIdValue = isInvoicex ? invoicex_id : invoice_id
-
-    // Validation
-    if (!invoiceIdValue) {
-      return res.status(400).json({
-        message: 'Invoice ID is required'
-      })
-    }
-
-    // If full_return flag is set, fetch all items from the invoice
-    let itemsToReturn = items
-    if (full_return && (!items || items.length === 0)) {
-      // Fetch all items from the invoice
-      const invoiceItems = isInvoicex
-        ? await prisma.invoice_itemsx.findMany({
-            where: { invoice_no: parseInt(invoiceIdValue) },
-            select: {
-              id: true,
-              product_id: true,
-              qty: true,
-              rate: true,
-              gst_percentage: true
-            }
-          })
-        : await prisma.invoiceitems.findMany({
-            where: { invoice_no: parseInt(invoiceIdValue) },
-            select: {
-              id: true,
-              product_id: true,
-              qty: true,
-              rate: true,
-              gst_percentage: true
-            }
-          })
-
-      if (!invoiceItems || invoiceItems.length === 0) {
-        return res.status(400).json({
-          message: 'No items found in the invoice'
-        })
-      }
-
-      // Convert invoice items to return items format
-      itemsToReturn = invoiceItems.map(item => ({
-        invoice_item_id: item.id,
-        return_qty: item.qty,
-        return_reason_id: 1, // Default reason (e.g., "Customer Request")
-        unit_price: item.rate,
-        tax_rate: item.gst_percentage || 0,
-        notes: 'Full order return'
-      }))
-    }
-
-    // Validation - items are required
-    if (!itemsToReturn || itemsToReturn.length === 0) {
-      return res.status(400).json({
-        message: 'Items are required for return'
-      })
-    }
-
-    // F-01: financial year comes from Settings, never from the calendar.
-    const financialYear = await getCurrentFinancialYear()
-
-    // Convert return date to Unix timestamp
-    const returnDateTimestamp = return_date ? convertDateToTimestamp(return_date) : Math.floor(Date.now() / 1000)
-
-    // Get invoice details based on type
-    const invoice = isInvoicex
-      ? await prisma.invoicex.findUnique({
-          where: { id: parseInt(invoiceIdValue) },
-          select: {
-            id: true,
-            invoice_no: true,
-            select_customer: true,
-            invoice_date: true,
-            fy: true
-          }
-        })
-      : await prisma.invoice.findUnique({
-          where: { id: parseInt(invoiceIdValue) },
-          select: {
-            id: true,
-            invoice_no: true,
-            select_customer: true,
-            invoice_date: true,
-            fy: true
-          }
-        })
-
-    if (!invoice) {
-      return res.status(400).json({
-        message: `Invalid ${isInvoicex ? 'invoicex' : 'invoice'} selected - invoice does not exist`
-      })
-    }
-
-    // Get customer details for tax calculations
-    const customer = invoice.select_customer ? await prisma.customer_details.findUnique({
-      where: { id: invoice.select_customer },
-      select: { billing_state_code: true }
-    }) : null
-
-    // Calculate totals
-    let totalAmount = 0
-    let totalTax = 0
-
-    // Process items and calculate totals
-    const processedItems = []
-    for (const item of itemsToReturn) {
-      const subtotal = item.return_qty * item.unit_price
-      const taxAmount = isInvoicex ? 0 : ((subtotal * (item.tax_rate || 0)) / 100)
-
-      totalAmount += subtotal
-      totalTax += taxAmount
-
-      // Accept both invoice_item_id and sale_item_id for compatibility
-      const itemId = item.invoice_item_id || item.sale_item_id
-      if (!itemId) {
-        throw new Error('Missing invoice_item_id or sale_item_id in item')
-      }
-
-      processedItems.push({
-        invoice_item_id: parseInt(itemId),
-        return_qty: item.return_qty,
-        return_reason_id: parseInt(item.return_reason_id),
-        unit_price: item.unit_price,
-        tax_amount: taxAmount,
-        notes: item.notes || ''
-      })
-    }
-
-    // Generate credit note number (outside transaction)
-    const creditNoteNo = await generateNoteNumber('CREDIT', financialYear)
-
-    // Process payment tracking fields (before transaction)
-    const paymentStatusValue = payment_status !== undefined ? parseInt(payment_status) : 0 // Default: Unpaid
-    const paymentModeValue = payment_mode !== undefined ? parseInt(payment_mode) : 1 // Default: Bank
-    const paymentDateValue = payment_date ? parseInt(payment_date) : null
-
-    // Calculate refund amount (before transaction for use in ledger entry)
-    const refundAmount = totalAmount + totalTax
-
-    // Use database transaction with increased timeout for return processing
-    const result = await prisma.$transaction(async (tx) => {
-      // Get affected invoice items based on type
-      const invoiceItemIds = itemsToReturn.map((item: any) => parseInt(item.invoice_item_id))
-      const invoiceItems = isInvoicex
-        ? await tx.invoice_itemsx.findMany({
-            where: { id: { in: invoiceItemIds } },
-            select: { id: true, product_id: true, qty: true }
-          })
-        : await tx.invoiceitems.findMany({
-            where: { id: { in: invoiceItemIds } },
-            select: { id: true, product_id: true, qty: true }
-          })
-
-      // Create the main return record based on type
-      const returnRecord = isInvoicex
-        ? await tx.salex_returns.create({
-            data: {
-              invoicex_id: parseInt(invoiceIdValue),
-              return_date: returnDateTimestamp,
-              total_amount: totalAmount,
-              status: 'Completed',
-              notes: return_notes || '',
-              fy: financialYear,
-              payment_status: paymentStatusValue,
-              payment_mode: paymentModeValue,
-              payment_date: paymentDateValue,
-              refund_amount: refundAmount
-            }
-          })
-        : await tx.sale_returns.create({
-            data: {
-              invoice_id: parseInt(invoiceIdValue),
-              return_date: returnDateTimestamp,
-              total_amount: totalAmount,
-              total_tax: totalTax,
-              status: 'Completed',
-              notes: return_notes || '',
-              fy: financialYear,
-              payment_status: paymentStatusValue,
-              payment_mode: paymentModeValue,
-              payment_date: paymentDateValue,
-              refund_amount: refundAmount
-            }
-          })
-
-      // Create return items and update product stock based on type
-      for (const item of processedItems) {
-        // Create return item record
-        if (isInvoicex) {
-          await tx.salex_return_items.create({
-            data: {
-              salex_return_id: returnRecord.id,
-              invoice_itemx_id: item.invoice_item_id,
-              return_qty: item.return_qty,
-              return_reason_id: item.return_reason_id,
-              unit_price: item.unit_price,
-              notes: item.notes
-            }
-          })
-        } else {
-          await tx.sale_return_items.create({
-            data: {
-              sale_return_id: returnRecord.id,
-              invoice_item_id: item.invoice_item_id,
-              return_qty: item.return_qty,
-              return_reason_id: item.return_reason_id,
-              unit_price: item.unit_price,
-              tax_amount: item.tax_amount,
-              notes: item.notes
-            }
-          })
-        }
-
-        // Update product stock (INCREASE stock since we're returning items to inventory)
-        const invoiceItem = invoiceItems.find(ii => ii.id === item.invoice_item_id)
-        if (invoiceItem?.product_id) {
-          await tx.product.update({
-            where: { id: invoiceItem.product_id },
-            data: {
-              stock: {
-                increment: item.return_qty
-              }
-            }
-          })
-        }
-      }
-
-      // Update return_status for the invoice based on type
-      if (isInvoicex) {
-        // Get all items for this invoicex
-        const allInvoiceItems = await tx.invoice_itemsx.findMany({
-          where: { invoice_no: invoice.invoice_no },
-          select: { id: true, qty: true }
-        })
-
-        // Get all returns for these items
-        const allReturns = await tx.salex_return_items.findMany({
-          where: { invoice_itemx_id: { in: allInvoiceItems.map(ii => ii.id) } },
-          select: { invoice_itemx_id: true, return_qty: true }
-        })
-
-        // Calculate return status
-        const returnMap = new Map()
-        allReturns.forEach(r => {
-          const existing = returnMap.get(r.invoice_itemx_id) || { qty: 0 }
-          existing.qty += r.return_qty
-          returnMap.set(r.invoice_itemx_id, existing)
-        })
-
-        let fullyReturnedCount = 0
-        let hasAnyReturns = false
-        for (const item of allInvoiceItems) {
-          const returnData = returnMap.get(item.id)
-          if (returnData && returnData.qty > 0) {
-            hasAnyReturns = true
-            if (returnData.qty >= (item.qty || 0)) {
-              fullyReturnedCount++
-            }
-          }
-        }
-
-        const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allInvoiceItems.length ? 2 : 1)
-
-        await tx.invoicex.update({
-          where: { id: parseInt(invoiceIdValue) },
-          data: { return_status: returnStatus }
-        })
-      } else {
-        // Get all items for this invoice
-        const allInvoiceItems = await tx.invoiceitems.findMany({
-          where: { invoice_no: invoice.invoice_no },
-          select: { id: true, qty: true }
-        })
-
-        // Get all returns for these items
-        const allReturns = await tx.sale_return_items.findMany({
-          where: { invoice_item_id: { in: allInvoiceItems.map(ii => ii.id) } },
-          select: { invoice_item_id: true, return_qty: true }
-        })
-
-        // Calculate return status
-        const returnMap = new Map()
-        allReturns.forEach(r => {
-          const existing = returnMap.get(r.invoice_item_id) || { qty: 0 }
-          existing.qty += r.return_qty
-          returnMap.set(r.invoice_item_id, existing)
-        })
-
-        let fullyReturnedCount = 0
-        let hasAnyReturns = false
-        for (const item of allInvoiceItems) {
-          const returnData = returnMap.get(item.id)
-          if (returnData && returnData.qty > 0) {
-            hasAnyReturns = true
-            if (returnData.qty >= (item.qty || 0)) {
-              fullyReturnedCount++
-            }
-          }
-        }
-
-        const returnStatus = !hasAnyReturns ? 0 : (fullyReturnedCount === allInvoiceItems.length ? 2 : 1)
-
-        await tx.invoice.update({
-          where: { id: parseInt(invoiceIdValue) },
-          data: { return_status: returnStatus }
-        })
-      }
-
-      // ✅ ONLY CREATE LEDGER ENTRIES WHEN COMPLETE (payment_status === 1)
-      if (paymentStatusValue === 1 && invoice.select_customer && invoice.select_customer !== 0) {
-        const creditNoteNo = isInvoicex ? `SXR-${String(returnRecord.id).padStart(3, '0')}` : `SR-${String(returnRecord.id).padStart(3, '0')}`
-        
-        // Get latest balance for ledger entry
-        const { customerLedgerService } = await import('../../../lib/customer-ledger-service')
-        const latestBalance = await customerLedgerService.getLatestBalance(invoice.select_customer, tx)
-        const newBalance = latestBalance + 0 - refundAmount // debit - credit
-        
-        // Create ledger entry for credit note INSIDE transaction
-        await tx.customer_ledger.create({
-          data: {
-            customer_id: invoice.select_customer,
-            transaction_date: returnDateTimestamp,
-            transaction_type: 'CREDIT_NOTE',
-            reference_type: isInvoicex ? 'salex_return' : 'sale_return',
-            reference_id: returnRecord.id,
-            reference_no: creditNoteNo,
-            debit: 0,
-            credit: refundAmount,
-            balance: newBalance,
-            payment_mode: paymentModeValue,
-            payment_status: 1,
-            payment_date: returnDateTimestamp,
-            notes: return_notes || `Return for ${isInvoicex ? 'salex' : 'sale'} invoice ${invoice.invoice_no}`,
-            fy: financialYear
-          }
-        })
-
-        // ✅ Update customer balance fields for complete returns WITH LOGGING
-        const { customerBalanceHandler } = await import('../../../lib/customer-balance-handler')
-        await customerBalanceHandler.incrementBalanceInTransaction(tx, invoice.select_customer, {
-          total_refunded: refundAmount,
-          total_refund_allocated: refundAmount
-        }, {
-          type: 'return_create',
-          id: returnRecord.id,
-          reference_no: creditNoteNo,
-          notes: `Return complete: ₹${refundAmount}`
-        })
-      }
-
-      return returnRecord
-    }, {
-      timeout: 15000 // 15 seconds timeout for complex return processing
-    })
-
-    const returnPrefix = isInvoicex ? 'SXR' : 'SR'
-    res.status(201).json({
-      success: true,
-      message: 'Return processed successfully',
-      data: {
-        return: {
-          id: result.id,
-          credit_note_no: creditNoteNo,
-          return_no: `${returnPrefix}-${String(result.id).padStart(3, '0')}`,
-          total_amount: totalAmount,
-          total_tax: totalTax,
-          refund_amount: refundAmount,
-          status: 'Completed',
-          payment_status: result.payment_status,
-          payment_mode: result.payment_mode,
-          payment_date: result.payment_date,
-          invoice_type: isInvoicex ? 'invoicex' : 'invoice'
-        }
-      }
-    })
-
-  } catch (error) {
-    console.error('Sale return processing error:', error)
-    res.status(500).json({
-      message: 'Failed to process return',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }

@@ -54,20 +54,26 @@ export function useSaleReturns(filters: SaleReturnFilters) {
   });
 }
 
-async function fetchSaleReturn(id: string | number, signal?: AbortSignal): Promise<any> {
-  const response = await fetch(`/api/sale-returns/${id}`, { signal });
+/**
+ * Sale and Invoice C returns are numbered separately, so a return is named by
+ * id AND type ('invoice' | 'invoicex'); the server refuses an id that names two.
+ */
+const returnUrl = (id: string | number, type?: string | null) =>
+  `/api/sale-returns/${id}${type ? `?type=${encodeURIComponent(type)}` : ''}`;
 
+async function fetchSaleReturn(id: string | number, type?: string | null, signal?: AbortSignal): Promise<any> {
+  const response = await fetch(returnUrl(id, type), { signal });
+  const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error('Failed to fetch sale return');
+    throw new Error(data.message || 'Failed to fetch sale return');
   }
-
-  return response.json();
+  return data;
 }
 
-export function useSaleReturn(id: string | number | undefined) {
+export function useSaleReturn(id: string | number | undefined, type?: string | null) {
   return useQuery({
-    queryKey: ['saleReturn', id],
-    queryFn: ({ signal }) => fetchSaleReturn(id!, signal),
+    queryKey: ['saleReturn', id, type ?? null],
+    queryFn: ({ signal }) => fetchSaleReturn(id!, type, signal),
     enabled: !!id,
     staleTime: 30000,
     gcTime: 5 * 60 * 1000,
@@ -76,15 +82,15 @@ export function useSaleReturn(id: string | number | undefined) {
 }
 
 // Delete Sale Return Mutation
-async function deleteSaleReturn(id: number) {
-  const response = await fetch(`/api/sale-returns/${id}`, {
+async function deleteSaleReturn({ id, type }: { id: number; type: string }) {
+  const response = await fetch(returnUrl(id, type), {
     method: 'DELETE'
   });
 
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok || !data.success) {
-    throw new Error(data.error || 'Failed to delete sale return');
+    throw new Error(data.message || data.error || 'Failed to delete sale return');
   }
 
   return data;
@@ -131,7 +137,7 @@ export function useCreateSaleReturn() {
 
 // Update Sale Return Mutation
 async function updateSaleReturn({ id, data }: { id: string; data: any }) {
-  const response = await fetch(`/api/sale-returns/${id}`, {
+  const response = await fetch(returnUrl(id, data?.invoice_type), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)

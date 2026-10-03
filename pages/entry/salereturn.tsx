@@ -140,7 +140,7 @@ export default function SaleReturnPage() {
   const handleConfirmDelete = () => {
     if (!returnToDelete) return;
 
-    deleteReturn.mutate(returnToDelete.id, {
+    deleteReturn.mutate({ id: returnToDelete.id, type: returnToDelete.type }, {
       onSuccess: () => {
         showSnackbar('success', `Return deleted successfully`);
         setDeleteModalOpen(false);
@@ -436,7 +436,7 @@ export default function SaleReturnPage() {
             </thead>
             <tbody>
               {returns.map((returnItem, idx) => (
-                <tr key={returnItem.id}>
+                <tr key={`${returnItem.invoice_type}-${returnItem.id}`}>
                   <td>{(pagination.page - 1) * pagination.limit + idx + 1}</td>
                   <td className="font-medium text-white">
                     {returnItem.return_no}
@@ -471,7 +471,7 @@ export default function SaleReturnPage() {
                   <td>
                     <div className="flex items-center space-x-2">
                       <Link
-                        href={`/entry/salereturn/${returnItem.id}`}
+                        href={`/entry/salereturn/${returnItem.id}?type=${returnItem.invoice_type}`}
                         title="View Return Details"
                         className="btn-icon text-slate-300 hover:text-blue-400"
                       >

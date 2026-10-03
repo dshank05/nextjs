@@ -1,5 +1,6 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
+import { returnNo } from '../../../lib/sale-return';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -29,27 +30,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const saleWhere: any = {};
     const salexWhere: any = {};
 
-    // Search filter
-    if (search) {
-      const searchCondition = {
-        OR: [
-          { return_no: { contains: search as string, mode: 'insensitive' } },
-          { customer: {
-            OR: [
-              { billing_name: { contains: search as string, mode: 'insensitive' } },
-              { name: { contains: search as string, mode: 'insensitive' } }
-            ]
-          }}
-        ]
-      };
-      saleWhere.OR = searchCondition.OR;
-      salexWhere.OR = searchCondition.OR;
+    // Search: a number is a note number (SR-012 / SXR-012 / 12); text matches
+    // the customer name after the join. Returns have no return_no, customer
+    // or customer_id column, so the old filters made every search a 500.
+    const searchText = String(search || '').trim();
+    const searchNum = parseInt(searchText.replace(/^SX?R-?/i, ''), 10);
+    if (searchText && Number.isInteger(searchNum) && /^(SX?R-?)?\d+$/i.test(searchText)) {
+      saleWhere.id = searchNum;
+      salexWhere.id = searchNum;
+      if (/^SR/i.test(searchText)) salexWhere.id = -1;
+      if (/^SXR/i.test(searchText)) saleWhere.id = -1;
     }
+    const nameSearch = searchText && !(saleWhere.id || salexWhere.id) ? searchText.toLowerCase() : '';
 
-    // Customer filter
+    // Customer filter: through the bill
     if (customerFilter) {
-      saleWhere.customer_id = parseInt(customerFilter as string);
-      salexWhere.customer_id = parseInt(customerFilter as string);
+      const cid = parseInt(customerFilter as string);
+      saleWhere.invoice = { select_customer: cid };
+      salexWhere.invoicex = { select_customer: cid };
     }
 
     // Date filters
@@ -120,12 +118,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const customerMap = new Map(customers.map(c => [c.id, c.billing_name || 'Unknown']));
+    const [saleCounts, salexCounts] = await Promise.all([
+      saleReturns.length ? prisma.sale_return_items.groupBy({ by: ['sale_return_id'], where: { sale_return_id: { in: saleReturns.map(r => r.id) } }, _count: { id: true } }) : Promise.resolve([] as any[]),
+      salexReturns.length ? prisma.salex_return_items.groupBy({ by: ['salex_return_id'], where: { salex_return_id: { in: salexReturns.map(r => r.id) } }, _count: { id: true } }) : Promise.resolve([] as any[])
+    ]);
+    const saleCount = new Map<number, number>(saleCounts.map((c: any) => [c.sale_return_id, c._count.id]));
+    const salexCount = new Map<number, number>(salexCounts.map((c: any) => [c.salex_return_id, c._count.id]));
 
     // Combine and format
     const allReturns = [
       ...saleReturns.map(r => ({
         id: r.id,
-        credit_note_no: r.id,
+        key: `sale-${r.id}`,
+        credit_note_no: returnNo('sale', r.id),
+        item_count: saleCount.get(r.id) || 0,
         return_date: r.return_date,
         customer_id: r.invoice.select_customer,
         customer_name: r.invoice.select_customer === 0 ? 'Other' : customerMap.get(r.invoice.select_customer) || 'Unknown',
@@ -144,7 +150,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       })),
       ...salexReturns.map(r => ({
         id: r.id,
-        credit_note_no: r.id,
+        key: `salex-${r.id}`,
+        credit_note_no: returnNo('salex', r.id),
+        item_count: salexCount.get(r.id) || 0,
         return_date: r.return_date,
         customer_id: r.invoicex.select_customer,
         customer_name: r.invoicex.select_customer === 0 ? 'Other' : customerMap.get(r.invoicex.select_customer) || 'Unknown',
@@ -162,8 +170,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }))
     ];
 
+    const matching = nameSearch
+      ? allReturns.filter(r => r.customer_name.toLowerCase().includes(nameSearch))
+      : allReturns;
+
     // Sort
-    allReturns.sort((a, b) => {
+    matching.sort((a, b) => {
       const aVal = a[sortBy as keyof typeof a];
       const bVal = b[sortBy as keyof typeof b];
       
@@ -175,8 +187,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     // Paginate
-    const total = allReturns.length;
-    const paginatedReturns = allReturns.slice(skip, skip + limitNum);
+    const total = matching.length;
+    const paginatedReturns = matching.slice(skip, skip + limitNum);
 
     return res.status(200).json({
       success: true,

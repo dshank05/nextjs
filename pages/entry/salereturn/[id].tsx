@@ -7,10 +7,10 @@ import type { SaleReturnItem } from '../../../types/sales';
 
 export default function SaleReturnDetailPage() {
   const router = useRouter();
-  const { id } = router.query;
+  const { id, type } = router.query;
 
-  // Query hook
-  const { data: apiData, isLoading, error } = useSaleReturn(id as string);
+  // Query hook (sale and Invoice C returns share ids: the type picks the table)
+  const { data: apiData, isLoading, error } = useSaleReturn(id as string, (type as string) || null);
 
   // Transform data
   const returnData = apiData?.data?.return ? {
@@ -54,8 +54,9 @@ export default function SaleReturnDetailPage() {
   const handleEditReturn = () => {
     if (apiData?.data && id) {
       // Cache the full return data to session storage
-      SessionStorageService.set('sale-returns', id.toString(), apiData.data);
-      router.push(`/entry/salereturn-create?id=${id}`);
+      const kind = apiData.data.return.invoice_type;
+      SessionStorageService.set('sale-returns', `${kind}-${id}`, apiData.data);
+      router.push(`/entry/salereturn-create?id=${id}&type=${kind}`);
     }
   };
 
