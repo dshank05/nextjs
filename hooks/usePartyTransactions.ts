@@ -18,7 +18,6 @@ export const PARTY = {
     formUrl: '/customer-transactions/create', viewUrl: (id: number, d: Direction) => `/customer-transactions/view/${id}?type=${d}`,
     listKey: 'customerTransactions', detailKey: 'customerTransaction', billsKey: 'customerOpenBills',
     sessionModule: (isPayment: boolean) => (isPayment ? 'customer-payments' : 'customer-refunds'),
-    refresh: ['sales', 'salex', 'sale', 'salex-item', 'saleReturns', 'saleReturn', 'customers', 'customer'],
     billWord: 'invoice', billsWord: 'Invoices', paymentTypeLabel: 'Invoice Specific',
     paymentVerb: 'RECEIPT (Receive from Customer)', refundVerb: 'PAYMENT (Pay Customer)',
     paymentBanner: 'RECEIPT', refundBanner: 'PAYMENT'
@@ -30,7 +29,6 @@ export const PARTY = {
     formUrl: '/entry/vendor-transaction', viewUrl: (id: number, d: Direction) => `/vendor-transactions/view/${id}?type=${d}`,
     listKey: 'vendorTransactions', detailKey: 'vendorTransaction', billsKey: 'vendorOpenBills',
     sessionModule: (isPayment: boolean) => (isPayment ? 'vendor-payments' : 'vendor-refunds'),
-    refresh: ['purchases', 'purchase', 'vendorPurchaseBills', 'purchaseReturns', 'purchaseReturn', 'vendors', 'vendor', 'outstandingBills', 'outstandingReturns'],
     billWord: 'bill', billsWord: 'Bills', paymentTypeLabel: 'Bill Specific',
     paymentVerb: 'PAYMENT (Pay Vendor)', refundVerb: 'RECEIPT (Receive Refund)',
     paymentBanner: 'PAYMENT', refundBanner: 'RECEIPT'
@@ -243,12 +241,15 @@ export function usePartyOpenBills(party: Party, partyId: number | undefined, all
 
 // ---------------------------------------------------------------- mutations
 
-function useRefresh(party: Party) {
+/**
+ * A payment or refund moves bills' paid status, the party's balance, ledger and
+ * reports. A key list (the old hooks had one per party) misses whatever screen
+ * it forgot, so everything is marked stale and what is on screen refetches - the
+ * same rule as hooks/useReturns.ts.
+ */
+function useRefresh(_party: Party) {
   const qc = useQueryClient();
-  const P = PARTY[party];
-  return () => {
-    for (const key of [P.listKey, P.detailKey, P.billsKey, ...P.refresh]) qc.invalidateQueries({ queryKey: [key] });
-  };
+  return () => qc.invalidateQueries();
 }
 
 export function useSavePartyTransaction(party: Party) {
