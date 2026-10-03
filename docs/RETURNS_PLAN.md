@@ -60,7 +60,7 @@ is in; sale returns need nothing new. No data changes.
 | Payload | `{customer_id, return_type:'custom', return_date, return_notes, payment_status, payment_mode, payment_date, items:[{invoice_item_id, invoice_type, return_qty, return_reason_id, unit_price, notes}]}` | `{vendor_id, return_date, return_notes, payment_status, payment_mode, payment_date, packing_forwarding_amount, items:[{purchase_item_id, return_qty, return_reason_id, unit_price, tax_rate, notes}]}` |
 | APIs | `/api/customers?dropdown=true`, `/api/sale-returns/reasons`, `/api/sale-returns/customer-items`, `/api/sales/:id` (invoice mode), `/api/sale-returns/:id?type=`, POST `customer-return`, PUT `:id` | `/api/vendors?dropdown=true`, reasons, `/api/purchase-returns/vendor-items`, `/api/purchase-returns/:id`, POST `vendor-return`, PUT `:id` |
 
-## 2. Bugs found while reading
+## 2. Bugs found while reading (screens, then hooks and types)
 
 Each gets a test that fails before the fix.
 
@@ -103,6 +103,29 @@ Each gets a test that fails before the fix.
     (REFUND_VIA_RETURN). Both modals and the route go.
 16. `?customer=` / `?vendor=` deep links are read but do nothing; `?invoice=` works for a
     sale bill but nothing links to it.
+
+**Hooks and types** (`hooks/useSales.ts` return half, `hooks/usePurchases.ts` return half,
+`types/sales.ts` and `types/purchases.ts` return types — read after the screens, 2026-10-03)
+17. Saving or deleting a return refreshes only the returns list. The bill it came from
+    (return status, payment status), product stock, the party's balance and transactions,
+    and the ledgers stay stale until they refetch on their own. A deleted sale return's
+    view stays cached too.
+18. Editing a return wipes every line's note: both forms send `notes: item.return_notes || ''`,
+    and nothing fills `return_notes` — the note the view shows is never loaded into the form.
+19. Purchase list hook: `status` is computed as `ret.status === 'Completed'` on a numeric
+    column (always 0), and `refund_amount` falls back to `total + tax`. Neither is shown,
+    but both are wrong if used.
+20. Purchase hooks throw "Failed to fetch purchase return" and drop the server's message;
+    the sale hooks show it.
+21. `useCreatePurchaseReturn` puts the create response into the view's cache under a numeric
+    id; the view reads a string id with a different response shape, so it never matches —
+    and would break the view if it did.
+22. Unused: `useCustomerBills` (the sale form fetches bills itself); the purchase view caches
+    the return for edit under `purchase-returns`, which the purchase form never reads;
+    filter fields in `SaleReturnFilters` that are never sent.
+
+The new `hooks/useReturns.ts` replaces both return halves and the return types; its save and
+delete refresh the bills, products, party, transactions, ledgers and reports for that party.
 
 ## 3. The rewrite
 
