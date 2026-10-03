@@ -1,6 +1,6 @@
-import { SaleBillView } from '../../../components/bills/SaleBillView';
+import { BillView } from '../../../components/bills/BillView'
 
-/** One sale (components/bills/SaleBillView.tsx, shared with Invoice C). */
+/** One sale (components/bills/BillView.tsx, shared with Purchase and Invoice C). */
 export default function SaleView() {
-  return <SaleBillView kind="sale" />;
+  return <BillView kind="sale" />
 }
