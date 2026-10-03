@@ -58,6 +58,9 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
 
   const existing = await prisma.purchase.findUnique({ where: { id: purchaseId } })
   if (!existing) throw new PurchaseEditError(404, 'Purchase not found', 'NOT_FOUND')
+  // Captured now: the handler compares against the bill as it was.
+  const oldTotal = existing.total
+  const oldStatus = existing.payment_status ?? PAYMENT_STATUS.UNPAID
 
   if (body.vendor_id !== undefined && body.vendor_id !== null && intOrNull(body.vendor_id) !== existing.vendor_id) {
     throw new PurchaseEditError(
@@ -389,9 +392,9 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
       : undefined
 
     const ops = await transactionHandler.handlePurchaseEdit({
-      oldStatus: existing.payment_status ?? PAYMENT_STATUS.UNPAID,
+      oldStatus,
       newStatus: finalStatus,
-      oldTotal: existing.total,
+      oldTotal,
       newTotal,
       vendorId: existing.vendor_id as number,
       purchaseId,

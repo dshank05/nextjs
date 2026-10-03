@@ -7,8 +7,8 @@ import { useSnackbar } from '../../components/SnackbarProvider';
 import { PurchaseLines, type PurchaseLine } from '../../components/purchases/PurchaseLines';
 import { broadcast, subscribeBroadcast } from '../../lib/broadcast';
 import { getLocalDateString } from '../../lib/date-utils';
-import { getBusinessStateCode, resolveSupplyType, splitGst } from '../../lib/gst';
-import { lineAmounts, parseNum, money } from '../../lib/line-math';
+import { getBusinessStateCode, resolveSupplyType } from '../../lib/gst';
+import { computeBill, parseNum, money } from '../../lib/line-math';
 import { useCreatePurchase, useUpdatePurchase, usePurchase, useLastInvoiceNumber } from '../../hooks/usePurchases';
 import { useVendors } from '../../hooks/useVendors';
 import { useStaff } from '../../hooks/useStaff';
@@ -192,15 +192,21 @@ export default function PurchaseCreate() {
     return { qty, rate, total: qty * rate };
   }, [packing]);
 
+  // The server's own function (lib/line-math computeBill), so the preview rounds
+  // exactly as the stored bill will (F-34).
   const summary = useMemo(() => {
-    let taxable = 0, tax = 0;
-    for (const l of lines) {
-      const a = lineAmounts(l.qty, l.rate, effectiveGst(l));
-      taxable += a.taxable;
-      tax += a.tax;
-    }
-    const split = supplyType ? splitGst(tax, supplyType) : { cgst: 0, sgst: 0, igst: 0 };
-    return { taxable, tax, ...split, grand: taxable + packingOut.total + tax };
+    const bill = computeBill(
+      lines.map(l => ({ qty: l.qty, rate: l.rate, gst_percentage: effectiveGst(l) })),
+      { supplyType, packingTotal: packingOut.total }
+    );
+    return {
+      taxable: bill.itemsTotal,
+      tax: bill.totalTax,
+      cgst: bill.totalCgst,
+      sgst: bill.totalSgst,
+      igst: bill.totalIgst,
+      grand: bill.grandTotal
+    };
   }, [lines, enableTax, supplyType, packingOut]);
 
   // ---- what gets sent

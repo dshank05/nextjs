@@ -139,7 +139,10 @@ model Invoice {
   staff                    staff?         @relation(fields: [staff_id], references: [id], map: "invoice_staff_fkey")
   sale_returns             sale_returns[]
   customer_payment_allocations customer_payment_allocations[]
+  lines                    Invoiceitems[]
 
+  // One number per financial year (SA-16), as purchase_fy_invoice_no.
+  @@unique([fy, invoice_no], map: "invoice_fy_invoice_no")
   @@index([mechanic_id], map: "invoice_mechanic_fkey")
   @@index([staff_id], map: "invoice_staff_fkey")
   @@index([invoice_date], map: "idx_invoice_invoice_date")
@@ -173,8 +176,11 @@ model Invoiceitems {
   discountrate      Float?
   subcategory_id    Int?
   product           Product             @relation(fields: [product_id], references: [id], map: "invoiceitems_product_fkey")
+  /// invoice_no holds the HEADER id (invoice.id), not the printed number (SA-33).
+  invoice           Invoice             @relation(fields: [invoice_no], references: [id], onDelete: Restrict, map: "invoice_items_invoice_fkey")
   sale_return_items sale_return_items[]
 
+  @@index([invoice_no], map: "idx_invoice_items_invoice_no")
   @@index([invoice_date], map: "idx_invoiceitems_invoice_date")
   @@index([product_id], map: "invoiceitems_product_fkey")
   @@map("invoice_items")
@@ -478,8 +484,11 @@ model invoice_itemsx {
   discountrate       Float?
   subcategory_id     Int?
   product            Product              @relation(fields: [product_id], references: [id], map: "invoiceitemsx_product_fkey")
+  /// invoice_no holds the HEADER id (invoicex.id), not the printed number (SA-33).
+  invoicex           invoicex             @relation(fields: [invoice_no], references: [id], onDelete: Restrict, map: "invoice_itemsx_invoicex_fkey")
   salex_return_items salex_return_items[]
 
+  @@index([invoice_no], map: "idx_invoice_itemsx_invoice_no")
   @@index([invoice_date], map: "idx_invoice_itemsx_invoice_date")
   @@index([product_id], map: "invoiceitemsx_product_fkey")
 }
@@ -518,7 +527,9 @@ model invoicex {
   staff                    staff?          @relation(fields: [staff_id], references: [id], map: "invoicex_staff_fkey")
   salex_returns            salex_returns[]
   customer_payment_allocations customer_payment_allocations[]
+  lines                    invoice_itemsx[]
 
+  @@unique([fy, invoice_no], map: "invoicex_fy_invoice_no")
   @@index([mechanic_id], map: "invoicex_mechanic_fkey")
   @@index([staff_id], map: "invoicex_staff_fkey")
   @@index([invoice_date], map: "idx_invoicex_invoice_date")

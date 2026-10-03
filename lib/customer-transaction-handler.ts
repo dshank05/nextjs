@@ -7,6 +7,7 @@
 import { customerLedgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDeleteOperation, ChangeSet } from './customer-ledger-handler';
 import { customerBalanceHandler, BalanceOperation } from './customer-balance-handler';
 import { customerLedgerService } from './customer-ledger-service';
+import { saleTables } from './sale';
 
 export interface AllocationChange {
   action: 'CREATE' | 'DELETE';
@@ -54,43 +55,8 @@ export interface DeleteResult {
   customerId: number;
 }
 
-/**
- * Prisma names for the two invoice families. Sale and salex lines both store
- * the HEADER id in invoice_no (not the printed invoice number), and the salex
- * tables do not follow the sale names - `invoicexitems` does not exist and the
- * return-line FK is `invoice_itemx_id`. Spelling these inline is what made every
- * customer-salex delete fail and every customer-sale delete hit the wrong bill.
- */
-const INVOICE_TABLES = {
-  sale: {
-    header: 'invoice',
-    items: 'invoiceitems',
-    returns: 'sale_returns',
-    returnItems: 'sale_return_items',
-    returnFk: 'sale_return_id',
-    returnItemFk: 'invoice_item_id',
-    billTo: 'bill_tosales',
-    shipTo: 'shipto',
-    transport: 'transport_details',
-  },
-  salex: {
-    header: 'invoicex',
-    items: 'invoice_itemsx',
-    returns: 'salex_returns',
-    returnItems: 'salex_return_items',
-    returnFk: 'salex_return_id',
-    returnItemFk: 'invoice_itemx_id',
-    billTo: 'bill_tosalesx',
-    shipTo: 'shiptox',
-    transport: 'transport_detailsx',
-  },
-} as const;
-
-function invoiceTables(type: string) {
-  const t = (INVOICE_TABLES as any)[type];
-  if (!t) throw new Error(`Unknown invoice type: ${type}`);
-  return t as (typeof INVOICE_TABLES)['sale'] | (typeof INVOICE_TABLES)['salex'];
-}
+/** Table names for the two invoice families - one map, in lib/sale.ts. */
+const invoiceTables = saleTables;
 
 export class CustomerTransactionHandler {
   /**

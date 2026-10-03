@@ -1,5 +1,6 @@
 import { prisma } from './db';
-import { getBusinessStateCode, resolveSupplyType, splitGst, SupplyType } from './gst';
+import { getBusinessStateCode, resolveSupplyType, SupplyType } from './gst';
+import { computeBill } from './line-math';
 
 /**
  * Purchase business rules, in one place.
@@ -130,12 +131,12 @@ export interface PurchaseTotals {
  * On a PURCHASE the roles are reversed relative to a sale: the VENDOR is the
  * supplier and we are the recipient, so the comparison is the vendor's state
  * against ours. `resolveSupplyType` only tests the two codes for equality, so
- * it serves both directions - but the argument names read customer-first, which
- * is why this wrapper exists rather than calling it inline.
+ * it serves both directions.
  *
- * Rounding is deliberately NOT applied. Rounding each tax component to the
- * nearest rupee (CGST Act s.170 + Rule 51) is finding F-34, kept separate so it
- * can land and be reviewed on its own.
+ * The arithmetic itself - including the F-34 rounding - is lib/line-math.ts
+ * `computeBill`, the same function sale and salex use, so the documents
+ * cannot round differently. Freight (transport_cost) is stored beside a
+ * purchase and is NOT part of its total; that is existing, intended behaviour.
  */
 export function computePurchaseTotals(params: {
   items: any[];
@@ -153,59 +154,40 @@ export function computePurchaseTotals(params: {
     params.hasVendorState
   );
 
-  const lines: PurchaseLineTotals[] = (params.items || []).map((item: any) => {
-    const qty = lineQty(item.qty);
-    const rate = num(item.rate);
-    const taxable = qty * rate;
-    const gstPercentage = num(item.gst_percentage);
-    const tax = taxable * gstPercentage / 100;
-
-    // An unresolvable supply type means no split can be asserted. Charging
-    // CGST+SGST on what might be an inter-state purchase would understate
-    // IGST, so the split is left at zero and the caller is told via
-    // supplyType: null rather than being given a guess.
-    const split = supplyType
-      ? splitGst(tax, supplyType)
-      : { cgst: 0, sgst: 0, igst: 0 };
-
-    return {
-      product_id: parseInt(item.product_id),
-      qty,
-      rate,
-      taxable,
-      gst_percentage: gstPercentage,
-      tax: supplyType ? tax : 0,
-      ...split
-    };
-  });
-
-  const sum = (pick: (l: PurchaseLineTotals) => number) =>
-    lines.reduce((acc, l) => acc + pick(l), 0);
-
-  const itemsTotal = sum(l => l.taxable);
-
-  // Packing is always derived from qty x rate. Create used to store the
-  // client's packing_forwarding_total verbatim while update recomputed it
-  // (L-20); one of those had to win, and the derived one is the only one that
-  // cannot be wrong.
+  // Packing is always derived from qty x rate when either is sent. Create used
+  // to store the client's packing_forwarding_total verbatim while update
+  // recomputed it (L-20); the derived one is the only one that cannot be wrong.
   const packingTotal =
     params.packingQty !== undefined || params.packingRate !== undefined
       ? num(params.packingQty) * num(params.packingRate)
       : num(params.packingTotal);
 
-  const totalTax = sum(l => l.tax);
+  const items = params.items || [];
+  // Purchases carry no discount (P4-21), so none is passed through.
+  const bill = computeBill(
+    items.map((item: any) => ({ qty: item.qty, rate: item.rate, gst_percentage: item.gst_percentage })),
+    { supplyType, packingTotal }
+  );
 
   return {
-    lines,
-    itemsTotal,
-    packingTotal,
-    totalTax,
-    totalCgst: sum(l => l.cgst),
-    totalSgst: sum(l => l.sgst),
-    totalIgst: sum(l => l.igst),
-    // Freight (transport_cost) is stored separately and is NOT part of the
-    // total; that is existing, intended behaviour.
-    grandTotal: itemsTotal + packingTotal + totalTax,
+    lines: bill.lines.map((l, i) => ({
+      product_id: parseInt(items[i].product_id),
+      qty: l.qty,
+      rate: l.rate,
+      taxable: l.taxable,
+      gst_percentage: l.gst_percentage,
+      tax: l.tax,
+      cgst: l.cgst,
+      sgst: l.sgst,
+      igst: l.igst
+    })),
+    itemsTotal: bill.itemsTotal,
+    packingTotal: bill.packingTotal,
+    totalTax: bill.totalTax,
+    totalCgst: bill.totalCgst,
+    totalSgst: bill.totalSgst,
+    totalIgst: bill.totalIgst,
+    grandTotal: bill.grandTotal,
     supplyType
   };
 }
