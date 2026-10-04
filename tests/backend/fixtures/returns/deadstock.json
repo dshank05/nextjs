@@ -1,0 +1,33 @@
+{
+ "steps": [
+  {
+   "name": "create",
+   "method": "POST",
+   "url": "/api/deadstock",
+   "status": 201,
+   "body": {
+    "product_id": 1,
+    "quantity": 3,
+    "reason": "water damage"
+   }
+  },
+  {
+   "name": "edit-qty",
+   "method": "PUT",
+   "url": "/api/deadstock/1000",
+   "status": 200,
+   "body": {
+    "product_id": 1,
+    "quantity": 5,
+    "reason": "water damage"
+   }
+  },
+  {
+   "name": "delete",
+   "method": "DELETE",
+   "url": "/api/deadstock/1000",
+   "status": 200,
+   "body": null
+  }
+ ]
+}

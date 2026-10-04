@@ -1,0 +1,474 @@
+{
+ "seed": {
+  "bills": [
+   [
+    "sales",
+    {
+     "select_customer": 1,
+     "invoiceItems": [
+      {
+       "product_id": 1,
+       "qty": 10,
+       "rate": 1000,
+       "gst_percentage": 18
+      },
+      {
+       "product_id": 3,
+       "qty": 5,
+       "rate": 200,
+       "gst_percentage": 0
+      }
+     ],
+     "date": "2026-10-02",
+     "payment_status": 0
+    }
+   ],
+   [
+    "salex",
+    {
+     "select_customer": 1,
+     "invoiceItems": [
+      {
+       "product_id": 1,
+       "qty": 10,
+       "rate": 1000,
+       "gst_percentage": 0
+      },
+      {
+       "product_id": 3,
+       "qty": 5,
+       "rate": 200,
+       "gst_percentage": 0
+      }
+     ],
+     "date": "2026-10-02",
+     "payment_status": 0
+    }
+   ],
+   [
+    "purchases",
+    {
+     "vendor_id": 1,
+     "state_code": 9,
+     "items": [
+      {
+       "product_id": 1,
+       "qty": 10,
+       "rate": 1000,
+       "gst_percentage": 18
+      },
+      {
+       "product_id": 3,
+       "qty": 5,
+       "rate": 200,
+       "gst_percentage": 0
+      }
+     ],
+     "date": "2026-10-02",
+     "payment_status": 0
+    }
+   ]
+  ],
+  "reasons": [
+   {
+    "id": 1,
+    "reason_name": "Incorrect Quantity",
+    "type": "purchase",
+    "status": "Active"
+   },
+   {
+    "id": 2,
+    "reason_name": "Wrong Item Shipped",
+    "type": "purchase",
+    "status": "Active"
+   },
+   {
+    "id": 3,
+    "reason_name": "Manufacturing Defect",
+    "type": "purchase",
+    "status": "Active"
+   },
+   {
+    "id": 4,
+    "reason_name": "Not as Described",
+    "type": "purchase",
+    "status": "Active"
+   },
+   {
+    "id": 5,
+    "reason_name": "Customer Dissatisfaction",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 6,
+    "reason_name": "Wrong Item Delivered",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 7,
+    "reason_name": "Defective Product",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 8,
+    "reason_name": "Size/Color Issue",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 9,
+    "reason_name": "Changed Mind",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 10,
+    "reason_name": "Damaged in Transit",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 11,
+    "reason_name": "Late Delivery",
+    "type": "sale",
+    "status": "Active"
+   },
+   {
+    "id": 12,
+    "reason_name": "Customer Dissatisfaction",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 13,
+    "reason_name": "Wrong Item Delivered",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 14,
+    "reason_name": "Defective Product",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 15,
+    "reason_name": "Size/Color Issue",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 16,
+    "reason_name": "Changed Mind",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 17,
+    "reason_name": "Damaged in Transit",
+    "type": "salex",
+    "status": "Active"
+   },
+   {
+    "id": 18,
+    "reason_name": "Late Delivery",
+    "type": "salex",
+    "status": "Active"
+   }
+  ],
+  "ids": {
+   "invoice": [
+    [
+     1000,
+     1
+    ]
+   ],
+   "invoicex": [
+    [
+     1000,
+     1
+    ]
+   ],
+   "purchase": [
+    [
+     1000,
+     1
+    ]
+   ],
+   "saleLines": [
+    1000,
+    1001
+   ],
+   "xLines": [
+    1000,
+    1001
+   ],
+   "pLines": [
+    1000,
+    1001
+   ]
+  }
+ },
+ "kind": "purchase",
+ "steps": [
+  {
+   "name": "create-pending",
+   "method": "POST",
+   "url": "/api/purchase-returns/vendor-return",
+   "status": 201,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "pads back",
+    "payment_status": 0,
+    "payment_mode": 1,
+    "vendor_id": "1",
+    "packing_forwarding_amount": 50,
+    "items": [
+     {
+      "purchase_item_id": 1000,
+      "return_qty": 2,
+      "return_reason_id": 1,
+      "unit_price": 1000,
+      "tax_rate": 18,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "create-refunded",
+   "method": "POST",
+   "url": "/api/purchase-returns/vendor-return",
+   "status": 201,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "",
+    "payment_status": 1,
+    "payment_mode": 0,
+    "payment_date": "2026-10-06",
+    "vendor_id": "1",
+    "packing_forwarding_amount": 0,
+    "items": [
+     {
+      "purchase_item_id": 1001,
+      "return_qty": 5,
+      "return_reason_id": 1,
+      "unit_price": 200,
+      "tax_rate": 0,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-unchanged",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1000",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "pads back",
+    "payment_status": 0,
+    "payment_mode": 1,
+    "packing_forwarding_amount": 50,
+    "items": [
+     {
+      "purchase_item_id": 1000,
+      "return_qty": 2,
+      "return_reason_id": 1,
+      "unit_price": 1000,
+      "tax_rate": 18,
+      "notes": ""
+     }
+    ]
+   },
+   "from": "view cache"
+  },
+  {
+   "name": "edit-qty",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1000",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "pads back",
+    "payment_status": 0,
+    "payment_mode": 1,
+    "packing_forwarding_amount": 50,
+    "items": [
+     {
+      "purchase_item_id": 1000,
+      "return_qty": 3,
+      "return_reason_id": 1,
+      "unit_price": 1000,
+      "tax_rate": 18,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-pf",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1000",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "pads back",
+    "payment_status": 0,
+    "payment_mode": 1,
+    "packing_forwarding_amount": 80,
+    "items": [
+     {
+      "purchase_item_id": 1000,
+      "return_qty": 3,
+      "return_reason_id": 1,
+      "unit_price": 1000,
+      "tax_rate": 18,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-reason",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1000",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "pads back",
+    "payment_status": 0,
+    "payment_mode": 1,
+    "packing_forwarding_amount": 80,
+    "items": [
+     {
+      "purchase_item_id": 1000,
+      "return_qty": 3,
+      "return_reason_id": 3,
+      "unit_price": 1000,
+      "tax_rate": 18,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-refunded-unchanged",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1001",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "",
+    "payment_status": 1,
+    "payment_mode": 0,
+    "payment_date": "2026-10-06",
+    "packing_forwarding_amount": 0,
+    "items": [
+     {
+      "purchase_item_id": 1001,
+      "return_qty": 5,
+      "return_reason_id": 1,
+      "unit_price": 200,
+      "tax_rate": 0,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-refunded-qty",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1001",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "",
+    "payment_status": 1,
+    "payment_mode": 0,
+    "payment_date": "2026-10-06",
+    "packing_forwarding_amount": 0,
+    "items": [
+     {
+      "purchase_item_id": 1001,
+      "return_qty": 3,
+      "return_reason_id": 1,
+      "unit_price": 200,
+      "tax_rate": 0,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-refunded-to-pending",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1001",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "",
+    "payment_status": 0,
+    "payment_mode": 0,
+    "packing_forwarding_amount": 0,
+    "items": [
+     {
+      "purchase_item_id": 1001,
+      "return_qty": 3,
+      "return_reason_id": 1,
+      "unit_price": 200,
+      "tax_rate": 0,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "edit-pending-to-refunded",
+   "method": "PUT",
+   "url": "/api/purchase-returns/1001",
+   "status": 200,
+   "body": {
+    "return_date": "2026-10-04",
+    "return_notes": "",
+    "payment_status": 1,
+    "payment_mode": 0,
+    "payment_date": "2026-10-08",
+    "packing_forwarding_amount": 0,
+    "items": [
+     {
+      "purchase_item_id": 1001,
+      "return_qty": 3,
+      "return_reason_id": 1,
+      "unit_price": 200,
+      "tax_rate": 0,
+      "notes": ""
+     }
+    ]
+   }
+  },
+  {
+   "name": "delete-refunded",
+   "method": "DELETE",
+   "url": "/api/purchase-returns/1001",
+   "status": 200,
+   "body": null
+  },
+  {
+   "name": "delete",
+   "method": "DELETE",
+   "url": "/api/purchase-returns/1000",
+   "status": 200,
+   "body": null
+  }
+ ],
+ "pickers": {
+  "vendorItems": [
+   "/api/purchase-returns/vendor-items?vendor_id=1&page=1&limit=50&from_date=2026-07-04&to_date=2026-10-04"
+  ]
+ }
+}

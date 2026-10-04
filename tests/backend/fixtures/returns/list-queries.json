@@ -1,0 +1,25 @@
+{
+ "customer": {
+  "initial": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc",
+  "returnNo": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&search=SR-1",
+  "invoiceNo": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&uid=1",
+  "party": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&customer=ravi",
+  "itemCount": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&itemCount=1",
+  "paymentMode": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&paymentMode=0",
+  "status": "/api/sale-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&status=0",
+  "sort": "/api/sale-returns?page=1&limit=50&sortBy=item_count&sortOrder=asc"
+ },
+ "vendor": {
+  "initial": "/api/purchase-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc",
+  "party": "/api/purchase-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&vendor=1",
+  "pf": "/api/purchase-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&packingForwardingTotal=50",
+  "status": "/api/purchase-returns?page=1&limit=50&sortBy=return_date&sortOrder=desc&status=1"
+ },
+ "customerItems": [
+  "/api/sale-returns/customer-items?customer_id=1&page=1&limit=50&from_date=2026-07-04&to_date=2026-10-04"
+ ],
+ "reasons": [
+  "/api/return-reasons?type=sale"
+ ],
+ "customerItemsSearch": "/api/sale-returns/customer-items?customer_id=1&page=1&limit=50&search=C-1&from_date=2026-07-04&to_date=2026-10-04"
+}
