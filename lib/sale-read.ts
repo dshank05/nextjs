@@ -146,8 +146,10 @@ export async function loadSaleDetail(kind: SaleKind, docId: number) {
     email: billTo?.email ?? master?.email ?? ''
   };
 
-  const totalPaid = allocations.reduce((s: number, a: any) => s + Number(a.allocated_amount), 0);
+  const allocated = allocations.reduce((s: number, a: any) => s + Number(a.allocated_amount), 0);
   const total = Number(doc.total) || 0;
+  // A walk-in (customer 0) has no payment rows by rule; marked Paid, it is paid in full (B-05).
+  const totalPaid = (doc.select_customer ?? 0) === 0 && doc.payment_status === 1 ? total : allocated;
 
   return {
     id: doc.id,
@@ -243,7 +245,7 @@ export async function loadSaleDetail(kind: SaleKind, docId: number) {
       total_qty: r.items.reduce((s: number, i: any) => s + (i.return_qty || 0), 0)
     })),
 
-    total_allocated: totalPaid,
+    total_allocated: allocated,
     outstanding_amount: total - totalPaid,
     payment_summary: {
       total_bill: total,

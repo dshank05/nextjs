@@ -598,7 +598,7 @@ export class CustomerTransactionHandler {
           sourceType = result.context.entityType === 'sale' ? 'sale_edit' : 'salex_edit';
           sourceId = result.context.entityId;
           referenceNo = `INV-${result.context.referenceNo}`;
-          notes = 'Sale status changed';
+          notes = `${result.context.entityType === 'salex' ? 'Invoice C' : 'Sale'} status changed`;
         } else if (result.context.entityType === 'return') {
           sourceType = 'return_edit';
           sourceId = result.context.entityId;
@@ -871,7 +871,8 @@ export class CustomerTransactionHandler {
           customerId: params.customerId,
           paymentStatus: params.paymentStatus,
           invoiceId: params.invoiceId,
-          invoiceNo: params.invoiceNo
+          invoiceNo: params.invoiceNo,
+          type: params.type   // B-07: the log names the kind (salex_delete)
         },
         parallel: false
       });
@@ -1516,12 +1517,12 @@ export class CustomerTransactionHandler {
           ...(paymentsRemoved > 0 ? { total_paid: -paymentsRemoved } : {})
         },
         {
-          type: 'sale_delete',
+          type: data.type === 'salex' ? 'salex_delete' : 'sale_delete',
           id: data.invoiceId || 0,
           reference_no: `INV-${data.invoiceNo || '?'}`,
           notes: paymentsRemoved > 0
-            ? `Sale deleted: deallocated ₹${context.totalPaid}, removed ₹${paymentsRemoved} of payments made with it`
-            : `Sale deleted: deallocated ₹${context.totalPaid} (advance payments left intact)`
+            ? `${data.type === 'salex' ? 'Invoice C' : 'Sale'} deleted: deallocated ₹${context.totalPaid}, removed ₹${paymentsRemoved} of payments made with it`
+            : `${data.type === 'salex' ? 'Invoice C' : 'Sale'} deleted: deallocated ₹${context.totalPaid} (advance payments left intact)`
         }
       );
       

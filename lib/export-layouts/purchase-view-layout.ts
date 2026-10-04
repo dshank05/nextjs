@@ -79,13 +79,14 @@ export const purchaseViewExportLayout: ExportLayout = {
       title: 'Purchase Returns',
       dataKey: 'returns',
       columns: [
+        // This bill's share of each return (a return can span bills) - A-12.
         { label: 'Return No', key: 'return_no', format: 'text', width: 20 },
         { label: 'Date', key: 'return_date', format: 'date', width: 15 },
-        { label: 'Total Amount', key: 'total_amount', format: 'currency', width: 20 },
+        { label: 'Total Amount', key: 'this_bill_total', format: 'currency', width: 20 },
         { label: 'Refund Amount', key: 'refund_amount', format: 'currency', width: 20 },
-        { label: 'Payment Status', key: 'payment_status', format: 'text', width: 15 },
-        { label: 'Payment Mode', key: 'payment_mode', format: 'text', width: 15 },
-        { label: 'Items Count', key: 'items_count', format: 'number', width: 15 },
+        { label: 'Payment Status', key: 'payment_status_text', format: 'text', width: 15 },
+        { label: 'Payment Mode', key: 'payment_mode_text', format: 'text', width: 15 },
+        { label: 'Items Count', key: 'this_bill_items_count', format: 'number', width: 15 },
       ]
     },
     {
@@ -104,14 +105,21 @@ export const purchaseViewExportLayout: ExportLayout = {
   ]
 };
 
-// Helper to add index to items
+// Helper to add index to items. A line's Total is what the screen shows, taxable + tax (A-12:
+// it printed the taxable amount); returns print this bill's share and their status in words.
 export const preparePurchaseDataForExport = (purchase: any) => {
   return {
     ...purchase,
     items: purchase.items?.map((item: any, index: number) => ({
       ...item,
       _index: index + 1,
-      product_name: item.display_name || item.product_name
-    })) || []
+      product_name: item.display_name || item.product_name,
+      total: Math.round(((Number(item.subtotal) || 0) + (Number(item.tax) || 0)) * 100) / 100
+    })) || [],
+    returns: (purchase.returns || []).map((r: any) => ({
+      ...r,
+      payment_status_text: r.payment_status === 1 ? 'Refunded' : r.payment_status === 2 ? 'Partly refunded' : 'Pending refund',
+      payment_mode_text: r.payment_mode === 0 ? 'Cash' : r.payment_mode === 1 ? 'Bank' : ''
+    }))
   };
 };

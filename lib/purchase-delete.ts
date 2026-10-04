@@ -12,7 +12,7 @@ import { SaleError } from './sale'
 export async function deletePurchase(purchaseId: number): Promise<void> {
   const purchase = await prisma.purchase.findUnique({
     where: { id: purchaseId },
-    select: { invoice_no: true, fy: true, payment_status: true, vendor_id: true, return_status: true }
+    select: { invoice_no: true, fy: true, payment_status: true, vendor_id: true, return_status: true, invoice_date: true }
   })
   if (!purchase) throw new SaleError(404, 'Purchase not found', 'NOT_FOUND')
 
@@ -43,7 +43,34 @@ export async function deletePurchase(purchaseId: number): Promise<void> {
     await assertStockCovers(tx, out, (name, have, need) =>
       `Cannot delete this purchase: only ${have} of "${name}" is in stock and the purchase brought in ${need}. Some of it has been sold.`)
     await transactionHandler.executeDeleteInTransaction(tx, ops)
+    await restoreLatestPurchase(tx, Array.from(out.keys()), purchase.invoice_date)
   }, { timeout: 45000 })
+}
+
+/**
+ * The product's latest purchase rate and date after a purchase is deleted (A-09, owner: delete
+ * rolls back completely). Create / edit set them from the newest bill; the deleted bill may have
+ * been it, so a product whose last_purchase_date is that bill's date takes them from its newest
+ * remaining purchase line, or none when no purchase of it is left. A product whose date is
+ * another bill's (newer, or a value set elsewhere) is left alone.
+ */
+export async function restoreLatestPurchase(tx: any, productIds: number[], deletedDate: number | null): Promise<void> {
+  if (deletedDate === null || deletedDate === undefined) return
+  for (const productId of productIds) {
+    const product = await tx.product.findUnique({ where: { id: productId }, select: { id: true, last_purchase_date: true } })
+    if (!product || product.last_purchase_date === null || Number(product.last_purchase_date) !== Number(deletedDate)) continue
+    const newest = await tx.purchaseitems.findFirst({
+      where: { product_id: productId },
+      orderBy: [{ invoice_date: 'desc' }, { id: 'desc' }],
+      select: { rate: true, invoice_date: true }
+    })
+    await tx.product.update({
+      where: { id: productId },
+      data: newest
+        ? { latest_purchase_rate: newest.rate, last_purchase_date: newest.invoice_date }
+        : { latest_purchase_rate: null, last_purchase_date: null }
+    })
+  }
 }
 
 /**

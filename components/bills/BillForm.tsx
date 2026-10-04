@@ -301,6 +301,23 @@ export function BillForm({ kind }: { kind: BillKind }) {
   const stateId = states.find((s: any) => party.state_code != null && s.code === party.state_code)?.id
     ?? states.find((s: any) => s.name === party.state)?.id ?? ''
   const nameOf = (m: any) => (isPurchase ? m.vendor_name : m.billing_name)
+  // The dropdowns list active rows only; a bill whose staff member, mechanic or party has since
+  // been deactivated keeps showing them on edit, marked inactive (B-14) - it read "Select ...".
+  type Opt = { id: string; name: string }
+  const withSaved = (opts: Opt[], id: number | null | undefined, name: string | undefined): Opt[] => {
+    if (!isEditMode || id === null || id === undefined || id === 0) return opts
+    const key = String(id)
+    return opts.some(o => o.id === key) ? opts : [...opts, { id: key, name: `${name || `#${key}`} (inactive)` }]
+  }
+  const staffOptions = withSaved(
+    [{ id: '', name: 'Select Staff' }, ...staff.map((m: any) => ({ id: String(m.id), name: m.phone ? `${m.name} - ${m.phone}` : m.name }))],
+    loaded?.staff_id, loaded?.staff_name)
+  const mechanicOptions = withSaved(
+    [{ id: '', name: 'Select Mechanic' }, ...mechanics.map((m: any) => ({ id: String(m.id), name: m.name }))],
+    loaded?.mechanic_id, loaded?.mechanic_name)
+  const partyOptions = withSaved(
+    [{ id: '', name: `Select ${B.partyLabel}` }, { id: OTHER, name: 'Other' }, ...masters.map((m: any) => ({ id: String(m.id), name: nameOf(m) }))],
+    loaded?.party.id, loaded?.party.name)
   const totalsShown: [string, number][] = [
     [B.discount ? 'ITEMS (AFTER DISCOUNT)' : 'ITEMS TOTAL', bill.itemsTotal],
     ...(B.discount ? [['DISCOUNT', bill.discountTotal] as [string, number]] : []),
@@ -366,7 +383,7 @@ export function BillForm({ kind }: { kind: BillKind }) {
                 <div>
                   <label className={label}>STAFF MEMBER</label>
                   <SearchableSelect
-                    options={[{ id: '', name: 'Select Staff' }, ...staff.map((m: any) => ({ id: String(m.id), name: m.phone ? `${m.name} - ${m.phone}` : m.name }))]}
+                    options={staffOptions}
                     selectedValue={header.staff_id}
                     onSelectionChange={v => setH('staff_id', v || '')}
                     placeholder="Select Staff"
@@ -393,7 +410,7 @@ export function BillForm({ kind }: { kind: BillKind }) {
                     )}
                   </div>
                   <SearchableSelect
-                    options={[{ id: '', name: `Select ${B.partyLabel}` }, { id: OTHER, name: 'Other' }, ...masters.map((m: any) => ({ id: String(m.id), name: nameOf(m) }))]}
+                    options={partyOptions}
                     selectedValue={partyId}
                     onSelectionChange={v => selectParty(v || '')}
                     placeholder={`Select ${B.partyLabel}`}
@@ -488,7 +505,7 @@ export function BillForm({ kind }: { kind: BillKind }) {
                     <div>
                       <label className={label}>MECHANIC NAME</label>
                       <SearchableSelect
-                        options={[{ id: '', name: 'Select Mechanic' }, ...mechanics.map((m: any) => ({ id: String(m.id), name: m.name }))]}
+                        options={mechanicOptions}
                         selectedValue={header.mechanic_id}
                         onSelectionChange={v => setH('mechanic_id', v || '')}
                         placeholder="Select Mechanic"

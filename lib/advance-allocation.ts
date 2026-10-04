@@ -18,6 +18,7 @@
  */
 
 import { customerLedgerService } from './customer-ledger-service';
+import { ledgerService } from './ledger-service';
 
 export type Party = 'vendor' | 'customer';
 
@@ -191,8 +192,90 @@ export async function trimAllocations(tx: any, party: Party, where: Record<strin
     if (!payment || payment.payment_type !== 'BILL_SPECIFIC') continue;
     const left = await tx[t.allocs].count({ where: { payment_id: id } });
     await tx[t.payments].update({ where: { id }, data: { payment_type: left > 0 ? 'MIXED' : 'DIRECT' } });
+    await postAsPaymentRow(tx, party, id);
   }
   return released;
+}
+
+/**
+ * A bill-specific payment that has just become MIXED / DIRECT (H2 = A-01, 2026-10-04): its
+ * ledger row(s) were tagged to the bill(s) it paid, so deleting or unmarking a bill took the
+ * row with it while the payment (now partly advance) and total_paid stayed. It now takes the
+ * shape a MIXED / DIRECT payment from the payments screen has - ONE row tagged 'payment' for
+ * the whole payment amount - so a later delete / unmark of a bill leaves it alone and only a
+ * delete of the payment itself (by transaction_id) removes it.
+ *
+ * The first existing row is re-tagged in place (it keeps its id and date, so the stored running
+ * balance keeps its entry order - F-02 untouched) and the payment's other rows (one per bill on
+ * the vendor side) are folded into it. Customer side: a payment already has one row; only its
+ * tag moves. A payment with no row carrying its id (legacy) is left as it is.
+ */
+async function postAsPaymentRow(tx: any, party: Party, paymentId: number): Promise<void> {
+  const t = T[party];
+  const payment = await tx[t.payments].findUnique({
+    where: { id: paymentId },
+    select: { id: true, payment_amount: true, payment_mode: true, payment_type: true, [t.partyFk]: true, allocations: { select: { allocated_amount: true } } }
+  });
+  if (!payment) return;
+  const partyId = Number(payment[t.partyFk]);
+  const amount = round2(Number(payment.payment_amount));
+  const allocated = round2((payment.allocations || []).reduce((s: number, a: any) => s + Number(a.allocated_amount), 0));
+  const notes = payment.payment_type === 'DIRECT'
+    ? `Advance payment ₹${amount} (bill lowered, kept as advance)`
+    : `Payment ₹${amount} (₹${allocated} allocated, ₹${round2(amount - allocated)} advance)`;
+  if (party === 'vendor') {
+    const rows = await tx.vendor_ledger.findMany({
+      where: { vendor_id: partyId, transaction_id: paymentId, transaction_type: 'PAYMENT' },
+      orderBy: { id: 'asc' },
+      select: { id: true }
+    });
+    if (!rows.length) return;
+    await tx.vendor_ledger.update({
+      where: { id: rows[0].id },
+      data: { reference_type: 'payment', reference_id: paymentId, reference_no: String(paymentId), debit: 0, credit: amount, payment_mode: payment.payment_mode, notes }
+    });
+    if (rows.length > 1) await tx.vendor_ledger.deleteMany({ where: { id: { in: rows.slice(1).map((r: any) => r.id) } } });
+    await ledgerService.recalculateBalancesAfter(partyId, 0, tx);
+  } else {
+    const rows = await tx.customer_ledger.findMany({
+      where: { customer_id: partyId, transaction_id: paymentId, transaction_type: 'PAYMENT_RECEIVED' },
+      orderBy: { id: 'asc' },
+      select: { id: true }
+    });
+    if (!rows.length) return;
+    await tx.customer_ledger.update({
+      where: { id: rows[0].id },
+      data: { reference_type: 'payment', reference_id: paymentId, reference_no: `PAY-${String(paymentId).padStart(3, '0')}`, debit: 0, credit: amount, payment_mode: payment.payment_mode, notes }
+    });
+    if (rows.length > 1) await tx.customer_ledger.deleteMany({ where: { id: { in: rows.slice(1).map((r: any) => r.id) } } });
+    await customerLedgerService.recalculateBalancesAfter(partyId, 0, tx);
+  }
+}
+
+/**
+ * The payment mode picked on a paid / part-paid bill's edit form (M1 = A-05 / B-03, 2026-10-04):
+ * the bill's own payments follow it - the BILL_SPECIFIC payments allocated to this bill and to
+ * no other (made with it), and their ledger rows (by transaction_id). A payment shared with
+ * other bills, or an advance the bill used, is the payments screen's to change and is left
+ * alone. Dates are not touched. Returns the ids of the payments changed.
+ */
+export async function setOwnPaymentsMode(tx: any, party: Party, where: Record<string, unknown>, mode: number): Promise<number[]> {
+  const t = T[party];
+  const allocations = await tx[t.allocs].findMany({ where, select: { payment_id: true } });
+  const ids = Array.from(new Set<number>(allocations.map((a: any) => a.payment_id)));
+  const changed: number[] = [];
+  for (const id of ids) {
+    const payment = await tx[t.payments].findUnique({ where: { id }, select: { payment_type: true, payment_mode: true } });
+    if (!payment || payment.payment_type !== 'BILL_SPECIFIC' || payment.payment_mode === mode) continue;
+    const all = await tx[t.allocs].findMany({ where: { payment_id: id }, select: { payment_id: true, ...Object.fromEntries(Object.keys(where).map(k => [k, true])) } });
+    const own = all.every((a: any) => Object.entries(where).every(([k, v]) => a[k] === v));
+    if (!own) continue;
+    await tx[t.payments].update({ where: { id }, data: { payment_mode: mode } });
+    if (party === 'vendor') await tx.vendor_ledger.updateMany({ where: { transaction_id: id, transaction_type: 'PAYMENT' }, data: { payment_mode: mode } });
+    else await tx.customer_ledger.updateMany({ where: { transaction_id: id, transaction_type: 'PAYMENT_RECEIVED' }, data: { payment_mode: mode } });
+    changed.push(id);
+  }
+  return changed;
 }
 
 /**

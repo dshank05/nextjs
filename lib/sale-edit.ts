@@ -1,5 +1,5 @@
 import { prisma } from './db';
-import { convertDateToTimestamp } from './date-utils';
+import { convertDateToTimestamp, getLocalDateString } from './date-utils';
 import { customerTransactionHandler } from './customer-transaction-handler';
 import { getBusinessGstin, PAYMENT_STATUS } from './purchase';
 import {
@@ -7,7 +7,7 @@ import {
   intOrNull, requestedCustomer, requestedFreight, requestedItems, billStateCode, requestedDate
 } from './sale';
 import { shippingFrom, transportFrom } from './sale-create';
-import { paidWithBill, trimAllocations } from './advance-allocation';
+import { paidWithBill, trimAllocations, setOwnPaymentsMode } from './advance-allocation';
 import { recalculateSaleStatus } from './payment-allocation-service';
 
 /**
@@ -108,14 +108,18 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
 
   // ---- Money, from the lines and the bill's state
   const stateCode = billStateCode(body, billTo?.billing_state_code ?? customer?.billing_state_code ?? null);
-  const pick = (f: string) => (has(f) ? body[f] : existing[f]);
   const freightRaw = requestedFreight(body);
+  // P&F: the sent qty / rate (/ total) are one set, as on purchase - a field left out of a sent
+  // set is not taken from the stored bill, or clearing P&F on the form (qty 0, rate 0, no total)
+  // brought it back as 1 x the stored total (B-02). Nothing sent: the stored figures.
+  const sentPacking = has('packing_forwarding_qty') || has('packing_forwarding_rate') || has('packing_forwarding_total');
+  const packingPick = (f: string) => (sentPacking ? body[f] : existing[f]);
   const { bill, supplyType, packing } = computeSaleTotals({
     kind,
     items: plan.map(p => p.item),
-    packingQty: pick('packing_forwarding_qty') ?? 0,
-    packingRate: pick('packing_forwarding_rate') ?? 0,
-    packingTotal: pick('packing_forwarding_total') ?? 0,
+    packingQty: packingPick('packing_forwarding_qty') ?? 0,
+    packingRate: packingPick('packing_forwarding_rate') ?? 0,
+    packingTotal: packingPick('packing_forwarding_total') ?? 0,
     freight: freightRaw !== undefined ? freightRaw : existing.freight,
     stateCode,
     businessGstin: await getBusinessGstin()
@@ -151,12 +155,24 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
   const paymentMode = body.payment_mode !== undefined && body.payment_mode !== null && body.payment_mode !== ''
     ? (intOrNull(body.payment_mode) as number)
     : (existing.payment_mode ?? 0);
+  const modeChanged = body.payment_mode !== undefined && body.payment_mode !== null && body.payment_mode !== '' && paymentMode !== existing.payment_mode;
   const totalAllocated = allocations.reduce((s: number, a: any) => s + Number(a.allocated_amount), 0);
   const isTypeA = allocations.length > 0;
   const newTotal = bill.grandTotal;
-  const finalStatus = requestedStatus === PAYMENT_STATUS.PAID && isTypeA && totalAllocated > 0
+  let finalStatus = requestedStatus === PAYMENT_STATUS.PAID && isTypeA && totalAllocated > 0
     ? (totalAllocated >= newTotal ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL)
     : requestedStatus;
+  // A (part) paid bill of a registered customer with nothing allocated and no payment row - a
+  // 0 bill marked Paid - whose total moves: nothing was paid, so it is Unpaid (A-03 twin). No
+  // payment is made for it automatically. A walk-in has no payment rows by rule: untouched.
+  if (customerId !== 0 && finalStatus !== PAYMENT_STATUS.UNPAID && oldStatus !== PAYMENT_STATUS.UNPAID && !isTypeA
+      && Math.abs(newTotal - oldTotal) > 0.005
+      && !(await prisma.customer_ledger.findFirst({
+        where: { customer_id: customerId, reference_type: kind, reference_id: docId, transaction_type: 'PAYMENT_RECEIVED' },
+        select: { id: true }
+      }))) {
+    finalStatus = PAYMENT_STATUS.UNPAID;
+  }
 
   const askedDate = has('date') || has('invoice_date') ? requestedDate(body, convertDateToTimestamp) : null;
   const finalDate = askedDate ?? existing.invoice_date;
@@ -178,7 +194,8 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
     total_igst: bill.totalIgst,
     total_tax: bill.totalTax,
     total: newTotal,
-    updated_at: new Date().toISOString().slice(0, 19).replace('T', ' ')
+    // The create's format and the India day (B-09): this wrote a UTC timestamp.
+    updated_at: getLocalDateString()
   };
   for (const f of ['bill_reference', 'notes', 'descriptions', 'staff_details']) {
     if (has(f)) headerData[f] = body[f] ?? '';
@@ -187,7 +204,8 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
   for (const [f, rel] of [['staff_id', 'staff'], ['mechanic_id', 'mechanic']]) {
     if (has(f)) {
       const id = intOrNull(body[f]);
-      headerData[rel] = id ? { connect: { id } } : { disconnect: true };
+      if (id) headerData[rel] = { connect: { id } };
+      else if (existing[f] !== null && existing[f] !== undefined) headerData[rel] = { disconnect: true };
     }
   }
 
@@ -292,13 +310,31 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
       update: billing,
       create: { invoice_no: docId, ...createBilling }
     });
-    if (has('useShippingAddress') || has('shippingDetails') || Object.values(billing).some(v => v !== undefined)) {
+    // Ship-to (B-06): rebuilt when the request sends a shipping block, or when the stored ship-to
+    // is a copy of the billing details (it follows them). A bill's own ship-to (the API still
+    // takes one) is kept when the form - which has no shipping block - saves billing fields.
+    const shipTo = await tx[t.shipTo].findFirst({ where: { invoice_no: docId } });
+    const shipIsCopy = !shipTo || !billTo || (
+      (shipTo.shipping_name ?? '') === (billTo.billing_name ?? '') &&
+      (shipTo.shipping_address ?? '') === (billTo.billing_address ?? '') &&
+      (shipTo.shipping_address2 ?? '') === (billTo.billing_address2 ?? '') &&
+      (shipTo.shipping_city ?? '') === (billTo.billing_city ?? '') &&
+      (shipTo.shipping_state ?? '') === (billTo.billing_state ?? '') &&
+      (shipTo.shipping_state_code ?? null) === (billTo.billing_state_code ?? null) &&
+      (shipTo.shipping_gstin ?? '') === (billTo.billing_gstin ?? ''));
+    if (has('useShippingAddress') || has('shippingDetails') || (shipIsCopy && Object.values(billing).some(v => v !== undefined))) {
       const ship = shippingFrom(body, { ...createBilling, ...(billTo || {}), ...stripUndefined(billing) });
       await tx[t.shipTo].upsert({ where: { invoice_no: docId }, update: ship, create: { invoice_no: docId, ...ship } });
     }
+    // Transport: only the fields sent change - a supply date the form does not send is kept (B-06).
     const transport = transportFrom(body);
     if (transport) {
-      await tx[t.transport].upsert({ where: { invoice_id: docId }, update: transport, create: { invoice_id: docId, ...transport } });
+      const d = body.transportDetails || {};
+      const update: any = {};
+      if (d.trans_mode !== undefined || has('transport_name')) update.trans_mode = transport.trans_mode;
+      if (d.vehicle_no !== undefined || has('vehicle_number')) update.vehicle_no = transport.vehicle_no;
+      if (d.supply_date !== undefined) update.supply_date = transport.supply_date;
+      await tx[t.transport].upsert({ where: { invoice_id: docId }, update, create: { invoice_id: docId, ...transport } });
     }
 
     // ---- Ledger, allocations and balance: registered customers only
@@ -340,6 +376,11 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
         } : undefined
       });
       await customerTransactionHandler.executeInTransaction(tx, ops);
+      // A new mode picked on a bill that was and stays (part) paid: the payments made with it
+      // follow, with their ledger rows (B-03). Shared payments and advance are left alone.
+      if (modeChanged && oldStatus !== PAYMENT_STATUS.UNPAID && finalStatus !== PAYMENT_STATUS.UNPAID) {
+        await setOwnPaymentsMode(tx, 'customer', { [t.allocFk]: docId }, paymentMode);
+      }
       // Lowered below what is allocated: the allocation shrinks, the rest is advance (owner).
       if (isTypeA && newTotal < totalAllocated - 0.005) {
         await trimAllocations(tx, 'customer', { [t.allocFk]: docId }, newTotal);

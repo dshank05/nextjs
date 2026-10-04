@@ -140,7 +140,9 @@ async function connected(step) {
     for (const b of bills) {
       const row = rows.find(r => r.id === b.id);
       const snapName = store[billTo(kind)].find(s => s.invoice_no === b.id)?.billing_name;
-      const paid = r2(sum(store.customer_payment_allocations.filter(a => a[allocFk(kind)] === b.id), a => N(a.allocated_amount)));
+      // A walk-in marked Paid reads as paid in full (B-05, fixed 2026-10-04); others: their allocations.
+      const paid = (b.select_customer ?? 0) === 0 && b.payment_status === 1 ? b.total
+        : r2(sum(store.customer_payment_allocations.filter(a => a[allocFk(kind)] === b.id), a => N(a.allocated_amount)));
       e(`${kind} ${b.id} list row: total, items, name, status, paid`, row && row.total === b.total && row.item_count === docLines(kind, b.id).length
         && row.customer_name === (snapName || 'Other') && row.payment_status === (b.payment_status ?? 0) && r2(row.total_paid) === paid, { row, b: { total: b.total, st: b.payment_status }, snapName, paid });
       // View (BillView via useBill): the same money.
@@ -244,7 +246,8 @@ describe('Review B - sale and Invoice C round trips from the screens\' own paylo
       ok('unchanged save 200', res.status === 200, res.body);
       let ch = diff(s0, snap());
       expectShape(`${kind} unchanged save`, ch, []);
-      ok('header updated_at moved (the only write)', doc(kind, id).updated_at !== s0[header(kind)][0].updated_at);
+      // B-09 (fixed 2026-10-04): an edit stamps the India date in the create's format, so a same-day save leaves it.
+      ok('header updated_at is the India date, the create\'s format', /^\d{4}-\d{2}-\d{2}$/.test(String(doc(kind, id).updated_at)), doc(kind, id).updated_at);
       await after(`${kind} unchanged save`);
 
       // ---- edit one field: notes

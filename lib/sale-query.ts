@@ -142,8 +142,9 @@ export async function listSales(kind: SaleKind, q: SaleListQuery) {
   const total = Number(countRows[0]?.count ?? 0)
 
   const sales = rows.map(r => {
-    const totalPaid = Number(r.total_paid || 0)
     const billTotal = Number(r.total || 0)
+    // A walk-in (customer 0) has no payment rows by rule; marked Paid, it is paid in full (B-05).
+    const totalPaid = Number(r.select_customer ?? 0) === 0 && Number(r.payment_status) === 1 ? billTotal : Number(r.total_paid || 0)
     return {
       id: r.id,
       type: kind,

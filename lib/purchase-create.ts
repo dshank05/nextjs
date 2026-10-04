@@ -96,7 +96,7 @@ export async function createPurchase(rawBody: any, attempt = 1): Promise<Created
       // ---- Header
       const data: any = {
         invoice_no: invoiceNo,
-        bill_reference: body.bill_reference,
+        bill_reference: body.bill_reference ?? '',
         bill_reference_date: body.bill_reference_date ? new Date(body.bill_reference_date).toISOString() : null,
         items_total: totals.itemsTotal,
         freight: totals.freight,
@@ -107,7 +107,7 @@ export async function createPurchase(rawBody: any, attempt = 1): Promise<Created
         total_tax: totals.totalTax,
         total: grandTotal,
         notes: body.notes || '',
-        descriptions: body.descriptions,
+        descriptions: body.descriptions ?? '',
         packing_forwarding_qty: totals.packingQty,
         packing_forwarding_rate: totals.packingRate,
         packing_forwarding_total: totals.packingTotal,
@@ -117,8 +117,8 @@ export async function createPurchase(rawBody: any, attempt = 1): Promise<Created
         payment_mode: paymentMode,
         fy: currentFy,
         transport: body.transport_name || '',
-        transport_name: body.transport_name,
-        vehicle_number: body.vehicle_number,
+        transport_name: body.transport_name ?? '',
+        vehicle_number: body.vehicle_number ?? '',
         return_status: 0
       }
       const staffId = intOrNull(body.staff_id)
@@ -165,6 +165,7 @@ export async function createPurchase(rawBody: any, attempt = 1): Promise<Created
             car_model: item.car_model || '',
             vendor_id: vendorId,
             part: item.part || '',
+            hsn: product.hsn || '',   // A-08: lines added by an edit had it, lines saved at create did not
             qty: line.qty,
             rate: line.rate,
             subtotal: line.taxable,

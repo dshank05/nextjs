@@ -43,21 +43,21 @@ const findingWith = (T, id, title, fn, { known = [] } = {}) => T(`${id} ${title}
 
 describe('A - findings (test.failing while open)', () => {
   // ---------------------------------------------------------------- A-01
-  finding('A-01a', 'paid on create, lowered, deleted: the payment stays as advance, so its ledger credit must stay too', async () => {
+  fixedFinding('A-01a', 'paid on create, lowered, deleted: the payment stays as advance, so its ledger credit must stay too', async () => {
     const { id } = await POST(simple(10));
     await PUT(id, editQty(id, 8));                                        // 10000 -> 8000: 2000 becomes advance (owner)
     const r = await call(k.one, 'DELETE', { id: String(id) });
     ex('A-01a', 'deleted; the 10000 payment stays (DIRECT, advance)', r.status === 200 && payments(k).length === 1 && payments(k)[0].payment_amount === 10000, payments(k));
     ex('A-01a', 'the ledger still credits the 10000 that was paid: vendor balance -10000', bal(k) === -10000, rows(k));
   });
-  finding('A-01b', 'paid on create, lowered, then marked Unpaid by the edit form: same - the ledger loses the payment', async () => {
+  fixedFinding('A-01b', 'paid on create, lowered, then marked Unpaid by the edit form: same - the ledger loses the payment', async () => {
     const { id } = await POST(simple(10));
     await PUT(id, editQty(id, 8));
     const r = await PUT(id, { ...editQty(id, 8), payment_status: 0 });
     ex('A-01b', 'unpaid; the payment stays as advance (it is MIXED, not this bill\'s own)', r.status === 200 && bill(k, id).payment_status === 0 && payments(k).length === 1, { r: r.body, p: payments(k) });
     ex('A-01b', 'ledger: 8000 owed less 10000 paid = -2000', bal(k) === -2000, rows(k));
   });
-  finding('A-01c', 'one Mark-as-Paid payment for two bills, one lowered then deleted: the other bill\'s payment row survives, the advance too', async () => {
+  fixedFinding('A-01c', 'one Mark-as-Paid payment for two bills, one lowered then deleted: the other bill\'s payment row survives, the advance too', async () => {
     const a = (await POST(simple(10, { payment_status: 0 }))).id, b = (await POST(simple(10, { payment_status: 0 }))).id;
     await pay(k, 20000, [[k, a, 10000], [k, b, 10000]], { mode: 1 });
     await PUT(a, editQty(a, 8));
@@ -66,20 +66,20 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-02
-  finding('A-02a', '"Other" paid on create: vendor 0 is a real vendor row, so its counters move like any vendor\'s', async () => {
+  fixedFinding('A-02a', '"Other" paid on create: vendor 0 is a real vendor row, so its counters move like any vendor\'s', async () => {
     const body = { ...fx('create-other-unpaid.json'), payment_status: 1, payment_mode: 0 };
     const { r } = await POST(body);
     ex('A-02a', 'created paid with its payment', r.status === 201 && payments(k, 0).length === 1, r.body);
     ex('A-02a', 'vendor 0: total_paid and total_allocated 2360 (an "Other" bill marked paid by an edit does move them)', counters(k, 0).paid === 2360 && counters(k, 0).alloc === 2360, counters(k, 0));
   });
-  finding('A-02b', '"Other" paid on create, then deleted: counters must not go below zero', async () => {
+  fixedFinding('A-02b', '"Other" paid on create, then deleted: counters must not go below zero', async () => {
     const { id } = await POST({ ...fx('create-other-unpaid.json'), payment_status: 1, payment_mode: 0 });
     await call(k.one, 'DELETE', { id: String(id) });
     ex('A-02b', 'vendor 0 counters back to 0 (today -2360 / -2360)', counters(k, 0).paid === 0 && counters(k, 0).alloc === 0, counters(k, 0));
   });
 
   // ---------------------------------------------------------------- A-03
-  finding('A-03', 'a paid bill at rate 0, then priced by an edit: it cannot stay "Paid" with nothing paid, and no payment may be invented', async () => {
+  fixedFinding('A-03', 'a paid bill at rate 0, then priced by an edit: it cannot stay "Paid" with nothing paid, and no payment may be invented', async () => {
     const { id } = await POST({ ...simple(10), items: [{ ...simple(10).items[0], rate: 0 }] });
     ex('A-03', 'rate-0 bill created paid at 0 (allowed)', bill(k, id).total === 0 && bill(k, id).payment_status === 1, bill(k, id));
     const e = await PUT(id, editQty(id, 10));                             // the form sends no status: the user only typed a rate
@@ -112,7 +112,7 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-05
-  finding('A-05', 'a paid bill whose payment mode is changed on the edit form: its payment (and the cash book) follow', async () => {
+  fixedFinding('A-05', 'a paid bill whose payment mode is changed on the edit form: its payment (and the cash book) follow', async () => {
     const { id } = await POST(simple(10, { payment_mode: 0 }));           // paid in cash
     const e = await PUT(id, editQty(id, 10, { payment_mode: 1 }));         // the user switches the form to Bank
     ex('A-05', 'bill says Bank', e.status === 200 && bill(k, id).payment_mode === 1, bill(k, id));
@@ -122,7 +122,7 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-06
-  finding('A-06', 'save back unchanged (the form\'s own body) changes nothing: empty text stays empty text', async () => {
+  fixedFinding('A-06', 'save back unchanged (the form\'s own body) changes nothing: empty text stays empty text', async () => {
     const { id } = await POST(fx('create-unpaid.json'));
     const before = JSON.stringify(bill(k, id));
     const d = (await call(k.one, 'GET', { id: String(id) })).body;
@@ -134,13 +134,13 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-08
-  finding('A-08', 'lines saved by create carry the product\'s HSN, as lines added by an edit do', async () => {
+  fixedFinding('A-08', 'lines saved by create carry the product\'s HSN, as lines added by an edit do', async () => {
     const { id } = await POST(fx('create-paid.json'));
     ex('A-08', 'both lines: HSN 8708 / 8421 (today empty -> "N/A" on the view and the export)', lines(k, id)[0].hsn === '8708' && lines(k, id)[1].hsn === '8421', lines(k, id));
   });
 
   // ---------------------------------------------------------------- A-09
-  finding('A-09', 'deleting a purchase rolls the product\'s latest purchase rate and date back', async () => {
+  fixedFinding('A-09', 'deleting a purchase rolls the product\'s latest purchase rate and date back', async () => {
     const { id } = await POST(simple(1, { payment_status: 0, date: D(5), items: [{ ...simple(1).items[0], rate: 1500 }] }));
     await call(k.one, 'DELETE', { id: String(id) });
     ex('A-09', 'after the delete: no purchase left, so no latest rate / date from it', !store.product[0].latest_purchase_rate && !store.product[0].last_purchase_date, store.product[0]);
@@ -157,7 +157,7 @@ describe('A - findings (test.failing while open)', () => {
   }, { known: ['A2'] });
 
   // ---------------------------------------------------------------- A-11
-  finding('A-11', '"Other" (vendor 0, a real vendor row) can be paid on the payments API like any vendor', async () => {
+  fixedFinding('A-11', '"Other" (vendor 0, a real vendor row) can be paid on the payments API like any vendor', async () => {
     const { id } = await POST(fx('create-other-unpaid.json'));
     const body = fx('mark-paid-part.json');
     const r = await call(H.vpCreate, 'POST', {}, { ...body, vendor_id: 0, payment_amount: 1000, allocations: [{ purchase_id: id, allocated_amount: 1000, notes: null }] });
@@ -165,7 +165,7 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-12
-  F('A-12 the purchase export\'s line Total is the line total the screen shows (taxable + tax)', async () => {
+  test('A-12 the purchase export\'s line Total is the line total the screen shows (taxable + tax)', async () => {
     seed();
     const { id } = await POST(fx('create-paid.json'));
     const d = (await call(k.one, 'GET', { id: String(id) })).body;
@@ -175,7 +175,7 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-13
-  finding('A-13', 'an edit moves the bill\'s updated_at', async () => {
+  fixedFinding('A-13', 'an edit moves the bill\'s updated_at', async () => {
     const { id } = await POST(fx('create-paid.json'));
     store.purchase.find(p => p.id === id).updated_at = '2026-01-01';
     await PUT(id, relined(fx('edit-notes.json'), id));

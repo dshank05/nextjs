@@ -112,7 +112,8 @@ export async function loadPurchaseDetail(purchaseId: number) {
       sgst: line.sgst || 0,
       igst: line.igst || 0,
       tax: line.tax || 0,
-      total: line.subtotal,
+      // The line total the screen shows, taxable + tax (A-12: the taxable amount alone).
+      total: Math.round(((line.subtotal || 0) + (line.tax || 0)) * 100) / 100,
       subtotal: line.subtotal,
       hsn: line.hsn || '',
       original_qty: qty,

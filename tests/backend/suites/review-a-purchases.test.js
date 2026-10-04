@@ -129,6 +129,9 @@ describe('A - purchase round trips from the screens\' own payloads', () => {
     expect(formPayload(d)).toEqual(captured);
     // and the stored detail is what the harness read back (ids aside)
     const det = fx('detail-after-create.json');
+    // Fixed since the capture (2026-10-04): lines saved at create carry the product's HSN (A-08), and
+    // a line's total is taxable + tax, as the screen shows it (A-12).
+    det.items = det.items.map(it => ({ ...it, hsn: store.product.find(p => p.id === it.product_id).hsn, total: Math.round((it.subtotal + it.tax) * 100) / 100 }));
     expect({ ...d, id: det.id, items: d.items.map((it, i) => ({ ...it, id: det.items[i].id, line_id: det.items[i].line_id })), payment_history: [], bill_to: null, staff: null })
       .toEqual({ ...det, payment_history: [], bill_to: null, staff: null });
     finish();

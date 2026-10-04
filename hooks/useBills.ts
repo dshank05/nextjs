@@ -134,6 +134,19 @@ export async function fetchBills(kind: BillKind, f: BillListFilterState & { page
   return { rows, pagination: data.pagination || { page: f.page, limit: f.limit, total: rows.length, totalPages: 1, hasMore: false } };
 }
 
+/**
+ * Every bill the filters match, for "Export all" (B-12): the API caps a page at 1,000 rows, so
+ * the export asked for one page and silently stopped at the newest 1,000. Pages through instead.
+ */
+export async function fetchAllBills(kind: BillKind, f: BillListFilterState) {
+  const limit = 1000;
+  const first = await fetchBills(kind, { ...f, page: 1, limit });
+  const rows = [...first.rows];
+  const pages = Math.max(1, Number(first.pagination?.totalPages) || 1);
+  for (let page = 2; page <= pages; page++) rows.push(...(await fetchBills(kind, { ...f, page, limit })).rows);
+  return rows;
+}
+
 export function useBillList(kind: BillKind, f: BillListFilterState & { page: number; limit: number }) {
   return useQuery({
     queryKey: [BILL[kind].listKey, f],

@@ -90,6 +90,16 @@ function saleRef(changes: ChangeSet): 'sale' | 'salex' {
   return changes.docType;
 }
 
+/** What the bill is called in its ledger particulars - an Invoice C is not a Sale (B-07). */
+function saleLabel(changes: ChangeSet): 'Sale' | 'Invoice C' {
+  return saleRef(changes) === 'sale' ? 'Sale' : 'Invoice C';
+}
+
+/** The same in running text ("Payment for sale 3", "Payment for Invoice C 3"). */
+function saleNoun(changes: ChangeSet): 'sale' | 'Invoice C' {
+  return saleRef(changes) === 'sale' ? 'sale' : 'Invoice C';
+}
+
 function returnRef(changes: ChangeSet): 'sale_return' | 'salex_return' {
   return saleRef(changes) === 'sale' ? 'sale_return' : 'salex_return';
 }
@@ -125,6 +135,7 @@ export class CustomerLedgerHandler {
    * Generate payment notes with advance information
    */
   private generatePaymentNotes(
+    label: string,
     invoiceNo: string,
     total: number,
     currentBalance?: {
@@ -137,11 +148,11 @@ export class CustomerLedgerHandler {
     const { advanceUsed, newPayment, hasAdvance } = this.calculateAdvanceBreakdown(total, currentBalance);
     
     if (advanceUsed >= total) {
-      return `Payment for sale ${invoiceNo} (fully from ₹${advanceUsed.toFixed(2)} advance)`;
+      return `Payment for ${label} ${invoiceNo} (fully from ₹${advanceUsed.toFixed(2)} advance)`;
     } else if (hasAdvance) {
-      return `Payment for sale ${invoiceNo} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment)`;
+      return `Payment for ${label} ${invoiceNo} (₹${advanceUsed.toFixed(2)} from advance + ₹${newPayment.toFixed(2)} new payment)`;
     } else {
-      return `Payment received for sale ${invoiceNo}`;
+      return `Payment received for ${label} ${invoiceNo}`;
     }
   }
   
@@ -186,7 +197,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -204,7 +215,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -226,7 +237,7 @@ export class CustomerLedgerHandler {
               payment_mode: changes.paymentMode,
               payment_status: 1,
               payment_date: changes.paymentDate || timestamp,
-              notes: this.generatePaymentNotes(changes.invoiceNo!, changes.newTotal, changes.currentBalance),
+              notes: this.generatePaymentNotes(saleNoun(changes), changes.invoiceNo!, changes.newTotal, changes.currentBalance),
               fy: changes.fy
             },
             description: 'Payment received creation',
@@ -252,7 +263,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -274,7 +285,7 @@ export class CustomerLedgerHandler {
               payment_mode: changes.paymentMode,
               payment_status: 1,
               payment_date: changes.paymentDate || timestamp,
-              notes: this.generatePaymentNotes(changes.invoiceNo!, remainingAmount, changes.currentBalance),
+              notes: this.generatePaymentNotes(saleNoun(changes), changes.invoiceNo!, remainingAmount, changes.currentBalance),
               fy: changes.fy
             },
             description: 'Payment for remaining amount',
@@ -309,7 +320,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -333,7 +344,7 @@ export class CustomerLedgerHandler {
               payment_mode: changes.paymentMode,
               payment_status: 2,
               payment_date: changes.paymentDate || timestamp,
-              notes: this.generatePaymentNotes(changes.invoiceNo!, allocatedSale02, changes.currentBalance),
+              notes: this.generatePaymentNotes(saleNoun(changes), changes.invoiceNo!, allocatedSale02, changes.currentBalance),
               fy: changes.fy
             },
             description: 'Partial payment on a previously unpaid sale',
@@ -369,7 +380,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -386,7 +397,7 @@ export class CustomerLedgerHandler {
           },
           data: {
             debit: changes.newTotal,
-            notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+            notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
           }
         });
         break;
@@ -404,7 +415,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
         }
@@ -422,7 +433,7 @@ export class CustomerLedgerHandler {
             },
             data: {
               debit: changes.newTotal,
-              notes: `Sale ${changes.invoiceNo} updated to ₹${changes.newTotal}`
+              notes: `${saleLabel(changes)} ${changes.invoiceNo} updated to ₹${changes.newTotal}`
             }
           });
           
@@ -437,7 +448,7 @@ export class CustomerLedgerHandler {
               },
               data: {
                 credit: changes.newTotal,
-                notes: `Payment updated to ₹${changes.newTotal} for sale ${changes.invoiceNo}`
+                notes: `Payment updated to ₹${changes.newTotal} for ${saleNoun(changes)} ${changes.invoiceNo}`
               }
             });
           }

@@ -1,9 +1,9 @@
 import { prisma } from './db'
 import { transactionHandler } from './transaction-handler'
-import { paidWithBill, trimAllocations } from './advance-allocation'
+import { paidWithBill, trimAllocations, setOwnPaymentsMode } from './advance-allocation'
 import { recalculatePurchaseStatus } from './payment-allocation-service'
 import { assertStockCovers } from './purchase-delete'
-import { convertDateToTimestamp } from './date-utils'
+import { convertDateToTimestamp, getLocalDateString } from './date-utils'
 import {
   validatePurchase,
   computePurchaseTotals,
@@ -215,14 +215,26 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
   const paymentMode = body.payment_mode !== undefined && body.payment_mode !== null
     ? (intOrNull(body.payment_mode) as number)
     : (existing.payment_mode ?? 0)
+  const modeChanged = body.payment_mode !== undefined && body.payment_mode !== null && paymentMode !== existing.payment_mode
 
   const totalAllocated = allocations.reduce((s, a) => s + Number(a.allocated_amount), 0)
   const isTypeA = allocations.length > 0
   const newTotal = totals.grandTotal
   // "Paid" against allocations that do not cover the new total is Partial.
-  const finalStatus = requestedStatus === PAYMENT_STATUS.PAID && isTypeA && totalAllocated > 0
+  let finalStatus = requestedStatus === PAYMENT_STATUS.PAID && isTypeA && totalAllocated > 0
     ? (totalAllocated >= newTotal ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.PARTIAL)
     : requestedStatus
+  // A (part) paid bill with nothing allocated and no payment row - a 0 bill marked Paid -
+  // whose total moves: nothing was paid, so it is Unpaid (A-03, 2026-10-04: it stayed Paid
+  // and the counters invented the money). No payment is made for it automatically.
+  if (finalStatus !== PAYMENT_STATUS.UNPAID && oldStatus !== PAYMENT_STATUS.UNPAID && !isTypeA
+      && Math.abs(newTotal - Number(oldTotal)) > 0.005
+      && !(await prisma.vendor_ledger.findFirst({
+        where: { reference_type: 'purchase', reference_id: purchaseId, transaction_type: { in: ['PAYMENT', 'PAYMENT_ADJUSTMENT'] } },
+        select: { id: true }
+      }))) {
+    finalStatus = PAYMENT_STATUS.UNPAID
+  }
 
   const finalDate = has('date') && body.date ? convertDateToTimestamp(body.date) : existing.invoice_date
 
@@ -241,20 +253,28 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
     total_sgst: totals.totalSgst,
     total_igst: totals.totalIgst,
     total_tax: totals.totalTax,
-    total: newTotal
+    total: newTotal,
+    // An edit moves it, in the create's format (A-13: written on create only).
+    updated_at: getLocalDateString()
   }
-  if (has('bill_reference')) headerData.bill_reference = body.bill_reference || null
+  // Empty text is stored as create stores it, '' (A-06: an edit wrote null, so saving the
+  // untouched form changed six columns). A column already blank (null on older rows) is kept.
+  const blank = (v: any) => v === undefined || v === null || v === ''
+  const textField = (sent: any, stored: any) => (blank(sent) ? (blank(stored) ? stored : '') : String(sent))
+  if (has('bill_reference')) headerData.bill_reference = textField(body.bill_reference, existing.bill_reference)
   if (has('bill_reference_date')) headerData.bill_reference_date = body.bill_reference_date ? new Date(body.bill_reference_date).toISOString() : null
-  if (has('notes')) headerData.notes = body.notes || null
-  if (has('descriptions')) headerData.descriptions = body.descriptions || null
+  if (has('notes')) headerData.notes = textField(body.notes, existing.notes)
+  if (has('descriptions')) headerData.descriptions = textField(body.descriptions, existing.descriptions)
   if (has('transport_name')) {
-    headerData.transport = body.transport_name || null
-    headerData.transport_name = body.transport_name || null
+    headerData.transport = textField(body.transport_name, existing.transport)
+    headerData.transport_name = textField(body.transport_name, existing.transport_name)
   }
-  if (has('vehicle_number')) headerData.vehicle_number = body.vehicle_number || null
+  if (has('vehicle_number')) headerData.vehicle_number = textField(body.vehicle_number, existing.vehicle_number)
   if (has('staff_id')) {
     const staffId = intOrNull(body.staff_id)
-    headerData.staff = staffId ? { connect: { id: staffId } } : { disconnect: true }
+    // Disconnected only when one is set: an untouched save writes nothing (A-06).
+    if (staffId) headerData.staff = { connect: { id: staffId } }
+    else if (existing.staff_id !== null && existing.staff_id !== undefined) headerData.staff = { disconnect: true }
   }
 
   // ---- The billing snapshot: sent fields only on update; the master fills a new one
@@ -441,6 +461,11 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
         : undefined
     })
     await transactionHandler.executeInTransaction(tx, ops)
+    // A new mode picked on a bill that was and stays (part) paid: the payments made with it
+    // follow, with their ledger rows (A-05). Shared payments and advance are left alone.
+    if (modeChanged && oldStatus !== PAYMENT_STATUS.UNPAID && finalStatus !== PAYMENT_STATUS.UNPAID) {
+      await setOwnPaymentsMode(tx, 'vendor', { purchase_id: purchaseId }, paymentMode)
+    }
     // Lowered below what is allocated: the allocation shrinks, the rest is advance (owner).
     if (isTypeA && newTotal < totalAllocated - 0.005) {
       await trimAllocations(tx, 'vendor', { purchase_id: purchaseId }, newTotal)

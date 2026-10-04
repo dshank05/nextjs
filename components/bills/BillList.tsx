@@ -15,7 +15,7 @@ import { money } from '../../lib/line-math'
 import { useDebounce } from '../../hooks/useDebounce'
 import { usePartyOptions } from '../../hooks/usePartyTransactions'
 import {
-  BILL, EMPTY_BILL_FILTERS, fetchBills, useBillList, useDeleteBill,
+  BILL, EMPTY_BILL_FILTERS, fetchAllBills, useBillList, useDeleteBill,
   type BillKind, type BillListFilterState, type BillRow
 } from '../../hooks/useBills'
 
@@ -111,7 +111,7 @@ export function BillList({ kind }: { kind: BillKind }) {
         <div className="flex items-center justify-end gap-2 mb-4">
           <ExportMenu
             data={exportRows(rows, (pagination.page - 1) * pagination.limit)}
-            fetchAll={async () => exportRows((await fetchBills(kind, { ...settled, page: 1, limit: 1000 })).rows, 0)}
+            fetchAll={async () => exportRows(await fetchAllBills(kind, settled), 0)}
             columns={[
               { key: 'serialNumber', label: 'S.N', enabled: true },
               { key: 'invoice_no', label: 'Invoice No', enabled: true },

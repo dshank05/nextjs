@@ -27,6 +27,8 @@ export interface ChangeSet {
   vendorId: number;
   totalAllocated?: number;
   isTypeA?: boolean; // Has existing allocations (the bill was paid through them)
+  /** A PAYMENT ledger row is tagged to the bill (A-03: none = nothing was paid). */
+  hasPaymentLedger?: boolean;
   /**
    * Money this document itself brought in, as opposed to the amount it
    * ALLOCATED. The two differ whenever a purchase was funded from an existing
@@ -62,11 +64,8 @@ export class BalanceHandler {
     };
     type: 'PURCHASE' | 'RETURN';
   }): BalanceOperation | null {
-    // Skip balance operations for "Other" vendor (id = 0)
-    if (params.vendorId === 0) {
-      return null;
-    }
-    
+    // "Other" (vendor 0) is a real vendor row that posts: its counters move like any
+    // vendor's, as they do on edit and delete (A-02, 2026-10-04 - this skipped them on create).
     // Calculate advance balance based on type
     const advanceBalance = params.currentBalance 
       ? (params.type === 'PURCHASE'
@@ -222,6 +221,9 @@ export class BalanceHandler {
         }
         
       case '1→0': // Paid → Unpaid (restore advance)
+        // Nothing allocated and no payment row (a 0 bill marked Paid, A-03): nothing was paid,
+        // so there is nothing to take back.
+        if (!changes.isTypeA && changes.hasPaymentLedger === false) return null;
         return {
           vendorId: changes.vendorId,
           update: {
@@ -237,6 +239,7 @@ export class BalanceHandler {
         };
         
       case '2→0': // Partial → Unpaid (restore partial advance)
+        if (!changes.isTypeA && changes.hasPaymentLedger === false) return null;
         return {
           vendorId: changes.vendorId,
           update: {
@@ -261,8 +264,9 @@ export class BalanceHandler {
           const allocDiff = Math.min(changes.newTotal, changes.totalAllocated) - changes.totalAllocated;
           return allocDiff !== 0 ? { vendorId: changes.vendorId, update: { total_allocated: allocDiff } } : null;
         }
-        // ✅ FIX: Update balance when amount changes while status stays Paid
-        if (changes.amountChanged) {
+        // Legacy "Type B" (paid with a payment row but no allocations): the payment follows the
+        // total. With no payment row there is no money to move (A-03).
+        if (changes.amountChanged && changes.hasPaymentLedger !== false) {
           const amountDiff = changes.newTotal - changes.oldTotal;
           return {
             vendorId: changes.vendorId,

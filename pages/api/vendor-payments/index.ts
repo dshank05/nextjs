@@ -51,7 +51,7 @@ async function handleCreatePayment(
     } = req.body;
 
     // Validate required fields
-    if (!vendor_id || !payment_amount || payment_mode === undefined || !payment_date || !allocations) {
+    if (vendor_id === undefined || vendor_id === null || vendor_id === '' || !payment_amount || payment_mode === undefined || !payment_date || !allocations) {
       return res.status(400).json({
         error: 'Missing required fields',
         required: ['vendor_id', 'payment_amount', 'payment_mode', 'payment_date', 'allocations']

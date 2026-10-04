@@ -17,8 +17,8 @@ import { BillPaymentModal } from './BillPaymentModal'
  * 817-line purchase view. Lines show what the server stored (the purchase view
  * re-derived tax in the browser, paise off the bill's own rounded totals);
  * returns say "Pending refund" / "Refunded" and link to the return; Mark as Paid
- * is offered only to a registered party (an "Other" purchase offered it and the
- * payment API refused); money always shows paise.
+ * is offered to a registered party and to the "Other" vendor (a real vendor row,
+ * A-11), not to a walk-in sale; money always shows paise.
  */
 const statusBadge = (s?: number | null) =>
   s === 1 ? <span className="px-2 py-1 bg-green-600 text-white text-xs rounded-full">Paid</span>
@@ -97,9 +97,10 @@ export function BillView({ kind }: { kind: BillKind }) {
       <span className={`text-white ${strong ? 'font-bold' : 'font-medium'}`}>{value}</span>
     </div>
   )
-  // "Other" has no account to post a payment to, and nothing to return against.
+  // A walk-in sale has no account to post a payment to, and nothing to return against. The
+  // "Other" vendor (0) is a real vendor row that posts, so its bills can be paid (A-11).
   const registered = p.id > 0
-  const canPay = !!pay && pay.remaining_amount > 0.005 && registered
+  const canPay = !!pay && pay.remaining_amount > 0.005 && (registered || isPurchase)
 
   return (
     <div className="space-y-6">

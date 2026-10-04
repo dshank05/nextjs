@@ -224,6 +224,9 @@ export class CustomerBalanceHandler {
         }
         
       case '1→0': // Paid → Unpaid (restore advance)
+        // Nothing allocated and no payment row (a 0 bill marked Paid, A-03): nothing was paid,
+        // so there is nothing to take back.
+        if (!changes.isTypeA && changes.hasPaymentLedger === false) return null;
         return {
           customerId: changes.customerId,
           update: {
@@ -235,6 +238,7 @@ export class CustomerBalanceHandler {
         };
         
       case '2→0': // Partial → Unpaid (restore partial advance)
+        if (!changes.isTypeA && changes.hasPaymentLedger === false) return null;
         return {
           customerId: changes.customerId,
           update: {
@@ -259,7 +263,9 @@ export class CustomerBalanceHandler {
           const allocDiff = Math.min(changes.newTotal, changes.totalAllocated) - changes.totalAllocated;
           return allocDiff !== 0 ? { customerId: changes.customerId, update: { total_allocated: allocDiff } } : null;
         }
-        if (changes.amountChanged) {
+        // Legacy "Type B" (paid with a payment row but no allocations): the payment follows the
+        // total. With no payment row there is no money to move (A-03).
+        if (changes.amountChanged && changes.hasPaymentLedger !== false) {
           const amountDiff = changes.newTotal - changes.oldTotal;
           return {
             customerId: changes.customerId,

@@ -86,7 +86,7 @@ describe('Review B - findings', () => {
     // (BillForm.tsx:216-217); the edit then takes the STORED total (lib/sale-edit.ts:116-118) and
     // packingAmount (lib/line-math.ts:133-138) turns "no qty + a total" into 1 x that total.
     // The purchase twin uses the sent fields as one set (lib/purchase-edit.ts:187-190).
-    test.failing(`B-02 ${kind}: P&F cleared on the edit form is removed from the bill`, async () => {
+    test(`B-02 ${kind}: P&F cleared on the edit form is removed from the bill`, async () => {
       seed();
       const { id } = await createFrom(kind, `${kind}-create.json`);
       const before = doc(kind, id).total;
@@ -104,7 +104,7 @@ describe('Review B - findings', () => {
     // 168) but a 1 -> 1 edit with no amount change has no operation (customer-ledger-handler
     // '1->1', balance handler '1->1'), so the payment, its ledger row and the cash book keep the old
     // mode. Same on purchase (twin).
-    test.failing(`B-03 ${kind}: payment mode changed on a paid bill reaches the payment, the ledger and the cash book`, async () => {
+    test(`B-03 ${kind}: payment mode changed on a paid bill reaches the payment, the ledger and the cash book`, async () => {
       seed();
       const { id } = await createFrom(kind, `${kind}-create-paid.json`);
       const t = doc(kind, id).total;
@@ -141,7 +141,7 @@ describe('Review B - findings', () => {
     // lib/sale-query.ts:145-173 read it as wholly outstanding: the view shows
     // "Paid / Outstanding ₹0 / ₹1,680" (harness review-b-capture, walk-in view) and the list
     // carries remaining_amount = total.
-    test.failing(`B-05 ${kind}: a walk-in bill marked Paid reads as paid, not outstanding`, async () => {
+    test(`B-05 ${kind}: a walk-in bill marked Paid reads as paid, not outstanding`, async () => {
       seed();
       const { id } = await createFrom(kind, `${kind}-create-other.json`);
       const d = (await call(api(kind).one, 'GET', { id: String(id) })).body;
@@ -157,7 +157,7 @@ describe('Review B - findings', () => {
     // always sends them) and writes supply_date null (transportFrom, lib/sale-create.ts:233-240).
     // A bill saved with its own ship-to / supply date (the older form; the API still takes and
     // returns them) loses both on any edit, e.g. a notes change.
-    test.failing(`B-06 ${kind}: a notes edit keeps the bill's own ship-to and supply date`, async () => {
+    test(`B-06 ${kind}: a notes edit keeps the bill's own ship-to and supply date`, async () => {
       seed();
       const { id } = await createFrom(kind, `${kind}-create.json`, {
         useShippingAddress: true,
@@ -184,7 +184,7 @@ describe('Review B - findings', () => {
   // particulars to "Sale <n> updated to ₹..." for both kinds (lib/customer-ledger-handler.ts, every
   // 'Update sale amount' op), so an edited Invoice C 1 reads as Sale 1 (lib/ledger-report.ts:71
   // shows the notes as particulars).
-  test.failing('B-07 salex: an Invoice C keeps its kind in balance logs and ledger particulars', async () => {
+  test('B-07 salex: an Invoice C keeps its kind in balance logs and ledger particulars', async () => {
     seed();
     const { id } = await createFrom('salex', 'salex-create-paid.json');
     await call(H.salexOne, 'DELETE', { id: String(id) });
@@ -201,7 +201,7 @@ describe('Review B - findings', () => {
   // updated_at: create stores the India date 'YYYY-MM-DD' (lib/sale-create.ts:110), an edit stores
   // a UTC 'YYYY-MM-DD HH:MM:SS' (lib/sale-edit.ts:181) - one column, two formats, and before 05:30
   // IST the edit's stamp is the previous day. Purchase edit does not touch it.
-  test.failing('B-09 sale: an edit stamps updated_at in the create\'s format and India time', async () => {
+  test('B-09 sale: an edit stamps updated_at in the create\'s format and India time', async () => {
     jest.useFakeTimers({ now: new Date('2026-10-02T20:00:00Z'), doNotFake: ['setTimeout', 'setInterval', 'setImmediate', 'clearTimeout', 'clearInterval', 'nextTick', 'queueMicrotask'] }); // 01:30 IST, 3 Oct
     try {
       seed();
