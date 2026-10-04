@@ -329,9 +329,13 @@ async function handleUpdatePayment(
           
           // Recalculate balances after update
           const firstEntry = entries[0];
+          // From the start (L-36): recalculateBalancesAfter seeds its running total
+          // from the stored balance of the row it is given, and this update has just
+          // changed that row's amount without touching its balance - so every row from
+          // here on stayed off by the change, and the next entry built on it.
           await ledgerService.recalculateBalancesAfter(
             firstEntry.vendor_id,
-            firstEntry.id,
+            0,
             tx
           );
           
