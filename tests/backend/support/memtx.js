@@ -18,14 +18,16 @@ const match = (row, where = {}) => Object.entries(where).every(([k, v]) => {
       return !!parent && match(parent, v);
     }
     // `not` may sit beside a range ({ not: null, gt: 0 }): both must hold.
-    if ('not' in v && row[k] === v.not) return false;
+    // review B: a column never set is NULL in MySQL, so { not: null } leaves it out.
+    if ('not' in v && (v.not === null ? (row[k] ?? null) === null : row[k] === v.not)) return false;
     if ('not' in v && !('gte' in v || 'lte' in v || 'gt' in v || 'lt' in v)) return true;
     const F = (x) => (x && typeof x === 'object' && '__field' in x ? row[x.__field] : x);
     if ('gte' in v || 'lte' in v || 'gt' in v || 'lt' in v) { v = { ...v, ...(('gte' in v) ? { gte: F(v.gte) } : {}), ...(('lte' in v) ? { lte: F(v.lte) } : {}), ...(('gt' in v) ? { gt: F(v.gt) } : {}), ...(('lt' in v) ? { lt: F(v.lt) } : {}) }; }
     if ('gte' in v || 'lte' in v || 'gt' in v || 'lt' in v) return (!('gte' in v) || row[k] >= v.gte) && (!('lte' in v) || row[k] <= v.lte) && (!('gt' in v) || row[k] > v.gt) && (!('lt' in v) || row[k] < v.lt);
     return true;
   }
-  return row[k] === v;
+  // review B: { col: null } is IS NULL - a column never set matches it, as in MySQL.
+  return v === null ? (row[k] ?? null) === null : row[k] === v;
 });
 
 // Relations for include/select: parent (row[fk] -> table.id) and children (table[fk] = row.id).
@@ -61,11 +63,11 @@ export function makeTx(store, log) {
         else if (include) { const inc = include; r = r.map(x => { const o = { ...x }; for (const k of Object.keys(inc)) if (k !== 'allocations' || !REL[name]) o[k] = resolveRel(store, name, x, k, inc[k]); else { const sub = inc[k] && (inc[k].include || inc[k].select); const [allocTable, allocFk] = REL[name]; o[k] = (store[allocTable] || []).filter(a => a[allocFk] === x.id).map(a => { if (!sub) return a; const ao = { ...a }; for (const kk of Object.keys(sub)) if (typeof sub[kk] === 'object') ao[kk] = resolveRel(store, allocTable, a, kk, sub[kk]); return ao; }); } return o; }); }
         return r; },
       findFirst: async function (args = {}) { return (args.orderBy || args.select || args.include) ? ((await this.findMany({ ...args, take: 1 }))[0] || null) : (rows().find(x => match(x, args.where)) || null); },
-      findUnique: async ({ where, include, select }) => { const x = rows().find(x => match(x, where)) || null; if (!x || (!include && !select)) return x; const one = store[name]; store[name] = [x]; try { return (await table(name).findMany({ include, select }))[0]; } finally { store[name] = one; } },
+      findUnique: async ({ where, include, select }) => { const x = rows().find(x => match(x, where)) || null; if (!x || (!include && !select)) return x; return (await table(name).findMany({ where, include, select, take: 1 }))[0] ?? null; }, // review C: no longer swaps store[name] (parallel callers saw a one-row table)
       count: async ({ where } = {}) => rows().filter(x => match(x, where)).length,
       deleteMany: async ({ where } = {}) => { log.push([name, 'deleteMany', where]); const before = rows().length; store[name] = rows().filter(x => !match(x, where)); return { count: before - store[name].length }; },
       delete: async ({ where }) => { log.push([name, 'delete', where]); const i = rows().findIndex(x => match(x, where)); if (i < 0) throw new Error(`${name}.delete: not found ${JSON.stringify(where)}`); return rows().splice(i, 1)[0]; },
-      update: async ({ where, data }) => { const r = rows().find(x => match(x, where)); if (!r) { log.push([name, 'update-missing', where]); return {}; } for (const [k, v] of Object.entries(data)) { if (v === undefined) continue; if (v && typeof v === 'object' && ('connect' in v || 'disconnect' in v)) continue; if (v && typeof v === 'object' && ('increment' in v || 'decrement' in v)) r[k] = (r[k] || 0) + (v.increment || 0) - (v.decrement || 0); else r[k] = v; } return r; },
+      update: async ({ where, data }) => { const r = rows().find(x => match(x, where)); if (!r) { log.push([name, 'update-missing', where]); return {}; } for (const [k, v] of Object.entries(data)) { if (v === undefined) continue; if (v && typeof v === 'object' && ('connect' in v || 'disconnect' in v)) { /* review B: a relation set on update moves its FK, as Prisma does (staff / mechanic on a bill edit) */ r[k + '_id'] = 'connect' in v ? v.connect.id : null; continue; } if (v && typeof v === 'object' && ('increment' in v || 'decrement' in v)) r[k] = (r[k] || 0) + (v.increment || 0) - (v.decrement || 0); else r[k] = v; } return r; },
       updateMany: async ({ where, data }) => { let n = 0; for (const r of rows().filter(x => match(x, where))) { n++; for (const [k, v] of Object.entries(data)) if (v !== undefined) r[k] = v; } return { count: n }; },
       upsert: async ({ where, update, create }) => { const key = where.invoice_no_fy || where; const r = rows().find(x => match(x, key)); if (r) { for (const [k, v] of Object.entries(update)) if (v !== undefined) r[k] = v; return r; } const n = { id: rows().length + 1000, ...create }; rows().push(n); return n; },
       create: async ({ data }) => { const d = {}; for (const [k, v] of Object.entries(data)) { if (v && typeof v === 'object' && !Array.isArray(v) && 'connect' in v) d[k + '_id'] = v.connect.id; else d[k] = v; } const r = { id: nextId(), ...d }; rows().push(r); return r; },
