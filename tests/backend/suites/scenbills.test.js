@@ -138,16 +138,14 @@ describe('Scenarios - batches 1-3: create, edit, payments (sale, Invoice C, purc
       ex(id_, 'paid 10000 on it, 2000 owed in the ledger', paidOn(k, id) === 10000 && bal(k) === 2000, { a: allocs(k, id), l: rows(k) });
       ex(id_, 'counters unchanged: paid 10000, allocated 10000', counters(k).paid === 10000 && counters(k).alloc === 10000, counters(k));
     });
-    sc(tag(k, '2.8'), 'edit paid, qty 10 -> 8, stays paid', async () => {
+    sc(tag(k, '2.8'), 'edit paid, qty 10 -> 8: the 2000 over stays as advance (owner)', async () => {
       const id_ = tag(k, '2.8');
       const { id } = await create(k, { status: 1, mode: 0 });
       const r = await edit(k, id, { items: [[1, 8, 1000, 0]], status: 1, mode: 0 });
-      ex(id_, 'total 8000, still paid', r.status === 200 && bill(k, id).total === 8000 && bill(k, id).payment_status === 1, bill(k, id));
-      ex(id_, 'allocation no more than the bill (8000)', paidOn(k, id) <= 8000, allocs(k, id));
-      ex(id_, 'payment, counters and ledger tell one story', (N(payments(k)[0]?.payment_amount) === 8000 && counters(k).paid === 8000 && bal(k) === 0)
-        || (N(payments(k)[0]?.payment_amount) === 10000 && counters(k).paid === 10000 && counters(k).alloc === 8000 && bal(k) === -2000),
-        { pay: payments(k).map(p => p.payment_amount), c: counters(k), bal: bal(k) });
-    }, { open: 'F-S1 paid bill lowered: allocation above the bill', known: [] });
+      ex(id_, 'total 8000, still paid, 8000 allocated', r.status === 200 && bill(k, id).total === 8000 && bill(k, id).payment_status === 1 && paidOn(k, id) === 8000, { b: bill(k, id), a: allocs(k, id) });
+      ex(id_, 'the payment stays 10000 received, now MIXED (2000 unallocated)', N(payments(k)[0]?.payment_amount) === 10000 && payments(k)[0].payment_type === 'MIXED', payments(k));
+      ex(id_, 'counters: paid 10000, allocated 8000; ledger: 2000 in the party\'s favour', counters(k).paid === 10000 && counters(k).alloc === 8000 && bal(k) === -2000, { c: counters(k), l: rows(k) });
+    });
     // ---- The partial cases (COMPLETE_SYSTEM_OPERATIONS_ANALYSIS cases 6-9): 10000 bill, 4000 paid
     const partBill = async () => { const { id } = await create(k); await pay(k, 4000, [[k, id, 4000]], { mode: 0 }); return id; };
     sc(tag(k, '2.13'), 'case 6: partial -> paid by an edit', async () => {
@@ -164,10 +162,11 @@ describe('Scenarios - batches 1-3: create, edit, payments (sale, Invoice C, purc
       const id_ = tag(k, '2.14');
       const id = await partBill();
       const r = await edit(k, id, { status: 0 });
-      ex(id_, 'unpaid; nothing allocated to it', r.status === 200 && bill(k, id).payment_status === 0 && paidOn(k, id) === 0, { r: r.body, b: bill(k, id), a: allocs(k, id) });
-      ex(id_, 'the 4000 received stays on the account as advance: ledger 6000, counters paid 4000 / allocated 0',
-        bal(k) === 6000 && counters(k).paid === 4000 && counters(k).alloc === 0, { l: rows(k), c: counters(k), p: payments(k) });
-    }, { open: 'F-S2 unmarking a bill paid on the payments screen' });
+      // The original rule (fb3d2c3, Feb 2026, and today): unmarking deletes the bill-specific
+      // payments allocated to it, with their ledger rows; counters come back by the same.
+      ex(id_, 'unpaid; its 4000 payment, allocation and ledger row gone; 10000 owed; counters 0', r.status === 200 && bill(k, id).payment_status === 0 && paidOn(k, id) === 0
+        && payments(k).length === 0 && payRows(k).length === 0 && bal(k) === 10000 && counters(k).paid === 0 && counters(k).alloc === 0, { r: r.body, b: bill(k, id), p: payments(k), l: rows(k), c: counters(k) });
+    });
     for (const [n, q, left, status] of [['2.15', 12, 8000, 2], ['2.16', 8, 4000, 2]]) {
       sc(tag(k, n), `case ${n === '2.15' ? 8 : 9}: partial, qty 10 -> ${q}`, async () => {
         const id_ = tag(k, n);
@@ -183,14 +182,33 @@ describe('Scenarios - batches 1-3: create, edit, payments (sale, Invoice C, purc
       await pay(k, 20000, [[k, a, 10000], [k, b, 10000]], { mode: 1 });
       const r = await edit(k, a, { status: 0 });
       ex(id_, 'bill A unpaid, bill B still paid', r.status === 200 && bill(k, a).payment_status === 0 && bill(k, b).payment_status === 1, { r: r.body, a: bill(k, a), b: bill(k, b) });
-    }, { open: 'F-S2 unmarking a bill paid on the payments screen' });
+      ex(id_, 'only A\'s share rolled back (owner): payment 10000, still bill specific, B\'s allocation kept', payments(k).length === 1 && N(payments(k)[0].payment_amount) === 10000 && payments(k)[0].payment_type === 'BILL_SPECIFIC' && paidOn(k, b) === 10000 && paidOn(k, a) === 0, { p: payments(k), al: store[k.allocTable] });
+      ex(id_, 'ledger: payment rows net 10000, balance 10000 (A owed); counters 10000 / 10000', sum(payRows(k), l => N(l.credit) - N(l.debit)) === 10000 && bal(k) === 10000 && counters(k).paid === 10000 && counters(k).alloc === 10000, { l: rows(k), c: counters(k) });
+    });
     sc(tag(k, '2.19'), 'paid on the payments screen, then unmarked', async () => {
       const id_ = tag(k, '2.19');
       const { id } = await create(k);
       await pay(k, 10000, [[k, id, 10000]], { mode: 1 });
       const r = await edit(k, id, { status: 0 });
-      ex(id_, 'unpaid, balance 10000', r.status === 200 && bill(k, id).payment_status === 0 && bal(k) === 10000, { r: r.body, b: bill(k, id), l: rows(k) });
-    }, k.party === 'customer' ? { open: 'F-S2 unmarking a bill paid on the payments screen' } : {});
+      ex(id_, 'unpaid; the payment and its ledger row gone (original rule); 10000 owed; counters 0', r.status === 200 && bill(k, id).payment_status === 0 && payments(k).length === 0 && payRows(k).length === 0
+        && bal(k) === 10000 && counters(k).paid === 0, { r: r.body, b: bill(k, id), p: payments(k), l: rows(k), c: counters(k) });
+    });
+    sc(tag(k, '2.20'), 'a bill paid on the payments screen, deleted', async () => {
+      const id_ = tag(k, '2.20');
+      const { id } = await create(k);
+      await pay(k, 10000, [[k, id, 10000]], { mode: 1 });
+      const r = await call(k.one, 'DELETE', { id: String(id) });
+      ex(id_, 'deleted with its payment, allocation and ledger rows; nothing owed; counters 0', r.status === 200 && !bill(k, id) && payments(k).length === 0 && store[k.ledger].length === 0
+        && counters(k).paid === 0 && counters(k).alloc === 0, { r: r.body, p: payments(k), l: store[k.ledger], c: counters(k) });
+    });
+    sc(tag(k, '2.21'), 'delete one of two bills paid by one payment', async () => {
+      const id_ = tag(k, '2.21');
+      const a = (await create(k)).id, b = (await create(k)).id;
+      await pay(k, 20000, [[k, a, 10000], [k, b, 10000]], { mode: 1 });
+      const r = await call(k.one, 'DELETE', { id: String(a) });
+      ex(id_, 'A deleted; payment 10000 for B, rows net 10000, balance 0, counters 10000 / 10000', r.status === 200 && !bill(k, a) && N(payments(k)[0]?.payment_amount) === 10000 && paidOn(k, b) === 10000
+        && sum(payRows(k), l => N(l.credit) - N(l.debit)) === 10000 && bal(k) === 0 && counters(k).paid === 10000 && counters(k).alloc === 10000, { r: r.body, p: payments(k), l: rows(k), c: counters(k) });
+    });
     sc(tag(k, '2.17'), 'case 9b: partial, total lowered below what was paid (10000 -> 3000, 4000 paid)', async () => {
       const id_ = tag(k, '2.17');
       const id = await partBill();
@@ -198,7 +216,7 @@ describe('Scenarios - batches 1-3: create, edit, payments (sale, Invoice C, purc
       ex(id_, 'saved, total 3000, paid', r.status === 200 && bill(k, id).total === 3000 && bill(k, id).payment_status === 1, { r: r.body, b: bill(k, id) });
       ex(id_, 'allocation trimmed to 3000; the 1000 over stays as advance (L-31): ledger -1000, counters paid 4000 / allocated 3000',
         paidOn(k, id) === 3000 && bal(k) === -1000 && counters(k).paid === 4000 && counters(k).alloc === 3000, { a: allocs(k, id), l: rows(k), c: counters(k) });
-    }, { open: 'F-S1 bill lowered below what was paid' });
+    });
     for (const [n, q] of [['2.9', 10], ['2.10', 15]]) {
       sc(tag(k, n), `edit paid -> unpaid${q !== 10 ? `, qty 10 -> ${q}` : ''}`, async () => {
         const id_ = tag(k, n);

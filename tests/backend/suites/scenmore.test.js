@@ -110,10 +110,11 @@ describe('Scenarios - batch 8: edge cases', () => {
       }
       ex(id_, 'nothing written', snapshot() === before);
     });
-    sc(tag(k, '8.1b'), 'a bill at rate 0 (total 0) - the doc says refuse', async () => {
-      const { r } = await create(k, { items: [[1, 10, 0, 0]] });
-      ex(tag(k, '8.1b'), 'refused', r.status === 400, r.body);
-    }, { open: 'F-S4 a zero-total bill is accepted' });
+    sc(tag(k, '8.1b'), 'a bill at rate 0 is accepted (the Feb 2026 code: "Removed rate validation to allow 0 or empty rates")', async () => {
+      const id_ = tag(k, '8.1b');
+      const { r, id } = await create(k, { items: [[1, 10, 0, 0]] });
+      ex(id_, 'saved: total 0, stock moved, a 0 ledger row (the doc expected a refusal)', r.status === 201 && bill(k, id).total === 0 && stock(1) === 1000 + k.stockSign * 10 && billNet(k, id) === 0, { r: r.body, b: bill(k, id) });
+    });
     sc(tag(k, '8.3'), 'a large bill adds up exactly', async () => {
       const id_ = tag(k, '8.3');
       const { id } = await create(k, { items: [[1, 999, 99999.99, 18]] });

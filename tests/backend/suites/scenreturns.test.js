@@ -116,14 +116,20 @@ describe('Scenarios - batches 4-6: returns and refunds (sale, Invoice C, purchas
       const r = await retEdit(k, rid, [[l[0], 7]]);
       ex(id_, 'saved: 7000, stock follows, still nothing in the ledger', r.status === 200 && N(theRet(k, rid).refund_amount) === 7000 && stock(1) === stockAfter(k, 10, 7) && noteRows(k, rid).length === 0, { r: r.body, rr: theRet(k, rid) });
     });
-    sc(tag(k, '5.2'), 'edit a refunded return is blocked (P22 / C22)', async () => {
+    sc(tag(k, '5.2'), k.name === 'purchase' ? 'edit a refunded purchase return - allowed (owner, 29 Jan 2026)' : 'edit a refunded return is blocked (P22 / C22)', async () => {
       const id_ = tag(k, '5.2');
       const { l } = await base();
       const { id: rid } = await ret(k, [[l[0], 5]], { status: 1 });
       const before = snapshot() + JSON.stringify(store[k.ledger].map(x => [x.debit, x.credit])) + stock(1);
       const r = await retEdit(k, rid, [[l[0], 3]]);
-      ex(id_, 'refused, nothing changed', r.status === 400 && snapshot() + JSON.stringify(store[k.ledger].map(x => [x.debit, x.credit])) + stock(1) === before, { r: r.body, rr: theRet(k, rid), notes: noteRows(k, rid) });
-    }, k.name === 'purchase' ? { open: 'F-S3 refunded purchase return can be edited (sale twin refuses)' } : {});
+      if (k.name === 'purchase') {
+        // The block was added on 7 Dec 2025 and removed on 29 Jan 2026 (00ff93b); the return
+        // screens say so ("purchase returns can be edited"). The note and counters follow.
+        ex(id_, 'saved: 3000, debit note 3000, counters 3000, stock follows', r.status === 200 && N(theRet(k, rid).refund_amount) === 3000
+          && noteRows(k, rid).filter(x => x.transaction_type === 'DEBIT_NOTE').reduce((a, x) => a + N(x.credit) - N(x.debit), 0) === 3000
+          && counters(k).refunded === 3000 && counters(k).refAlloc === 3000 && stock(1) === stockAfter(k, 10, 3), { r: r.body, n: noteRows(k, rid), c: counters(k) });
+      } else ex(id_, 'refused, nothing changed', r.status === 400 && snapshot() + JSON.stringify(store[k.ledger].map(x => [x.debit, x.credit])) + stock(1) === before, { r: r.body, rr: theRet(k, rid), notes: noteRows(k, rid) });
+    });
     sc(tag(k, '5.3'), 'edit: add a line to a pending return', async () => {
       const id_ = tag(k, '5.3');
       const { l } = await base({ second: true });
