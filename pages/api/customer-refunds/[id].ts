@@ -2,9 +2,9 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
-import { customerLedgerService } from '../../../lib/customer-ledger-service';
 import { customerBalanceHandler } from '../../../lib/customer-balance-handler';
 import { convertDateToTimestamp } from '../../../lib/date-utils';
+import { rebuildCustomerRefundLedger } from '../../../lib/payment-ledger';
 
 
 export default async function handler(
@@ -277,24 +277,9 @@ async function handleUpdateRefund(
           refund_date,
           refund_mode,
           refund_type,
-          notes: notes || null
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null
         }
       });
-
-      // 3. If refund_date changed, sync all related ledger entries
-      if (existingRefund.refund_date !== refund_date) {
-        await tx.customer_ledger.updateMany({
-          where: {
-            transaction_id: refundId,
-            reference_type: 'refund',
-            transaction_type: 'REFUND_PAID'
-          },
-          data: {
-            transaction_date: refund_date,
-            payment_date: refund_date
-          }
-        });
-      }
 
       // 4. ⚡ OPTIMIZATION: Sequential allocation updates (delete then create)
       // Delete old allocations first
@@ -333,49 +318,11 @@ async function handleUpdateRefund(
         );
       }
 
-      // 6. Execute ledger operations (UPDATE existing or CREATE new)
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[REFUND EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length);
-        for (const update of handlerResult.ledgerUpdates) {
-          console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
-          
-          const entries = await tx.customer_ledger.findMany({
-            where: update.where,
-            select: { id: true, customer_id: true }
-          });
-          
-          if (entries.length === 0) {
-            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
-            continue;
-          }
-          
-          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`);
-          
-          await tx.customer_ledger.updateMany({
-            where: update.where,
-            data: update.data
-          });
-          
-          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`);
-          
-          const firstEntry = entries[0];
-          await customerLedgerService.recalculateBalancesAfter(
-            firstEntry.customer_id,
-            firstEntry.id,
-            tx
-          );
-          
-          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`);
-        }
-      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
-        console.log('[REFUND EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length);
-        for (const ledgerOp of handlerResult.ledgerOps) {
-          await customerLedgerService.createEntry(ledgerOp.entry, tx);
-        }
-        console.log('[REFUND EDIT] Ledger entries created');
-      } else {
-        console.log('[REFUND EDIT] No ledger operations to execute');
-      }
+      // 6. Its ledger row(s), rebuilt from the refund as it now stands (C-04 /
+      // C-05): amount, date, mode and notes follow the refund; the handler's
+      // update moved only the amount and wrote "Refund #N updated to ..." over
+      // the note.
+      await rebuildCustomerRefundLedger(tx, refundId, { oldNotes: existingRefund.notes });
 
       // 7. Update customer balance
       const amountDiff = handlerResult.metadata?.amountDiff || 0;

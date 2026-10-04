@@ -79,6 +79,12 @@ async function handleCreateRefund(
     if (!(Number(refund_amount) > 0)) {
       return res.status(400).json({ error: 'Enter a refund amount above zero', message: 'Enter a refund amount above zero' });
     }
+    // Any other allocation (zero, negative, not a number) is refused too, as the
+    // customer twin does (C-08): a zero allocation to a completed return wrote a
+    // zero allocation and ledger row and put the return back to pending.
+    if (allocations.length > 0) {
+      return res.status(400).json({ error: 'Allocation amounts must be greater than 0', message: 'Allocation amounts must be greater than 0' });
+    }
 
     // Validate allocations (pass 'vendor' type for purchase returns)
     const validation = await validateRefundAllocation(
@@ -114,7 +120,8 @@ async function handleCreateRefund(
           refund_amount,
           refund_mode,
           refund_type,
-          notes,
+          // Blank is stored as null, as the edit stores it (C-09).
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null,
           fy: financialYear
         }
       });

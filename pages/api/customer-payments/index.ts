@@ -7,6 +7,7 @@ import { getCurrentFinancialYear } from '../../../lib/financial-year'
 import { checkPaymentAllocations, allocationRow } from '../../../lib/payment-allocations'
 import { recalculateSaleStatus } from '../../../lib/payment-allocation-service'
 import { answerError } from '../../../lib/api/sale-routes'
+import { rebuildCustomerPaymentLedger } from '../../../lib/payment-ledger'
 
 async function handler(
   req: NextApiRequest,
@@ -74,6 +75,29 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       } catch (error) {
         console.warn('Error parsing filter dates:', error);
       }
+    }
+
+    // Customer filter (C-10): by id, or by a part of the name. It was applied
+    // after the page was read and its result thrown away, so every customer's
+    // rows came back. In the query now, so the page and the total follow it.
+    if (customer && customer !== '') {
+      const customerStr = (Array.isArray(customer) ? customer[0] : customer) as string
+      const customerNum = parseInt(customerStr)
+      if (!isNaN(customerNum)) {
+        where.customer_id = customerNum
+      } else {
+        const matches = await prisma.customer_details.findMany({
+          where: { billing_name: { contains: customerStr } },
+          select: { id: true }
+        })
+        where.customer_id = { in: matches.map(c => c.id) }
+      }
+    }
+
+    // Status filter (C-10): it was read and ignored. It names the payment's
+    // type (DIRECT / MIXED / BILL_SPECIFIC), as the transactions list does.
+    if (status && status !== '' && status !== 'all') {
+      where.payment_type = (Array.isArray(status) ? status[0] : status) as string
     }
 
     // Validate and set sort parameters
@@ -185,22 +209,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     })
 
-    // Apply customer filter (after data enhancement)
-    if (customer && customer !== '') {
-      const customerStr = Array.isArray(customer) ? customer[0] : customer;
-      const customerNum = parseInt(customerStr);
-
-      if (!isNaN(customerNum)) {
-        // Filter by customer ID
-        enhancedPayments.filter(p => p.customer_id === customerNum);
-      } else {
-        // Filter by customer name
-        enhancedPayments.filter(p =>
-          p.customer_name.toLowerCase().includes(customerStr.toLowerCase())
-        );
-      }
-    }
-
     const totalPages = Math.ceil(total / limitNum)
 
     res.status(200).json({
@@ -275,7 +283,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           payment_amount: amount,
           payment_mode: Number.isInteger(parseInt(payment_mode)) ? parseInt(payment_mode) : 1,
           payment_type: checked.paymentType,
-          notes: notes || '',
+          // Blank is stored as null, as the edit stores it (C-09).
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null,
           fy: financialYear
         }
       })
@@ -291,23 +300,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         await recalculateSaleStatus(a.kind as 'sale' | 'salex', a.id, tx)
       }
 
-      // Create customer ledger entry for receipt (inside transaction)
-      await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry({
-        customer_id: parseInt(customer_id),
-        transaction_date: paymentDateTimestamp,
-        transaction_type: 'PAYMENT_RECEIVED',
-        reference_type: 'payment',
-        reference_id: payment.id,
-        reference_no: `PAY-${String(payment.id).padStart(3, '0')}`,
-        debit: 0,
-        credit: amount,
-        payment_mode: Number.isInteger(parseInt(payment_mode)) ? parseInt(payment_mode) : 1, // 0 is cash: `|| 1` made it bank
-        payment_status: 1,
-        payment_date: paymentDateTimestamp,
-        notes: notes || `Customer payment receipt`,
-        fy: financialYear,
-        transaction_id: payment.id
-      }, tx);
+      // Its PAYMENT_RECEIVED row, by the same code the edit uses (C-03 / C-04).
+      await rebuildCustomerPaymentLedger(tx, payment.id)
 
       // Update customer balance using handler (with logging)
       await require('../../../lib/customer-balance-handler').customerBalanceHandler.incrementBalanceInTransaction(

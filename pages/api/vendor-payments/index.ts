@@ -5,7 +5,7 @@ import { authOptions } from '../auth/[...nextauth]';
 import { checkPaymentAllocations } from '../../../lib/payment-allocations';
 import { answerError } from '../../../lib/api/sale-routes';
 import { SaleError } from '../../../lib/sale';
-import { ledgerService } from '../../../lib/ledger-service';
+import { rebuildVendorPaymentLedger } from '../../../lib/payment-ledger';
 import { balanceHandler } from '../../../lib/balance-handler';
 import { parseDateRange, convertDateToTimestamp } from '../../../lib/date-utils';
 import { getCurrentFinancialYear } from '../../../lib/financial-year'
@@ -87,7 +87,9 @@ async function handleCreatePayment(
           payment_amount: amount,
           payment_mode,
           payment_type: paymentType,
-          notes,
+          // Blank is stored as null, as the edit stores it (C-09: "save
+          // unchanged" turned '' into null).
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null,
           fy: financialYear
         }
       });
@@ -153,114 +155,26 @@ async function handleCreatePayment(
       const totalAllocated = allocs.reduce((sum: number, a: any) => sum + a.allocated_amount, 0);
       const unallocatedAmount = amount - totalAllocated;
 
-      if (paymentType === 'DIRECT') {
-        const directLedgerNotes = notes?.trim() 
-          ? notes 
-          : `Direct advance payment ₹${amount}`;
-        
-        await ledgerService.createEntry({
-          vendor_id: vendorId,
-          transaction_date: paymentTimestamp,
-          transaction_type: 'PAYMENT',
-          reference_type: 'payment',
-          reference_id: payment.id,
-          reference_no: payment.id.toString(),
-          payment_mode,
-          payment_date: paymentTimestamp,
-          debit: 0,
-          credit: amount,
-          notes: directLedgerNotes,
-          fy: financialYear,
-          transaction_id: payment.id
-        }, tx);
+      // The ledger rows (one per bill for Bill Specific, one tagged 'payment'
+      // otherwise), by the same code the edit uses, so an edit and a create can
+      // never post a payment differently (C-01 / C-03).
+      await rebuildVendorPaymentLedger(tx, payment.id);
 
-        await balanceHandler.incrementBalanceInTransaction(
-          tx, 
-          vendorId, 
-          { total_paid: amount },
-          {
-            type: 'payment_create',
-            id: payment.id,
-            reference_no: `PAY-${payment.id}`,
-            notes: `Direct payment: ₹${amount}`
-          }
-        );
-      } else if (paymentType === 'MIXED') {
-        const mixedLedgerNotes = notes?.trim()
-          ? notes
-          : `Payment ₹${amount} (₹${totalAllocated} allocated, ₹${unallocatedAmount} advance)`;
-        
-        await ledgerService.createEntry({
-          vendor_id: vendorId,
-          transaction_date: paymentTimestamp,
-          transaction_type: 'PAYMENT',
-          reference_type: 'payment',
-          reference_id: payment.id,
-          reference_no: payment.id.toString(),
-          payment_mode,
-          payment_date: paymentTimestamp,
-          debit: 0,
-          credit: amount,
-          notes: mixedLedgerNotes,
-          fy: financialYear,
-          transaction_id: payment.id
-        }, tx);
-        
-        await balanceHandler.incrementBalanceInTransaction(
-          tx, 
-          vendorId, 
-          {
-            total_paid: amount,
-            total_allocated: totalAllocated
-          },
-          {
-            type: 'payment_create',
-            id: payment.id,
-            reference_no: `PAY-${payment.id}`,
-            notes: `Payment: ₹${amount} (allocated: ₹${totalAllocated}, advance: ₹${unallocatedAmount})`
-          }
-        );
-      } else {
-        // One after another (2026-10-03): each entry's stored running balance starts
-        // from the latest row, so entries written together all read the same one.
-        for (const u of statusUpdates) {
-            const ledgerNotes = notes?.trim() 
-              ? notes 
-              : `Payment ₹${u.allocation.allocated_amount} for bill INV-${u.purchase.invoice_no} via Payment #${payment.id}${u.status === 2 ? ' (Partial)' : ''}`;
-            
-            await ledgerService.createEntry({
-              vendor_id: vendorId,
-              transaction_date: paymentTimestamp,
-              transaction_type: 'PAYMENT',
-              reference_type: 'purchase',
-              reference_id: u.allocation.purchase_id,
-              reference_no: u.purchase.invoice_no.toString(),
-              payment_mode,
-              payment_status: u.status,
-              payment_date: paymentTimestamp,
-              debit: 0,
-              credit: u.allocation.allocated_amount,
-              notes: ledgerNotes,
-              fy: financialYear,
-              transaction_id: payment.id
-            }, tx);
+      await balanceHandler.incrementBalanceInTransaction(
+        tx,
+        vendorId,
+        paymentType === 'DIRECT' ? { total_paid: amount } : { total_paid: amount, total_allocated: totalAllocated },
+        {
+          type: 'payment_create',
+          id: payment.id,
+          reference_no: `PAY-${payment.id}`,
+          notes: paymentType === 'DIRECT'
+            ? `Direct payment: ₹${amount}`
+            : paymentType === 'MIXED'
+              ? `Payment: ₹${amount} (allocated: ₹${totalAllocated}, advance: ₹${unallocatedAmount})`
+              : `Payment: ₹${amount} (allocated: ₹${totalAllocated})`
         }
-        
-        await balanceHandler.incrementBalanceInTransaction(
-          tx, 
-          vendorId, 
-          {
-            total_paid: amount,
-            total_allocated: totalAllocated
-          },
-          {
-            type: 'payment_create',
-            id: payment.id,
-            reference_no: `PAY-${payment.id}`,
-            notes: `Payment: ₹${amount} (allocated: ₹${totalAllocated})`
-          }
-        );
-      }
+      );
 
       return {
         payment,

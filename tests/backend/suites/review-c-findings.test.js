@@ -50,7 +50,7 @@ const deepCopy = (x) => JSON.parse(JSON.stringify(x));
 
 // ===================================================================== findings (wrong today)
 
-test.failing('C-01 vendor Bill Specific payment over two bills: editing the amount (screen fixture 1300 -> 1200) must leave the ledger at 1200, not 1200 on every bill row', async () => {
+test('C-01 vendor Bill Specific payment over two bills: editing the amount (screen fixture 1300 -> 1200) must leave the ledger at 1200, not 1200 on every bill row', async () => {
   await seed();
   const id = (await send('vp-create-bill')).body.data.payment.id;
   const e = await send('vp-edit-changed', id);
@@ -83,7 +83,7 @@ for (const kind of ['sale', 'salex', 'purchase']) {
   });
 }
 
-test.failing('C-03 vendor: moving a Bill Specific payment to another bill (screen edit) must move its ledger row; deleting the old bill must not take the payment\'s row', async () => {
+test('C-03 vendor: moving a Bill Specific payment to another bill (screen edit) must move its ledger row; deleting the old bill must not take the payment\'s row', async () => {
   reset(); seedStock(); stats.failures = [];
   const k = K.purchase;
   const a = (await create(k, { items: [[3, 10, 100, 0]] })).id, b = (await create(k, { items: [[3, 10, 100, 0]] })).id;
@@ -97,7 +97,7 @@ test.failing('C-03 vendor: moving a Bill Specific payment to another bill (scree
   await done('C-03 vendor', ['A2']);
 });
 
-test.failing('C-03 customer twin: a payment made with a paid sale, moved to another sale on the payments screen, loses its ledger row when the first sale is deleted', async () => {
+test('C-03 customer twin: a payment made with a paid sale, moved to another sale on the payments screen, loses its ledger row when the first sale is deleted', async () => {
   reset(); seedStock(); stats.failures = [];
   const k = K.sale;
   const a = (await create(k, { items: [[3, 5, 100, 0]], status: 1, mode: 0 })).id; // 500, paid on the bill: PAYMENT_RECEIVED tagged with the SALE
@@ -111,7 +111,7 @@ test.failing('C-03 customer twin: a payment made with a paid sale, moved to anot
 });
 
 for (const side of ['customer', 'vendor']) {
-  test.failing(`C-04 ${side}: a payment-mode edit (cash -> bank, screen fixtures) must reach the ledger rows the ledger report and ledger screen show`, async () => {
+  test(`C-04 ${side}: a payment-mode edit (cash -> bank, screen fixtures) must reach the ledger rows the ledger report and ledger screen show`, async () => {
     await seed();
     const c = side === 'customer';
     // payment: bill specific (customer) / mixed (vendor: one row - C-01 aside), then the screen's edit with mode Bank
@@ -131,7 +131,7 @@ for (const side of ['customer', 'vendor']) {
   });
 }
 
-test.failing('C-05 notes: a payment edit must carry the payment\'s notes to its ledger row and must not overwrite a note typed on the ledger screen with system text', async () => {
+test('C-05 notes: a payment edit must carry the payment\'s notes to its ledger row and must not overwrite a note typed on the ledger screen with system text', async () => {
   await seed();
   const pid = (await send('cp-create-bill')).body.data.payment.id;
   const row = rowsOf('customer_ledger', 'PAYMENT_RECEIVED', pid)[0];
@@ -148,7 +148,7 @@ test.failing('C-05 notes: a payment edit must carry the payment\'s notes to its 
 });
 
 for (const side of ['customer', 'vendor']) {
-  test.failing(`C-06 ${side}: Auto Allocate float residue (screen fixture: 1.14e-13 on a fourth bill) must not leave a zero allocation on that bill`, async () => {
+  test(`C-06 ${side}: Auto Allocate float residue (screen fixture: 1.14e-13 on a fourth bill) must not leave a zero allocation on that bill`, async () => {
     await seed();
     const c = side === 'customer';
     const fx = FX(c ? 'cp-auto-paise' : 'vp-auto-paise');
@@ -165,7 +165,7 @@ for (const side of ['customer', 'vendor']) {
 }
 
 for (const side of ['customer', 'vendor']) {
-  test.failing(`C-07 ${side}: the edit form lets the party be changed (screen fixture); the PUT must not answer 200 and silently keep the old party`, async () => {
+  test(`C-07 ${side}: the edit form lets the party be changed (screen fixture); the PUT must not answer 200 and silently keep the old party`, async () => {
     await seed();
     const c = side === 'customer';
     const id = (await send(c ? 'cp-create-direct' : 'vp-create-direct')).body.data.payment.id;
@@ -179,7 +179,7 @@ for (const side of ['customer', 'vendor']) {
   });
 }
 
-test.failing('C-08 vendor refund create with a zero allocation to a completed return must be refused like the customer twin (today: 201, the return goes back to pending)', async () => {
+test('C-08 vendor refund create with a zero allocation to a completed return must be refused like the customer twin (today: 201, the return goes back to pending)', async () => {
   reset(); seedStock(); stats.failures = [];
   const k = K.purchase;
   const a = (await create(k, { items: [[3, 10, 100, 0]] })).id;
@@ -195,7 +195,7 @@ test.failing('C-08 vendor refund create with a zero allocation to a completed re
   await done('C-08', ['A2']);
 });
 
-test.failing('C-09 save unchanged must change nothing: a payment / refund with no notes comes back with notes "" -> null (both parties)', async () => {
+test('C-09 save unchanged must change nothing: a payment / refund with no notes comes back with notes "" -> null (both parties)', async () => {
   await seed();
   const changed = [];
   for (const [create_, table, one] of [['cp-create-direct', 'customer_payments', H.cpOne], ['vp-create-direct', 'vendor_payments', H.vpOne]]) {
@@ -210,7 +210,7 @@ test.failing('C-09 save unchanged must change nothing: a payment / refund with n
   await done('C-09', ['A2']);
 });
 
-test.failing('C-10 GET /api/customer-payments and /api/customer-refunds: the customer filter is computed and thrown away (no screen calls these lists)', async () => {
+test('C-10 GET /api/customer-payments and /api/customer-refunds: the customer filter is computed and thrown away (no screen calls these lists)', async () => {
   await seed();
   await send('cp-create-direct');
   const r = await call(H.cpCreate, 'GET', { customer: '1', page: '1', limit: '50' });
@@ -341,23 +341,53 @@ test('R-04 a refund edit cannot raise the old allocation of a legacy return-spec
 // assertion catches it). Suggested assertion in the report (G-01 .. G-04).
 const auditFails = async () => (await require('../support/flowlib.js').audit.run([], { quiet: true })).filter(r => r.failures.length && r.id !== 'A2');
 
-test.failing('G-01 A1-A14 should catch a Bill Specific vendor payment whose ledger row names a bill it no longer pays (C-03 before the bill is deleted)', async () => {
+// G-01 (fixed by A15). The edit no longer leaves the wrong state (C-03 fixed), so after the
+// real edit the audit is clean, and each wrong state the old code left is put back by hand:
+// a row naming the bill the payment no longer pays (C-03), the new total on every per-bill
+// row (C-01), a ₹0 row on a bill (C-06), a customer row still tagged with a bill that is not
+// the payment's own (C-03 customer).
+test('G-01 A1-A14 should catch a Bill Specific vendor payment whose ledger row names a bill it no longer pays (C-03 before the bill is deleted)', async () => {
   reset(); seedStock(); stats.failures = [];
   const k = K.purchase;
   const a = (await create(k, { items: [[3, 10, 100, 0]] })).id, b = (await create(k, { items: [[3, 10, 100, 0]] })).id;
   const { id } = await pay(k, 1000, [[k, a, 1000]], { mode: 1 });
   await call(H.vpOne, 'PUT', { id: String(id) }, { vendor_id: '1', notes: '', payment_amount: 1000, payment_mode: 1, payment_date: 1790965800, payment_type: 'BILL_SPECIFIC', allocations: [{ purchase_id: b, allocated_amount: 1000 }] });
-  expect((await auditFails()).length).toBeGreaterThan(0);
+  expect(await auditFails()).toEqual([]);
+  const row = rowsOf('vendor_ledger', 'PAYMENT', id)[0];
+  row.reference_id = a;                                                         // C-03: still names bill a
+  expect((await auditFails()).map(r => r.id)).toContain('A15');
+  row.reference_id = b;
+  expect(await auditFails()).toEqual([]);
 });
 
-test.failing('G-02 A1-A14 should catch a payment / refund whose ledger row carries another mode or date than the document (C-04)', async () => {
+test('G-01 A15 catches the other per-payment states A12 let through: new total on every bill row, a ₹0 row, a customer row tagged with a bill it does not belong to', async () => {
+  await seed();
+  const vid = (await send('vp-create-bill')).body.data.payment.id;            // P1 1000, P2 300
+  const cid = (await send('cp-create-bill')).body.data.payment.id;
+  expect(await auditFails()).toEqual([]);
+  const vrows = rowsOf('vendor_ledger', 'PAYMENT', vid);
+  const keep = vrows.map(r => r.credit);
+  vrows[0].credit = 1300; vrows[1].credit = 0;                                  // party total unchanged (A12 passes), rows wrong
+  expect((await auditFails()).map(r => r.id)).toEqual(['A15']);
+  vrows.forEach((r, i) => { r.credit = keep[i]; });
+  const q1 = store.vendor_payments.find(p => p.vendor_id === 2);                // Q1's own payment (600.10)
+  const q1row = rowsOf('vendor_ledger', 'PAYMENT', q1.id)[0];
+  store.vendor_ledger.push({ ...q1row, id: 99001, reference_id: bills.Q4, reference_no: 'x', credit: 0 }); // C-06: a ₹0 row on a bill it does not pay
+  expect((await auditFails()).map(r => r.id)).toEqual(['A15']);
+  store.vendor_ledger.pop();
+  const crow = rowsOf('customer_ledger', 'PAYMENT_RECEIVED', cid)[0];
+  Object.assign(crow, { reference_type: 'sale', reference_id: bills.S1 });       // two bills: not S1's own payment
+  expect((await auditFails()).map(r => r.id)).toEqual(['A15']);
+});
+
+test('G-02 A1-A14 should catch a payment / refund whose ledger row carries another mode or date than the document (C-04)', async () => {
   await seed();
   const id = (await send('cp-create-bill')).body.data.payment.id;
   store.customer_payments.find(x => x.id === id).payment_mode = 1; // the document says bank, its ledger row cash
   expect((await auditFails()).length).toBeGreaterThan(0);
 });
 
-test.failing('G-03 A1-A14 should catch total_allocated drifting from the payments\' allocations when the drift was logged (A14 only checks the log chain)', async () => {
+test('G-03 A1-A14 should catch total_allocated drifting from the payments\' allocations when the drift was logged (A14 only checks the log chain)', async () => {
   await seed();
   await send('cp-create-bill');
   const c = store.customer_details.find(x => x.id === 1);
@@ -366,7 +396,7 @@ test.failing('G-03 A1-A14 should catch total_allocated drifting from the payment
   expect((await auditFails()).length).toBeGreaterThan(0);
 });
 
-test.failing('G-04 A10 should check customer refund allocations like the other three: same customer, refund exists, return exists', async () => {
+test('G-04 A10 should check customer refund allocations like the other three: same customer, refund exists, return exists', async () => {
   await seed();
   const rid = (await send('cr-create')).body.data.refund.id;
   // a refund allocation on Asha's bill's return id that does not exist, and an orphan without its refund

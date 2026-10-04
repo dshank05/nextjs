@@ -68,7 +68,9 @@ export async function checkPaymentAllocations(
   for (const a of (raw as any[]) || []) {
     const value = Number(a?.allocated_amount);
     if (!Number.isFinite(value) || value < 0) throw new SaleError(400, 'Allocation amounts must be numbers', 'VALIDATION');
-    if (value === 0) continue;
+    // Below half a paisa is nothing (C-06): Auto Allocate's float residue
+    // (1.1e-13) was stored as a ₹0 allocation - and a ₹0 vendor ledger row.
+    if (r2(value) === 0) continue;
     let kind: BillKind;
     let id: number;
     if (party === 'vendor') {

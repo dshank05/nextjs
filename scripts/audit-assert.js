@@ -2,7 +2,8 @@
  * Reconciliation assertions (Phase 4; A7-A11 added 2026-10-03 for the
  * customer side, sale payments, returns, payments / refunds, dead stock and
  * the party masters; A12-A14 the same day: documents to ledger, ledger to
- * documents, balance logs).
+ * documents, balance logs; A15-A16 on 2026-10-04: each payment / refund to its
+ * own ledger rows, the allocation counters to the allocations).
  *
  * Run after EVERY step. These are the definition of "the step was clean".
  * Read-only: this script never writes.
@@ -454,13 +455,17 @@ async function A10() {
       if (r.kind === 'BILL_SPECIFIC' && !near(al, amt)) failures.push(`${s.label} ${r.id}: bill specific but ₹${money(al)} of ₹${money(amt)} allocated`);
       if (r.kind === 'DIRECT' && al > TOL) failures.push(`${s.label} ${r.id}: on account but ₹${money(al)} allocated`);
       if (r.kind === 'MIXED' && al <= TOL) failures.push(`${s.label} ${r.id}: mixed but nothing allocated`);
+      if (r.kind === 'RETURN_SPECIFIC' && al <= TOL) failures.push(`${s.label} ${r.id}: return specific but nothing allocated`);
     }
   }
   const cross = [
     [`SELECT a.id, p.customer_id AS owner, b.select_customer AS other FROM customer_payment_allocations a JOIN customer_payments p ON p.id = a.payment_id JOIN invoice b ON b.id = a.invoice_id WHERE a.invoice_id IS NOT NULL AND b.select_customer <> p.customer_id`, 'customer payment allocation (sale)'],
     [`SELECT a.id, p.customer_id AS owner, b.select_customer AS other FROM customer_payment_allocations a JOIN customer_payments p ON p.id = a.payment_id JOIN invoicex b ON b.id = a.invoicex_id WHERE a.invoicex_id IS NOT NULL AND b.select_customer <> p.customer_id`, 'customer payment allocation (Invoice C)'],
     [`SELECT a.id, p.vendor_id AS owner, b.vendor_id AS other FROM payment_allocations a JOIN vendor_payments p ON p.id = a.payment_id JOIN purchase b ON b.id = a.purchase_id WHERE b.vendor_id <> p.vendor_id`, 'vendor payment allocation'],
-    [`SELECT a.id, p.vendor_id AS owner, r.vendor_id AS other FROM refund_allocations a JOIN vendor_refunds p ON p.id = a.refund_id JOIN purchase_returns r ON r.id = a.return_id WHERE r.vendor_id <> p.vendor_id`, 'vendor refund allocation']
+    [`SELECT a.id, p.vendor_id AS owner, r.vendor_id AS other FROM refund_allocations a JOIN vendor_refunds p ON p.id = a.refund_id JOIN purchase_returns r ON r.id = a.return_id WHERE r.vendor_id <> p.vendor_id`, 'vendor refund allocation'],
+    // G-04 (2026-10-04): customer refund allocations, like the other three.
+    [`SELECT a.id, f.customer_id AS owner, b.select_customer AS other FROM customer_refund_allocations a JOIN customer_refunds f ON f.id = a.refund_id JOIN sale_returns r ON r.id = a.sale_return_id JOIN invoice b ON b.id = r.invoice_id WHERE a.sale_return_id IS NOT NULL AND b.select_customer <> f.customer_id`, 'customer refund allocation (sale return)'],
+    [`SELECT a.id, f.customer_id AS owner, b.select_customer AS other FROM customer_refund_allocations a JOIN customer_refunds f ON f.id = a.refund_id JOIN salex_returns r ON r.id = a.salex_return_id JOIN invoicex b ON b.id = r.invoicex_id WHERE a.salex_return_id IS NOT NULL AND b.select_customer <> f.customer_id`, 'customer refund allocation (Invoice C return)']
   ];
   for (const [sql, label] of cross) {
     for (const r of await q(sql)) failures.push(`${label} ${r.id}: party ${r.owner} but the bill / return belongs to ${r.other}`);
@@ -469,7 +474,12 @@ async function A10() {
     [`SELECT a.id FROM customer_payment_allocations a WHERE NOT EXISTS (SELECT 1 FROM customer_payments p WHERE p.id = a.payment_id)`, 'customer payment allocation without its payment'],
     [`SELECT a.id FROM customer_payment_allocations a WHERE a.invoice_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM invoice b WHERE b.id = a.invoice_id)`, 'customer payment allocation to a missing sale'],
     [`SELECT a.id FROM customer_payment_allocations a WHERE a.invoicex_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM invoicex b WHERE b.id = a.invoicex_id)`, 'customer payment allocation to a missing Invoice C bill'],
-    [`SELECT a.id FROM payment_allocations a WHERE NOT EXISTS (SELECT 1 FROM vendor_payments p WHERE p.id = a.payment_id)`, 'vendor payment allocation without its payment']
+    [`SELECT a.id FROM payment_allocations a WHERE NOT EXISTS (SELECT 1 FROM vendor_payments p WHERE p.id = a.payment_id)`, 'vendor payment allocation without its payment'],
+    [`SELECT a.id FROM customer_refund_allocations a WHERE NOT EXISTS (SELECT 1 FROM customer_refunds f WHERE f.id = a.refund_id)`, 'customer refund allocation without its refund'],
+    [`SELECT a.id FROM customer_refund_allocations a WHERE a.sale_return_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM sale_returns r WHERE r.id = a.sale_return_id)`, 'customer refund allocation to a missing sale return'],
+    [`SELECT a.id FROM customer_refund_allocations a WHERE a.salex_return_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM salex_returns r WHERE r.id = a.salex_return_id)`, 'customer refund allocation to a missing Invoice C return'],
+    [`SELECT a.id FROM refund_allocations a WHERE NOT EXISTS (SELECT 1 FROM vendor_refunds f WHERE f.id = a.refund_id)`, 'vendor refund allocation without its refund'],
+    [`SELECT a.id FROM refund_allocations a WHERE NOT EXISTS (SELECT 1 FROM purchase_returns r WHERE r.id = a.return_id)`, 'vendor refund allocation to a missing return']
   ];
   for (const [sql, label] of orphans) for (const r of await q(sql)) failures.push(`${label}: ${r.id}`);
 
@@ -778,8 +788,155 @@ async function A14() {
   report('A14', 'balance logs: each row adds up, the rows chain, the last equals the party\'s figure', failures, checked);
 }
 
+/* ------------------------------------------------------------------ A15 */
+/**
+ * Each payment and refund -> its own ledger rows (2026-10-04, review C G-01 /
+ * G-02). A12 sums per party, so a payment posted 2x while another posted 0, a
+ * row left naming a bill the payment no longer pays (deleting that bill then
+ * takes the row), or a row of 0 passed. Per the per-party conventions:
+ *  - vendor payment: BILL_SPECIFIC -> one PAYMENT row per allocated bill, tagged
+ *    with the bill, for that bill's share; MIXED / DIRECT -> one PAYMENT row
+ *    tagged 'payment' for the whole amount;
+ *  - customer payment: one PAYMENT_RECEIVED row for the whole amount; tagged
+ *    with a bill only while it is that bill's own payment (BILL_SPECIFIC, that
+ *    one bill) - the bill's delete removes it;
+ *  - vendor refund: REFUND_RECEIVED rows netting to the refund, one per
+ *    (legacy) return allocation for its share;
+ *  - customer refund: one REFUND_PAID row tagged 'refund' for the amount;
+ * and every one of these rows carries the document's date and mode.
+ */
+async function A15() {
+  const q = (sql) => prisma.$queryRawUnsafe(sql);
+  const failures = [];
+  let checked = 0;
+  const group = (rows, key) => { const m = new Map(); for (const r of rows) { const k = num(r[key]); if (!m.has(k)) m.set(k, []); m.get(k).push(r); } return m; };
+  const sameMode = (doc, row) => doc === null || doc === undefined || (row !== null && row !== undefined && num(doc) === num(row));
+  const dateMode = (label, doc, rows, dateCol, modeCol) => {
+    for (const l of rows) {
+      if (num(l.transaction_date) !== num(doc[dateCol])) failures.push(`${label}: ledger row ${l.id} dated ${num(l.transaction_date)}, the document ${num(doc[dateCol])}`);
+      if (!sameMode(doc[modeCol], l.payment_mode)) failures.push(`${label}: ledger row ${l.id} mode ${l.payment_mode}, the document ${doc[modeCol]}`);
+    }
+  };
+
+  // Vendor payments
+  {
+    const pays = await q(`SELECT id, payment_amount, payment_type, payment_date, payment_mode FROM vendor_payments`);
+    const allocs = group(await q(`SELECT payment_id, purchase_id, allocated_amount FROM payment_allocations`), 'payment_id');
+    const rows = group(await q(`SELECT id, transaction_id, reference_type, reference_id, credit, debit, transaction_date, payment_mode FROM vendor_ledger WHERE transaction_type = 'PAYMENT'`), 'transaction_id');
+    for (const p of pays) {
+      checked++;
+      const label = `vendor payment ${p.id} (${p.payment_type})`;
+      const mine = rows.get(num(p.id)) || [];
+      const al = (allocs.get(num(p.id)) || []).filter(a => num(a.allocated_amount) > PAISA);
+      dateMode(label, p, mine, 'payment_date', 'payment_mode');
+      if (p.payment_type === 'BILL_SPECIFIC') {
+        for (const a of al) {
+          const r = mine.filter(l => l.reference_type === 'purchase' && num(l.reference_id) === num(a.purchase_id));
+          if (r.length !== 1) failures.push(`${label}: ${r.length} ledger rows for purchase ${a.purchase_id} (expected 1)`);
+          else if (!near(num(r[0].credit) - num(r[0].debit), a.allocated_amount)) failures.push(`${label}: purchase ${a.purchase_id} has ₹${money(a.allocated_amount)} but its ledger row credits ₹${money(num(r[0].credit) - num(r[0].debit))}`);
+        }
+        for (const l of mine) {
+          if (!(l.reference_type === 'purchase' && al.some(a => num(a.purchase_id) === num(l.reference_id)))) failures.push(`${label}: ledger row ${l.id} names ${l.reference_type} ${l.reference_id}, which the payment does not pay`);
+        }
+      } else {
+        if (mine.length !== 1 || mine[0].reference_type !== 'payment') failures.push(`${label}: ${mine.length} ledger rows (${mine.map(l => `${l.reference_type} ${l.reference_id}`).join(', ')}); expected one tagged 'payment'`);
+        else if (!near(num(mine[0].credit) - num(mine[0].debit), p.payment_amount)) failures.push(`${label}: ₹${money(p.payment_amount)} but its ledger row credits ₹${money(num(mine[0].credit) - num(mine[0].debit))}`);
+      }
+    }
+  }
+
+  // Customer payments
+  {
+    const pays = await q(`SELECT id, payment_amount, payment_type, payment_date, payment_mode FROM customer_payments`);
+    const allocs = group(await q(`SELECT payment_id, invoice_id, invoicex_id, allocated_amount FROM customer_payment_allocations`), 'payment_id');
+    const rows = group(await q(`SELECT id, transaction_id, reference_type, reference_id, credit, debit, transaction_date, payment_mode FROM customer_ledger WHERE transaction_type = 'PAYMENT_RECEIVED'`), 'transaction_id');
+    for (const p of pays) {
+      checked++;
+      const label = `customer payment ${p.id} (${p.payment_type})`;
+      const mine = rows.get(num(p.id)) || [];
+      dateMode(label, p, mine, 'payment_date', 'payment_mode');
+      if (mine.length !== 1) { failures.push(`${label}: ${mine.length} PAYMENT_RECEIVED rows (expected 1)`); continue; }
+      const l = mine[0];
+      if (!near(num(l.credit) - num(l.debit), p.payment_amount)) failures.push(`${label}: ₹${money(p.payment_amount)} but its ledger row credits ₹${money(num(l.credit) - num(l.debit))}`);
+      if (l.reference_type === 'sale' || l.reference_type === 'salex') {
+        const al = (allocs.get(num(p.id)) || []).filter(a => num(a.allocated_amount) > PAISA);
+        const col = l.reference_type === 'sale' ? 'invoice_id' : 'invoicex_id';
+        if (!(p.payment_type === 'BILL_SPECIFIC' && al.length === 1 && num(al[0][col]) === num(l.reference_id))) {
+          failures.push(`${label}: its ledger row ${l.id} is tagged ${l.reference_type} ${l.reference_id}, but the payment is not that bill's own payment - deleting the bill would take the row`);
+        }
+      } else if (l.reference_type !== 'payment') failures.push(`${label}: ledger row ${l.id} tagged "${l.reference_type}"`);
+    }
+  }
+
+  // Vendor refunds
+  {
+    const refs = await q(`SELECT id, refund_amount, refund_date, refund_mode FROM vendor_refunds`);
+    const allocs = group(await q(`SELECT refund_id, return_id, allocated_amount FROM refund_allocations`), 'refund_id');
+    const rows = group(await q(`SELECT id, transaction_id, reference_type, reference_id, credit, debit, transaction_date, payment_mode FROM vendor_ledger WHERE transaction_type = 'REFUND_RECEIVED'`), 'transaction_id');
+    for (const f of refs) {
+      checked++;
+      const label = `vendor refund ${f.id}`;
+      const mine = rows.get(num(f.id)) || [];
+      dateMode(label, f, mine, 'refund_date', 'refund_mode');
+      const net = mine.reduce((s, l) => s + num(l.debit) - num(l.credit), 0);
+      if (!near(net, f.refund_amount)) failures.push(`${label}: ₹${money(f.refund_amount)} but its ledger rows net ₹${money(net)}`);
+      for (const a of (allocs.get(num(f.id)) || []).filter(a => num(a.allocated_amount) > PAISA)) {
+        const r = mine.filter(l => l.reference_type === 'purchase_return' && num(l.reference_id) === num(a.return_id));
+        if (r.length !== 1 || !near(num(r[0].debit) - num(r[0].credit), a.allocated_amount)) failures.push(`${label}: return ${a.return_id} has ₹${money(a.allocated_amount)} but ${r.length} ledger row(s) for it`);
+      }
+    }
+  }
+
+  // Customer refunds
+  {
+    const refs = await q(`SELECT id, refund_amount, refund_date, refund_mode FROM customer_refunds`);
+    const rows = group(await q(`SELECT id, transaction_id, credit, debit, transaction_date, payment_mode FROM customer_ledger WHERE reference_type = 'refund' AND transaction_type IN ('REFUND_PAID', 'REFUND')`), 'transaction_id');
+    for (const f of refs) {
+      checked++;
+      const label = `customer refund ${f.id}`;
+      const mine = rows.get(num(f.id)) || [];
+      dateMode(label, f, mine, 'refund_date', 'refund_mode');
+      if (mine.length !== 1) failures.push(`${label}: ${mine.length} REFUND_PAID rows (expected 1)`);
+      else if (!near(num(mine[0].debit) - num(mine[0].credit), f.refund_amount)) failures.push(`${label}: ₹${money(f.refund_amount)} but its ledger row debits ₹${money(num(mine[0].debit) - num(mine[0].credit))}`);
+    }
+  }
+  report('A15', 'each payment and refund posts its own rows: shape, amount, date and mode as the document', failures, checked);
+}
+
+/* ------------------------------------------------------------------ A16 */
+/**
+ * The allocation counters against the allocations (2026-10-04, review C G-03).
+ * A14 checks only that each change was logged and the log chains, so a wrong
+ * increment that was logged passed. total_allocated is the money in the party's
+ * payment allocations; total_refund_allocated is at least what its refunds have
+ * allocated (a return marked refunded later may also count an on-account
+ * refund against it - owner: direct adjustment - with no allocation row).
+ */
+async function A16() {
+  const q = (sql) => prisma.$queryRawUnsafe(sql);
+  const failures = [];
+  let checked = 0;
+  for (const [side, master, payAlloc, refAlloc] of [
+    ['vendor', 'vendor_details',
+      `SELECT p.vendor_id AS party, SUM(a.allocated_amount) AS amount FROM payment_allocations a JOIN vendor_payments p ON p.id = a.payment_id GROUP BY p.vendor_id`,
+      `SELECT f.vendor_id AS party, SUM(a.allocated_amount) AS amount FROM refund_allocations a JOIN vendor_refunds f ON f.id = a.refund_id GROUP BY f.vendor_id`],
+    ['customer', 'customer_details',
+      `SELECT p.customer_id AS party, SUM(a.allocated_amount) AS amount FROM customer_payment_allocations a JOIN customer_payments p ON p.id = a.payment_id GROUP BY p.customer_id`,
+      `SELECT f.customer_id AS party, SUM(a.allocated_amount) AS amount FROM customer_refund_allocations a JOIN customer_refunds f ON f.id = a.refund_id GROUP BY f.customer_id`]]) {
+    const pay = new Map((await q(payAlloc)).map(r => [num(r.party), num(r.amount)]));
+    const ref = new Map((await q(refAlloc)).map(r => [num(r.party), num(r.amount)]));
+    for (const c of await q(`SELECT id, total_allocated, total_refund_allocated FROM ${master}`)) {
+      checked++;
+      const id = num(c.id), a = pay.get(id) || 0, r = ref.get(id) || 0;
+      if (!near(c.total_allocated, a)) failures.push(`${side} ${id}: total_allocated ₹${money(c.total_allocated)} but its payments' allocations hold ₹${money(a)}`);
+      if (num(c.total_refund_allocated) < r - TOL) failures.push(`${side} ${id}: total_refund_allocated ₹${money(c.total_refund_allocated)} but its refunds' allocations hold ₹${money(r)}`);
+    }
+  }
+  report('A16', 'allocation counters: total_allocated is what the payments allocate; total_refund_allocated covers the refunds\' allocations', failures, checked);
+}
+
 /* ------------------------------------------------------------------ run */
-const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14 };
+const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16 };
 
 /**
  * Run the chosen assertions (all when none is named) and return the results.

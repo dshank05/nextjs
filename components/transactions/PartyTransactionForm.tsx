@@ -148,11 +148,14 @@ export function PartyTransactionForm({ party }: { party: Party }) {
   const itemsWord = isPayment ? (party === 'customer' ? 'invoices' : 'bills') : 'returns'
 
   const autoAllocate = () => {
-    let left = amountNum
+    // In paise (C-06): plain float subtraction left a residue (1.1e-13) that
+    // went to one more bill as an allocation of nothing.
+    const paise = (n: number) => Math.round(n * 100)
+    let left = paise(amountNum)
     const next: Record<string, number> = {}
     for (const r of rows) {
-      const take = left > 0 ? Math.min(left, r.outstanding) : 0
-      next[r.key] = take
+      const take = left > 0 ? Math.min(left, paise(r.outstanding)) : 0
+      next[r.key] = take / 100
       left -= take
     }
     setAlloc(next)
@@ -284,6 +287,7 @@ export function PartyTransactionForm({ party }: { party: Party }) {
                   onSelectionChange={v => changeParty(v || '')}
                   placeholder={`Select ${party}...`}
                   className="w-full"
+                  disabled={isEdit}
                 />
               </div>
 

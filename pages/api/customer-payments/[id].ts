@@ -6,6 +6,8 @@ import { getCurrentFinancialYear } from '../../../lib/financial-year'
 import { checkPaymentAllocations, allocationRow } from '../../../lib/payment-allocations'
 import { recalculateSaleStatus } from '../../../lib/payment-allocation-service'
 import { answerError } from '../../../lib/api/sale-routes'
+import { SaleError } from '../../../lib/sale'
+import { rebuildCustomerPaymentLedger } from '../../../lib/payment-ledger'
 
 async function handler(
   req: NextApiRequest,
@@ -134,6 +136,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse, paymentId: s
 async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: string) {
   try {
     const {
+      customer_id,
       payment_date,
       payment_amount,
       payment_mode,
@@ -158,6 +161,12 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
 
     if (!existingPayment) {
       return res.status(404).json({ message: 'Customer payment not found' })
+    }
+
+    // A payment stays with its customer (C-07): the PUT ignored customer_id and
+    // answered 200, so a customer changed on the form was silently dropped.
+    if (customer_id !== undefined && customer_id !== null && customer_id !== '' && parseInt(customer_id) !== existingPayment.customer_id) {
+      throw new SaleError(400, 'A payment cannot be moved to another customer. Delete it and record it for the right customer.', 'PARTY_CHANGED')
     }
 
     // F-01: financial year comes from Settings, never from the calendar.
@@ -217,9 +226,6 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
         metadata: handlerResult.metadata
       })
       
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-      }
-
       // 2. Update payment record
       const updatedPayment = await tx.customer_payments.update({
         where: { id: parseInt(paymentId) },
@@ -228,23 +234,9 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
           payment_date: paymentDateTimestamp,
           payment_mode: parseInt(payment_mode),
           payment_type: checked.paymentType,
-          notes: notes || null
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null
         }
       })
-
-      // 3. If payment_date changed, sync all related ledger entries
-      if (existingPayment.payment_date !== paymentDateTimestamp) {
-        await tx.customer_ledger.updateMany({
-          where: {
-            transaction_id: parseInt(paymentId),
-            transaction_type: 'PAYMENT_RECEIVED'
-          },
-          data: {
-            transaction_date: paymentDateTimestamp,
-            payment_date: paymentDateTimestamp
-          }
-        })
-      }
 
       // 4. ⚡ OPTIMIZATION: Sequential allocation updates (delete then create)
       // Delete old allocations first
@@ -270,49 +262,13 @@ async function handlePut(req: NextApiRequest, res: NextApiResponse, paymentId: s
       for (const a of checked.allocations) touched.set(`${a.kind}-${a.id}`, { kind: a.kind as 'sale' | 'salex', id: a.id })
       for (const t of Array.from(touched.values())) await recalculateSaleStatus(t.kind, t.id, tx)
 
-      // 6. ✅ Execute ledger operations (UPDATE existing or CREATE new)
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        for (const update of handlerResult.ledgerUpdates) {
-          console.log(`[LEDGER UPDATE] ${update.description}`, update.where)
-          
-          // Get entries before update for balance recalculation
-          const entries = await tx.customer_ledger.findMany({
-            where: update.where,
-            select: { id: true, customer_id: true }
-          })
-          
-          if (entries.length === 0) {
-            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where)
-            continue
-          }
-          
-          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`)
-          
-          // Execute UPDATE
-          await tx.customer_ledger.updateMany({
-            where: update.where,
-            data: update.data
-          })
-          
-          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`)
-          
-          // Recalculate balances after update
-          const firstEntry = entries[0]
-          await require('../../../lib/customer-ledger-service').customerLedgerService.recalculateBalancesAfter(
-            firstEntry.customer_id,
-            firstEntry.id,
-            tx
-          )
-          
-          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`)
-        }
-      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
-        // Fallback: CREATE new entries (shouldn't happen for payment edits, but kept for safety)
-        for (const ledgerOp of handlerResult.ledgerOps) {
-          await require('../../../lib/customer-ledger-service').customerLedgerService.createEntry(ledgerOp.entry, tx)
-        }
-      } else {
-      }
+      // 6. Its PAYMENT_RECEIVED row, rebuilt from the payment as it now stands
+      // (C-03 / C-04 / C-05): amount, date, mode and notes follow the payment,
+      // and a row still tagged with a bill the payment no longer is the own
+      // payment of is re-tagged to the payment - a later delete of that bill
+      // took the row with it. The handler's update only moved the amount and
+      // wrote "Payment #N updated to ..." over the row's note.
+      await rebuildCustomerPaymentLedger(tx, existingPayment.id, { oldNotes: existingPayment.notes })
 
       // 7. Update customer balance
       const amountDiff = handlerResult.metadata?.amountDiff || 0

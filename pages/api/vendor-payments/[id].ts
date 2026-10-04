@@ -2,10 +2,10 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
-import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
 import { convertDateToTimestamp } from '../../../lib/date-utils';
 import { checkPaymentAllocations } from '../../../lib/payment-allocations';
+import { rebuildVendorPaymentLedger } from '../../../lib/payment-ledger';
 import { answerError } from '../../../lib/api/sale-routes';
 import { SaleError } from '../../../lib/sale';
 
@@ -157,6 +157,7 @@ async function handleUpdatePayment(
   try {
     const { id } = req.query;
     const {
+      vendor_id,
       payment_amount,
       payment_date,
       payment_mode,
@@ -189,6 +190,12 @@ async function handleUpdatePayment(
 
     if (!existingPayment) {
       return res.status(404).json({ error: 'Payment not found' });
+    }
+
+    // A payment stays with its vendor (C-07): the PUT ignored vendor_id and
+    // answered 200, so a vendor changed on the form was silently dropped.
+    if (vendor_id !== undefined && vendor_id !== null && vendor_id !== '' && parseInt(vendor_id) !== existingPayment.vendor_id) {
+      throw new SaleError(400, 'A payment cannot be moved to another vendor. Delete it and record it for the right vendor.', 'PARTY_CHANGED');
     }
 
     // Checked against what is left on each purchase apart from this payment.
@@ -240,10 +247,6 @@ async function handleUpdatePayment(
         metadata: handlerResult.metadata
       });
       
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[PAYMENT EDIT] Ledger updates to execute:', JSON.stringify(handlerResult.ledgerUpdates, null, 2));
-      }
-
       // 2. Update payment record
       console.log('[PAYMENT EDIT] Updating payment record...');
       const updatedPayment = await tx.vendor_payments.update({
@@ -257,20 +260,6 @@ async function handleUpdatePayment(
         }
       });
       console.log('[PAYMENT EDIT] Payment record updated');
-
-      // 3. If payment_date changed, sync all related ledger entries
-      if (existingPayment.payment_date !== paymentTs) {
-        await tx.vendor_ledger.updateMany({
-          where: {
-            transaction_id: paymentId,
-            transaction_type: 'PAYMENT'
-          },
-          data: {
-            transaction_date: paymentTs,
-            payment_date: paymentTs
-          }
-        });
-      }
 
       // 4. Replace the allocations: delete first, then create (in order -
       // issuing both at once left the order to the driver), as the customer side does.
@@ -298,59 +287,12 @@ async function handleUpdatePayment(
         console.log('[PAYMENT EDIT] Purchase statuses recalculated');
       }
 
-      // 6. ✅ Execute ledger operations (UPDATE existing or CREATE new)
-      // For payment edits: Only UPDATES (modify existing PAYMENT ledger entry)
-      // For other operations: May have CREATES (new ledger entries)
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[PAYMENT EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length);
-        for (const update of handlerResult.ledgerUpdates) {
-          console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
-          
-          // Get entries before update for balance recalculation
-          const entries = await tx.vendor_ledger.findMany({
-            where: update.where,
-            select: { id: true, vendor_id: true }
-          });
-          
-          if (entries.length === 0) {
-            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
-            continue;
-          }
-          
-          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`);
-          
-          // Execute UPDATE
-          await tx.vendor_ledger.updateMany({
-            where: update.where,
-            data: update.data
-          });
-          
-          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`);
-          
-          // Recalculate balances after update
-          const firstEntry = entries[0];
-          // From the start (L-36): recalculateBalancesAfter seeds its running total
-          // from the stored balance of the row it is given, and this update has just
-          // changed that row's amount without touching its balance - so every row from
-          // here on stayed off by the change, and the next entry built on it.
-          await ledgerService.recalculateBalancesAfter(
-            firstEntry.vendor_id,
-            0,
-            tx
-          );
-          
-          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`);
-        }
-      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
-        // Fallback: CREATE new entries (shouldn't happen for payment edits, but kept for safety)
-        console.log('[PAYMENT EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length);
-        for (const ledgerOp of handlerResult.ledgerOps) {
-          await ledgerService.createEntry(ledgerOp.entry, tx);
-        }
-        console.log('[PAYMENT EDIT] Ledger entries created');
-      } else {
-        console.log('[PAYMENT EDIT] No ledger operations to execute');
-      }
+      // 6. The payment's ledger rows, rebuilt from the payment as it now stands
+      // (C-01 / C-03 / C-04 / C-05): per bill with each bill's share for Bill
+      // Specific, one row tagged 'payment' otherwise; date, mode and notes
+      // follow the payment. The handler's single update wrote the NEW TOTAL on
+      // every per-bill row and never moved a row off a bill it stopped paying.
+      await rebuildVendorPaymentLedger(tx, paymentId, { oldNotes: existingPayment.notes });
 
       // 7. Update vendor balance
       console.log('[PAYMENT EDIT] Updating vendor balance...');

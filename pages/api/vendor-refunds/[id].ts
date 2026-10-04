@@ -3,8 +3,8 @@ import { prisma } from '../../../lib/db';
 import { convertDateToTimestamp } from '../../../lib/date-utils';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]';
-import { ledgerService } from '../../../lib/ledger-service';
 import { balanceHandler } from '../../../lib/balance-handler';
+import { rebuildVendorRefundLedger } from '../../../lib/payment-ledger';
 
 
 export default async function handler(
@@ -241,23 +241,9 @@ async function handleUpdateRefund(
           refund_date,
           refund_mode,
           refund_type,
-          notes: notes || null
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null
         }
       });
-
-      // 3. If refund_date changed, sync all related ledger entries
-      if (existingRefund.refund_date !== refund_date) {
-        await tx.vendor_ledger.updateMany({
-          where: {
-            transaction_id: refundId,
-            transaction_type: 'REFUND_RECEIVED'
-          },
-          data: {
-            transaction_date: refund_date,
-            payment_date: refund_date
-          }
-        });
-      }
 
       // 4. Replace the allocations, in order (delete, then create).
       await tx.refund_allocations.deleteMany({ where: { refund_id: refundId } });
@@ -283,53 +269,11 @@ async function handleUpdateRefund(
         );
       }
 
-      // 6. Execute ledger operations (UPDATE existing or CREATE new)
-      if (handlerResult.ledgerUpdates && handlerResult.ledgerUpdates.length > 0) {
-        console.log('[REFUND EDIT] Executing ledger UPDATES:', handlerResult.ledgerUpdates.length);
-        for (const update of handlerResult.ledgerUpdates) {
-          console.log(`[LEDGER UPDATE] ${update.description}`, update.where);
-          
-          const entries = await tx.vendor_ledger.findMany({
-            where: update.where,
-            select: { id: true, vendor_id: true }
-          });
-          
-          if (entries.length === 0) {
-            console.warn(`[LEDGER UPDATE] No entries found for update:`, update.where);
-            continue;
-          }
-          
-          console.log(`[LEDGER UPDATE] Found ${entries.length} entries to update`);
-          
-          await tx.vendor_ledger.updateMany({
-            where: update.where,
-            data: update.data
-          });
-          
-          console.log(`[LEDGER UPDATE] Updated entries, now recalculating balances...`);
-          
-          const firstEntry = entries[0];
-          // From the start (L-36): recalculateBalancesAfter seeds its running total
-          // from the stored balance of the row it is given, and this update has just
-          // changed that row's amount without touching its balance - so every row from
-          // here on stayed off by the change, and the next entry built on it.
-          await ledgerService.recalculateBalancesAfter(
-            firstEntry.vendor_id,
-            0,
-            tx
-          );
-          
-          console.log(`[LEDGER UPDATE] ✅ Successfully updated ${entries.length} entries and recalculated balances`);
-        }
-      } else if (handlerResult.ledgerOps && handlerResult.ledgerOps.length > 0) {
-        console.log('[REFUND EDIT] Creating NEW ledger entries:', handlerResult.ledgerOps.length);
-        for (const ledgerOp of handlerResult.ledgerOps) {
-          await ledgerService.createEntry(ledgerOp.entry, tx);
-        }
-        console.log('[REFUND EDIT] Ledger entries created');
-      } else {
-        console.log('[REFUND EDIT] No ledger operations to execute');
-      }
+      // 6. Its ledger row(s), rebuilt from the refund as it now stands (C-04 /
+      // C-05): amount, date, mode and notes follow the refund; the handler's
+      // update moved only the amount and wrote "Refund #N updated to ..." over
+      // the note.
+      await rebuildVendorRefundLedger(tx, refundId, { oldNotes: existingRefund.notes });
 
       // 7. Update vendor balance
       const amountDiff = handlerResult.metadata?.amountDiff || 0;

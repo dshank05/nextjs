@@ -73,6 +73,29 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       }
     }
 
+    // Customer filter (C-10): by id, or by a part of the name. It was applied
+    // after the page was read and its result thrown away, so every customer's
+    // rows came back. In the query now, so the page and the total follow it.
+    if (customer && customer !== '') {
+      const customerStr = (Array.isArray(customer) ? customer[0] : customer) as string
+      const customerNum = parseInt(customerStr)
+      if (!isNaN(customerNum)) {
+        where.customer_id = customerNum
+      } else {
+        const matches = await prisma.customer_details.findMany({
+          where: { billing_name: { contains: customerStr } },
+          select: { id: true }
+        })
+        where.customer_id = { in: matches.map(c => c.id) }
+      }
+    }
+
+    // Status filter (C-10): it was read and ignored. It names the refund's
+    // type (DIRECT / MIXED / RETURN_SPECIFIC), as the transactions list does.
+    if (status && status !== '' && status !== 'all') {
+      where.refund_type = (Array.isArray(status) ? status[0] : status) as string
+    }
+
     // Validate and set sort parameters
     const validSortFields = ['id', 'refund_date', 'refund_amount', 'refund_mode', 'fy']
     const sortField = validSortFields.includes(sortBy as string) ? sortBy as string : 'refund_date'
@@ -181,22 +204,6 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         created_at: refund.created_at
       }
     })
-
-    // Apply customer filter (after data enhancement)
-    if (customer && customer !== '') {
-      const customerStr = Array.isArray(customer) ? customer[0] : customer;
-      const customerNum = parseInt(customerStr);
-
-      if (!isNaN(customerNum)) {
-        // Filter by customer ID
-        enhancedRefunds.filter(r => r.customer_id === customerNum);
-      } else {
-        // Filter by customer name
-        enhancedRefunds.filter(r =>
-          r.customer_name.toLowerCase().includes(customerStr.toLowerCase())
-        );
-      }
-    }
 
     const totalPages = Math.ceil(total / limitNum)
 
@@ -410,7 +417,8 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           refund_amount: parseFloat(refund_amount),
           refund_mode: (Number.isInteger(parseInt(refund_mode)) ? parseInt(refund_mode) : 1),
           refund_type: validatedAllocations.length ? refund_type : 'DIRECT',
-          notes: notes || '',
+          // Blank is stored as null, as the edit stores it (C-09).
+          notes: typeof notes === 'string' && notes.trim() !== '' ? notes : null,
           fy: financialYear
         }
       })

@@ -220,6 +220,12 @@ export class TransactionHandler {
   }
   
   /**
+   * NOTE (2026-10-04, C-01 / C-03 / C-04 / C-05): the edit route no longer runs
+   * this result's ledgerUpdates - it rebuilds the document's ledger rows with
+   * lib/payment-ledger.ts (one update by transaction_id wrote the new total on
+   * every per-bill row and never moved a row, its mode or its notes). The route
+   * still uses metadata (amountDiff, allocDiff, the bills / returns to recalculate).
+   *
    * Handle vendor payment edit transaction
    * ✅ REFACTORED: Returns UPDATE operations instead of PAYMENT_ADJUSTMENT
    */
@@ -290,6 +296,12 @@ export class TransactionHandler {
   }
   
   /**
+   * NOTE (2026-10-04, C-01 / C-03 / C-04 / C-05): the edit route no longer runs
+   * this result's ledgerUpdates - it rebuilds the document's ledger rows with
+   * lib/payment-ledger.ts (one update by transaction_id wrote the new total on
+   * every per-bill row and never moved a row, its mode or its notes). The route
+   * still uses metadata (amountDiff, allocDiff, the bills / returns to recalculate).
+   *
    * Handle vendor refund edit transaction
    * ✅ REFACTORED: Returns UPDATE operations instead of REFUND_ADJUSTMENT
    */
