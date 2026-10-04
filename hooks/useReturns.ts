@@ -175,7 +175,7 @@ export function normalizeBill(party: ReturnParty, b: any): ReturnBill {
         taxRate: n(i.tax_rate),
         stock: i.current_stock === undefined ? null : n(i.current_stock),
         returnQty: n(i.return_qty),
-        reasonId: n(i.return_reason_id) || 1,
+        reasonId: n(i.return_reason_id),   // 0: none chosen (see reasonFor)
         reason: i.return_reason || '',
         notes: i.notes || '',
         taxAmount: n(i.tax_amount),
@@ -205,7 +205,7 @@ export function useReturnBills(party: ReturnParty, partyId: string, q: BillQuery
     queryFn: async ({ signal }) => {
       const p = new URLSearchParams({ [R.billsPartyParam]: partyId, page: String(q.page), limit: '50' });
       if (q.search) p.set('search', q.search);
-      if (q.itemSearch && party === 'vendor') p.set('item_search', q.itemSearch);
+      if (q.itemSearch) p.set('item_search', q.itemSearch);
       if (q.from && q.to) { p.set('from_date', q.from); p.set('to_date', q.to); }
       const data = await readJson(await fetch(`${R.billsApi}?${p}`, { signal }), 'Failed to load bills');
       const d = data.data || {};
@@ -297,6 +297,15 @@ export function useReturnDetail(party: ReturnParty, id: string | undefined, type
 }
 
 // ---------------------------------------------------------------- reasons, parties
+
+/**
+ * The reason a line shows and is saved with: its own when it is one of the
+ * form's reasons, else the first of them (D-04: a sale line used to show the
+ * placeholder and be saved with id 1, a purchase reason). 0 while the list loads:
+ * nothing is sent and the server takes the same first reason.
+ */
+export const reasonFor = (reasons: { id: number }[], id?: number | null) =>
+  id && reasons.some(r => r.id === id) ? id : (reasons[0]?.id ?? 0);
 
 export function useReturnReasons(party: ReturnParty) {
   const type = RET[party].reasonType;

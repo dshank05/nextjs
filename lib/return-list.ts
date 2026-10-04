@@ -20,7 +20,8 @@ export interface ReturnListQuery {
   page: number;
   limit: number;
   search: string;
-  party: string;          // id, or part of a name
+  party: string;          // part of a name
+  partyId: number | null; // the party's id
   status: number | null;  // payment_status: 0 pending refund, 1 refunded
   dateFrom: string;
   dateTo: string;
@@ -51,11 +52,25 @@ function parseStatus(v: unknown): number | null {
 export function parseReturnListQuery(party: ReturnParty, q: Record<string, unknown>): ReturnListQuery {
   const page = Math.max(1, intOrNull(q.page) ?? 1);
   const limit = Math.min(1000, Math.max(1, intOrNull(q.limit) ?? 50));
+  // Customer: `customer` is the name typed in the box, `customer_id` the id (the
+  // Pending-returns hint) - a number typed as a name was taken as an id (D-18).
+  // Vendor: the box is a dropdown of ids (`vendor`), so digits there are an id.
+  let partyText: string;
+  let partyId: number | null;
+  if (party === 'customer') {
+    partyText = one(q.customer);
+    partyId = intOrNull(q.customer_id);
+  } else {
+    const v = one(q.vendor ?? q.vendor_id);
+    partyId = /^\d+$/.test(v) ? parseInt(v, 10) : null;
+    partyText = partyId === null ? v : '';
+  }
   return {
     page,
     limit,
     search: one(q.search),
-    party: one(party === 'customer' ? (q.customer ?? q.customer_id) : (q.vendor ?? q.vendor_id)),
+    party: partyText,
+    partyId,
     status: parseStatus(q.status),
     dateFrom: one(q.dateFrom),
     dateTo: one(q.dateTo),
@@ -262,17 +277,14 @@ export async function listReturns(party: ReturnParty, q: ReturnListQuery) {
     if (q.dateTo) where.return_date.lte = endTimestamp;
   }
   if (q.packingTotal !== null) where.packing_forwarding_amount = q.packingTotal;
-  const partyId = /^\d+$/.test(q.party) ? parseInt(q.party, 10) : null;
+  const partyId = q.partyId;
   if (party === 'vendor' && partyId !== null) where.vendor_id = partyId;
 
   let rows: any[] = party === 'customer' ? await customerRows(where) : await vendorRows(where);
 
   // Filters on joined fields.
-  if (q.party) {
-    rows = partyId !== null
-      ? rows.filter(r => r.party_id === partyId)
-      : rows.filter(r => r.party_name.toLowerCase().includes(q.party.toLowerCase()));
-  }
+  if (partyId !== null) rows = rows.filter(r => r.party_id === partyId);
+  if (q.party) rows = rows.filter(r => r.party_name.toLowerCase().includes(q.party.toLowerCase()));
   if (q.search) {
     const hit = searchedId(q.search);
     const text = q.search.toLowerCase();

@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, FileText } from 'lucide-react'
 import { SearchableSelect } from '../common/SearchableSelect'
+import { reasonFor } from '../../hooks/useReturns'
 import type { ReturnParty, ReturnBill, ReturnLine } from '../../hooks/useReturns'
 
 /** A line chosen for return, with what the form has set on it. */
@@ -38,7 +39,7 @@ export function BillPicker({ party, bills, picked, onPick, expanded, onToggle, r
     const qty = Math.max(0, Math.min(parseInt(raw) || 0, line.available))
     const next = { ...picked }
     if (qty === 0) delete next[line.key]
-    else next[line.key] = { line, bill, qty, price: picked[line.key]?.price ?? line.unitPrice, reasonId: picked[line.key]?.reasonId ?? line.reasonId ?? 1, notes: picked[line.key]?.notes ?? line.notes }
+    else next[line.key] = { line, bill, qty, price: picked[line.key]?.price ?? line.unitPrice, reasonId: picked[line.key]?.reasonId ?? reasonFor(reasons, line.reasonId), notes: picked[line.key]?.notes ?? line.notes }
     onPick(next)
   }
   const setPrice = (line: ReturnLine, raw: string) => {
@@ -145,8 +146,8 @@ export function BillPicker({ party, bills, picked, onPick, expanded, onToggle, r
                             <td className="px-4 py-3 text-center">
                               <SearchableSelect
                                 options={reasons.map(r => ({ id: String(r.id), name: r.reason_name }))}
-                                selectedValue={String(p?.reasonId ?? line.reasonId ?? 1)}
-                                onSelectionChange={v => setReason(line, parseInt(v || '1'))}
+                                selectedValue={String(reasonFor(reasons, p?.reasonId ?? line.reasonId) || '')}
+                                onSelectionChange={v => setReason(line, parseInt(v || '0') || reasonFor(reasons))}
                                 placeholder="Select reason..."
                                 className="w-full"
                               />

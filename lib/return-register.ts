@@ -82,7 +82,8 @@ export async function returnRegister(Q: ReturnRegisterQuery) {
       charges: r2(n(r.charges)),
       refund: r2(n(r.refund)),
       status: n(r.status),
-      status_text: n(r.status) === 1 ? 'Complete' : n(r.status) === 2 ? 'Partial' : 'Pending',
+      // The return screens' words (owner decision 4, D-17).
+      status_text: n(r.status) === 1 ? 'Refunded' : n(r.status) === 2 ? 'Partly refunded' : 'Pending refund',
       url: kind === 'purchase' ? `/entry/purchasereturn-vendor/${id}` : `/entry/salereturn/${id}?type=${kind === 'sale' ? 'invoice' : 'invoicex'}`
     };
   });

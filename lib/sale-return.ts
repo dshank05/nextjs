@@ -6,6 +6,8 @@ import { customerBalanceHandler } from './customer-balance-handler';
 import { customerTransactionHandler } from './customer-transaction-handler';
 import { round2, roundRupee } from './line-math';
 import { SaleKind, SaleError, saleTables, intOrNull } from './sale';
+import { assertStockCovers } from './purchase-delete';
+import { resolveReturnReasons } from './return-reasons';
 
 /**
  * Sale and Invoice C returns: pricing, validation, create, edit, delete.
@@ -105,7 +107,7 @@ export async function priceReturnLines(
   const wanted = items.map((i: any) => ({
     id: intOrNull(i.invoice_item_id ?? i.sale_item_id ?? i.id),
     qty: Math.round(Number(i.return_qty)),
-    reason: intOrNull(i.return_reason_id) ?? 1,
+    reason: intOrNull(i.return_reason_id) || null,
     price: i.unit_price,
     notes: i.notes || i.return_notes || ''
   }));
@@ -132,6 +134,7 @@ export async function priceReturnLines(
   }
 
   const groups = new Map<number, PricedLine[]>();
+  const inOrder: PricedLine[] = [];
   for (const w of wanted) {
     const line = byId.get(w.id as number);
     if (!line) throw new SaleError(400, `A return line does not belong to any ${t.label} bill`, 'UNKNOWN_LINE');
@@ -162,7 +165,7 @@ export async function priceReturnLines(
       invoice_item_id: line.id,
       product_id: line.product_id,
       return_qty: w.qty,
-      return_reason_id: w.reason,
+      return_reason_id: w.reason ?? 0,
       unit_price: unit,
       subtotal,
       tax_amount: tax,
@@ -173,7 +176,11 @@ export async function priceReturnLines(
     };
     if (!groups.has(line.invoice_no)) groups.set(line.invoice_no, []);
     groups.get(line.invoice_no)!.push(priced);
+    inOrder.push(priced);
   }
+  // A sale reason (Invoice C uses the sale reasons too); none sent = the form's first (D-04).
+  const reasons = await resolveReturnReasons(tx, kind === 'sale' ? ['sale'] : ['sale', 'salex'], inOrder.map(l => l.return_reason_id || null), 'sale');
+  inOrder.forEach((l, i) => { l.return_reason_id = reasons[i]; });
 
   return Array.from(groups.entries()).map(([docId, ls]) => {
     const sum = (f: keyof PricedLine) => ls.reduce((s, l) => s + (l[f] as number), 0);
@@ -196,6 +203,23 @@ export async function recalcReturnStatus(tx: any, kind: SaleKind, docId: number)
   const any = rows.length > 0;
   const full = lines.length > 0 && lines.every((l: any) => (back.get(l.id) || 0) >= (Number(l.qty) || 0));
   await tx[t.header].update({ where: { id: docId }, data: { return_status: !any ? 0 : full ? 2 : 1 } });
+}
+
+const perProduct = (lines: { product_id: number; qty: number }[]) => {
+  const per = new Map<number, number>();
+  lines.forEach(l => { if (l.product_id) per.set(l.product_id, (per.get(l.product_id) || 0) + (Number(l.qty) || 0)); });
+  return per;
+};
+
+/**
+ * Units a return brought back that go out of stock again (the return lowered or
+ * deleted) must still be there: refused like a sale or a purchase delete
+ * (D-07). Read inside the transaction that then moves the stock.
+ */
+async function assertReturnStockCovers(tx: any, out: Map<number, number>, action: 'lower' | 'delete') {
+  await assertStockCovers(tx, out, (name, have, need) => action === 'delete'
+    ? `Cannot delete this return: only ${have} of "${name}" is in stock and the return brought back ${need}. Some of it has been sold.`
+    : `Cannot lower this return: only ${have} of "${name}" is in stock and ${need} would go back out. Some of it has been sold.`);
 }
 
 async function moveStock(tx: any, lines: { product_id: number; qty: number }[], sign: 1 | -1) {
@@ -253,6 +277,7 @@ export async function createCustomerReturns(body: any) {
         if (!bill || (bill.select_customer ?? 0) !== customerId) {
           throw new SaleError(400, 'A returned bill does not belong to this customer', 'FOREIGN_BILL');
         }
+        const paidOn = status === 1 ? (paymentDateTs(body.payment_date) ?? returnDate) : null;
         const header: any = {
           [t.returnHeaderFk]: r.docId,
           return_date: returnDate,
@@ -260,7 +285,7 @@ export async function createCustomerReturns(body: any) {
           refund_amount: r.refundAmount,
           payment_status: status,
           payment_mode: mode,
-          payment_date: status === 1 ? (paymentDateTs(body.payment_date) ?? returnDate) : null,
+          payment_date: paidOn,
           notes: body.return_notes || '',
           fy
         };
@@ -289,10 +314,11 @@ export async function createCustomerReturns(body: any) {
             debit: 0, credit: r.refundAmount, payment_mode: null, payment_status: 1, payment_date: null,
             notes: body.return_notes || `${t.label} return ${no}`, fy, transaction_id: null
           } as any, tx);
+          // The money goes out on the payment date, as the cash book has it (D-08); the note stays on the return date.
           await customerLedgerService.createEntry({
-            customer_id: customerId, transaction_date: returnDate, transaction_type: 'REFUND',
+            customer_id: customerId, transaction_date: paidOn, transaction_type: 'REFUND',
             reference_type: kind === 'sale' ? 'sale_return' : 'salex_return', reference_id: ret.id, reference_no: `REF-${no}`,
-            debit: r.refundAmount, credit: 0, payment_mode: mode, payment_status: 1, payment_date: returnDate,
+            debit: r.refundAmount, credit: 0, payment_mode: mode, payment_status: 1, payment_date: paidOn,
             notes: `Refund for ${t.label} return ${no}`, fy, transaction_id: ret.id
           } as any, tx);
           // Logged under the return's note number, so deleting it can reverse exactly this.
@@ -335,7 +361,13 @@ export async function updateSaleReturn(kind: SaleKind, returnId: number, body: a
       ? await tx[t.items].findMany({ where: { id: { in: old.map((o: any) => o[t.returnItemFk]) } }, select: { id: true, product_id: true } })
       : [];
     const productOf = new Map<number, number>(oldLines.map((l: any) => [l.id, l.product_id]));
-    await moveStock(tx, old.map((o: any) => ({ product_id: productOf.get(o[t.returnItemFk]) as number, qty: o.return_qty })), -1);
+    const oldOut = old.map((o: any) => ({ product_id: productOf.get(o[t.returnItemFk]) as number, qty: o.return_qty }));
+    const before = perProduct(oldOut);
+    const after = perProduct(priced.lines.map(l => ({ product_id: l.product_id, qty: l.return_qty })));
+    const goingOut = new Map<number, number>();
+    before.forEach((q, pid) => { const d = q - (after.get(pid) || 0); if (d > 0) goingOut.set(pid, d); });
+    await assertReturnStockCovers(tx, goingOut, 'lower');
+    await moveStock(tx, oldOut, -1);
     await tx[t.returnItems].deleteMany({ where: { [t.returnFk]: returnId } });
     for (const l of priced.lines) {
       const row: any = {
@@ -354,7 +386,8 @@ export async function updateSaleReturn(kind: SaleKind, returnId: number, body: a
       notes: body.notes ?? body.return_notes ?? existing.notes ?? '',
       payment_status: newStatus,
       payment_mode: mode,
-      payment_date: newStatus === 1 ? (paymentDateTs(body.payment_date) ?? oldPaymentDate ?? finalDate) : oldPaymentDate
+      // Pending: not refunded, so no payment date (D-12, as purchase returns).
+      payment_date: newStatus === 1 ? (paymentDateTs(body.payment_date) ?? oldPaymentDate ?? finalDate) : null
     };
     if (kind === 'sale') data.total_tax = priced.totalTax;
     const updated = await tx[t.returns].update({ where: { id: returnId }, data });
@@ -414,6 +447,13 @@ export async function deleteSaleReturn(kind: SaleKind, returnId: number) {
   const customerId = bill?.select_customer ?? 0;
 
   await prisma.$transaction(async (tx: any) => {
+    const rows = await tx[t.returnItems].findMany({ where: { [t.returnFk]: returnId }, select: { [t.returnItemFk]: true, return_qty: true } });
+    const lines = rows.length
+      ? await tx[t.items].findMany({ where: { id: { in: rows.map((r: any) => r[t.returnItemFk]) } }, select: { id: true, product_id: true } })
+      : [];
+    const productOf = new Map<number, number>(lines.map((l: any) => [l.id, l.product_id]));
+    const out = rows.map((r: any) => ({ product_id: productOf.get(r[t.returnItemFk]) as number, qty: r.return_qty }));
+    await assertReturnStockCovers(tx, perProduct(out), 'delete');
     if (customerId) {
       const ops = await customerTransactionHandler.handleReturnDelete({
         type: kind, returnId, customerId, paymentStatus: ret.payment_status ?? 0, fy: ret.fy,
@@ -422,12 +462,7 @@ export async function deleteSaleReturn(kind: SaleKind, returnId: number) {
       });
       await customerTransactionHandler.executeDeleteInTransaction(tx, ops);
     } else {
-      const rows = await tx[t.returnItems].findMany({ where: { [t.returnFk]: returnId }, select: { [t.returnItemFk]: true, return_qty: true } });
-      const lines = rows.length
-        ? await tx[t.items].findMany({ where: { id: { in: rows.map((r: any) => r[t.returnItemFk]) } }, select: { id: true, product_id: true } })
-        : [];
-      const productOf = new Map<number, number>(lines.map((l: any) => [l.id, l.product_id]));
-      await moveStock(tx, rows.map((r: any) => ({ product_id: productOf.get(r[t.returnItemFk]) as number, qty: r.return_qty })), -1);
+      await moveStock(tx, out, -1);
       await tx[t.returnItems].deleteMany({ where: { [t.returnFk]: returnId } });
       await tx[t.returns].delete({ where: { id: returnId } });
     }
@@ -456,7 +491,7 @@ export async function loadSaleReturnDetail(id: number, kindHint: SaleKind | null
   const type = kind === 'sale' ? 'invoice' : 'invoicex';
   const docId: number = record[t.returnHeaderFk];
   const invoice = docId
-    ? await db[t.header].findUnique({ where: { id: docId }, select: { id: true, invoice_no: true, select_customer: true, invoice_date: true } })
+    ? await db[t.header].findUnique({ where: { id: docId }, select: { id: true, invoice_no: true, select_customer: true, invoice_date: true, total: true, bill_reference: true } })
     : null;
   if (!invoice) throw new SaleError(404, 'Associated invoice not found', 'NOT_FOUND');
 
@@ -494,7 +529,9 @@ export async function loadSaleReturnDetail(id: number, kindHint: SaleKind | null
     ? await db.product.findMany({ where: { id: { in: productIds } }, select: { id: true, display_name: true } })
     : [];
   const nameOf = new Map<number, string>(products.map((p: any) => [p.id, p.display_name]));
-  const billRef = invoice.invoice_no?.toString() || 'N/A';
+  const billNo = invoice.invoice_no?.toString() || 'N/A';
+  // The bill's own reference (D-09: this repeated the bill number).
+  const billRef = invoice.bill_reference || '';
   const invoiceDate = ymd(invoice.invoice_date);
 
   const items = lines.map((line: any) => {
@@ -557,12 +594,13 @@ export async function loadSaleReturnDetail(id: number, kindHint: SaleKind | null
     bills: [{
       id: `${type}-${invoice.id}`,
       invoice_id: invoice.id,
-      invoice_no: billRef,
+      invoice_no: billNo,
       bill_reference: billRef,
       invoice_date: invoiceDate,
-      total_amount: record.total_amount,
+      // The bill's total, as the create screen shows it (D-09: this was the return's).
+      total_amount: Number(invoice.total) || 0,
       has_tax: totalTax > 0,
-      available_items: items.length,
+      available_items: items.filter((i: any) => i.available_qty > 0).length,
       total_items: items.length,
       items,
       invoice_type: type

@@ -350,15 +350,16 @@ async function refundedFlow({ stopBeforeDelete = false } = {}) {
 
   r = await send(stepOf(fx, 'delete-refunded'));
   ok('delete: counters back to 0 / 0', r.status === 200 && canon(counters('vendor_details')) === canon([0, 0, 0, 0]), counters('vendor_details'));
-  const left = diff(S0, snap()).filter(x => x !== '+vendor_balance_logs' && x !== 'vendor_ledger.balance');
-  ok('delete: everything rolled back', left.length === 0, left);
+  // The debit note number stays used (as for the pending return); the balance-log rows stay and net to 0.
+  const left = diff(S0, snap()).filter(x => x !== '+vendor_balance_logs' && x !== 'vendor_ledger.balance' && x !== 'note_counters.last_number');
+  ok('delete: everything rolled back (the debit note number stays used)', left.length === 0, left);
   await after('purchase delete refunded');
 }
 test('purchase return CRUD (refunded): create, read as the form, unchanged, qty, pending, refunded again - note and counters follow', async () => {
   await refundedFlow({ stopBeforeDelete: true });
   expectClean();
 });
-(process.env.REVIEW_D_SHOW ? test : test.failing)('D-01/D-02 purchase return CRUD (refunded): ...then delete - counters back to 0 (today -1000: the edits were logged without the note number, so the delete reverses 1600)', async () => {
+test('D-01/D-02 purchase return CRUD (refunded): ...then delete - counters back to 0 (today -1000: the edits were logged without the note number, so the delete reverses 1600)', async () => {
   await refundedFlow();
   expectClean();
 });

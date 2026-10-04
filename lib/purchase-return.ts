@@ -7,6 +7,8 @@ import { generateNoteNumber } from './note-counter';
 import { ledgerService } from './ledger-service';
 import { balanceHandler } from './balance-handler';
 import { transactionHandler } from './transaction-handler';
+import { returnCounterAmounts } from './advance-allocation';
+import { resolveReturnReasons } from './return-reasons';
 
 /**
  * Purchase (vendor) return pricing and validation, the twin of
@@ -47,7 +49,7 @@ export async function pricePurchaseReturnLines(
   const wanted = items.map((i: any) => ({
     id: intOrNull(i.purchase_item_id ?? i.id),
     qty: Math.round(Number(i.return_qty)),
-    reason: intOrNull(i.return_reason_id) ?? 1,
+    reason: intOrNull(i.return_reason_id) || null,
     price: i.unit_price,
     notes: i.notes || ''
   }));
@@ -101,7 +103,7 @@ export async function pricePurchaseReturnLines(
       product_id: line.product_id ?? null,
       purchase_id: line.purchase_id,
       return_qty: w.qty,
-      return_reason_id: w.reason,
+      return_reason_id: w.reason ?? 0,
       unit_price: unit,
       tax_amount: tax,
       cgst: inter ? 0 : round2(tax / 2),
@@ -110,6 +112,10 @@ export async function pricePurchaseReturnLines(
       notes: w.notes
     };
   });
+
+  // A purchase reason; none sent = the form's first (D-04, as the sale twin).
+  const reasons = await resolveReturnReasons(tx, ['purchase'], priced.map(l => l.return_reason_id || null), 'purchase');
+  priced.forEach((l, i) => { l.return_reason_id = reasons[i]; });
 
   const sum = (f: keyof PricedPurchaseLine) => priced.reduce((s, l) => s + (l[f] as number), 0);
   const totalAmount = round2(priced.reduce((s, l) => s + round2(l.return_qty * l.unit_price), 0));
@@ -192,6 +198,43 @@ async function checkStock(tx: any, lines: PricedPurchaseLine[], givenBack: Map<n
         'INSUFFICIENT_STOCK', { product_name: p.product_name, requested_qty: want, current_stock: p.stock });
     }
   }
+}
+
+/**
+ * How a return edit moves the vendor's refund counters, from what the return
+ * itself put on them (`before`: the balance-log rows under its debit note
+ * number, the same figures a delete takes back).
+ *
+ * A refunded return holds its refund (less any old refund allocations to it)
+ * on total_refund_allocated. Of that, the part not drawn from an on-account
+ * vendor refund is also on total_refunded. Pending: nothing on either.
+ *  - raised (or marked refunded): the extra draws first on the vendor's free
+ *    on-account refund, as marking refunded always has (owner); the rest is
+ *    new refund money;
+ *  - lowered: the drawn part is given back to on account first; the return's
+ *    own refund money comes off only below that;
+ *  - marked pending: both come off, exactly what the return added.
+ */
+export function returnCounterChange(p: {
+  before: { refunded: number; allocated: number };
+  newStatus: number;
+  newTotal: number;
+  totalAllocated: number;
+  freeRefund: number;
+}): { total_refunded?: number; total_refund_allocated?: number } | null {
+  const { before } = p;
+  const allocated = p.newStatus === 1 ? Math.max(0, round2(p.newTotal - p.totalAllocated)) : 0;
+  let refunded: number;
+  if (allocated <= before.allocated) {
+    refunded = Math.min(before.refunded, allocated);
+  } else {
+    const extra = round2(allocated - before.allocated);
+    refunded = round2(before.refunded + extra - Math.min(Math.max(0, round2(p.freeRefund)), extra));
+  }
+  const dR = round2(refunded - before.refunded);
+  const dA = round2(allocated - before.allocated);
+  if (!dR && !dA) return null;
+  return { ...(dR ? { total_refunded: dR } : {}), ...(dA ? { total_refund_allocated: dA } : {}) };
 }
 
 /** POST /api/purchase-returns/vendor-return */
@@ -330,7 +373,8 @@ export async function updatePurchaseReturn(returnId: number, body: any) {
         notes: body.return_notes ?? body.notes ?? existing.notes ?? '',
         payment_status: newStatus,
         payment_mode: mode ?? undefined,
-        payment_date: newStatus === 1 ? (sentPaymentDate ?? existing.payment_date ?? finalDate) : existing.payment_date,
+        // A return marked pending has not been refunded: it carries no payment date (D-12).
+        payment_date: newStatus === 1 ? (sentPaymentDate ?? existing.payment_date ?? finalDate) : newStatus === 0 ? null : existing.payment_date,
         updated_at: new Date()
       }
     });
@@ -368,7 +412,25 @@ export async function updatePurchaseReturn(returnId: number, body: any) {
         total_refunded: Number(vendor.total_refunded), total_refund_allocated: Number(vendor.total_refund_allocated)
       } : undefined
     } as any);
+    // The refund counters are moved here, not by the handler's status cases
+    // (D-01..D-03): those were logged without the debit note number, so a later
+    // delete reversed the wrong amount, and 1->0 / 1->1 assumed the return had
+    // raised total_refunded by its whole refund even when it drew on an
+    // on-account vendor refund.
+    ops.balanceOp = null;
     await transactionHandler.executeInTransaction(tx, ops);
+    const counters = returnCounterChange({
+      before: await returnCounterAmounts(tx, 'vendor', vendorId, [existing.debit_note_no || ''],
+        oldStatus === 1 ? Math.max(0, round2(oldTotal - totalAllocated)) : 0),
+      newStatus, newTotal, totalAllocated,
+      freeRefund: vendor ? Number(vendor.total_refunded) - Number(vendor.total_refund_allocated) : 0
+    });
+    if (counters) {
+      await balanceHandler.incrementBalanceInTransaction(tx, vendorId, counters, {
+        type: 'return_edit', id: returnId, reference_no: existing.debit_note_no || '',
+        notes: newStatus === 1 ? `Return edited: refund ₹${newTotal}` : 'Return marked pending: refund counters reversed'
+      });
+    }
     return updated;
   }, { timeout: 45000 });
 }
@@ -467,7 +529,8 @@ export async function loadPurchaseReturnDetail(returnId: number) {
       invoice_no: p?.invoice_no?.toString() || '',
       bill_reference: p?.bill_reference || '',
       invoice_date: ymd(p?.invoice_date),
-      total_amount: 0,
+      // The bill's total, as the create screen shows it (D-09: this was the return's portion).
+      total_amount: Number(p?.total) || 0,
       has_tax: (record.total_tax || 0) > 0,
       available_items: 0,
       total_items: 0,
@@ -515,7 +578,6 @@ export async function loadPurchaseReturnDetail(returnId: number) {
     bill.items.push(item);
     bill.total_items++;
     if (available > 0) bill.available_items++;
-    bill.total_amount += returnQty * unitPrice + taxAmount;
   }
   const bills = Array.from(billsMap.values());
 

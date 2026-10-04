@@ -75,7 +75,7 @@ export default function ReturnRegisterPage() {
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Status</label>
             <SearchableSelect
-              options={[{ id: '', name: 'Any' }, { id: '0', name: 'Pending' }, { id: '1', name: 'Complete' }, { id: '2', name: 'Partial' }]}
+              options={[{ id: '', name: 'Any' }, { id: '0', name: 'Pending refund' }, { id: '1', name: 'Refunded' }, { id: '2', name: 'Partly refunded' }]}
               selectedValue={status} onSelectionChange={v => setStatus(v || '')} placeholder="Any" />
           </div>
           <div>

@@ -18,6 +18,7 @@ async function handler(
       page = '1',
       limit = '50',
       search = '',
+      item_search = '',
       from_date = '',
       to_date = ''
     } = req.query
@@ -38,10 +39,12 @@ async function handler(
       // return_status: { not: 2 } // Exclude fully returned sales
     }
 
-    // Add search filter - handle integer vs string fields properly
-    if (search) {
-      const searchStr = Array.isArray(search) ? search[0] : search;
-      const searchNum = parseInt(searchStr);
+    // Bill search: a number (exact), or a bill reference (contains). The picker
+    // shows an Invoice C bill as "C-<n>" (D-10): that names Invoice C bill n only.
+    const searchStr = String((Array.isArray(search) ? search[0] : search) || '').trim().replace(/^#\s*/, '')
+    const invoiceCNo = searchStr.match(/^C-?\s*(\d+)$/i)
+    if (searchStr) {
+      const searchNum = invoiceCNo ? NaN : parseInt(searchStr);
       invoiceWhere.OR = [
         !isNaN(searchNum) ? { invoice_no: searchNum } : undefined, // Exact match for invoice numbers
         { bill_reference: { contains: searchStr } } // Contains for bill references
@@ -86,9 +89,8 @@ async function handler(
     }
 
     // Add search filter for invoicex
-    if (search) {
-      const searchStr = Array.isArray(search) ? search[0] : search;
-      const searchNum = parseInt(searchStr);
+    if (searchStr) {
+      const searchNum = invoiceCNo ? parseInt(invoiceCNo[1], 10) : parseInt(searchStr);
       invoicexWhere.OR = [
         !isNaN(searchNum) ? { invoice_no: searchNum } : undefined,
         { bill_reference: { contains: searchStr } }
@@ -290,8 +292,14 @@ async function handler(
       }
     }).filter(bill => bill.available_items > 0)
 
+    // Item search: only the bills with a line whose name or part matches, over
+    // every bill and not just the page loaded (as the vendor picker, D-13).
+    const itemText = String((Array.isArray(item_search) ? item_search[0] : item_search) || '').trim().toLowerCase()
+    const hasItem = (bill: { items: { product_name: string; part_number: string }[] }) =>
+      !itemText || bill.items.some(i => i.product_name.toLowerCase().includes(itemText) || i.part_number.toLowerCase().includes(itemText))
+
     // Combine and sort by date
-    const allBills = [...invoiceBills, ...invoicexBills].sort((a, b) => {
+    const allBills = [...invoiceBills, ...invoicexBills].filter(hasItem).sort((a, b) => {
       return new Date(b.invoice_date).getTime() - new Date(a.invoice_date).getTime()
     })
 
@@ -315,6 +323,7 @@ async function handler(
         filters: {
           applied: {
             search: search || '',
+            item_search: itemText,
             from_date: from_date || '',
             to_date: to_date || ''
           }

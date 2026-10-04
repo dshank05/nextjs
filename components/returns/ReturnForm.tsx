@@ -11,7 +11,7 @@ import { getLocalDateString } from '../../lib/date-utils'
 import { useDebounce } from '../../hooks/useDebounce'
 import { BillPicker, type Picked } from './BillPicker'
 import {
-  RET, REFUND_STATUS, cachedReturn, useReturnDetail, useReturnBills, useReturnReasons, useReturnParties, useSaveReturn,
+  RET, REFUND_STATUS, reasonFor, cachedReturn, useReturnDetail, useReturnBills, useReturnReasons, useReturnParties, useSaveReturn,
   readJson, type ReturnParty, type ReturnBill
 } from '../../hooks/useReturns'
 
@@ -209,7 +209,7 @@ export function ReturnForm({ party }: { party: ReturnParty }) {
           ...(isEdit ? { invoice_type: detail?.type } : { customer_id: partyId, return_type: 'custom' }),
           items: chosen.map(p => ({
             invoice_item_id: p.line.lineId, invoice_type: p.line.type, return_qty: p.qty,
-            return_reason_id: p.reasonId, unit_price: p.price, notes: p.notes
+            return_reason_id: reasonFor(reasons, p.reasonId) || undefined, unit_price: p.price, notes: p.notes
           }))
         }
       : {
@@ -217,7 +217,7 @@ export function ReturnForm({ party }: { party: ReturnParty }) {
           ...(isEdit ? {} : { vendor_id: partyId }),
           packing_forwarding_amount: Number(pf) || 0,
           items: chosen.map(p => ({
-            purchase_item_id: p.line.lineId, return_qty: p.qty, return_reason_id: p.reasonId,
+            purchase_item_id: p.line.lineId, return_qty: p.qty, return_reason_id: reasonFor(reasons, p.reasonId) || undefined,
             unit_price: p.price, tax_rate: p.line.taxRate, notes: p.notes
           }))
         }
@@ -354,7 +354,7 @@ export function ReturnForm({ party }: { party: ReturnParty }) {
               )}
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-2">Search Items</label>
-                <ClearableInput value={itemSearch} onChange={e => setItemSearch(e.target.value)} placeholder="Search products, part numbers..." className="w-full" />
+                <ClearableInput value={itemSearch} onChange={e => { setItemSearch(e.target.value); setPage(1) }} placeholder="Search products, part numbers..." className="w-full" />
               </div>
               {!isEdit && (
                 <div>

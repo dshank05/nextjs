@@ -43,7 +43,7 @@ const prPut = (id, items, extra = {}) => call(H.prOne, 'PUT', { id: String(id) }
 const sIt = (l, q, type = 'invoice') => ({ invoice_item_id: l.id, invoice_type: type, return_qty: q, return_reason_id: 5 });
 
 // ---------------------------------------------------------------- D-01..D-03: refunded purchase return edits and the vendor's refund counters
-failing('D-01 a refunded purchase return edited 5 -> 3 and then deleted leaves the refund counters at 0 (today -2000 / -2000: the edit is logged without the note number)', async () => {
+test('D-01 a refunded purchase return edited 5 -> 3 and then deleted leaves the refund counters at 0 (today -2000 / -2000: the edit is logged without the note number)', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.purchase, id)[0];
@@ -56,7 +56,7 @@ failing('D-01 a refunded purchase return edited 5 -> 3 and then deleted leaves t
   await clean('D-01');
 });
 
-failing('D-02 a refunded purchase return marked pending, refunded again and deleted leaves the counters at 0 (today -5000: the delete reverses the completion twice)', async () => {
+test('D-02 a refunded purchase return marked pending, refunded again and deleted leaves the counters at 0 (today -5000: the delete reverses the completion twice)', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.purchase, id)[0];
@@ -69,7 +69,7 @@ failing('D-02 a refunded purchase return marked pending, refunded again and dele
   await clean('D-02');
 });
 
-failing('D-03 a purchase return refunded from an on-account vendor refund, then marked pending (or lowered), gives back only the allocation (today total_refunded drops below the refund on record, A12)', async () => {
+test('D-03 a purchase return refunded from an on-account vendor refund, then marked pending (or lowered), gives back only the allocation (today total_refunded drops below the refund on record, A12)', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.purchase, id)[0];
@@ -85,13 +85,15 @@ failing('D-03 a purchase return refunded from an on-account vendor refund, then 
 });
 
 // ---------------------------------------------------------------- D-04: the reason a sale return line is stored with
-failing('D-04 the sale return the screen sent with the reason box on its placeholder is stored with a SALE reason, or refused (today: reason 1, the purchase reason "Incorrect Quantity")', async () => {
+test('D-04 the sale return the screen sent with the reason box on its placeholder is stored with a SALE reason, or refused (today: reason 1, the purchase reason "Incorrect Quantity")', async () => {
   const fx = FX('sale.json');
   start();
   store.return_reasons = fx.seed.reasons.map(r => ({ ...r }));
   for (const [k, b] of fx.seed.bills) await call({ sales: H.sales, salex: H.salex, purchases: H.purchases }[k], 'POST', {}, JSON.parse(JSON.stringify(b)));
   const step = fx.steps.find(s => s.name === 'create-pending');
-  const r = await call(H.srCreate, 'POST', {}, JSON.parse(JSON.stringify(step.body)));
+  // The request as the screen sent it before the fix (sale.json now holds the fixed screen's: its first sale reason).
+  const body = JSON.parse(JSON.stringify(step.body)); body.items.forEach(i => { i.return_reason_id = 1; });
+  const r = await call(H.srCreate, 'POST', {}, body);
   const item = store.sale_return_items[0];
   const reason = item && store.return_reasons.find(x => x.id === item.return_reason_id);
   ok('stored with a sale reason (or refused 400)', r.status === 400 || (reason && reason.type === 'sale'), { status: r.status, reason });
@@ -101,7 +103,7 @@ failing('D-04 the sale return the screen sent with the reason box on its placeho
 });
 
 // ---------------------------------------------------------------- D-05 / D-06 / D-13: the vendor bill picker
-failing('D-05 vendor bill picker: a line already returned on a return headed by ANOTHER bill shows what is really left (today the whole line)', async () => {
+test('D-05 vendor bill picker: a line already returned on a return headed by ANOTHER bill shows what is really left (today the whole line)', async () => {
   start();
   const a = await create(K.purchase, { items: [[1, 2, 1000, 0]] });
   const b = await create(K.purchase, { items: [[3, 10, 200, 0]], date: D(3) });
@@ -116,7 +118,7 @@ failing('D-05 vendor bill picker: a line already returned on a return headed by 
   expect(stats.failures).toEqual([]);
 });
 
-failing('D-06 vendor bill picker: "x/y items available" counts the lines with something left (today every line)', async () => {
+test('D-06 vendor bill picker: "x/y items available" counts the lines with something left (today every line)', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0], [3, 5, 200, 0]] });
   const l = lines(K.purchase, id);
@@ -127,7 +129,7 @@ failing('D-06 vendor bill picker: "x/y items available" counts the lines with so
   expect(stats.failures).toEqual([]);
 });
 
-failing('D-13 vendor bill picker: the item search the screen sends (item_search) narrows the bills on the server (today ignored; only the loaded page is filtered on screen)', async () => {
+test('D-13 vendor bill picker: the item search the screen sends (item_search) narrows the bills on the server (today ignored; only the loaded page is filtered on screen)', async () => {
   start();
   await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   await create(K.purchase, { items: [[3, 5, 200, 0]], date: D(3) });
@@ -138,7 +140,7 @@ failing('D-13 vendor bill picker: the item search the screen sends (item_search)
 });
 
 // ---------------------------------------------------------------- D-07: stock below zero
-failing('D-07 deleting a sale return (or lowering it) whose units were sold again is refused like a sale or a purchase delete (today stock goes to -5)', async () => {
+test('D-07 deleting a sale return (or lowering it) whose units were sold again is refused like a sale or a purchase delete (today stock goes to -5)', async () => {
   start();
   const { id } = await create(K.sale, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.sale, id)[0];
@@ -154,7 +156,7 @@ failing('D-07 deleting a sale return (or lowering it) whose units were sold agai
 });
 
 // ---------------------------------------------------------------- D-08: the REFUND row's date
-failing('D-08 a sale return created refunded posts its REFUND on the payment date sent, like the cash book (today on the return date)', async () => {
+test('D-08 a sale return created refunded posts its REFUND on the payment date sent, like the cash book (today on the return date)', async () => {
   const fx = FX('sale.json');
   start();
   store.return_reasons = fx.seed.reasons.map(r => ({ ...r }));
@@ -171,7 +173,7 @@ failing('D-08 a sale return created refunded posts its REFUND on the payment dat
 });
 
 // ---------------------------------------------------------------- D-09 / D-10: what the bill pickers show
-failing('D-09 the edit form\'s bill (GET a return) carries the bill\'s total and reference, as on the create screen (today the return\'s own total; the sale reference is the bill number)', async () => {
+test('D-09 the edit form\'s bill (GET a return) carries the bill\'s total and reference, as on the create screen (today the return\'s own total; the sale reference is the bill number)', async () => {
   start();
   const s = await create(K.sale, { items: [[1, 10, 1000, 18]], extra: { bill_reference: 'REF-S' } });
   const p = await create(K.purchase, { items: [[1, 10, 1000, 18]], extra: { bill_reference: 'REF-P' } });
@@ -185,7 +187,7 @@ failing('D-09 the edit form\'s bill (GET a return) carries the bill\'s total and
   expect(stats.failures).toEqual([]);
 });
 
-failing('D-10 the customer bill search finds an Invoice C bill by the number the picker shows ("C-1"; today nothing)', async () => {
+test('D-10 the customer bill search finds an Invoice C bill by the number the picker shows ("C-1"; today nothing)', async () => {
   start();
   const x = await create(K.salex, { items: [[1, 10, 1000, 0]] });
   const no = store.invoicex.find(b => b.id === x.id).invoice_no;
@@ -196,7 +198,7 @@ failing('D-10 the customer bill search finds an Invoice C bill by the number the
 });
 
 // ---------------------------------------------------------------- D-12: a refunded purchase return marked pending
-failing('D-12 marking a refunded purchase return pending clears its payment date (today the old date stays on a pending return)', async () => {
+test('D-12 marking a refunded purchase return pending clears its payment date (today the old date stays on a pending return)', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.purchase, id)[0];
@@ -208,7 +210,7 @@ failing('D-12 marking a refunded purchase return pending clears its payment date
 });
 
 // ---------------------------------------------------------------- D-17: the returns register's words
-failing('D-17 the returns register says "Pending refund" / "Refunded" like every return screen (owner decision 4; today "Pending" / "Complete")', async () => {
+test('D-17 the returns register says "Pending refund" / "Refunded" like every return screen (owner decision 4; today "Pending" / "Complete")', async () => {
   start();
   const { id } = await create(K.purchase, { items: [[1, 10, 1000, 0]] });
   const l = lines(K.purchase, id)[0];

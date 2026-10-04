@@ -67,6 +67,27 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
       ].filter(Boolean) // Remove undefined values
     }
 
+    // Item search (D-13): only the bills with a line whose product name or part
+    // matches - the screen filtered just the page it had loaded.
+    const itemText = String((Array.isArray(item_search) ? item_search[0] : item_search) || '').trim()
+    if (itemText) {
+      const products = await prisma.product.findMany({
+        where: { OR: [{ display_name: { contains: itemText } }, { part_no: { contains: itemText } }] },
+        select: { id: true }
+      })
+      const hits = await prisma.purchaseitems.findMany({
+        where: {
+          OR: [
+            { name_of_product: { contains: itemText } },
+            { part: { contains: itemText } },
+            ...(products.length ? [{ product_id: { in: products.map(p => p.id) } }] : [])
+          ]
+        },
+        select: { purchase_id: true }
+      })
+      purchaseWhere.id = { in: Array.from(new Set(hits.map(h => h.purchase_id))) }
+    }
+
     // Add date range filter
     if (from_date && to_date) {
       const { startTimestamp, endTimestamp } = parseDateRange(
@@ -155,25 +176,20 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
     // Create product lookup map
     const productMap = new Map(products.map(p => [p.id, p]))
 
-    // Get already returned quantities for these items
-    const returnedQuantities = await prisma.purchase_return_items.groupBy({
-      by: ['purchase_item_id'],
-      where: {
-        purchase_return: {
-          purchase_id: {
-            in: purchaseIds
-          }
-        }
-      },
-      _sum: {
-        return_qty: true
-      }
-    })
-
-    // Create lookup map for returned quantities
-    const returnedQtyMap = new Map(
-      returnedQuantities.map(item => [item.purchase_item_id, item._sum.return_qty || 0])
-    )
+    // Already returned, per LINE (D-05): a return may span bills and its header
+    // names only the first, so counting through the header's bill missed the
+    // lines of the other bills whenever that bill was not on this page.
+    const lineIds = purchaseItems.map(item => item.id)
+    const returnedRows = lineIds.length
+      ? await prisma.purchase_return_items.findMany({
+          where: { purchase_item_id: { in: lineIds } },
+          select: { purchase_item_id: true, return_qty: true }
+        })
+      : []
+    const returnedQtyMap = new Map<number, number>()
+    for (const r of returnedRows) {
+      returnedQtyMap.set(r.purchase_item_id, (returnedQtyMap.get(r.purchase_item_id) || 0) + (Number(r.return_qty) || 0))
+    }
 
     // Group items by invoice/bill
     const billsMap = new Map()
@@ -228,7 +244,8 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
           })() : '',
           total_amount: purchase.total || 0,
           has_tax: (purchase.total_tax || 0) > 0,
-          available_items: availableItems.length,
+          // Lines with something left (D-06; it counted every line).
+          available_items: availableItems.filter(item => item.available_qty > 0).length,
           total_items: billItems.length,
           items: availableItems
         })
@@ -259,6 +276,7 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
         filters: {
           applied: {
             search: search || null,
+            item_search: itemText || null,
             from_date: from_date || null,
             to_date: to_date || null
           }

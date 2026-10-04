@@ -55,8 +55,10 @@ test('returns lists', async () => {
   ok('sale list: SXR-001 finds the Invoice C return only', ids(r) === 'invoicex-1', ids(r));
   r = await call(saleList, 'GET', { sortBy: 'invoice_no', sortOrder: 'asc' });
   ok('sale list: sorts by invoice number (fell back to date)', r.body.returns.map(x => x.invoice_no).join(',') === '7,101,205', r.body.returns.map(x => x.invoice_no));
-  r = await call(saleList, 'GET', { customer: '1', limit: '1000' });
+  r = await call(saleList, 'GET', { customer_id: '1', limit: '1000' });
   ok('sale list: customer id (Pending-returns hint) - both kinds, rows keep refund_amount', ids(r).split(',').sort().join() === 'invoice-1,invoicex-1' && r.body.returns.every(x => x.refund_amount > 0), r.body);
+  r = await call(saleList, 'GET', { customer: '1', limit: '1000' });
+  ok('sale list: a number typed in the customer NAME box is a name, not an id (D-18)', r.body.returns.length === 0, r.body);
   r = await call(saleList, 'GET', { dateFrom: '2026-10-02' });
   ok('sale list: a range with only a start works', r.body.pagination.total === 2, r.body.pagination);
 

@@ -21,7 +21,7 @@ export function PendingReturnsHint({ party, partyId }: { party: 'customer' | 've
     if (!partyId) { setRows(null); return }
     const ctrl = new AbortController()
     const url = party === 'customer'
-      ? `/api/sale-returns?customer=${partyId}&limit=1000&sortBy=return_date&sortOrder=asc`
+      ? `/api/sale-returns?customer_id=${partyId}&limit=1000&sortBy=return_date&sortOrder=asc`
       : `/api/purchase-returns?vendor=${partyId}&status=0&limit=1000&sortBy=return_date&sortOrder=asc`
     fetch(url, { signal: ctrl.signal })
       .then(r => (r.ok ? r.json() : { returns: [] }))
