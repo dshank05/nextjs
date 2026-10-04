@@ -59,7 +59,7 @@ counts, any bugs fixed in their own commits.
 
 ## 6. Results
 
-`npm run test:backend` — 25 files, **288 tests: 285 pass, 3 skipped**, about 2 minutes, no
+`npm run test:backend` — 25 files, **294 tests: 291 pass, 3 skipped**, about 2 minutes, no
 database or server. 265 of them are the docs' scenarios, one jest test each:
 
 | File | Scenarios | Covers |
@@ -97,14 +97,20 @@ The purchase documents map onto the same tests (`P` = purchase kind):
 | 8ff35d0, badcab5 | Assertions: a 0.01 payment is a part payment (A3 / A8); purchase totals are rounded to the rupee (A4); refunds checked as a range (A12) |
 | da4a8ed | A12 also checks each party's counters against its payments and refunds — the refund-edit bug was invisible to A1–A14 |
 
-### Open — owner decision (each runs as `test.failing`)
+### Settled (owner, 2026-10-03) — checked first against the Feb 2026 code (fb3d2c3)
 
-| | Scenarios | What happens | Options |
-|---|---|---|---|
-| **F-S1** | S/X/P 2.8, 2.17 | A paid or part-paid bill lowered below what was paid keeps its old allocation (10000 on an 8000 bill). The counters treat the 2000 as returned, the ledger shows it as the party's credit, and the payment still says 10000 | (a) the 2000 stays as the party's advance — trim the allocation, counters follow (as L-31 does for part-paid bills); (b) the bill's own payment is reduced by 2000, as the old doc says |
-| **F-S2** | S/X/P 2.14, 2.18; S/X 2.19 | Unmarking a bill that was paid on the payments screen deletes that payment. Customer side: its ledger row is left behind. A payment shared with another bill is left half allocated; vendor side drops that bill's ledger row | (a) unmarking only releases the allocation — the money stays as advance; (b) keep deleting, and make both parties remove the payment's rows and handle shared payments |
-| **F-S3** | P5.2 | A refunded purchase return can be edited; the sale twin refuses (the docs expect refusal) | refuse, like the sale side |
-| **F-S4** | S/P 8.1b | A bill at rate 0 (total 0) is accepted; the doc says refuse | refuse a zero-total bill, or allow free lines but not a zero bill |
+The pre-audit code was run through the same scenarios (purchase side; its sale side had no
+payment or ledger handling). It behaved exactly as the rewrite did in all four, so none was a
+regression; the owner decided each:
+
+| | Decision | Commit |
+|---|---|---|
+| **F-S1** bill lowered below what is paid | The allocation shrinks to the new total; the money over stays with the party as advance (payment and total_paid untouched, total_allocated moves, the payment becomes MIXED) | 6f786fe |
+| **F-S2** unmarking / deleting a bill paid on the payments screen | Allowed, and the rollback is complete: a payment for this bill alone goes with its ledger rows (the customer's row was left behind); a shared payment loses exactly this bill's share | 6f786fe |
+| **F-S3** editing a refunded purchase return | Allowed — the owner removed the block on 29 Jan 2026 (00ff93b); a refunded purchase return only adjusts what is owed, so the note and counters follow. Sale returns stay blocked (cash was paid out) | — |
+| **F-S4** a bill at rate 0 | Allowed — the owner removed rate validation in Feb 2026 (free lines) | — |
+
+Tests: 2.8, 2.14, 2.17–2.21, P5.2, 8.1b are plain tests of these rules; none is open.
 
 ### Where the docs are older (tests follow today's agreed behaviour)
 
