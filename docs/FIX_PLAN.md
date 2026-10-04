@@ -45,4 +45,25 @@ list in `docs/review/README.md` and the section reports beside it. H1 (A-04 = B-
 
 ## 4. Results
 
-(filled in as each group lands)
+Status: **done** (2026-10-04). Every finding in §2 is fixed; only §3 is open. Backend suite: 41 files,
+**518 tests — 515 pass, 3 skipped**; the open `test.failing` left are A-10, B-04, B-13, E-07 (owner).
+`tsc` and `next build` clean.
+
+| Group | How, in short |
+|---|---|
+| H1 | `availableAdvance()` in `lib/advance-allocation.ts` — refunds given back are taken off advance, everywhere it is read |
+| F1 | New `lib/payment-ledger.ts`: a payment's / refund's ledger rows are rebuilt from the document and its allocations on create and edit (shape per party convention; rows reused by id so F-02 entry order holds; mode, date, notes follow; a note typed on the ledger screen is kept). Allocations under half a paisa ignored, Auto Allocate in paise. Party locked on edit (400 `PARTY_CHANGED`). Vendor refund create refuses allocations, as the customer twin. Blank notes stored as null on create and edit. Customer payment / refund lists filter by customer and type. New assertions **A15** (each payment's / refund's own rows: shape, amount, tag, date, mode) and **A16** (`total_allocated` = Σ allocations); A10 covers customer refund allocations |
+| F2 | A payment that becomes MIXED / DIRECT when its bill is lowered gets one row tagged `payment` (both parties). Mode change on a paid bill reaches its own payment and ledger rows. "Other" vendor counters follow on create; "Other" bills can be part-paid. A paid bill with nothing allocated becomes Unpaid when its total moves. P&F clear sticks; ship-to and supply date kept on edit; Invoice C named in logs and particulars; `updated_at` one format and moved on edit; Export all pages through; inactive staff / mechanic / party shown on edit; HSN at create; deleting a purchase restores the product's latest rate; export line Total includes tax; walk-in Paid reads paid |
+| F3 | A refunded purchase return's counters move by what it actually holds, logged under its debit note (edit and delete agree; a raise draws first on free on-account refund, as marking refunded later does). Pending clears the payment date. Lowering / deleting a sale or Invoice C return refuses negative stock (`INSUFFICIENT_STOCK`). Return reasons checked by kind (`INVALID_REASON`), placeholder takes the first reason of the kind. Bill picker counts returned qty per line, `item_search` works, "C-n" finds Invoice C. REFUND row dated by the payment date. Register words; customer filter by name |
+| F4 | `auth_key` 32 characters. Shipping address kept as stored ("copy from billing" only when blank or identical). FY dates stored as the typed day. Stock report filters use the real product routes. Report pickers include inactive parties (marked) and load all. Settings saves refresh the shared caches. Report and party-list exports take every page. Reports name the customer from the bill. States used by a ship-to cannot be deleted. Empty lists "Page 1 of 1" / "Showing 0 to 0 of 0"; ledger leaves out 0/0 rows; no raw error text; debit notes search vendor name; user edit sends status only when changed |
+
+### One-off data checks the owner may want to run (nothing was changed in the data)
+
+1. `node scripts/audit-assert.js` — A15 / A16 now list payments whose ledger rows are stale (edited multi-bill vendor payments, moved allocations, old modes, ₹0 rows) and parties whose `total_allocated` drifted. The `rebuild*Ledger` helpers in `lib/payment-ledger.ts` are idempotent and can be run per listed payment.
+2. Vendor 0 ("Other") `total_paid` / `total_allocated` — recompute from its payments (A-02).
+3. Payments lowered into MIXED before this fix whose bill was then deleted — their ledger row is gone (A12 lists them).
+4. Refunded purchase returns edited before this fix — their edit logs have no note number; the next edit or delete starts from the wrong base.
+5. Financial years made in Settings — stored a day early (31 Mar – 30 Mar); move both dates forward a day.
+6. Sale / Invoice C return lines saved with a purchase reason (id 1); refunded sale returns whose REFUND row is on the return date; pending purchase returns still carrying a payment date.
+7. Products whose latest purchase rate came from a deleted purchase; purchase lines with empty HSN.
+8. Customers whose shipping address was overwritten by billing — by hand.

@@ -1,5 +1,8 @@
 # Five-section review — results (2026-10-04)
 
+**Fixed since:** every finding that needed no owner decision — see `docs/FIX_PLAN.md` (H1–H6, M1–M8,
+M10–M17, the Lows and G-01–G-04). Open: the owner questions below, M9 (B-13), D-14, C-11, C-12.
+
 Method: `docs/REVIEW_PLAN.md`. Section reports: `purchases.md` (A), `sales.md` (B),
 `transactions.md` (C), `returns.md` (D), `parties-settings-reports.md` (E). No app code was
 changed by the review.
