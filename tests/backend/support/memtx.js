@@ -44,13 +44,15 @@ function resolveRel(store, table, row, key, spec) {
   if (PARENT[key]) { const [t, fk] = PARENT[key]; const fkv = row[fk] ?? (key === 'customer' ? row.select_customer : undefined); const hit = (store[t] || store[t.replace(/s$/, '')] || []).find(x => x.id === fkv); return hit ?? null; }
   return row[key];
 }
+const copy1 = (x) => (x && typeof x === 'object' && !(x instanceof Date) ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, Array.isArray(v) ? v.map(e => (e && typeof e === 'object' && !(e instanceof Date) ? { ...e } : e)) : v && typeof v === 'object' && !(v instanceof Date) ? { ...v } : v])) : x);
+const copy = (v) => (Array.isArray(v) ? v.map(copy1) : copy1(v));
 export function makeTx(store, log) {
   STORE_REF.current = store;
   const table = (name) => {
     if (!store[name]) store[name] = [];
     const rows = () => store[name];
     const nextId = () => Math.max(999, ...rows().map(r => (typeof r.id === 'number' ? r.id : 0))) + 1;
-    return {
+    const t = {
       fields: new Proxy({}, { get: (_, f) => ({ __field: f }) }),
       findMany: async ({ where, select, orderBy, skip, take, include } = {}) => { log.push([name, 'findMany', where]); let r = rows().filter(x => match(x, where));
         if (orderBy) { const keys = (Array.isArray(orderBy) ? orderBy : [orderBy]).map(o => Object.entries(o)[0]).map(([k, d]) => (d && typeof d === 'object' && PARENT[k]) ? (() => { const [rk, rd] = Object.entries(d)[0]; const [t, fk] = PARENT[k]; r = r.map(x => ({ ...x, ['__rel_' + k]: ((store[t] || []).find(p => p.id === x[fk]) || {})[rk] })); return ['__rel_' + k, rd]; })() : [k, d]); r = [...r].sort((a, b) => { for (const [k, d] of keys) { if (a[k] < b[k]) return d === 'asc' ? -1 : 1; if (a[k] > b[k]) return d === 'asc' ? 1 : -1; } return 0; }); }
@@ -70,6 +72,13 @@ export function makeTx(store, log) {
       createMany: async ({ data }) => { for (const d of data) rows().push({ id: nextId(), ...d }); return { count: data.length }; },
       aggregate: async ({ where, _sum }) => { const r = rows().filter(x => match(x, where)); return { _sum: Object.fromEntries(Object.keys(_sum || {}).map(k => [k, r.reduce((a, x) => a + (x[k] || 0), 0)])) }; }, groupBy: async ({ by, where, _sum, _count } = {}) => { const g = new Map(); for (const x of rows().filter(x => match(x, where))) { const k = JSON.stringify(by.map(b => x[b])); if (!g.has(k)) g.set(k, []); g.get(k).push(x); } return Array.from(g.values()).map(list => ({ ...Object.fromEntries(by.map(b => [b, list[0][b]])), ...(_sum ? { _sum: Object.fromEntries(Object.keys(_sum).map(f => [f, list.reduce((a, x) => a + (Number(x[f]) || 0), 0)])) } : {}), ...(_count ? { _count: Object.fromEntries(Object.keys(_count).map(f => [f, list.length])) } : {}) })); },
     };
+    // Prisma hands back fresh objects: code that reads a row, updates it and then uses
+    // the value it read must see the old value here too (2026-10-03).
+    for (const m of ['findMany', 'findFirst', 'findUnique', 'create', 'update', 'upsert', 'delete']) {
+      const f = t[m];
+      if (f) t[m] = async function (...a) { return copy(await f.apply(t, a)); };
+    }
+    return t;
   };
   return new Proxy({}, { get: (_, name) => (name === 'then' ? undefined : table(name)) });
 }
