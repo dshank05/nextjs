@@ -18,6 +18,8 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const TOL = 0.01;
+// Half a paisa: a 0.01 payment is a real part payment (A3 / A8), not rounding noise.
+const PAISA = 0.005;
 const num = (v) => (v === null || v === undefined ? 0 : Number(v));
 const money = (v) => num(v).toFixed(2);
 const near = (a, b) => Math.abs(num(a) - num(b)) <= TOL;
@@ -159,11 +161,11 @@ async function A3() {
     const alloc = num(r.allocated);
     const total = num(r.total);
     const st = r.payment_status;
-    if (st === 0 && alloc > TOL) {
+    if (st === 0 && alloc > PAISA) {
       failures.push(`purchase ${r.id} (inv ${r.invoice_no}): status Unpaid but ₹${money(alloc)} allocated`);
     } else if (st === 1 && !near(alloc, total)) {
       failures.push(`purchase ${r.id} (inv ${r.invoice_no}): status Paid but allocated ₹${money(alloc)} of ₹${money(total)}`);
-    } else if (st === 2 && (alloc <= TOL || alloc >= total - TOL)) {
+    } else if (st === 2 && (alloc < PAISA || alloc >= total - TOL)) {
       failures.push(`purchase ${r.id} (inv ${r.invoice_no}): status Partial but allocated ₹${money(alloc)} of ₹${money(total)}`);
     }
   }
@@ -326,9 +328,9 @@ async function A8() {
     for (const r of rows) {
       checked++;
       const alloc = num(r.allocated), total = num(r.total), st = num(r.payment_status);
-      if (st === 0 && alloc > TOL) failures.push(`${label} ${r.id} (no ${r.invoice_no}): status Unpaid but ₹${money(alloc)} allocated`);
+      if (st === 0 && alloc > PAISA) failures.push(`${label} ${r.id} (no ${r.invoice_no}): status Unpaid but ₹${money(alloc)} allocated`);
       else if (st === 1 && !near(alloc, total)) failures.push(`${label} ${r.id} (no ${r.invoice_no}): status Paid but allocated ₹${money(alloc)} of ₹${money(total)}`);
-      else if (st === 2 && (alloc <= TOL || alloc >= total - TOL)) failures.push(`${label} ${r.id} (no ${r.invoice_no}): status Partial but allocated ₹${money(alloc)} of ₹${money(total)}`);
+      else if (st === 2 && (alloc < PAISA || alloc >= total - TOL)) failures.push(`${label} ${r.id} (no ${r.invoice_no}): status Partial but allocated ₹${money(alloc)} of ₹${money(total)}`);
       if (alloc > total + TOL) failures.push(`${label} ${r.id} (no ${r.invoice_no}): ₹${money(alloc)} allocated to a ₹${money(total)} bill`);
     }
   }
