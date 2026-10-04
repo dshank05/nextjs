@@ -1,0 +1,59 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/sale/create?edit=id",
+  "notes": "Edit of the bill from sale-create.json: Mechanic, staff cleared; commission, freight, vehicle, transport emptied. line_id values are that bill's rows in the harness; the suites map them by position.",
+  "method": "PUT",
+  "url": "/api/sales/1000",
+  "query": {
+    "id": "1000"
+  },
+  "status": 200,
+  "body": {
+    "date": "2026-10-02",
+    "bill_reference": "BR-7",
+    "staff_id": null,
+    "transport_name": "",
+    "vehicle_number": "",
+    "transport_cost": 0,
+    "descriptions": "Fitted at shop",
+    "notes": "Deliver by noon",
+    "packing_forwarding_qty": 2,
+    "packing_forwarding_rate": 50,
+    "payment_mode": 0,
+    "contact_number": "9876543210",
+    "email_id": "ravi@shop.in",
+    "gst_number": "09AAAPR1234C1Z5",
+    "address": "12 MG Road",
+    "address_2": "Near Temple",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Ravi",
+    "mechanic_id": null,
+    "commission": 0,
+    "invoiceItems": [
+      {
+        "line_id": 1000,
+        "product_id": 1,
+        "model_id": 1,
+        "company_id": null,
+        "part": "BP-1",
+        "qty": 2,
+        "rate": 1000,
+        "gst_percentage": 18,
+        "discount": 100
+      },
+      {
+        "line_id": 1001,
+        "product_id": 3,
+        "model_id": 1,
+        "company_id": null,
+        "part": "OF-3",
+        "qty": 3,
+        "rate": 250,
+        "gst_percentage": 0,
+        "discount": 0
+      }
+    ]
+  }
+}

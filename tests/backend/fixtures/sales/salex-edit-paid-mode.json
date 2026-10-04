@@ -1,0 +1,48 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex/create?edit=id",
+  "notes": "Edit of the bill from salex-create-paid.json: only the payment mode, Cash -> Bank.",
+  "method": "PUT",
+  "url": "/api/salex/1001",
+  "query": {
+    "id": "1001"
+  },
+  "status": 200,
+  "body": {
+    "date": "2026-10-03",
+    "bill_reference": "",
+    "staff_id": null,
+    "transport_name": "",
+    "vehicle_number": "",
+    "transport_cost": 0,
+    "descriptions": "",
+    "notes": "",
+    "packing_forwarding_qty": 0,
+    "packing_forwarding_rate": 0,
+    "payment_mode": 1,
+    "contact_number": "9876543210",
+    "email_id": "ravi@shop.in",
+    "gst_number": "09AAAPR1234C1Z5",
+    "address": "12 MG Road",
+    "address_2": "Near Temple",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Ravi",
+    "mechanic_id": null,
+    "commission": 0,
+    "invoiceItems": [
+      {
+        "line_id": 1002,
+        "product_id": 2,
+        "model_id": 1,
+        "company_id": null,
+        "part": "CP-2",
+        "qty": 1,
+        "rate": 2000,
+        "gst_percentage": 0,
+        "discount": 0
+      }
+    ]
+  }
+}

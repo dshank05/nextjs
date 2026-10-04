@@ -1,0 +1,47 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/sale/create",
+  "notes": "Walk-in (\"Other\"): manual name, phone, address, city, state UP; one line; Paid, Cash.",
+  "method": "POST",
+  "url": "/api/sales",
+  "query": {},
+  "status": 201,
+  "body": {
+    "date": "2026-10-03",
+    "bill_reference": "",
+    "staff_id": null,
+    "transport_name": "",
+    "vehicle_number": "",
+    "transport_cost": 0,
+    "descriptions": "",
+    "notes": "",
+    "packing_forwarding_qty": 0,
+    "packing_forwarding_rate": 0,
+    "payment_mode": 0,
+    "contact_number": "9999999999",
+    "email_id": "",
+    "gst_number": "",
+    "address": "Bus Stand",
+    "address_2": "",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Walk-in Kumar",
+    "mechanic_id": null,
+    "commission": 0,
+    "invoiceItems": [
+      {
+        "product_id": 4,
+        "model_id": 1,
+        "company_id": null,
+        "part": "DR-4",
+        "qty": 1,
+        "rate": 1500,
+        "gst_percentage": 12,
+        "discount": 0
+      }
+    ],
+    "select_customer": 0,
+    "payment_status": 1
+  }
+}

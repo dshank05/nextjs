@@ -1,0 +1,11 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex",
+  "notes": "Delete of the bill from salex-create.json from the list.",
+  "method": "DELETE",
+  "url": "/api/salex/1000",
+  "query": {
+    "id": "1000"
+  },
+  "status": 200
+}

@@ -1,0 +1,25 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex/view/[id] Mark as Paid",
+  "notes": "Part payment ₹500 cash against the bill of salex-create.json (allocation keyed invoicex_id).",
+  "method": "POST",
+  "url": "/api/customer-payments",
+  "query": {},
+  "status": 201,
+  "body": {
+    "customer_id": 1,
+    "payment_date": "2026-10-04",
+    "payment_amount": 500,
+    "payment_mode": 0,
+    "payment_type": "BILL_SPECIFIC",
+    "fy": 4,
+    "notes": "Payment for Invoice C 1",
+    "allocations": [
+      {
+        "invoicex_id": 1000,
+        "allocated_amount": 500,
+        "notes": null
+      }
+    ]
+  }
+}

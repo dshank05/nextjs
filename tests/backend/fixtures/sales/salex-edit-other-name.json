@@ -1,0 +1,48 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex/create?edit=id",
+  "notes": "Edit of the walk-in bill from salex-create-other.json: the manual name only.",
+  "method": "PUT",
+  "url": "/api/salex/1002",
+  "query": {
+    "id": "1002"
+  },
+  "status": 200,
+  "body": {
+    "date": "2026-10-03",
+    "bill_reference": "",
+    "staff_id": null,
+    "transport_name": "",
+    "vehicle_number": "",
+    "transport_cost": 0,
+    "descriptions": "",
+    "notes": "",
+    "packing_forwarding_qty": 0,
+    "packing_forwarding_rate": 0,
+    "payment_mode": 0,
+    "contact_number": "9999999999",
+    "email_id": "",
+    "gst_number": "",
+    "address": "Bus Stand",
+    "address_2": "",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Walk-in Kumar Singh",
+    "mechanic_id": null,
+    "commission": 0,
+    "invoiceItems": [
+      {
+        "line_id": 1003,
+        "product_id": 4,
+        "model_id": 1,
+        "company_id": null,
+        "part": "DR-4",
+        "qty": 1,
+        "rate": 1500,
+        "gst_percentage": 0,
+        "discount": 0
+      }
+    ]
+  }
+}

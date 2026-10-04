@@ -1,0 +1,47 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/sale/create",
+  "notes": "Registered customer Ravi, one line, Paid, mode Cash (the form default).",
+  "method": "POST",
+  "url": "/api/sales",
+  "query": {},
+  "status": 201,
+  "body": {
+    "date": "2026-10-03",
+    "bill_reference": "",
+    "staff_id": null,
+    "transport_name": "",
+    "vehicle_number": "",
+    "transport_cost": 0,
+    "descriptions": "",
+    "notes": "",
+    "packing_forwarding_qty": 0,
+    "packing_forwarding_rate": 0,
+    "payment_mode": 0,
+    "contact_number": "9876543210",
+    "email_id": "ravi@shop.in",
+    "gst_number": "09AAAPR1234C1Z5",
+    "address": "12 MG Road",
+    "address_2": "Near Temple",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Ravi",
+    "mechanic_id": null,
+    "commission": 0,
+    "invoiceItems": [
+      {
+        "product_id": 2,
+        "model_id": 1,
+        "company_id": null,
+        "part": "CP-2",
+        "qty": 1,
+        "rate": 2000,
+        "gst_percentage": 18,
+        "discount": 0
+      }
+    ],
+    "select_customer": 1,
+    "payment_status": 1
+  }
+}

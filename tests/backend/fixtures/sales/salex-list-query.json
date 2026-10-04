@@ -1,0 +1,16 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex",
+  "notes": "List with the customer filter (Ravi) and status Unpaid, as the screen asks.",
+  "method": "GET",
+  "url": "/api/salex",
+  "query": {
+    "page": "1",
+    "limit": "50",
+    "customer": "1",
+    "status": "0",
+    "sortBy": "invoice_date",
+    "sortOrder": "desc"
+  },
+  "status": 200
+}

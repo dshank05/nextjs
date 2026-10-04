@@ -1,0 +1,17 @@
+{
+  "_about": "Review B: the masters both the page harness (harness/review-b-capture.jsx) and the backend suites (review-b-*.test.js) use, so a captured payload replays against the same data. Applied on top of tests/backend/support/flowlib.js reset() + seedStock().",
+  "customer_details": [
+    { "id": 1, "billing_name": "Ravi", "billing_address": "12 MG Road", "billing_address_2": "Near Temple", "billing_city": "Mathura", "billing_state": "Uttar Pradesh", "billing_state_code": 9, "billing_gstin": "09AAAPR1234C1Z5", "contact_no": "9876543210", "email": "ravi@shop.in", "status": "Active" },
+    { "id": 2, "billing_name": "Asha", "billing_address": "5 Connaught Place", "billing_address_2": "", "billing_city": "Delhi", "billing_state": "Delhi", "billing_state_code": 7, "billing_gstin": "", "contact_no": "9876500002", "email": "", "status": "Active" }
+  ],
+  "staff": [{ "id": 3, "name": "Suresh", "phone": "9000000003", "email": "", "status": "Active" }],
+  "mechanic": [{ "id": 5, "name": "Mohan", "phone": "9000000005", "city": "Mathura", "status": "Active" }],
+  "product": [
+    { "id": 1, "product_name": "Brake Pad", "display_name": "Brake Pad", "part_no": "BP-1", "selling_price": 1000, "gst_rate_percentage": 18, "car_model_ids": "" },
+    { "id": 2, "product_name": "Clutch Plate", "display_name": "Clutch Plate", "part_no": "CP-2", "selling_price": 2000, "gst_rate_percentage": 18, "car_model_ids": "" },
+    { "id": 3, "product_name": "Oil Filter", "display_name": "Oil Filter", "part_no": "OF-3", "selling_price": 250, "gst_rate_percentage": 0, "car_model_ids": "" },
+    { "id": 4, "product_name": "Disc Rotor", "display_name": "Disc Rotor", "part_no": "DR-4", "selling_price": 1500, "gst_rate_percentage": 12, "car_model_ids": "" }
+  ],
+  "models": [{ "id": 1, "name": "Alto" }, { "id": 2, "name": "Swift" }],
+  "states": [{ "id": 1, "state_name": "Uttar Pradesh", "code": 9 }, { "id": 2, "state_name": "Delhi", "code": 7 }]
+}

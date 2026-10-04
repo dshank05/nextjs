@@ -1,0 +1,11 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/sale",
+  "notes": "Delete of the bill from sale-create.json from the list.",
+  "method": "DELETE",
+  "url": "/api/sales/1000",
+  "query": {
+    "id": "1000"
+  },
+  "status": 200
+}

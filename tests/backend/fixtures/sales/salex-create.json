@@ -1,0 +1,57 @@
+{
+  "_captured_by": "harness/review-b-capture.jsx",
+  "screen": "/salex/create",
+  "notes": "Registered customer Ravi; staff, mechanic, commission, bill ref, vehicle, transport, freight, discount, two lines, P&F 2 / ₹100, notes, descriptions; Unpaid (payment mode left at the form default, Cash).",
+  "method": "POST",
+  "url": "/api/salex",
+  "query": {},
+  "status": 201,
+  "body": {
+    "date": "2026-10-02",
+    "bill_reference": "BR-7",
+    "staff_id": 3,
+    "transport_name": "Sharma Roadways",
+    "vehicle_number": "UP85 AB 1234",
+    "transport_cost": 120,
+    "descriptions": "Fitted at shop",
+    "notes": "Deliver by noon",
+    "packing_forwarding_qty": 2,
+    "packing_forwarding_rate": 50,
+    "payment_mode": 0,
+    "contact_number": "9876543210",
+    "email_id": "ravi@shop.in",
+    "gst_number": "09AAAPR1234C1Z5",
+    "address": "12 MG Road",
+    "address_2": "Near Temple",
+    "city": "Mathura",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "customer_name": "Ravi",
+    "mechanic_id": 5,
+    "commission": 50,
+    "invoiceItems": [
+      {
+        "product_id": 1,
+        "model_id": 1,
+        "company_id": null,
+        "part": "BP-1",
+        "qty": 2,
+        "rate": 1000,
+        "gst_percentage": 0,
+        "discount": 100
+      },
+      {
+        "product_id": 3,
+        "model_id": 1,
+        "company_id": null,
+        "part": "OF-3",
+        "qty": 3,
+        "rate": 250,
+        "gst_percentage": 0,
+        "discount": 0
+      }
+    ],
+    "select_customer": 1,
+    "payment_status": 0
+  }
+}
