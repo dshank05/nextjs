@@ -623,6 +623,21 @@ async function A12() {
       }
     }
   }
+  // Counters against the documents (2026-10-03): total_paid is the money in the party's
+  // payments, total_refunded the money in its refunds plus its refunded returns. A refund
+  // edit once left total_refunded at the old amount and no assertion noticed.
+  for (const [side, master, payQ, refQ] of [
+    ['vendor', 'vendor_details', `SELECT vendor_id AS party, SUM(payment_amount) AS amount FROM vendor_payments GROUP BY vendor_id`,
+      `SELECT party, SUM(amount) AS amount FROM (SELECT vendor_id AS party, refund_amount AS amount FROM vendor_refunds UNION ALL SELECT vendor_id AS party, refund_amount AS amount FROM purchase_returns WHERE payment_status = 1) t GROUP BY party`],
+    ['customer', 'customer_details', `SELECT customer_id AS party, SUM(payment_amount) AS amount FROM customer_payments GROUP BY customer_id`,
+      `SELECT party, SUM(amount) AS amount FROM (SELECT customer_id AS party, refund_amount AS amount FROM customer_refunds UNION ALL ${REFUNDED_SALE_RETURNS.replace(/SELECT party, SUM\(amount\) AS amount FROM \(|\) t GROUP BY party/g, '')}) u GROUP BY party`]]) {
+    const pay = await sumBy(payQ), ref = await sumBy(refQ);
+    for (const c of await q(`SELECT id, total_paid, total_refunded FROM ${master}`)) {
+      if (!near(c.total_paid, pay.get(num(c.id)) || 0)) failures.push(`${side} ${c.id}: total_paid ₹${money(c.total_paid)} but its payments hold ₹${money(pay.get(num(c.id)) || 0)}`);
+      if (!near(c.total_refunded, ref.get(num(c.id)) || 0)) failures.push(`${side} ${c.id}: total_refunded ₹${money(c.total_refunded)} but its refunds and refunded returns hold ₹${money(ref.get(num(c.id)) || 0)}`);
+    }
+  }
+
   // A return's own REFUND rows (customer side): none, or exactly its refund.
   for (const [label, ret, head, fk, ref] of [['sale return', 'sale_returns', 'invoice', 'invoice_id', 'sale_return'], ['Invoice C return', 'salex_returns', 'invoicex', 'invoicex_id', 'salex_return']]) {
     const rows = await q(`
