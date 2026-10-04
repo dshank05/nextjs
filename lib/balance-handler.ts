@@ -25,6 +25,7 @@ export interface ChangeSet {
   newTotal: number;
   vendorId: number;
   totalAllocated?: number;
+  isTypeA?: boolean; // Has existing allocations (the bill was paid through them)
   /**
    * Money this document itself brought in, as opposed to the amount it
    * ALLOCATED. The two differ whenever a purchase was funded from an existing
@@ -252,6 +253,13 @@ export class BalanceHandler {
         return null;
         
       case '1→1': // Paid → Paid (amount change)
+        // A bill paid through allocations (Type A): no money moves. Lowered below what is
+        // allocated, the allocation shrinks and the rest stays as advance (owner, 2026-10-03;
+        // trimAllocations); raised, it becomes part paid (never 1→1). Only total_allocated moves.
+        if (changes.amountChanged && changes.isTypeA && changes.totalAllocated !== undefined) {
+          const allocDiff = Math.min(changes.newTotal, changes.totalAllocated) - changes.totalAllocated;
+          return allocDiff !== 0 ? { vendorId: changes.vendorId, update: { total_allocated: allocDiff } } : null;
+        }
         // ✅ FIX: Update balance when amount changes while status stays Paid
         if (changes.amountChanged) {
           const amountDiff = changes.newTotal - changes.oldTotal;

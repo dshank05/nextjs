@@ -1,6 +1,7 @@
 import { prisma } from './db'
 import { transactionHandler } from './transaction-handler'
-import { paidWithBill } from './advance-allocation'
+import { paidWithBill, trimAllocations } from './advance-allocation'
+import { recalculatePurchaseStatus } from './payment-allocation-service'
 import { assertStockCovers } from './purchase-delete'
 import { convertDateToTimestamp } from './date-utils'
 import {
@@ -440,6 +441,11 @@ export async function updatePurchase(purchaseId: number, rawBody: any) {
         : undefined
     })
     await transactionHandler.executeInTransaction(tx, ops)
+    // Lowered below what is allocated: the allocation shrinks, the rest is advance (owner).
+    if (isTypeA && newTotal < totalAllocated - 0.005) {
+      await trimAllocations(tx, 'vendor', { purchase_id: purchaseId }, newTotal)
+      await recalculatePurchaseStatus(purchaseId, tx)
+    }
 
     return updated
   }, { timeout: 30000 })

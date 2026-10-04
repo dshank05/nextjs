@@ -7,7 +7,8 @@ import {
   intOrNull, requestedCustomer, requestedFreight, requestedItems, billStateCode, requestedDate
 } from './sale';
 import { shippingFrom, transportFrom } from './sale-create';
-import { paidWithBill } from './advance-allocation';
+import { paidWithBill, trimAllocations } from './advance-allocation';
+import { recalculateSaleStatus } from './payment-allocation-service';
 
 /**
  * Editing a sale or salex (PUT /api/sales/[id], PUT /api/salex/[id]).
@@ -339,6 +340,11 @@ export async function updateSale(kind: SaleKind, docId: number, rawBody: any) {
         } : undefined
       });
       await customerTransactionHandler.executeInTransaction(tx, ops);
+      // Lowered below what is allocated: the allocation shrinks, the rest is advance (owner).
+      if (isTypeA && newTotal < totalAllocated - 0.005) {
+        await trimAllocations(tx, 'customer', { [t.allocFk]: docId }, newTotal);
+        await recalculateSaleStatus(kind, docId, tx);
+      }
     }
     return updated;
   }, { timeout: 45000 });

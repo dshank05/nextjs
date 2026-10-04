@@ -251,6 +251,13 @@ export class CustomerBalanceHandler {
         return null;
         
       case '1→1': // Paid → Paid (amount change)
+        // A bill paid through allocations (Type A): no money moves. Lowered below what is
+        // allocated, the allocation shrinks and the rest stays as advance (owner, 2026-10-03;
+        // trimAllocations); raised, it becomes part paid (never 1→1). Only total_allocated moves.
+        if (changes.amountChanged && changes.isTypeA && changes.totalAllocated !== undefined) {
+          const allocDiff = Math.min(changes.newTotal, changes.totalAllocated) - changes.totalAllocated;
+          return allocDiff !== 0 ? { customerId: changes.customerId, update: { total_allocated: allocDiff } } : null;
+        }
         if (changes.amountChanged) {
           const amountDiff = changes.newTotal - changes.oldTotal;
           return {

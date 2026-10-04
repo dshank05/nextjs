@@ -17,6 +17,8 @@
  *    actually removed, so total_paid moves by exactly that (L-26, both sides).
  */
 
+import { customerLedgerService } from './customer-ledger-service';
+
 export type Party = 'vendor' | 'customer';
 
 const T = {
@@ -107,19 +109,80 @@ export async function releaseAllocations(
   await tx[t.allocs].deleteMany({ where });
 
   let paymentsRemoved = 0;
-  const ids: number[] = Array.from(new Set(allocations.map((a: any) => a.payment_id as number)));
-  for (const id of ids) {
-    if ((await tx[t.allocs].count({ where: { payment_id: id } })) > 0) continue;
+  // What each payment gave this bill.
+  const released = new Map<number, number>();
+  for (const a of allocations) released.set(a.payment_id, round2((released.get(a.payment_id) || 0) + Number(a.allocated_amount)));
+  const removedIds: number[] = [];
+  const reduced = new Map<number, number>();
+  for (const [id, part] of Array.from(released.entries())) {
     const payment = await tx[t.payments].findUnique({ where: { id }, select: { payment_type: true, payment_amount: true } });
     if (!payment) continue;
+    const others = await tx[t.allocs].count({ where: { payment_id: id } });
     if (payment.payment_type === 'BILL_SPECIFIC') {
-      paymentsRemoved = round2(paymentsRemoved + Number(payment.payment_amount));
-      await tx[t.payments].delete({ where: { id } });
-    } else if (payment.payment_type === 'MIXED') {
+      if (others === 0) {
+        paymentsRemoved = round2(paymentsRemoved + Number(payment.payment_amount));
+        await tx[t.payments].delete({ where: { id } });
+        removedIds.push(id);
+      } else {
+        // Paid this bill and others: only this bill's share goes (owner, 2026-10-03 - the
+        // rollback must be complete). It stays a bill-specific payment for the others.
+        paymentsRemoved = round2(paymentsRemoved + part);
+        await tx[t.payments].update({ where: { id }, data: { payment_amount: round2(Number(payment.payment_amount) - part) } });
+        reduced.set(id, part);
+      }
+    } else if (payment.payment_type === 'MIXED' && others === 0) {
       await tx[t.payments].update({ where: { id }, data: { payment_type: 'DIRECT' } });
     }
   }
+  // A customer payment from the payments screen posts ONE ledger row tagged with the payment,
+  // not the bill, so the bill's own ledger delete never finds it: the row goes (or shrinks) with
+  // its payment here. The vendor side posts one row per bill, which goes with the bill.
+  if (party === 'customer' && (removedIds.length || reduced.size)) {
+    let customerId: number | null = null;
+    if (removedIds.length) {
+      const gone = await tx.customer_ledger.findMany({ where: { transaction_id: { in: removedIds }, transaction_type: 'PAYMENT_RECEIVED', reference_type: 'payment' }, select: { id: true, customer_id: true } });
+      if (gone.length) { customerId = gone[0].customer_id; await tx.customer_ledger.deleteMany({ where: { id: { in: gone.map((r: any) => r.id) } } }); }
+    }
+    for (const [id, part] of Array.from(reduced.entries())) {
+      const row = await tx.customer_ledger.findFirst({ where: { transaction_id: id, transaction_type: 'PAYMENT_RECEIVED', reference_type: 'payment' }, select: { id: true, customer_id: true, credit: true } });
+      if (!row) continue;
+      customerId = row.customer_id;
+      await tx.customer_ledger.update({ where: { id: row.id }, data: { credit: round2(Number(row.credit) - part) } });
+    }
+    if (customerId !== null) await customerLedgerService.recalculateBalancesAfter(customerId, 0, tx);
+  }
   return { deallocated, paymentsRemoved };
+}
+
+/**
+ * A bill lowered below what is allocated to it (owner, 2026-10-03): the allocations shrink to
+ * the new total, newest first, and the money over stays with the party as advance - the
+ * payments, their ledger rows and total_paid are untouched (the counters move total_allocated
+ * only, in the balance handlers). A bill-specific payment left with money over becomes MIXED
+ * (DIRECT if nothing is allocated any more). Returns the amount released.
+ */
+export async function trimAllocations(tx: any, party: Party, where: Record<string, unknown>, newTotal: number): Promise<number> {
+  const t = T[party];
+  const allocations = await tx[t.allocs].findMany({ where, orderBy: { id: 'desc' }, select: { id: true, payment_id: true, allocated_amount: true } });
+  let excess = round2(allocations.reduce((s: number, a: any) => s + Number(a.allocated_amount), 0) - newTotal);
+  if (excess <= 0.005) return 0;
+  const released = excess;
+  const touched = new Set<number>();
+  for (const a of allocations) {
+    if (excess <= 0.005) break;
+    const cut = Math.min(excess, Number(a.allocated_amount));
+    if (cut >= Number(a.allocated_amount) - 0.005) await tx[t.allocs].delete({ where: { id: a.id } });
+    else await tx[t.allocs].update({ where: { id: a.id }, data: { allocated_amount: round2(Number(a.allocated_amount) - cut) } });
+    excess = round2(excess - cut);
+    touched.add(a.payment_id);
+  }
+  for (const id of Array.from(touched)) {
+    const payment = await tx[t.payments].findUnique({ where: { id }, select: { payment_type: true } });
+    if (!payment || payment.payment_type !== 'BILL_SPECIFIC') continue;
+    const left = await tx[t.allocs].count({ where: { payment_id: id } });
+    await tx[t.payments].update({ where: { id }, data: { payment_type: left > 0 ? 'MIXED' : 'DIRECT' } });
+  }
+  return released;
 }
 
 /**
