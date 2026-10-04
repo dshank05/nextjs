@@ -354,7 +354,10 @@ export class CustomerTransactionHandler {
       ledgerUpdates,
       ledgerDeletes: [],
       balanceOp,
-      allocationChanges: []  // Handled separately in API
+      allocationChanges: [],  // Handled separately in API
+      // The route moves the counters from these (as for a payment edit); without
+      // them a refund edit left total_refunded at the old amount (found 2026-10-03).
+      metadata: { amountDiff, allocDiff }
     };
   }
 
