@@ -2,6 +2,8 @@ module.exports = {
   testEnvironment: 'node',
   testTimeout: 30000,
   verbose: true,
+  // tests/backend has its own config (npm run test:backend).
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/backend/'],
   testMatch: [
     '**/tests/**/*.test.js'
   ],

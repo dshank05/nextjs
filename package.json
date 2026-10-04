@@ -13,6 +13,7 @@
     "prisma:studio": "prisma studio",
     "test": "jest",
     "test:batch1": "jest tests/batch-1-purchase-creation.test.js",
+    "test:backend": "jest -c jest.backend.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
   },
