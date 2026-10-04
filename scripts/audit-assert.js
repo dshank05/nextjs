@@ -180,7 +180,7 @@ async function A3() {
  *
  * Freight is part of the total since 2026-10-03 (owner, BILLS_PLAN Q1); bills
  * saved before that carry it outside the total, and no data was changed, so
- * either form is accepted.
+ * either form is accepted. The total is rounded to the rupee (F-34).
  */
 async function A4() {
   const rows = await prisma.purchase.findMany({
@@ -194,7 +194,9 @@ async function A4() {
   const failures = [];
   for (const r of rows) {
     const expected = num(r.items_total) + num(r.packing_forwarding_total) + num(r.total_tax);
-    if (!near(r.total, expected + num(r.freight)) && !near(r.total, expected)) {
+    // The total is rounded to the rupee (F-34), so it may sit up to 50 paise off its parts.
+    const roundedNear = (a, b) => Math.abs(num(a) - num(b)) <= 0.5 + TOL;
+    if (!roundedNear(r.total, expected + num(r.freight)) && !roundedNear(r.total, expected)) {
       failures.push(
         `purchase ${r.id} (inv ${r.invoice_no}): total=${money(r.total)} but items ${money(r.items_total)} ` +
         `+ packing ${money(r.packing_forwarding_total)} + tax ${money(r.total_tax)} + freight ${money(r.freight)} = ${money(expected + num(r.freight))}`
@@ -624,17 +626,23 @@ async function A12() {
     }
   }
   // Counters against the documents (2026-10-03): total_paid is the money in the party's
-  // payments, total_refunded the money in its refunds plus its refunded returns. A refund
-  // edit once left total_refunded at the old amount and no assertion noticed.
+  // payments. total_refunded is at least the money in its refunds and at most that plus its
+  // refunded returns - a return marked refunded later may draw on an earlier on-account
+  // refund (owner: direct adjustment), so it can count for less. A refund edit once left
+  // total_refunded at the old amount and no assertion noticed.
   for (const [side, master, payQ, refQ] of [
     ['vendor', 'vendor_details', `SELECT vendor_id AS party, SUM(payment_amount) AS amount FROM vendor_payments GROUP BY vendor_id`,
       `SELECT party, SUM(amount) AS amount FROM (SELECT vendor_id AS party, refund_amount AS amount FROM vendor_refunds UNION ALL SELECT vendor_id AS party, refund_amount AS amount FROM purchase_returns WHERE payment_status = 1) t GROUP BY party`],
     ['customer', 'customer_details', `SELECT customer_id AS party, SUM(payment_amount) AS amount FROM customer_payments GROUP BY customer_id`,
       `SELECT party, SUM(amount) AS amount FROM (SELECT customer_id AS party, refund_amount AS amount FROM customer_refunds UNION ALL ${REFUNDED_SALE_RETURNS.replace(/SELECT party, SUM\(amount\) AS amount FROM \(|\) t GROUP BY party/g, '')}) u GROUP BY party`]]) {
     const pay = await sumBy(payQ), ref = await sumBy(refQ);
+    const own = await sumBy(side === 'vendor'
+      ? `SELECT vendor_id AS party, SUM(refund_amount) AS amount FROM vendor_refunds GROUP BY vendor_id`
+      : `SELECT customer_id AS party, SUM(refund_amount) AS amount FROM customer_refunds GROUP BY customer_id`);
     for (const c of await q(`SELECT id, total_paid, total_refunded FROM ${master}`)) {
       if (!near(c.total_paid, pay.get(num(c.id)) || 0)) failures.push(`${side} ${c.id}: total_paid ₹${money(c.total_paid)} but its payments hold ₹${money(pay.get(num(c.id)) || 0)}`);
-      if (!near(c.total_refunded, ref.get(num(c.id)) || 0)) failures.push(`${side} ${c.id}: total_refunded ₹${money(c.total_refunded)} but its refunds and refunded returns hold ₹${money(ref.get(num(c.id)) || 0)}`);
+      const lo = own.get(num(c.id)) || 0, hi = ref.get(num(c.id)) || 0;
+      if (num(c.total_refunded) < lo - TOL || num(c.total_refunded) > hi + TOL) failures.push(`${side} ${c.id}: total_refunded ₹${money(c.total_refunded)} but its refunds hold ₹${money(lo)} and with its refunded returns ₹${money(hi)}`);
     }
   }
 
