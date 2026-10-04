@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-04",
+  "bill_reference": "",
+  "staff_id": null,
+  "transport_name": "",
+  "vehicle_number": "",
+  "transport_cost": 0,
+  "descriptions": "",
+  "notes": "",
+  "packing_forwarding_qty": 0,
+  "packing_forwarding_rate": 0,
+  "payment_mode": 0,
+  "contact_number": "9999999999",
+  "email_id": "",
+  "gst_number": "",
+  "address": "Karol Bagh",
+  "address_2": "",
+  "city": "",
+  "state": "Delhi",
+  "state_code": 7,
+  "bill_reference_date": "",
+  "vendor_name": "Walk-in Supplier",
+  "pin_code": "",
+  "items": [
+    {
+      "product_id": 2,
+      "model_id": 2,
+      "company_id": 7,
+      "part": "CP-2",
+      "qty": 4,
+      "rate": 500,
+      "gst_percentage": 18,
+      "car_model": "Swift"
+    }
+  ],
+  "vendor_id": 0,
+  "payment_status": 0
+}

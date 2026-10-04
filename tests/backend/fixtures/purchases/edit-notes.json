@@ -1,0 +1,48 @@
+{
+  "date": "2026-10-02",
+  "bill_reference": "BR-77",
+  "staff_id": 3,
+  "transport_name": "VRL",
+  "vehicle_number": "3",
+  "transport_cost": 500,
+  "descriptions": "monthly stock",
+  "notes": "first bill, checked",
+  "packing_forwarding_qty": 1,
+  "packing_forwarding_rate": 100,
+  "payment_mode": 1,
+  "contact_number": "1",
+  "email_id": "b@x.in",
+  "gst_number": "09BOSCH1234F1Z5",
+  "address": "Noida",
+  "address_2": "",
+  "city": "Noida",
+  "state": "Uttar Pradesh",
+  "state_code": 9,
+  "bill_reference_date": "2026-10-01",
+  "vendor_name": "Bosch",
+  "pin_code": "201301",
+  "items": [
+    {
+      "line_id": 1000,
+      "product_id": 1,
+      "model_id": 1,
+      "company_id": 7,
+      "part": "BP-1",
+      "qty": 10,
+      "rate": 1000,
+      "gst_percentage": 18,
+      "car_model": "Alto"
+    },
+    {
+      "line_id": 1001,
+      "product_id": 3,
+      "model_id": 1,
+      "company_id": null,
+      "part": "OF-3",
+      "qty": 5,
+      "rate": 200,
+      "gst_percentage": 0,
+      "car_model": "Alto"
+    }
+  ]
+}

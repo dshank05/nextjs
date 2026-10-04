@@ -1,0 +1,9 @@
+{
+  "page": "1",
+  "limit": "50",
+  "vendor": "2",
+  "status": "1",
+  "billReference": "BR",
+  "sortBy": "invoice_date",
+  "sortOrder": "desc"
+}

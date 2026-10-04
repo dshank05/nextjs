@@ -1,0 +1,6 @@
+{
+  "page": "1",
+  "limit": "50",
+  "sortBy": "invoice_date",
+  "sortOrder": "desc"
+}

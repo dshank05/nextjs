@@ -1,0 +1,14 @@
+{
+  "vendor_id": 2,
+  "payment_date": "2026-10-04",
+  "payment_amount": 4000,
+  "payment_mode": 1,
+  "notes": "Payment for purchase 3",
+  "allocations": [
+    {
+      "purchase_id": 1002,
+      "allocated_amount": 4000,
+      "notes": null
+    }
+  ]
+}

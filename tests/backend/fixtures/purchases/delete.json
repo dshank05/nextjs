@@ -1,0 +1,5 @@
+{
+  "method": "DELETE",
+  "path": "/api/purchases/1001",
+  "body": null
+}

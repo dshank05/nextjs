@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-04",
+  "bill_reference": "",
+  "staff_id": null,
+  "transport_name": "",
+  "vehicle_number": "",
+  "transport_cost": 0,
+  "descriptions": "",
+  "notes": "",
+  "packing_forwarding_qty": 0,
+  "packing_forwarding_rate": 0,
+  "payment_mode": 0,
+  "contact_number": "2",
+  "email_id": "",
+  "gst_number": "",
+  "address": "",
+  "address_2": "",
+  "city": "",
+  "state": "Delhi",
+  "state_code": 7,
+  "bill_reference_date": "",
+  "vendor_name": "Delhi Parts",
+  "pin_code": "",
+  "items": [
+    {
+      "line_id": 1003,
+      "product_id": 1,
+      "model_id": 1,
+      "company_id": 7,
+      "part": "BP-1",
+      "qty": 8,
+      "rate": 1250,
+      "gst_percentage": 0,
+      "car_model": "Alto"
+    }
+  ],
+  "payment_status": 0
+}
