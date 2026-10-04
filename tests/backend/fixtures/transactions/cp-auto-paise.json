@@ -1,0 +1,85 @@
+{
+  "name": "cp-auto-paise",
+  "screen": "/customer-transactions/create",
+  "steps": [
+    "party 2",
+    "Payment direction",
+    "Bill Specific",
+    "amount 1199.40",
+    "Auto Allocate",
+    "Record",
+    "Confirm"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "POST",
+    "url": "/api/customer-payments",
+    "body": {
+      "customer_id": "2",
+      "notes": "",
+      "allocations": [
+        {
+          "invoice_id": 1002,
+          "allocated_amount": 399.9,
+          "notes": "Payment for Invoice 3"
+        },
+        {
+          "invoice_id": 1003,
+          "allocated_amount": 399.79999999999995,
+          "notes": "Payment for Invoice 4"
+        },
+        {
+          "invoice_id": 1004,
+          "allocated_amount": 399.70000000000005,
+          "notes": "Payment for Invoice 5"
+        },
+        {
+          "invoice_id": 1005,
+          "allocated_amount": 1.1368683772161603e-13,
+          "notes": "Payment for Invoice 6"
+        }
+      ],
+      "payment_amount": 1199.4,
+      "payment_mode": 1,
+      "payment_date": 1791138600,
+      "payment_type": "BILL_SPECIFIC"
+    },
+    "rawBody": "{\"customer_id\":\"2\",\"notes\":\"\",\"allocations\":[{\"invoice_id\":1002,\"allocated_amount\":399.9,\"notes\":\"Payment for Invoice 3\"},{\"invoice_id\":1003,\"allocated_amount\":399.79999999999995,\"notes\":\"Payment for Invoice 4\"},{\"invoice_id\":1004,\"allocated_amount\":399.70000000000005,\"notes\":\"Payment for Invoice 5\"},{\"invoice_id\":1005,\"allocated_amount\":1.1368683772161603e-13,\"notes\":\"Payment for Invoice 6\"}],\"payment_amount\":1199.4,\"payment_mode\":1,\"payment_date\":1791138600,\"payment_type\":\"BILL_SPECIFIC\"}"
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "success": true,
+      "message": "Customer payment recorded successfully",
+      "data": {
+        "payment": {
+          "id": 1006,
+          "payment_no": "PAY-1006",
+          "customer_name": "Asha",
+          "payment_amount": 1199.4,
+          "payment_mode": 1,
+          "total_allocated": 1199.4,
+          "allocations_count": 4,
+          "payment_type": "BILL_SPECIFIC",
+          "notes": ""
+        }
+      }
+    }
+  },
+  "fourth_bill_input_value": "1.1368683772161603e-13"
+}

@@ -1,0 +1,48 @@
+{
+  "name": "vendor-list-query-cash",
+  "screen": "/vendor-transactions",
+  "steps": [
+    "mode Cash"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "GET",
+    "url": "/api/vendor-transactions?page=1&limit=50&sortBy=date&sortOrder=asc&type=all&vendor_id=1&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&payment_mode=0",
+    "body": null,
+    "rawBody": null
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": [],
+      "pagination": {
+        "page": 1,
+        "limit": 50,
+        "total": 0,
+        "totalPages": 1
+      },
+      "totals": {
+        "income": 0,
+        "expense": 0,
+        "net": 0,
+        "count": 0
+      }
+    }
+  }
+}

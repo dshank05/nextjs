@@ -1,0 +1,90 @@
+{
+  "name": "cp-edit-changed",
+  "screen": "/customer-transactions/create?edit",
+  "steps": [
+    "edit (fetched, no cache)",
+    "amount 1200",
+    "SINV-2 300 -> 200",
+    "date 2026-10-06",
+    "mode Bank",
+    "notes \"edited\"",
+    "Update",
+    "Confirm"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "PUT",
+    "url": "/api/customer-payments/1003",
+    "body": {
+      "customer_id": "1",
+      "notes": "edited",
+      "allocations": [
+        {
+          "invoice_id": 1000,
+          "allocated_amount": 1000,
+          "notes": "Payment for Invoice 1"
+        },
+        {
+          "invoice_id": 1001,
+          "allocated_amount": 200,
+          "notes": "Payment for Invoice 2"
+        }
+      ],
+      "payment_amount": 1200,
+      "payment_mode": 1,
+      "payment_date": 1791225000,
+      "payment_type": "BILL_SPECIFIC"
+    },
+    "rawBody": "{\"customer_id\":\"1\",\"notes\":\"edited\",\"allocations\":[{\"invoice_id\":1000,\"allocated_amount\":1000,\"notes\":\"Payment for Invoice 1\"},{\"invoice_id\":1001,\"allocated_amount\":200,\"notes\":\"Payment for Invoice 2\"}],\"payment_amount\":1200,\"payment_mode\":1,\"payment_date\":1791225000,\"payment_type\":\"BILL_SPECIFIC\"}"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "message": "Customer payment updated successfully",
+      "data": {
+        "payment": {
+          "id": 1003,
+          "customer_id": 1,
+          "payment_date": 1791225000,
+          "payment_amount": 1200,
+          "payment_mode": 1,
+          "payment_type": "BILL_SPECIFIC",
+          "notes": "edited",
+          "fy": 4
+        },
+        "allocations": [
+          {
+            "kind": "sale",
+            "id": 1000,
+            "amount": 1000,
+            "notes": "Payment for Invoice 1",
+            "field": "invoice_id"
+          },
+          {
+            "kind": "sale",
+            "id": 1001,
+            "amount": 200,
+            "notes": "Payment for Invoice 2",
+            "field": "invoice_id"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,87 @@
+{
+  "name": "vp-create-bill",
+  "screen": "/entry/vendor-transaction",
+  "steps": [
+    "pick Payment direction",
+    "Bill Specific",
+    "amount 1300",
+    "mode Cash",
+    "notes \"cash receipt\"",
+    "date 2026-10-05",
+    "Auto Allocate",
+    "Record",
+    "Confirm"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "POST",
+    "url": "/api/vendor-payments",
+    "body": {
+      "vendor_id": "1",
+      "notes": "cash receipt",
+      "allocations": [
+        {
+          "purchase_id": 1000,
+          "allocated_amount": 1000,
+          "notes": "Payment for Invoice 1"
+        },
+        {
+          "purchase_id": 1001,
+          "allocated_amount": 300,
+          "notes": "Payment for Invoice 2"
+        }
+      ],
+      "payment_amount": 1300,
+      "payment_mode": 0,
+      "payment_date": 1791138600,
+      "payment_type": "BILL_SPECIFIC"
+    },
+    "rawBody": "{\"vendor_id\":\"1\",\"notes\":\"cash receipt\",\"allocations\":[{\"purchase_id\":1000,\"allocated_amount\":1000,\"notes\":\"Payment for Invoice 1\"},{\"purchase_id\":1001,\"allocated_amount\":300,\"notes\":\"Payment for Invoice 2\"}],\"payment_amount\":1300,\"payment_mode\":0,\"payment_date\":1791138600,\"payment_type\":\"BILL_SPECIFIC\"}"
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "success": true,
+      "message": "Payment created successfully",
+      "data": {
+        "payment": {
+          "id": 1003,
+          "vendor_id": 1,
+          "payment_date": 1791138600,
+          "payment_amount": 1300,
+          "payment_mode": 0,
+          "payment_type": "BILL_SPECIFIC",
+          "notes": "cash receipt",
+          "fy": 4
+        },
+        "allocations": [
+          {
+            "purchase_id": 1000,
+            "allocated_amount": 1000,
+            "notes": "Payment for Invoice 1"
+          },
+          {
+            "purchase_id": 1001,
+            "allocated_amount": 300,
+            "notes": "Payment for Invoice 2"
+          }
+        ]
+      }
+    }
+  }
+}

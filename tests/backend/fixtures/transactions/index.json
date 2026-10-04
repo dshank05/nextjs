@@ -1,0 +1,281 @@
+{
+  "captured_by": "harness/review-c-capture.jsx",
+  "seed": [
+    {
+      "name": "S1",
+      "route": "sales",
+      "body": {
+        "select_customer": 1,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "S2",
+      "route": "sales",
+      "body": {
+        "select_customer": 1,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 5,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "X1",
+      "route": "salex",
+      "body": {
+        "select_customer": 1,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 3,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "P1",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 1,
+        "state_code": 9,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "P2",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 1,
+        "state_code": 9,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 5,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "A1",
+      "route": "sales",
+      "body": {
+        "select_customer": 2,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "A2",
+      "route": "sales",
+      "body": {
+        "select_customer": 2,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "A3",
+      "route": "sales",
+      "body": {
+        "select_customer": 2,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "A4",
+      "route": "sales",
+      "body": {
+        "select_customer": 2,
+        "invoiceItems": [
+          {
+            "product_id": 3,
+            "qty": 5,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "Q1",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 2,
+        "state_code": 7,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "Q2",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 2,
+        "state_code": 7,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "Q3",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 2,
+        "state_code": 7,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 10,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    },
+    {
+      "name": "Q4",
+      "route": "purchases",
+      "body": {
+        "vendor_id": 2,
+        "state_code": 7,
+        "items": [
+          {
+            "product_id": 3,
+            "qty": 5,
+            "rate": 100,
+            "gst_percentage": 0
+          }
+        ],
+        "date": "2026-10-02",
+        "payment_status": 0
+      }
+    }
+  ],
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "fixtures": [
+    "cp-create-bill",
+    "cp-create-mixed",
+    "cp-create-direct",
+    "cp-edit-unchanged",
+    "cp-edit-changed",
+    "cp-edit-party",
+    "cr-create",
+    "cr-edit-unchanged",
+    "cr-edit-changed",
+    "customer-list-query",
+    "customer-list-query-cash",
+    "cp-delete",
+    "cr-delete",
+    "cp-auto-paise",
+    "cp-refused-over-bill",
+    "customer-ledger-note",
+    "vp-create-bill",
+    "vp-create-mixed",
+    "vp-create-direct",
+    "vp-edit-unchanged",
+    "vp-edit-changed",
+    "vp-edit-party",
+    "vr-create",
+    "vr-edit-unchanged",
+    "vr-edit-changed",
+    "vendor-list-query",
+    "vendor-list-query-cash",
+    "vp-delete",
+    "vr-delete",
+    "vp-auto-paise",
+    "vp-refused-over-bill",
+    "vendor-ledger-note"
+  ]
+}

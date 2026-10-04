@@ -1,0 +1,66 @@
+{
+  "name": "customer-ledger-note",
+  "screen": "/reports/customer-ledger",
+  "steps": [
+    "party 1",
+    "Edit note on the payment row",
+    "type",
+    "Save"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "PATCH",
+    "url": "/api/customer-ledger/1012",
+    "body": {
+      "notes": "checked with bank statement"
+    },
+    "rawBody": "{\"notes\":\"checked with bank statement\"}"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "success": true,
+      "data": {
+        "id": 1012,
+        "customer_id": 1,
+        "transaction_date": 1791138600,
+        "transaction_type": "PAYMENT_RECEIVED",
+        "reference_type": "payment",
+        "reference_id": 1005,
+        "reference_no": "PAY-1005",
+        "payment_mode": 1,
+        "payment_status": 1,
+        "payment_date": 1791138600,
+        "debit": 0,
+        "credit": 250,
+        "balance": 350,
+        "notes": "checked with bank statement",
+        "fy": 4,
+        "transaction_id": 1005
+      }
+    }
+  },
+  "screen_row_text": "5/10/2026PAYMENT RECEIVEDPAYMENT RECEIVEDPAY-1005-₹250.00₹1,550.00checked with bank statement",
+  "screen_rows": [
+    "2/10/2026SALESALE1₹1,000.00-₹1,000.00Sale INV-1",
+    "2/10/2026SALESALE2₹500.00-₹1,500.00Sale INV-2",
+    "2/10/2026SALESALE1₹300.00-₹1,800.00Invoice C INV-1",
+    "5/10/2026PAYMENT RECEIVEDPAYMENT RECEIVEDPAY-1005-₹250.00₹1,550.00Customer payment receipt",
+    "6/10/2026PAYMENT RECEIVEDPAYMENT RECEIVEDPAY-1003-₹1,200.00₹350.00Payment #1003 updated to ₹1200.00 (Bill specific)"
+  ]
+}

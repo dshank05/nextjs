@@ -1,0 +1,62 @@
+{
+  "name": "cr-create",
+  "screen": "/customer-transactions/create",
+  "steps": [
+    "Refund direction",
+    "amount 100",
+    "mode Cash",
+    "notes \"refund cash\"",
+    "date 2026-10-05",
+    "Record",
+    "Confirm"
+  ],
+  "captured_at": "harness/review-c-capture.jsx",
+  "bills": {
+    "S1": 1000,
+    "S2": 1001,
+    "X1": 1000,
+    "P1": 1000,
+    "P2": 1001,
+    "A1": 1002,
+    "A2": 1003,
+    "A3": 1004,
+    "A4": 1005,
+    "Q1": 1002,
+    "Q2": 1003,
+    "Q3": 1004,
+    "Q4": 1005
+  },
+  "request": {
+    "method": "POST",
+    "url": "/api/customer-refunds",
+    "body": {
+      "customer_id": "1",
+      "notes": "refund cash",
+      "allocations": [],
+      "refund_amount": 100,
+      "refund_mode": 0,
+      "refund_date": 1791138600,
+      "refund_type": "DIRECT"
+    },
+    "rawBody": "{\"customer_id\":\"1\",\"notes\":\"refund cash\",\"allocations\":[],\"refund_amount\":100,\"refund_mode\":0,\"refund_date\":1791138600,\"refund_type\":\"DIRECT\"}"
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "success": true,
+      "message": "Customer refund recorded successfully",
+      "data": {
+        "refund": {
+          "id": 1000,
+          "refund_no": "REF-1000",
+          "customer_name": "Ravi",
+          "refund_amount": 100,
+          "refund_mode": 0,
+          "total_allocated": 0,
+          "allocations_count": 0,
+          "notes": "refund cash"
+        }
+      }
+    }
+  }
+}
