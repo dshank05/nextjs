@@ -64,7 +64,7 @@ test.failing('C-01 vendor Bill Specific payment over two bills: editing the amou
 });
 
 for (const kind of ['sale', 'salex', 'purchase']) {
-  test.failing(`C-02 an on-account refund is counted as advance: a ${kind} created as Paid after "advance 1000, refunded 1000" must record new money for the whole bill`, async () => {
+  test(`C-02 an on-account refund is counted as advance: a ${kind} created as Paid after "advance 1000, refunded 1000" must record new money for the whole bill`, async () => {
     reset(); seedStock(); stats.failures = [];
     const k = K[kind];
     await pay(k, 1000, [], { mode: 0, type: 'DIRECT' });                    // advance 1000

@@ -5,7 +5,7 @@
  */
 
 import { ledgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDeleteOperation, ChangeSet } from './ledger-handler';
-import { allocateFromAdvance, releaseAllocations, returnCounterAmounts } from './advance-allocation';
+import { allocateFromAdvance, releaseAllocations, returnCounterAmounts, availableAdvance } from './advance-allocation';
 import { balanceHandler, BalanceOperation } from './balance-handler';
 import { ledgerService } from './ledger-service';
 
@@ -682,11 +682,9 @@ export class TransactionHandler {
   ): AllocationChange[] {
     const allocations: AllocationChange[] = [];
     
-    // Calculate advance balance - include both unallocated payments AND unallocated refunds
-    const advanceBalance = changes.currentBalance 
-      ? (Number(changes.currentBalance.total_paid) - Number(changes.currentBalance.total_allocated)) +
-        (Number(changes.currentBalance.total_refunded) - Number(changes.currentBalance.total_refund_allocated))
-      : 0;
+    // Unallocated payments less unallocated refunds (H1: refunds were added)
+    
+    const advanceBalance = availableAdvance(changes.currentBalance);
     
     // Calculate how much advance can be used and how much new payment is needed
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);

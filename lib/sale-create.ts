@@ -3,7 +3,7 @@ import { getNextInvoiceNumber } from './invoice-counter';
 import { convertDateToTimestamp, getLocalDateString } from './date-utils';
 import { customerLedgerService } from './customer-ledger-service';
 import { customerBalanceHandler } from './customer-balance-handler';
-import { allocateFromAdvance } from './advance-allocation';
+import { allocateFromAdvance, availableAdvance } from './advance-allocation';
 import { getBusinessGstin, PAYMENT_STATUS } from './purchase';
 import {
   SaleKind, SaleError, saleTables, validateSale, computeSaleTotals, assertStock,
@@ -252,10 +252,7 @@ async function recordPaymentOnCreate(tx: any, p: {
     where: { id: p.customerId },
     select: { total_paid: true, total_allocated: true, total_refunded: true, total_refund_allocated: true }
   });
-  const advance = customer
-    ? (Number(customer.total_paid) - Number(customer.total_allocated)) +
-      (Number(customer.total_refunded) - Number(customer.total_refund_allocated))
-    : 0;
+  const advance = availableAdvance(customer);
   // The advance is allocated from the customer's existing payments - no new
   // row for money paid earlier (SA-28). What the rows cannot cover is new money.
   const advanceUsed = await allocateFromAdvance(

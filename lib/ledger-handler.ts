@@ -5,6 +5,7 @@
  */
 
 import { LedgerEntryData } from './ledger-service';
+import { availableAdvance } from './advance-allocation';
 
 export interface ChangeSet {
   oldStatus: number;
@@ -90,11 +91,8 @@ export class LedgerHandler {
       total_refund_allocated: number;
     }
   ): { advanceUsed: number; newPayment: number; hasAdvance: boolean } {
-    // Include both unallocated payments AND unallocated refunds
-    const advanceBalance = currentBalance 
-      ? (Number(currentBalance.total_paid) - Number(currentBalance.total_allocated)) +
-        (Number(currentBalance.total_refunded) - Number(currentBalance.total_refund_allocated))
-      : 0;
+    // Unallocated payments less unallocated refunds (H1: refunds were added)
+    const advanceBalance = availableAdvance(currentBalance);
     
     const advanceUsed = Math.min(Math.max(0, advanceBalance), total);
     const newPayment = total - advanceUsed;

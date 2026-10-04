@@ -55,7 +55,7 @@ describe('Review B - findings', () => {
     // lib/customer-transaction-handler.ts:643-645, lib/customer-ledger-handler.ts:111-113. The
     // payment rows still show the refunded money as "free", so allocateFromAdvance takes it, and the
     // rest becomes a "carried advance" row. The cash the customer hands over is never recorded.
-    test.failing(`B-01 ${kind}: paid on create after the customer's advance was refunded - the new money is recorded`, async () => {
+    test(`B-01 ${kind}: paid on create after the customer's advance was refunded - the new money is recorded`, async () => {
       seed();
       await call(H.cpCreate, 'POST', {}, { customer_id: 1, payment_date: '2026-10-01', payment_mode: 0, payment_amount: 500, payment_type: 'DIRECT', allocations: [] });
       await call(H.crCreate, 'POST', {}, { customer_id: 1, refund_date: '2026-10-01', refund_mode: 0, refund_amount: 500, allocations: [] });
@@ -68,7 +68,7 @@ describe('Review B - findings', () => {
       ok('a paid bill leaves the customer square', ledgerBalance() === 0, store.customer_ledger);
       await done(`B-01 ${kind}`);
     });
-    test.failing(`B-01 ${kind}: marked paid on the edit form after an advance was refunded - the new money is recorded`, async () => {
+    test(`B-01 ${kind}: marked paid on the edit form after an advance was refunded - the new money is recorded`, async () => {
       seed();
       await call(H.cpCreate, 'POST', {}, { customer_id: 1, payment_date: '2026-10-01', payment_mode: 0, payment_amount: 500, payment_type: 'DIRECT', allocations: [] });
       await call(H.crCreate, 'POST', {}, { customer_id: 1, refund_date: '2026-10-01', refund_mode: 0, refund_amount: 500, allocations: [] });

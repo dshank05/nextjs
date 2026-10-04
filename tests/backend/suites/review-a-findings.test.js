@@ -30,7 +30,9 @@ const simple = (qty = 10, extra = {}) => ({ ...fx('create-paid.json'), transport
 const editQty = (id, qty, extra = {}) => { const b = fx('edit-notes.json'); return { ...b, transport_cost: 0, packing_forwarding_qty: 0, packing_forwarding_rate: 0, items: [{ ...b.items[0], line_id: lines(k, id)[0].id, qty, gst_percentage: 0 }], ...extra }; };
 
 const F = process.env.REVIEW_A_SHOW ? test : test.failing;
-const finding = (id, title, fn, { known = [] } = {}) => F(`${id} ${title}`, async () => {
+const fixedFinding = (id, title, fn, opts = {}) => findingWith(test, id, title, fn, opts);
+const finding = (id, title, fn, opts = {}) => findingWith(F, id, title, fn, opts);
+const findingWith = (T, id, title, fn, { known = [] } = {}) => T(`${id} ${title}`, async () => {
   seed();
   await fn();
   prismaDates();
@@ -87,7 +89,7 @@ describe('A - findings (test.failing while open)', () => {
   });
 
   // ---------------------------------------------------------------- A-04
-  finding('A-04a', 'an advance the vendor refunded back is not an advance any more: a paid purchase must be paid with new money', async () => {
+  fixedFinding('A-04a', 'an advance the vendor refunded back is not an advance any more: a paid purchase must be paid with new money', async () => {
     await pay(k, 1000, [], { date: D(1) });                               // advance 1000
     const rr = await call(H.vrCreate, 'POST', {}, { vendor_id: 1, refund_date: D(1), refund_mode: 0, refund_amount: 1000, allocations: [] });
     ex('A-04a', 'vendor refunded the 1000: square', rr.status === 201 && bal(k) === 0, rows(k));
@@ -95,14 +97,14 @@ describe('A - findings (test.failing while open)', () => {
     ex('A-04a', 'one new payment of 2000 (today: none - "paid" from an advance of 2000 that does not exist)', r.status === 201 && payments(k).filter(p => p.payment_type === 'BILL_SPECIFIC').reduce((s, p) => s + p.payment_amount, 0) === 2000, payments(k));
     ex('A-04a', 'ledger square after paying the bill', bal(k) === 0, rows(k));
   });
-  finding('A-04b', 'a refund received (500) is not spent again on every later paid purchase', async () => {
+  fixedFinding('A-04b', 'a refund received (500) is not spent again on every later paid purchase', async () => {
     await call(H.vrCreate, 'POST', {}, { vendor_id: 1, refund_date: D(1), refund_mode: 0, refund_amount: 500, allocations: [] });
     await POST(simple(10)); await POST(simple(10));
     const carried = payments(k).filter(p => /carried/.test(p.notes || ''));
     ex('A-04b', 'no "carried advance" payment rows invented (today one per purchase, 500 each)', carried.length === 0, carried);
     ex('A-04b', 'the two bills are paid with 20000 of new money; ledger: 500 refund owed back', sum(payRows(k), l => l.credit) === 20000 && bal(k) === 500, rows(k));
   });
-  finding('A-04c', 'the same through the edit form (Unpaid -> Paid) with only a refund on the account', async () => {
+  fixedFinding('A-04c', 'the same through the edit form (Unpaid -> Paid) with only a refund on the account', async () => {
     await call(H.vrCreate, 'POST', {}, { vendor_id: 1, refund_date: D(1), refund_mode: 0, refund_amount: 500, allocations: [] });
     const { id } = await POST(simple(10, { payment_status: 0 }));
     await PUT(id, { ...editQty(id, 10), payment_status: 1 });

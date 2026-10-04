@@ -5,7 +5,7 @@ import { balanceHandler } from './balance-handler'
 import { getLocalDateString, convertDateToTimestamp } from './date-utils'
 import { validatePurchase, computePurchaseTotals, getBusinessGstin, num, PAYMENT_STATUS } from './purchase'
 import { parseStateCode } from './purchase-edit'
-import { allocateFromAdvance } from './advance-allocation'
+import { allocateFromAdvance, availableAdvance } from './advance-allocation'
 import { SaleError, intOrNull } from './sale'
 
 /**
@@ -189,10 +189,7 @@ export async function createPurchase(rawBody: any, attempt = 1): Promise<Created
           where: { id: vendorId },
           select: { total_paid: true, total_allocated: true, total_refunded: true, total_refund_allocated: true }
         })
-        const advance = vendorBalance
-          ? (Number(vendorBalance.total_paid) - Number(vendorBalance.total_allocated)) +
-            (Number(vendorBalance.total_refunded) - Number(vendorBalance.total_refund_allocated))
-          : 0
+        const advance = availableAdvance(vendorBalance)
         advanceUsed = await allocateFromAdvance(
           tx, 'vendor', vendorId, { purchase_id: created.id },
           Math.min(Math.max(0, advance), grandTotal), invoiceDate,

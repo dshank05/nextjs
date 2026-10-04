@@ -29,6 +29,16 @@ const T = {
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
+ * Advance a party can still spend on a bill: money paid but not allocated, less money refunded
+ * to (or from) it and not set against a return - the same as the stored account_balance and
+ * A2 / A7 (H1, 2026-10-04: these places ADDED the refunds, so a refund given back was spent again).
+ */
+export function availableAdvance(b: { total_paid: unknown; total_allocated: unknown; total_refunded: unknown; total_refund_allocated: unknown } | null | undefined): number {
+  if (!b) return 0;
+  return round2(Number(b.total_paid) - Number(b.total_allocated) - (Number(b.total_refunded) - Number(b.total_refund_allocated)));
+}
+
+/**
  * Allocate `amount` of the party's unallocated payments to one bill.
  * `docField` names the bill: { purchase_id: 7 }, { invoice_id: 7 } or { invoicex_id: 7 }.
  *

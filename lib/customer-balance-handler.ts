@@ -5,6 +5,7 @@
  */
 
 import { CustomerBalanceLogService, BalanceColumn, SourceType, BalanceLogEntry } from './customer-balance-log-service';
+import { availableAdvance } from './advance-allocation';
 
 export interface BalanceUpdate {
   total_paid?: number;
@@ -77,7 +78,7 @@ export class CustomerBalanceHandler {
     // Calculate advance balance based on type
     const advanceBalance = params.currentBalance 
       ? (params.type === 'sale' || params.type === 'salex'
-          ? params.currentBalance.total_paid - params.currentBalance.total_allocated
+          ? availableAdvance(params.currentBalance)
           : params.currentBalance.total_refunded - params.currentBalance.total_refund_allocated)
       : 0;
     
@@ -131,7 +132,7 @@ export class CustomerBalanceHandler {
     
     // Calculate advance balance (customer has credit with us)
     const advanceBalance = changes.currentBalance 
-      ? changes.currentBalance.total_paid - changes.currentBalance.total_allocated 
+      ? availableAdvance(changes.currentBalance) 
       : 0;
     
     switch (statusChange) {

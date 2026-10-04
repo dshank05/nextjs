@@ -8,7 +8,7 @@ import { customerLedgerHandler, LedgerOperation, LedgerUpdateOperation, LedgerDe
 import { customerBalanceHandler, BalanceOperation } from './customer-balance-handler';
 import { customerLedgerService } from './customer-ledger-service';
 import { saleTables } from './sale';
-import { allocateFromAdvance, releaseAllocations, returnCounterAmounts } from './advance-allocation';
+import { allocateFromAdvance, releaseAllocations, returnCounterAmounts, availableAdvance } from './advance-allocation';
 import { recalculateSaleStatus, recalculateSaleReturnRefundStatus } from './payment-allocation-service';
 
 export interface AllocationChange {
@@ -639,11 +639,9 @@ export class CustomerTransactionHandler {
   ): AllocationChange[] {
     const allocations: AllocationChange[] = [];
     
-    // Calculate advance balance - include both unallocated payments AND unallocated refunds
-    const advanceBalance = changes.currentBalance 
-      ? (Number(changes.currentBalance.total_paid) - Number(changes.currentBalance.total_allocated)) +
-        (Number(changes.currentBalance.total_refunded) - Number(changes.currentBalance.total_refund_allocated))
-      : 0;
+    // Unallocated payments less unallocated refunds (H1: refunds were added)
+    
+    const advanceBalance = availableAdvance(changes.currentBalance);
     
     // Calculate how much advance can be used and how much new payment is needed
     const advanceUsed = Math.min(Math.max(0, advanceBalance), amount);
