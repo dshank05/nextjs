@@ -606,9 +606,13 @@ export class TransactionHandler {
         referenceNo = firstOp.entry.reference_no;
         notes = 'Return edited';
       } else if (firstOp.entry.transaction_type === 'PAYMENT') {
+        // A payment written by a status change (unpaid -> paid) has no id on
+        // the op: step 0 created it and holds it in paymentMap. Without one the
+        // counters below moved with no balance-log row (found 2026-10-03).
+        const paymentId = firstOp.entry.transaction_id ?? paymentMap.get(firstOp.entry.reference_id);
         sourceType = 'payment_edit';
-        sourceId = firstOp.entry.transaction_id;
-        referenceNo = `PAY-${firstOp.entry.transaction_id}`;
+        sourceId = paymentId;
+        referenceNo = `PAY-${paymentId}`;
         notes = 'Payment edit via status change';
       }
     }
@@ -653,12 +657,14 @@ export class TransactionHandler {
         tx,
         result.balanceOp.vendorId,
         result.balanceOp.update,
-        sourceId && referenceNo ? {
+        // Always logged: a counter that moves without a log row makes the
+        // balance-log report disagree with the party's figures.
+        {
           type: sourceType,
-          id: sourceId,
-          reference_no: referenceNo,
+          id: sourceId ?? 0,
+          reference_no: referenceNo ?? '',
           notes: notes || 'Balance update'
-        } : undefined
+        }
       );
     }
   }
