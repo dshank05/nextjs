@@ -1,0 +1,350 @@
+{
+  "customerCreateCopy": {
+    "method": "POST",
+    "path": "/api/customers",
+    "query": {},
+    "search": "",
+    "body": {
+      "billing_name": "New Wheels",
+      "billing_address": "4 Station Road",
+      "billing_address_2": "",
+      "billing_city": "Agra",
+      "billing_pin_code": "282002",
+      "billing_state": "Uttar Pradesh",
+      "billing_gstin": "09ABCDE1234F1Z5",
+      "shipping_name": "New Wheels",
+      "shipping_address": "4 Station Road",
+      "shipping_address_2": "",
+      "shipping_city": "Agra",
+      "shipping_pin_code": "282002",
+      "shipping_state": "Uttar Pradesh",
+      "shipping_gstin": "09ABCDE1234F1Z5",
+      "contact_no": "9876543210",
+      "contact_no_2": "9123456789",
+      "contact_no_3": null,
+      "email": "nw@x.in",
+      "billing_state_code": 9,
+      "shipping_state_code": 9
+    }
+  },
+  "customerCreateShip": {
+    "method": "POST",
+    "path": "/api/customers",
+    "query": {},
+    "search": "",
+    "body": {
+      "billing_name": "Sharma Spares",
+      "billing_address": "GT Road",
+      "billing_address_2": "",
+      "billing_city": "",
+      "billing_pin_code": "",
+      "billing_state": "Haryana",
+      "billing_gstin": "",
+      "shipping_name": "Sharma Godown",
+      "shipping_address": "Panipat Bypass",
+      "shipping_address_2": "",
+      "shipping_city": "",
+      "shipping_pin_code": "",
+      "shipping_state": "Delhi",
+      "shipping_gstin": "",
+      "contact_no": "9876543211",
+      "contact_no_2": null,
+      "contact_no_3": null,
+      "email": "",
+      "billing_state_code": 6,
+      "shipping_state_code": 7
+    }
+  },
+  "customerEditUnchangedSameName": {
+    "method": "PUT",
+    "path": "/api/customers/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "billing_name": "Ravi Motors",
+      "billing_address": "12 Ring Road",
+      "billing_address_2": "",
+      "billing_city": "Agra",
+      "billing_pin_code": "282001",
+      "billing_state": "Uttar Pradesh",
+      "billing_gstin": "09ABCDE1234F1Z5",
+      "shipping_name": "Ravi Motors",
+      "shipping_address": "12 Ring Road",
+      "shipping_address_2": "",
+      "shipping_city": "Agra",
+      "shipping_pin_code": "282001",
+      "shipping_state": "Uttar Pradesh",
+      "shipping_gstin": "09ABCDE1234F1Z5",
+      "contact_no": "9876500001",
+      "contact_no_2": null,
+      "contact_no_3": null,
+      "email": "ravi@x.in",
+      "billing_state_code": 9,
+      "shipping_state_code": 9
+    }
+  },
+  "customerEditUnchangedSameName_before": {
+    "id": 1,
+    "billing_name": "Ravi Motors",
+    "billing_address": "12 Ring Road",
+    "billing_address_2": null,
+    "billing_city": "Agra",
+    "billing_pin_code": "282001",
+    "billing_state": "Uttar Pradesh",
+    "billing_state_code": 9,
+    "billing_gstin": "09ABCDE1234F1Z5",
+    "shipping_name": "Ravi Motors",
+    "shipping_address": "Plot 7, Transport Nagar",
+    "shipping_address_2": null,
+    "shipping_city": "Mathura",
+    "shipping_pin_code": "281001",
+    "shipping_state": "Uttar Pradesh",
+    "shipping_state_code": 9,
+    "shipping_gstin": null,
+    "contact_no": "9876500001",
+    "contact_no_2": null,
+    "contact_no_3": null,
+    "email": "ravi@x.in",
+    "status": "Active",
+    "total_paid": 0,
+    "total_allocated": 0,
+    "total_refunded": 0,
+    "total_refund_allocated": 0,
+    "account_balance": 0
+  },
+  "customerEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/customers/2",
+    "query": {},
+    "search": "",
+    "body": {
+      "billing_name": "Asha Auto",
+      "billing_address": "Karol Bagh",
+      "billing_address_2": "Lane 2",
+      "billing_city": "Delhi",
+      "billing_pin_code": "110005",
+      "billing_state": "Delhi",
+      "billing_gstin": "",
+      "shipping_name": "Asha Godown",
+      "shipping_address": "Okhla Ph 2",
+      "shipping_address_2": "Lane 2",
+      "shipping_city": "Delhi",
+      "shipping_pin_code": "110020",
+      "shipping_state": "Delhi",
+      "shipping_gstin": "",
+      "contact_no": "9876500002",
+      "contact_no_2": "9876500012",
+      "contact_no_3": null,
+      "email": "",
+      "billing_state_code": 7,
+      "shipping_state_code": 7
+    }
+  },
+  "customerEditUnchanged_before": {
+    "id": 2,
+    "billing_name": "Asha Auto",
+    "billing_address": "Karol Bagh",
+    "billing_address_2": "Lane 2",
+    "billing_city": "Delhi",
+    "billing_pin_code": "110005",
+    "billing_state": "Delhi",
+    "billing_state_code": 7,
+    "billing_gstin": null,
+    "shipping_name": "Asha Godown",
+    "shipping_address": "Okhla Ph 2",
+    "shipping_address_2": null,
+    "shipping_city": "Delhi",
+    "shipping_pin_code": "110020",
+    "shipping_state": "Delhi",
+    "shipping_state_code": 7,
+    "shipping_gstin": null,
+    "contact_no": "9876500002",
+    "contact_no_2": "9876500012",
+    "contact_no_3": null,
+    "email": null,
+    "status": "Active",
+    "total_paid": 0,
+    "total_allocated": 0,
+    "total_refunded": 0,
+    "total_refund_allocated": 0,
+    "account_balance": 0
+  },
+  "customerEditCity": {
+    "method": "PUT",
+    "path": "/api/customers/2",
+    "query": {},
+    "search": "",
+    "body": {
+      "billing_name": "Asha Auto",
+      "billing_address": "Karol Bagh",
+      "billing_address_2": "Lane 2",
+      "billing_city": "New Delhi",
+      "billing_pin_code": "110005",
+      "billing_state": "Delhi",
+      "billing_gstin": "",
+      "shipping_name": "Asha Godown",
+      "shipping_address": "Okhla Ph 2",
+      "shipping_address_2": "Lane 2",
+      "shipping_city": "Delhi",
+      "shipping_pin_code": "110020",
+      "shipping_state": "Delhi",
+      "shipping_gstin": "",
+      "contact_no": "9876500002",
+      "contact_no_2": "9876500012",
+      "contact_no_3": null,
+      "email": "",
+      "billing_state_code": 7,
+      "shipping_state_code": 7
+    }
+  },
+  "customerDeactivate": {
+    "method": "PUT",
+    "path": "/api/customers/2/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive",
+      "confirmed": true
+    }
+  },
+  "vendorCreate": {
+    "method": "POST",
+    "path": "/api/vendors",
+    "query": {},
+    "search": "",
+    "body": {
+      "vendor_name": "Lumax Parts",
+      "address": "Udyog Vihar",
+      "address_2": "",
+      "city": "Gurugram",
+      "pin_code": "122016",
+      "contact_no": "9876533333",
+      "contact_no_2": null,
+      "contact_no_3": null,
+      "email": "",
+      "tax_id": "06ABCDE1234F1Z5",
+      "state": "Haryana",
+      "state_code": 6
+    }
+  },
+  "vendorEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/vendors/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "vendor_name": "Bosch India",
+      "address": "Sector 5",
+      "address_2": "",
+      "city": "Noida",
+      "pin_code": "201301",
+      "contact_no": "9876511111",
+      "contact_no_2": null,
+      "contact_no_3": null,
+      "email": "",
+      "tax_id": "09AAAAA0000A1Z5",
+      "state": "Uttar Pradesh",
+      "state_code": 9
+    }
+  },
+  "vendorEditUnchanged_before": {
+    "id": 1,
+    "vendor_name": "Bosch India",
+    "address": "Sector 5",
+    "address_2": null,
+    "city": "Noida",
+    "pin_code": "201301",
+    "state": "Uttar Pradesh",
+    "state_code": 9,
+    "contact_no": "9876511111",
+    "contact_no_2": null,
+    "contact_no_3": null,
+    "email": null,
+    "tax_id": "09AAAAA0000A1Z5",
+    "status": "Active",
+    "total_paid": 0,
+    "total_allocated": 0,
+    "total_refunded": 0,
+    "total_refund_allocated": 0,
+    "account_balance": 0
+  },
+  "vendorDeactivate": {
+    "method": "PUT",
+    "path": "/api/vendors/1/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive",
+      "confirmed": true
+    }
+  },
+  "customerListQueries": [
+    [
+      "default",
+      "?page=1&limit=50&sortBy=name&sortOrder=asc"
+    ],
+    [
+      "search ravi",
+      "?page=1&limit=50&sortBy=name&sortOrder=asc&search=ravi"
+    ],
+    [
+      "sort city asc",
+      "?page=1&limit=50&sortBy=city&sortOrder=asc"
+    ],
+    [
+      "sort city desc",
+      "?page=1&limit=50&sortBy=city&sortOrder=desc"
+    ],
+    [
+      "sort state asc",
+      "?page=1&limit=50&sortBy=state&sortOrder=asc"
+    ],
+    [
+      "sort status asc",
+      "?page=1&limit=50&sortBy=status&sortOrder=asc"
+    ],
+    [
+      "limit 10",
+      "?page=1&limit=10&sortBy=status&sortOrder=asc"
+    ]
+  ],
+  "vendorListQueries": [
+    [
+      "default",
+      "?page=1&limit=50&sortBy=name&sortOrder=asc"
+    ],
+    [
+      "search zzzz",
+      "?page=1&limit=50&sortBy=name&sortOrder=asc&search=zzzz"
+    ]
+  ],
+  "customerLedgerQuery": "?customer_id=3&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59",
+  "customerOutstandingQueries": [
+    [
+      "default",
+      "?page=1&limit=10&search=&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ],
+    [
+      "page 2",
+      "?page=2&limit=10&search=&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ],
+    [
+      "search Old (from page 2)",
+      "?page=2&limit=10&search=Old&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ]
+  ],
+  "vendorOutstandingQueries": [
+    [
+      "default",
+      "?page=1&limit=10&search=&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ],
+    [
+      "page 2",
+      "?page=2&limit=10&search=&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ],
+    [
+      "search Old (from page 2)",
+      "?page=1&limit=10&search=Old&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+    ]
+  ]
+}

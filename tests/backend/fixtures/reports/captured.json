@@ -1,0 +1,272 @@
+{
+  "sale": {
+    "endpoint": "/api/reports/sales",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&reportType=sale"
+      ],
+      [
+        "both",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&reportType=both"
+      ],
+      [
+        "salex only",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&reportType=salex"
+      ]
+    ]
+  },
+  "salex": {
+    "endpoint": "/api/reports/salex-report",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "purchase": {
+    "endpoint": "/api/reports/purchase",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "gst": {
+    "endpoint": "/api/reports/gst",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "profit": {
+    "endpoint": "/api/reports/profit",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-04-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "cashbook": {
+    "endpoint": "/api/reports/cash-book",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&mode=all&page=1&limit=100"
+      ],
+      [
+        "cash",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&mode=cash&page=1&limit=100"
+      ],
+      [
+        "bank",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&mode=bank&page=1&limit=100"
+      ]
+    ]
+  },
+  "returns": {
+    "endpoint": "/api/reports/returns",
+    "queries": [
+      [
+        "default",
+        "?kind=all&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ],
+      [
+        "customer",
+        "?kind=customer&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ],
+      [
+        "complete",
+        "?kind=customer&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&status=1"
+      ]
+    ]
+  },
+  "customerReports": {
+    "endpoint": "/api/reports/customer-outstanding",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=10&search=&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+      ],
+      [
+        "credit notes view",
+        "?page=1&limit=10&search=&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc&paymentStatus=all"
+      ]
+    ]
+  },
+  "vendorReports": {
+    "endpoint": "/api/reports/vendor-outstanding",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=10&search=&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+      ],
+      [
+        "debit notes view",
+        "?page=1&limit=10&search=&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc&paymentStatus=all"
+      ]
+    ]
+  },
+  "debitNotes": {
+    "endpoint": "/api/reports/debit-notes",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=10&search=&vendorFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&paymentStatus=all&sortBy=return_date&sortOrder=desc"
+      ]
+    ]
+  },
+  "customerLedger": {
+    "endpoint": "/api/reports/customer-ledger-accounting",
+    "queries": [
+      [
+        "after pick",
+        "?customer_id=1&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "vendorLedger": {
+    "endpoint": "/api/reports/vendor-ledger-accounting",
+    "queries": [
+      [
+        "after pick",
+        "?vendor_id=1&page=1&limit=50&dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59"
+      ]
+    ]
+  },
+  "customerLogs": {
+    "endpoint": "/api/reports/customer-balance-logs",
+    "queries": [
+      [
+        "after pick",
+        "?customer_id=1&page=1"
+      ],
+      [
+        "after pick",
+        "?customer_id=1&get_balance=true"
+      ]
+    ]
+  },
+  "vendorLogs": {
+    "endpoint": "/api/reports/vendor-balance-logs",
+    "queries": [
+      [
+        "after pick",
+        "?vendor_id=1&page=1"
+      ],
+      [
+        "after pick",
+        "?vendor_id=1&get_balance=true"
+      ]
+    ]
+  },
+  "openingClosing": {
+    "endpoint": "/api/reports/opening-closing",
+    "queries": [
+      [
+        "default",
+        "?dateFrom=2026-10-01T00%3A00%3A00&dateTo=2026-10-31T23%3A59%3A59&page=1&limit=100&sortBy=product_name&sortOrder=asc"
+      ]
+    ]
+  },
+  "minimumStock": {
+    "endpoint": "/api/reports/minimum-stock",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&search=&categoryFilter=&companyFilter=&modelFilter="
+      ]
+    ]
+  },
+  "mechanic": {
+    "endpoint": "/api/reports/mechanic-sales",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&dateFrom=&dateTo=&transactionType=all&mechanicId="
+      ]
+    ],
+    "pickerUrl": ""
+  },
+  "staff": {
+    "endpoint": "/api/reports/staff-sales",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&dateFrom=&dateTo=&transactionType=all&staffId="
+      ]
+    ]
+  },
+  "commissions": {
+    "endpoint": "/api/reports/commissions",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&dateFrom=&dateTo=&transactionType=all&staffId=&mechanicId="
+      ]
+    ]
+  },
+  "transport": {
+    "endpoint": "/api/reports/transport-cost",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&dateFrom=&dateTo=&transactionType=all&customerId=&vendorId="
+      ]
+    ]
+  },
+  "packing": {
+    "endpoint": "/api/reports/packing-forwarding",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&dateFrom=&dateTo=&transactionType=all&customerId=&vendorId="
+      ]
+    ]
+  },
+  "billRefSale": {
+    "endpoint": "/api/reports/bill-reference-sale",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&billReference=&dateFrom=&dateTo="
+      ]
+    ]
+  },
+  "billRefPurchase": {
+    "endpoint": "/api/reports/bill-reference-purchase",
+    "queries": [
+      [
+        "default",
+        "?page=1&limit=50&billReference=&dateFrom=&dateTo="
+      ]
+    ]
+  },
+  "notes": {
+    "endpoint": "/api/reports/notes-mentioned",
+    "queries": [
+      [
+        "search urgent",
+        "?page=1&limit=50&notesSearch=urgent&transactionType=all&dateFrom=&dateTo="
+      ]
+    ]
+  },
+  "dashboard": {
+    "endpoint": "/api/dashboard",
+    "queries": [
+      [
+        "default",
+        "?today=2026-10-04&salesDate=2026-10-04&purchasesDate=2026-10-04"
+      ],
+      [
+        "sales yesterday",
+        "?today=2026-10-04&salesDate=2026-10-03&purchasesDate=2026-10-04"
+      ]
+    ]
+  }
+}

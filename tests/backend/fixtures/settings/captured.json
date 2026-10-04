@@ -1,0 +1,530 @@
+{
+  "mechanicList": "?page=1&limit=50&search=&sortBy=name&sortOrder=asc&includeInactive=true",
+  "mechanicCreate": {
+    "method": "POST",
+    "path": "/api/mechanics",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": " Sohan ",
+      "phone": "9123456789",
+      "city": "Agra"
+    }
+  },
+  "mechanicEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/mechanics/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": "Ravi",
+      "phone": "9876543210",
+      "city": ""
+    }
+  },
+  "mechanicEditUnchanged_before": {
+    "id": 1,
+    "name": "Ravi",
+    "phone": "9876543210",
+    "city": null,
+    "status": "Active"
+  },
+  "mechanicEditOne": {
+    "method": "PUT",
+    "path": "/api/mechanics/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": "Ravi",
+      "phone": "9876543210",
+      "city": "Mathura"
+    }
+  },
+  "mechanicStatus": {
+    "method": "PATCH",
+    "path": "/api/mechanics/1/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive"
+    }
+  },
+  "staffList": "?page=1&limit=50&search=&sortBy=name&sortOrder=asc&includeInactive=true",
+  "staffCreate": {
+    "method": "POST",
+    "path": "/api/staff",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": "Kiran",
+      "email": "",
+      "phone": "9000000002"
+    }
+  },
+  "staffEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/staff/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": "Neha",
+      "email": "",
+      "phone": "9000000001"
+    }
+  },
+  "staffEditUnchanged_before": {
+    "id": 1,
+    "name": "Neha",
+    "phone": "9000000001",
+    "email": null,
+    "status": "Active"
+  },
+  "staffEditOne": {
+    "method": "PUT",
+    "path": "/api/staff/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "name": "Neha",
+      "email": "neha@shop.in",
+      "phone": "9000000001"
+    }
+  },
+  "staffStatus": {
+    "method": "PATCH",
+    "path": "/api/staff/1/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive"
+    }
+  },
+  "gstList": "?page=1&limit=50&search=&sortBy=description&sortOrder=asc&includeInactive=true",
+  "gstCreate": {
+    "method": "POST",
+    "path": "/api/gst-rates",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 0,
+      "description": "GST 0.25%",
+      "rate": "0.25",
+      "hsn_code": "7102",
+      "applicable_for": "",
+      "status": "Active"
+    }
+  },
+  "gstEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/gst-rates",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "description": "GST 18%",
+      "rate": "18",
+      "hsn_code": "8708",
+      "applicable_for": ""
+    }
+  },
+  "gstEditUnchanged_before": {
+    "id": 1,
+    "description": "GST 18%",
+    "rate": 18,
+    "hsn_code": "8708",
+    "applicable_for": "",
+    "status": "Active"
+  },
+  "gstEditOne": {
+    "method": "PUT",
+    "path": "/api/gst-rates",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "description": "GST 18%",
+      "rate": "18",
+      "hsn_code": "8714",
+      "applicable_for": ""
+    }
+  },
+  "gstStatus": {
+    "method": "PATCH",
+    "path": "/api/gst-rates/1/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive"
+    }
+  },
+  "statesList": "?page=1&limit=50&search=&sortBy=state_name&sortOrder=asc",
+  "stateCreate": {
+    "method": "POST",
+    "path": "/api/states",
+    "query": {},
+    "search": "",
+    "body": {
+      "state_name": "Haryana",
+      "code": "6"
+    }
+  },
+  "stateEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/states/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "state_name": "Uttar Pradesh",
+      "code": "9"
+    }
+  },
+  "stateEditUnchanged_before": {
+    "id": 1,
+    "state_name": "Uttar Pradesh",
+    "code": 9
+  },
+  "stateRenameInUse": {
+    "method": "PUT",
+    "path": "/api/states/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "state_name": "U.P.",
+      "code": "9"
+    }
+  },
+  "stateCodeChangeInUse": {
+    "method": "PUT",
+    "path": "/api/states/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "state_name": "Uttar Pradesh",
+      "code": "10"
+    }
+  },
+  "stateDeleteInUse": {
+    "method": "DELETE",
+    "path": "/api/states/2",
+    "query": {},
+    "search": "",
+    "body": null
+  },
+  "stateDelete": {
+    "method": "DELETE",
+    "path": "/api/states/1000",
+    "query": {},
+    "search": "",
+    "body": null
+  },
+  "categoryList": "?page=1&limit=50&search=&sortBy=category_name&sortOrder=asc",
+  "categoryCreate": {
+    "method": "POST",
+    "path": "/api/products/categories",
+    "query": {},
+    "search": "",
+    "body": {
+      "category_name": "Clutch"
+    }
+  },
+  "categoryEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/products/categories/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "category_name": "Brakes"
+    }
+  },
+  "subcategoryList": "?page=1&limit=50&search=&sortBy=subcategory_name&sortOrder=asc&category_search=",
+  "subcategoryCreate": {
+    "method": "POST",
+    "path": "/api/products/subcategories",
+    "query": {},
+    "search": "",
+    "body": {
+      "subcategory_name": "Gaskets",
+      "category_id": 2
+    }
+  },
+  "subcategoryEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/products/subcategories/1",
+    "query": {},
+    "search": "",
+    "body": {
+      "subcategory_name": "Pads",
+      "category_id": 1
+    }
+  },
+  "warehouseList": "?page=1&limit=50&search=&sortBy=name&sortOrder=asc&includeInactive=true",
+  "warehouseCreate": {
+    "method": "POST",
+    "path": "/api/warehouses",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 0,
+      "name": "Annexe",
+      "location": "Mathura"
+    }
+  },
+  "warehouseEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/warehouses",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "name": "Main",
+      "location": "Delhi"
+    }
+  },
+  "warehouseEditUnchanged_before": {
+    "id": 1,
+    "name": "Main",
+    "location": "Delhi",
+    "status": "Active"
+  },
+  "warehouseEditOne": {
+    "method": "PUT",
+    "path": "/api/warehouses",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "name": "Main",
+      "location": "New Delhi"
+    }
+  },
+  "warehouseStatus": {
+    "method": "PATCH",
+    "path": "/api/warehouses/1/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive"
+    }
+  },
+  "warehouseStatusTarget": "Inactive",
+  "rackList": "?page=1&limit=50&search=&sortBy=rack_number&sortOrder=asc&includeInactive=true",
+  "rackWarehouseOptions": "?dropdown=true",
+  "rackCreate": {
+    "method": "POST",
+    "path": "/api/warehouses/2/racks",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": "",
+      "warehouse_id": "2",
+      "rack_number": " B2 ",
+      "description": ""
+    }
+  },
+  "rackEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/warehouses/1/racks",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": "1",
+      "warehouse_id": "1",
+      "rack_number": "A1",
+      "description": ""
+    }
+  },
+  "rackEditUnchanged_before": {
+    "id": 1,
+    "warehouse_id": 1,
+    "rack_number": "A1",
+    "description": null,
+    "status": "Active"
+  },
+  "rackStatus": {
+    "method": "PUT",
+    "path": "/api/warehouses/1/racks",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "status": "Inactive"
+    }
+  },
+  "bankList": "?page=1&limit=50&search=&sortBy=bank_name&sortOrder=asc",
+  "bankCreate": {
+    "method": "POST",
+    "path": "/api/bank-details",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 0,
+      "bank_name": "Savings",
+      "account_number": "1234567890",
+      "bank_address": "",
+      "ifsc": "hdfc0001234"
+    }
+  },
+  "bankEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/bank-details",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "bank_name": "Current A/c",
+      "account_number": "50100012345",
+      "bank_address": "",
+      "ifsc": ""
+    }
+  },
+  "bankEditUnchanged_before": {
+    "id": 1,
+    "bank_name": "Current A/c",
+    "account_number": "50100012345",
+    "bank_address": null,
+    "ifsc": null
+  },
+  "bankEditOne": {
+    "method": "PUT",
+    "path": "/api/bank-details",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "bank_name": "Current A/c",
+      "account_number": "50100012345",
+      "bank_address": "",
+      "ifsc": "SBIN0001234"
+    }
+  },
+  "businessEditUnchanged": {
+    "method": "PUT",
+    "path": "/api/business-details",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "gstin": "09ABCDE1234F1Z5",
+      "name": "Baijnath Sons",
+      "tagline": null,
+      "address_line_1": "Main Bazar",
+      "address_line_2": null,
+      "pin_code": "282001",
+      "phone": "9876500000",
+      "phone2": null,
+      "email": null,
+      "fax": null,
+      "terms": null
+    }
+  },
+  "businessEditUnchanged_before": {
+    "id": 1,
+    "gstin": "09ABCDE1234F1Z5",
+    "name": "Baijnath Sons",
+    "tagline": null,
+    "address_line_1": "Main Bazar",
+    "address_line_2": null,
+    "pin_code": "282001",
+    "phone": "9876500000",
+    "phone2": null,
+    "email": null,
+    "fax": null,
+    "terms": null
+  },
+  "businessEditOne": {
+    "method": "PUT",
+    "path": "/api/business-details",
+    "query": {},
+    "search": "",
+    "body": {
+      "id": 1,
+      "gstin": "09ABCDE1234F1Z5",
+      "name": "Baijnath Sons",
+      "tagline": null,
+      "address_line_1": "Main Bazar",
+      "address_line_2": null,
+      "pin_code": "282001",
+      "phone": "9876500000",
+      "phone2": null,
+      "email": "shop@bs.in",
+      "fax": null,
+      "terms": null
+    }
+  },
+  "usersList": "?page=1&limit=50&search=&sortBy=created_at&sortOrder=desc",
+  "userCreate": {
+    "method": "POST",
+    "path": "/api/users",
+    "query": {},
+    "search": "",
+    "body": {
+      "username": "counter1",
+      "email": "counter1@shop.in",
+      "phone": null,
+      "password": "secret123",
+      "status": "10"
+    }
+  },
+  "userEditUnchanged": {
+    "method": "POST",
+    "path": "/api/users",
+    "query": {},
+    "search": "",
+    "body": {
+      "username": "admin",
+      "email": "admin@shop.in",
+      "phone": null,
+      "password": "",
+      "status": "10",
+      "id": 1
+    }
+  },
+  "userEditUnchanged_before": {
+    "id": 1,
+    "username": "admin",
+    "email": "admin@shop.in",
+    "phone": null,
+    "status": 10,
+    "auth_key": "k",
+    "password_hash": "h",
+    "created_at": 1,
+    "updated_at": 1
+  },
+  "userStatus": {
+    "method": "PATCH",
+    "path": "/api/users/1000/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Inactive"
+    }
+  },
+  "fyList": "?page=1&limit=50&search=&sortBy=fy&sortOrder=desc",
+  "fyCreate": {
+    "method": "POST",
+    "path": "/api/financial-years",
+    "query": {},
+    "search": "",
+    "body": {
+      "start_date": "2025-04-01",
+      "end_date": "2026-03-31"
+    }
+  },
+  "fySetCurrentPast": {
+    "method": "PUT",
+    "path": "/api/financial-years/1000/current",
+    "query": {},
+    "search": "",
+    "body": null
+  },
+  "inactiveList": "?page=1&limit=50&search=&sortBy=product_name&sortOrder=asc&isActive=false",
+  "inactiveReactivate": {
+    "method": "PATCH",
+    "path": "/api/products/2/status",
+    "query": {},
+    "search": "",
+    "body": {
+      "status": "Active"
+    }
+  }
+}
