@@ -1,7 +1,8 @@
 /**
  * Reconciliation assertions (Phase 4; A7-A11 added 2026-10-03 for the
  * customer side, sale payments, returns, payments / refunds, dead stock and
- * the party masters).
+ * the party masters; A12-A14 the same day: documents to ledger, ledger to
+ * documents, balance logs).
  *
  * Run after EVERY step. These are the definition of "the step was clean".
  * Read-only: this script never writes.
@@ -10,6 +11,7 @@
  *   node scripts/audit-assert.js A1 A4      only those
  *
  * Exit code 0 if everything passed, 1 otherwise, so it can gate a commit.
+ * require('./audit-assert').run(ids, { quiet }) returns the results instead.
  */
 
 const { PrismaClient } = require('@prisma/client');
@@ -21,8 +23,11 @@ const money = (v) => num(v).toFixed(2);
 const near = (a, b) => Math.abs(num(a) - num(b)) <= TOL;
 
 const results = [];
+const QUIET = { on: false };
+const say = (...a) => { if (!QUIET.on) console.log(...a); };
 function report(id, title, failures, checked) {
   results.push({ id, title, failures, checked });
+  if (QUIET.on) return;
   // An assertion that examined nothing has not passed - it has abstained (L-38).
   // Every Phase 4 suite cleans up after itself, so the baseline holds zero
   // ledger rows and A2/A3/A4 were quietly reporting PASS over an empty set.
@@ -170,6 +175,10 @@ async function A3() {
  * Purchase arithmetic. Holds by construction only once the server recomputes
  * tax (P4-12); until then this is the assertion that catches a client that got
  * its own sums wrong.
+ *
+ * Freight is part of the total since 2026-10-03 (owner, BILLS_PLAN Q1); bills
+ * saved before that carry it outside the total, and no data was changed, so
+ * either form is accepted.
  */
 async function A4() {
   const rows = await prisma.purchase.findMany({
@@ -183,10 +192,10 @@ async function A4() {
   const failures = [];
   for (const r of rows) {
     const expected = num(r.items_total) + num(r.packing_forwarding_total) + num(r.total_tax);
-    if (!near(r.total, expected)) {
+    if (!near(r.total, expected + num(r.freight)) && !near(r.total, expected)) {
       failures.push(
         `purchase ${r.id} (inv ${r.invoice_no}): total=${money(r.total)} but items ${money(r.items_total)} ` +
-        `+ packing ${money(r.packing_forwarding_total)} + tax ${money(r.total_tax)} = ${money(expected)}`
+        `+ packing ${money(r.packing_forwarding_total)} + tax ${money(r.total_tax)} + freight ${money(r.freight)} = ${money(expected + num(r.freight))}`
       );
     }
     const split = num(r.total_cgst) + num(r.total_sgst) + num(r.total_igst);
@@ -512,38 +521,285 @@ async function A11() {
   report('A11', 'dead stock entries valid; status words; nothing points at a missing customer or vendor', failures, checked);
 }
 
-/* ------------------------------------------------------------------ run */
-const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11 };
+/* ------------------------------------------------------------------ A12 */
+/**
+ * Documents -> ledger (2026-10-03). A1-A11 check that the ledger agrees with
+ * itself; this checks that it agrees with the documents it records, so a bill
+ * posted at the wrong total, or a payment that never reached the ledger, fails.
+ *
+ *  - every bill has exactly one PURCHASE / SALE row, on its own party, and its
+ *    rows (with any _ADJUSTMENT / _REVERSAL) net to the bill's total; a walk-in
+ *    ("Other" customer, 0) sale posts nothing - the vendor "Other" (0) is a real
+ *    vendor row and does post;
+ *  - per party, the payment rows net to the party's payments, the refund rows to
+ *    its refunds and the note rows to its refunded returns.
+ *  - a refunded return is a direct adjustment to the party's account (owner,
+ *    2026-10-03): its note is what posts. A sale / Invoice C return created as
+ *    refunded also writes a REFUND row for the same amount; one marked refunded
+ *    later writes only the note. So a return's REFUND rows, when it has any,
+ *    net to its refund, and a pending return has none.
+ * Together these make each party's closing balance exactly what its documents
+ * say - which is what the outstanding and ledger reports show.
+ */
+async function A12() {
+  const q = (sql, ...p) => prisma.$queryRawUnsafe(sql, ...p);
+  const failures = [];
+  let checked = 0;
 
-(async () => {
-  const want = process.argv.slice(2).filter((a) => ALL[a]);
+  const BILLS = [
+    { label: 'purchase', head: 'purchase', party: 'COALESCE(b.vendor_id, 0)', ledger: 'vendor_ledger', who: 'vendor_id', ref: `'purchase'`, type: 'PURCHASE', walkIn: false },
+    { label: 'sale', head: 'invoice', party: 'COALESCE(b.select_customer, 0)', ledger: 'customer_ledger', who: 'customer_id', ref: `'sale'`, type: 'SALE', walkIn: true },
+    { label: 'Invoice C', head: 'invoicex', party: 'COALESCE(b.select_customer, 0)', ledger: 'customer_ledger', who: 'customer_id', ref: `'salex'`, type: 'SALE', walkIn: true }
+  ];
+  for (const k of BILLS) {
+    const rows = await q(`
+      SELECT b.id, b.invoice_no, b.total, ${k.party} AS party,
+        COALESCE((SELECT SUM(l.debit - l.credit) FROM ${k.ledger} l
+                  WHERE l.reference_type = ${k.ref} AND l.reference_id = b.id AND l.transaction_type LIKE '${k.type}%'), 0) AS posted,
+        (SELECT COUNT(*) FROM ${k.ledger} l
+          WHERE l.reference_type = ${k.ref} AND l.reference_id = b.id AND l.transaction_type = '${k.type}') AS main_rows,
+        (SELECT COUNT(*) FROM ${k.ledger} l
+          WHERE l.reference_type = ${k.ref} AND l.reference_id = b.id AND l.${k.who} <> ${k.party}) AS other_party
+      FROM ${k.head} b`);
+    for (const r of rows) {
+      checked++;
+      const name = `${k.label} ${r.id} (no ${r.invoice_no})`;
+      if (k.walkIn && num(r.party) === 0) {
+        if (num(r.main_rows) > 0 || Math.abs(num(r.posted)) > TOL) failures.push(`${name}: walk-in bill but the ledger carries ₹${money(r.posted)} for it`);
+        continue;
+      }
+      if (num(r.main_rows) !== 1) failures.push(`${name}: ${num(r.main_rows)} ${k.type} rows in the ledger (expected 1)`);
+      if (!near(r.posted, r.total)) failures.push(`${name}: total ₹${money(r.total)} but its ledger rows net ₹${money(r.posted)}`);
+      if (num(r.other_party) > 0) failures.push(`${name}: ${num(r.other_party)} of its ledger rows sit on another party`);
+    }
+  }
+
+  // Per party: each kind of money movement against what the documents hold.
+  const sumBy = async (sql) => {
+    const m = new Map();
+    for (const r of await q(sql)) m.set(num(r.party), num(r.amount));
+    return m;
+  };
+  const SIDES = [
+    {
+      side: 'vendor', master: 'vendor_details', nameCol: 'vendor_name',
+      pairs: [
+        ['payments', `SELECT vendor_id AS party, SUM(payment_amount) AS amount FROM vendor_payments GROUP BY vendor_id`,
+                     `SELECT vendor_id AS party, SUM(credit - debit) AS amount FROM vendor_ledger WHERE transaction_type LIKE 'PAYMENT%' GROUP BY vendor_id`],
+        ['refunds', `SELECT vendor_id AS party, SUM(refund_amount) AS amount FROM vendor_refunds GROUP BY vendor_id`,
+                    `SELECT vendor_id AS party, SUM(debit - credit) AS amount FROM vendor_ledger WHERE transaction_type LIKE 'REFUND%' GROUP BY vendor_id`],
+        ['debit notes', `SELECT vendor_id AS party, SUM(refund_amount) AS amount FROM purchase_returns WHERE payment_status = 1 GROUP BY vendor_id`,
+                        `SELECT vendor_id AS party, SUM(credit - debit) AS amount FROM vendor_ledger WHERE transaction_type LIKE 'DEBIT_NOTE%' GROUP BY vendor_id`]
+      ]
+    },
+    {
+      side: 'customer', master: 'customer_details', nameCol: 'billing_name',
+      pairs: [
+        ['payments', `SELECT customer_id AS party, SUM(payment_amount) AS amount FROM customer_payments GROUP BY customer_id`,
+                     `SELECT customer_id AS party, SUM(credit - debit) AS amount FROM customer_ledger WHERE transaction_type LIKE 'PAYMENT%' GROUP BY customer_id`],
+        ['refunds', `SELECT customer_id AS party, SUM(refund_amount) AS amount FROM customer_refunds GROUP BY customer_id`,
+                    `SELECT customer_id AS party, SUM(debit - credit) AS amount FROM customer_ledger WHERE transaction_type LIKE 'REFUND%' AND reference_type NOT IN ('sale_return', 'salex_return') GROUP BY customer_id`],
+        ['credit notes', REFUNDED_SALE_RETURNS,
+                         `SELECT customer_id AS party, SUM(credit - debit) AS amount FROM customer_ledger WHERE transaction_type LIKE 'CREDIT_NOTE%' GROUP BY customer_id`],
+      ]
+    }
+  ];
+  for (const s of SIDES) {
+    const names = new Map((await q(`SELECT id, ${s.nameCol} AS name FROM ${s.master}`)).map(r => [num(r.id), r.name]));
+    const parties = new Set(names.keys());
+    const sets = [];
+    for (const [label, docSql, ledgerSql] of s.pairs) {
+      const docs = await sumBy(docSql), posted = await sumBy(ledgerSql);
+      for (const p of [...docs.keys(), ...posted.keys()]) parties.add(p);
+      sets.push([label, docs, posted]);
+    }
+    for (const p of parties) {
+      checked++;
+      for (const [label, docs, posted] of sets) {
+        const d = docs.get(p) || 0, l = posted.get(p) || 0;
+        if (!near(d, l)) failures.push(`${s.side} ${p} "${names.get(p) ?? '?'}": ${label} ₹${money(d)} but the ledger rows for them net ₹${money(l)}`);
+      }
+    }
+  }
+  // A return's own REFUND rows (customer side): none, or exactly its refund.
+  for (const [label, ret, head, fk, ref] of [['sale return', 'sale_returns', 'invoice', 'invoice_id', 'sale_return'], ['Invoice C return', 'salex_returns', 'invoicex', 'invoicex_id', 'salex_return']]) {
+    const rows = await q(`
+      SELECT r.id, r.payment_status, r.refund_amount, b.select_customer AS party,
+        (SELECT COUNT(*) FROM customer_ledger l WHERE l.reference_type = '${ref}' AND l.reference_id = r.id AND l.transaction_type LIKE 'REFUND%') AS n,
+        COALESCE((SELECT SUM(l.debit - l.credit) FROM customer_ledger l WHERE l.reference_type = '${ref}' AND l.reference_id = r.id AND l.transaction_type LIKE 'REFUND%'), 0) AS paid
+      FROM ${ret} r JOIN ${head} b ON b.id = r.${fk}`);
+    for (const r of rows) {
+      if (num(r.n) === 0) continue;
+      checked++;
+      if (num(r.payment_status) !== 1) failures.push(`${label} ${r.id}: pending but the ledger carries a refund of ₹${money(r.paid)} for it`);
+      else if (!near(r.paid, r.refund_amount)) failures.push(`${label} ${r.id}: refund ₹${money(r.refund_amount)} but its REFUND rows net ₹${money(r.paid)}`);
+    }
+  }
+  report('A12', 'documents -> ledger: each bill posted at its total; each party\'s payments, refunds and notes posted in full', failures, checked);
+}
+
+/** Refunded sale and Invoice C returns per customer (their CREDIT_NOTE rows). */
+const REFUNDED_SALE_RETURNS = `
+  SELECT party, SUM(amount) AS amount FROM (
+    SELECT b.select_customer AS party, r.refund_amount AS amount FROM sale_returns r JOIN invoice b ON b.id = r.invoice_id WHERE r.payment_status = 1 AND b.select_customer <> 0
+    UNION ALL
+    SELECT b.select_customer AS party, r.refund_amount AS amount FROM salex_returns r JOIN invoicex b ON b.id = r.invoicex_id WHERE r.payment_status = 1 AND b.select_customer <> 0
+  ) t GROUP BY party`;
+
+/* ------------------------------------------------------------------ A13 */
+/**
+ * Ledger -> documents (2026-10-03), the other direction of A12. Every row is a
+ * type the app writes, and the document it records still exists and belongs to
+ * the same party. A delete removes its rows, so a row left behind - or one
+ * written by hand - shows up here. A payment or refund row carries the
+ * payment's / refund's id in transaction_id (that is how a delete finds it);
+ * the reversal rows a status change writes carry only their bill.
+ */
+async function A13() {
+  const q = (sql) => prisma.$queryRawUnsafe(sql);
+  const failures = [];
+  const VENDOR_TYPES = ['PURCHASE', 'DEBIT_NOTE', 'PAYMENT', 'REFUND_RECEIVED', 'REFUND'];
+  const CUSTOMER_TYPES = ['SALE', 'CREDIT_NOTE', 'PAYMENT_RECEIVED', 'PAYMENT', 'REFUND', 'REFUND_PAID'];
+  const known = (types, t) => types.some(b => t === b || t === `${b}_REVERSAL` || t === `${b}_ADJUSTMENT`);
+  const VENDOR_KNOWN = (t) => known(VENDOR_TYPES, t) && t !== 'REFUND' && t !== 'REFUND_PAID';
+  const CUSTOMER_KNOWN = (t) => known(CUSTOMER_TYPES, t) && t !== 'PAYMENT';
+  const hasId = (v) => v !== null && v !== undefined;
+
+  const vendorRows = await q(`SELECT id, vendor_id, transaction_type, reference_type, reference_id, transaction_id FROM vendor_ledger`);
+  const customerRows = await q(`SELECT id, customer_id, transaction_type, reference_type, reference_id, transaction_id FROM customer_ledger`);
+  const owner = async (sql) => new Map((await q(sql)).map(r => [num(r.id), num(r.party)]));
+  const purchases = await owner(`SELECT id, COALESCE(vendor_id, 0) AS party FROM purchase`);
+  const pReturns = await owner(`SELECT id, COALESCE(vendor_id, 0) AS party FROM purchase_returns`);
+  const vPayments = await owner(`SELECT id, vendor_id AS party FROM vendor_payments`);
+  const vRefunds = await owner(`SELECT id, vendor_id AS party FROM vendor_refunds`);
+  const sales = await owner(`SELECT id, COALESCE(select_customer, 0) AS party FROM invoice`);
+  const salesX = await owner(`SELECT id, COALESCE(select_customer, 0) AS party FROM invoicex`);
+  const sReturns = await owner(`SELECT r.id, COALESCE(b.select_customer, 0) AS party FROM sale_returns r JOIN invoice b ON b.id = r.invoice_id`);
+  const xReturns = await owner(`SELECT r.id, COALESCE(b.select_customer, 0) AS party FROM salex_returns r JOIN invoicex b ON b.id = r.invoicex_id`);
+  const cPayments = await owner(`SELECT id, customer_id AS party FROM customer_payments`);
+  const cRefunds = await owner(`SELECT id, customer_id AS party FROM customer_refunds`);
+
+  const expect = (label, row, party, docs, id, what) => {
+    if (!docs.has(num(id))) failures.push(`${label} row ${row.id} (${row.transaction_type}): ${what} ${id} does not exist`);
+    else if (docs.get(num(id)) !== party) failures.push(`${label} row ${row.id} (${row.transaction_type}): ${what} ${id} belongs to party ${docs.get(num(id))}, the row to ${party}`);
+  };
+  for (const r of vendorRows) {
+    const t = String(r.transaction_type), L = 'vendor ledger', party = num(r.vendor_id);
+    if (!VENDOR_KNOWN(t)) { failures.push(`${L} row ${r.id}: type ${t} is not one the app writes`); continue; }
+    if (r.reference_type === 'purchase') expect(L, r, party, purchases, r.reference_id, 'purchase');
+    else if (r.reference_type === 'purchase_return') expect(L, r, party, pReturns, r.reference_id, 'purchase return');
+    else if (r.reference_type !== 'payment') failures.push(`${L} row ${r.id} (${t}): reference type "${r.reference_type}"`);
+    if (t.endsWith('_REVERSAL')) continue;
+    if (t.startsWith('PAYMENT')) {
+      if (!hasId(r.transaction_id)) failures.push(`${L} row ${r.id} (${t}): no payment id - deleting the payment cannot find it`);
+      else expect(L, r, party, vPayments, r.transaction_id, 'payment');
+    } else if (t.startsWith('REFUND')) {
+      if (!hasId(r.transaction_id)) failures.push(`${L} row ${r.id} (${t}): no refund id - deleting the refund cannot find it`);
+      else expect(L, r, party, vRefunds, r.transaction_id, 'refund');
+    }
+  }
+  for (const r of customerRows) {
+    const t = String(r.transaction_type), L = 'customer ledger', party = num(r.customer_id);
+    if (!CUSTOMER_KNOWN(t)) { failures.push(`${L} row ${r.id}: type ${t} is not one the app writes`); continue; }
+    if (party === 0) failures.push(`${L} row ${r.id} (${t}): on the walk-in customer, who has no account`);
+    if (r.reference_type === 'sale') expect(L, r, party, sales, r.reference_id, 'sale');
+    else if (r.reference_type === 'salex') expect(L, r, party, salesX, r.reference_id, 'Invoice C bill');
+    else if (r.reference_type === 'sale_return') expect(L, r, party, sReturns, r.reference_id, 'sale return');
+    else if (r.reference_type === 'salex_return') expect(L, r, party, xReturns, r.reference_id, 'Invoice C return');
+    else if (r.reference_type !== 'payment' && r.reference_type !== 'refund') failures.push(`${L} row ${r.id} (${t}): reference type "${r.reference_type}"`);
+    if (t.endsWith('_REVERSAL')) continue;
+    if (t.startsWith('PAYMENT')) {
+      if (!hasId(r.transaction_id)) failures.push(`${L} row ${r.id} (${t}): no payment id - deleting the payment cannot find it`);
+      else expect(L, r, party, cPayments, r.transaction_id, 'payment');
+    } else if (t.startsWith('REFUND_PAID')) {
+      if (!hasId(r.transaction_id)) failures.push(`${L} row ${r.id} (${t}): no refund id - deleting the refund cannot find it`);
+      else expect(L, r, party, cRefunds, r.transaction_id, 'refund');
+    }
+  }
+  report('A13', 'ledger -> documents: every row a known type, its document there, same party', failures, vendorRows.length + customerRows.length);
+}
+
+/* ------------------------------------------------------------------ A14 */
+/**
+ * Balance logs (2026-10-03). Every change to a party's total_paid /
+ * total_allocated / total_refunded / total_refund_allocated is logged, and the
+ * balance-log reports list those rows. Per party and column: each row's new
+ * value is old + change, each row starts where the previous one ended, and the
+ * last one is the party's current figure. Parties or columns with no log rows
+ * (data from before the logs) are skipped.
+ */
+async function A14() {
+  const q = (sql) => prisma.$queryRawUnsafe(sql);
+  const failures = [];
+  let checked = 0;
+  const COLUMNS = ['total_paid', 'total_allocated', 'total_refunded', 'total_refund_allocated'];
+  for (const [side, logs, master, who] of [['vendor', 'vendor_balance_logs', 'vendor_details', 'vendor_id'], ['customer', 'customer_balance_logs', 'customer_details', 'customer_id']]) {
+    const parties = new Map((await q(`SELECT id, total_paid, total_allocated, total_refunded, total_refund_allocated FROM ${master}`)).map(r => [num(r.id), r]));
+    const rows = await q(`SELECT id, ${who} AS party, column_name, change_amount, old_value, new_value, source_type FROM ${logs} ORDER BY ${who}, column_name, id`);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i], before = rows[i - 1], after = rows[i + 1];
+      const key = (x) => `${num(x.party)}|${x.column_name}`;
+      const label = `${side} ${num(r.party)} ${r.column_name} log ${r.id} (${r.source_type})`;
+      if (!near(num(r.old_value) + num(r.change_amount), r.new_value)) failures.push(`${label}: ${money(r.old_value)} + ${money(r.change_amount)} is not ${money(r.new_value)}`);
+      if (before && key(before) === key(r) && !near(before.new_value, r.old_value)) failures.push(`${label}: starts at ${money(r.old_value)} but the row before ended at ${money(before.new_value)}`);
+      if (after && key(after) === key(r)) continue;
+      checked++;
+      const p = parties.get(num(r.party));
+      if (!p) failures.push(`${label}: ${side} ${num(r.party)} does not exist`);
+      else if (!COLUMNS.includes(r.column_name)) failures.push(`${label}: unknown column`);
+      else if (!near(p[r.column_name], r.new_value)) failures.push(`${side} ${num(r.party)} ${r.column_name}: ${money(p[r.column_name])} but its log ends at ${money(r.new_value)}`);
+    }
+  }
+  report('A14', 'balance logs: each row adds up, the rows chain, the last equals the party\'s figure', failures, checked);
+}
+
+/* ------------------------------------------------------------------ run */
+const ALL = { A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14 };
+
+/**
+ * Run the chosen assertions (all when none is named) and return the results.
+ * `quiet` skips the printing - the test harness runs every assertion after
+ * each step it takes.
+ */
+async function run(ids = [], { quiet = false } = {}) {
+  results.length = 0;
+  QUIET.on = quiet;
+  const want = ids.filter((a) => ALL[a]);
   const chosen = want.length ? want : Object.keys(ALL);
 
-  console.log(`\nReconciliation — ${chosen.join(' ')}`);
-  console.log('='.repeat(72));
+  say(`\nReconciliation — ${chosen.join(' ')}`);
+  say('='.repeat(72));
 
   for (const id of chosen) await ALL[id]();
 
   const failed = results.filter((r) => r.failures.length > 0);
   const empty = results.filter((r) => r.failures.length === 0 && r.checked === 0);
-  console.log('\n' + '='.repeat(72));
+  say('\n' + '='.repeat(72));
   if (failed.length === 0) {
-    console.log(`ALL CLEAN — ${chosen.length - empty.length} of ${chosen.length} assertions passed.\n`);
+    say(`ALL CLEAN — ${chosen.length - empty.length} of ${chosen.length} assertions passed.\n`);
   } else {
-    console.log(`${failed.length} of ${chosen.length} assertions FAILING: ${failed.map((f) => f.id).join(', ')}\n`);
+    say(`${failed.length} of ${chosen.length} assertions FAILING: ${failed.map((f) => f.id).join(', ')}\n`);
   }
   if (empty.length) {
-    console.log(
+    say(
       `${empty.length} assertion(s) examined NOTHING and prove nothing: ` +
       `${empty.map((e) => e.id).join(', ')}.\n` +
       `  Seed the relevant data before trusting a green run (L-38).\n`
     );
   }
+  return results.map((r) => ({ ...r }));
+}
 
-  await prisma.$disconnect();
-  process.exit(failed.length === 0 ? 0 : 1);
-})().catch(async (e) => {
-  console.error('ASSERTION RUN FAILED:', e);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+module.exports = { run, ALL };
+
+if (require.main === module) {
+  (async () => {
+    const out = await run(process.argv.slice(2));
+    await prisma.$disconnect();
+    process.exit(out.some((r) => r.failures.length > 0) ? 1 : 0);
+  })().catch(async (e) => {
+    console.error('ASSERTION RUN FAILED:', e);
+    await prisma.$disconnect();
+    process.exit(1);
+  });
+}
