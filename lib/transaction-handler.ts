@@ -1554,9 +1554,10 @@ export class TransactionHandler {
     } else {
       // ✅ EXISTING LOGIC: For status change edits, create reversal entries
       // This preserves audit trail for status changes
-      await Promise.all(
-        ledgerEntries.map(entry => 
-          ledgerService.createEntry({
+      // One after another (2026-10-03): each reversal's stored running balance
+      // starts from the latest row; written together they all read the same one.
+      for (const entry of ledgerEntries) {
+        await ledgerService.createEntry({
             vendor_id: entry.vendor_id,
             transaction_date: Math.floor(Date.now() / 1000),
             transaction_type: `${entry.transaction_type}_REVERSAL` as any,
@@ -1568,9 +1569,8 @@ export class TransactionHandler {
             credit: entry.debit,
             notes: `Reversal: ${entry.transaction_type} deleted`,
             fy: entry.fy
-          }, tx)
-        )
-      );
+          }, tx);
+      }
     }
   }
   

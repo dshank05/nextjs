@@ -221,13 +221,14 @@ async function handleCreatePayment(
           }
         );
       } else {
-        await Promise.all(
-          statusUpdates.map(u => {
+        // One after another (2026-10-03): each entry's stored running balance starts
+        // from the latest row, so entries written together all read the same one.
+        for (const u of statusUpdates) {
             const ledgerNotes = notes?.trim() 
               ? notes 
               : `Payment ₹${u.allocation.allocated_amount} for bill INV-${u.purchase.invoice_no} via Payment #${payment.id}${u.status === 2 ? ' (Partial)' : ''}`;
             
-            return ledgerService.createEntry({
+            await ledgerService.createEntry({
               vendor_id: vendorId,
               transaction_date: paymentTimestamp,
               transaction_type: 'PAYMENT',
@@ -243,8 +244,7 @@ async function handleCreatePayment(
               fy: financialYear,
               transaction_id: payment.id
             }, tx);
-          })
-        );
+        }
         
         await balanceHandler.incrementBalanceInTransaction(
           tx, 

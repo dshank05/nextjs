@@ -166,22 +166,21 @@ async function handleCreateRefund(
         };
       });
 
-      // Execute all updates and ledger entries in parallel
-      await Promise.all([
-        // Update all return statuses
-        ...statusUpdates.map(u => 
-          tx.purchase_returns.update({
-            where: { id: u.returnId },
-            data: { payment_status: u.status }
-          })
-        ),
-        // Create all ledger entries
-        ...statusUpdates.map(u => {
+      // Return statuses together; the ledger entries one after another (2026-10-03):
+      // each entry's stored running balance starts from the latest row, so entries
+      // written together all read the same one.
+      await Promise.all(statusUpdates.map(u =>
+        tx.purchase_returns.update({
+          where: { id: u.returnId },
+          data: { payment_status: u.status }
+        })
+      ));
+      for (const u of statusUpdates) {
           const ledgerNotes = notes?.trim() 
             ? notes 
             : `Refund received ₹${u.allocation.allocated_amount} for return ${u.purchaseReturn.debit_note_no} via Refund #${refund.id}${u.status === 2 ? ' (Partial)' : ''}`;
           
-          return ledgerService.createEntry({
+          await ledgerService.createEntry({
             vendor_id: vendorId,
             transaction_date: refundTimestamp,  // ✅ Use converted timestamp
             transaction_type: 'REFUND_RECEIVED',
@@ -197,8 +196,7 @@ async function handleCreateRefund(
             fy: financialYear,
             transaction_id: refund.id
           }, tx);
-        })
-      ]);
+      }
 
       const createdAllocations = allocations; // For response compatibility
 
