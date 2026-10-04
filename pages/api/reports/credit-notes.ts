@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
 import { returnNo } from '../../../lib/sale-return';
 import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
+import { fail } from '../../../lib/api/respond';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -197,7 +198,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
   } catch (error) {
-    console.error('Error fetching credit notes:', error);
-    return res.status(500).json({ error: 'Failed to fetch credit notes' });
+    // E-15: the same failure shape as every other route ({ message }).
+    return fail(res, error, 'fetch credit notes');
   }
 }

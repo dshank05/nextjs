@@ -15,6 +15,9 @@ import { convertDateToTimestamp } from '../../../lib/date-utils';
 import dashboard from '../../../pages/api/dashboard/index';
 import commissionsR from '../../../pages/api/reports/commissions';
 import freightR from '../../../pages/api/reports/transport-cost';
+import mechanicR from '../../../pages/api/reports/mechanic-sales';
+import staffR from '../../../pages/api/reports/staff-sales';
+import packingR from '../../../pages/api/reports/packing-forwarding';
 
 const FIX = path.join(__dirname, '../fixtures/sales');
 const fx = (name) => JSON.parse(fs.readFileSync(path.join(FIX, name), 'utf8'));
@@ -220,7 +223,7 @@ describe('Review B - findings', () => {
   // (pages/api/reports/commissions.ts:67-78, transport-cost.ts:59-71, and the mechanic / staff /
   // P&F twins), so a walk-in is "Unknown" and a bill shows the customer's current name, not the
   // one printed on it; the sale list and the bill-reference report use the bill's snapshot.
-  test.failing('B-10 sale: a walk-in with commission and freight is named in the commission and freight reports', async () => {
+  test('B-10 sale: a walk-in with commission and freight is named in the commission and freight reports', async () => {
     seed();
     await createFrom('sale', 'sale-create-other.json', { commission: 20, transport_cost: 50 });
     const com = (await call(commissionsR, 'GET', { ...RANGE })).body.data || [];
@@ -229,6 +232,27 @@ describe('Review B - findings', () => {
     ok('freight report names the walk-in', fr.length === 1 && fr[0].party_name === 'Walk-in Kumar', fr);
     await done('B-10');
   });
+
+  // B-10 twins: all five reports, both bill kinds; a renamed customer's old bill keeps its billed name.
+  for (const kind of ['sale', 'salex']) {
+    test(`B-10 ${kind}: commission, mechanic, staff, freight and P&F reports name the customer the bill names`, async () => {
+      seed();
+      const extras = { commission: 20, transport_cost: 50, mechanic_id: 5, staff_id: 3, packing_forwarding_qty: 1, packing_forwarding_rate: 30 };
+      const w = await createFrom(kind, `${kind}-create-other.json`, extras);
+      ok('walk-in created', w.r.status === 201, w.r.body);
+      const c = await createFrom(kind, `${kind}-create.json`, extras);
+      ok('Ravi created', c.r.status === 201, c.r.body);
+      store.customer_details.find(x => x.id === 1).billing_name = 'Ravi Renamed';
+      const t = kind === 'sale' ? 'sale' : 'salex';
+      const reports = [[commissionsR, 'customer_name'], [mechanicR, 'customer_name'], [staffR, 'customer_name'], [freightR, 'party_name'], [packingR, 'party_name']];
+      for (const [h, key] of reports) {
+        const rows = ((await call(h, 'GET', { ...RANGE, transactionType: t })).body.data || []);
+        const names = rows.map(r => r[key]).sort();
+        ok(`${key} in ${h.name || 'report'}: the billed names`, JSON.stringify(names) === JSON.stringify(['Ravi', 'Walk-in Kumar']), rows);
+      }
+      await done('B-10');
+    });
+  }
 
   // ------------------------------------------------------------------ B-13 (returns / GST report - sections D and E)
   // Found here because the screens' own bill has a discounted 18% line (2 x 1000 - 100 = 1900,

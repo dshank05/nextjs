@@ -5,6 +5,7 @@ import { store, call, H as FH, ex, create, K } from '../support/scenlib.js';
 import { reset, checkAll, checkReports, stats } from '../support/flowlib.js';
 import { seedStock } from '../support/scenlib.js';
 const FX = require('../fixtures/settings/captured.json');
+import { REPORT_PICKER_URL } from '../../../lib/party-details-picker';
 const SHOW = !!process.env.REVIEW_E_SHOW;
 const sc = (id, title, fn, { known = [], open = null } = {}) =>
   ((open && !SHOW) ? test.failing : test)(`${id} ${title}${open ? `  [OPEN ${open}]` : ''}`, async () => {
@@ -167,7 +168,7 @@ describe('Review E - settings', () => {
     store.shipto.push({ id: 900, invoice_no: 900, shipping_address: 'x', shipping_state: 'Goa', shipping_state_code: 30, shipping: true });
     const r = await api('DELETE', '/api/states/3');
     ex('E-09', 'refused (today: deleted - shipto / shiptox are not checked)', r.status === 409 && store.states.some(s => s.id === 3), r.body);
-  }, { open: 'E-09' });
+  });
 
   // ------------------------------------------------------------ product lookups
   sc('E-S4', 'category / subcategory: create, save unchanged, duplicate, delete guarded by products', async () => {
@@ -261,7 +262,7 @@ describe('Review E - settings', () => {
     await replay(FX.userCreate);
     const nu = store.user.find(u => u.username === 'counter1');
     ex('E-03', 'auth_key at most 32 characters (today 48: randomBytes(24).toString("hex"))', nu && nu.auth_key.length <= 32, nu?.auth_key?.length);
-  }, { open: 'E-03' });
+  });
 
   // ------------------------------------------------------------ financial years (D2)
   sc('E-S8', 'financial years: past year allowed, overlap refused, last day still current, list', async () => {
@@ -289,7 +290,52 @@ describe('Review E - settings', () => {
     const f = store.financial_year.find(x => x.fy === '2025-2026');
     // Prisma writes a @db.Date as the UTC calendar day of the Date it is given.
     ex('E-04', 'start_date is 2025-04-01 in UTC (today 2025-03-31T18:30Z: stored as 31 March)', f && f.start_date.toISOString().slice(0, 10) === '2025-04-01', f && f.start_date.toISOString());
-  }, { open: 'E-04' });
+  });
+
+  sc('E-04 end', 'a year created in Settings ends on 31 March: the overlap check and "Set as current" on 31 March read the typed days', async () => {
+    const c = await replay(FX.fyCreate);
+    const f = store.financial_year.find(x => x.fy === '2025-2026');
+    ex('E-04', 'end_date is 2026-03-31 in UTC', c.status === 201 && f.end_date.toISOString().slice(0, 10) === '2026-03-31', f && f.end_date.toISOString());
+    jest.useFakeTimers({ now: new Date('2026-03-31T23:30:00+05:30'), doNotFake: ['setTimeout', 'setImmediate', 'nextTick', 'queueMicrotask'] });
+    try {
+      const last = await api('PUT', `/api/financial-years/${f.id}/current`);
+      ex('E-04', '31 March 23:30: the year made here can still be made current (D2)', last.status === 200, last.body);
+      jest.setSystemTime(new Date('2025-04-01T00:00:30+05:30'));
+      const first = await api('PUT', `/api/financial-years/${f.id}/current`);
+      ex('E-04', '1 April 00:00:30: it has started', first.status === 200, first.body);
+    } finally { jest.useRealTimers(); }
+  });
+
+  sc('E-09 twins', 'a state used by an Invoice C ship-to snapshot cannot be deleted or renamed', async () => {
+    store.shiptox.push({ id: 901, invoice_no: 901, shipping_address: 'x', shipping_state: 'Goa', shipping_state_code: 30, shipping: true });
+    const d = await api('DELETE', '/api/states/3');
+    ex('E-09', 'delete refused with the in-use 409', d.status === 409 && /in use/.test(d.body.message) && store.states.some(s => s.id === 3), d.body);
+    const r = await api('PUT', '/api/states/3', { state_name: 'Goa State', code: 30 });
+    ex('E-09', 'rename refused', r.status === 409 && store.states.find(s => s.id === 3).state_name === 'Goa', r.body);
+  });
+
+  sc('E-18', 'user edit without status (what the form sends when status was not touched) keeps the stored status', async () => {
+    const c = await replay(FX.userCreate);
+    const nu = store.user.find(u => u.username === 'counter1');
+    await api('PATCH', `/api/users/${nu.id}/status`, { status: 'Inactive' });
+    const { status, ...noStatus } = FX.userCreate.body;
+    const u = await api('POST', '/api/users', { ...noStatus, id: nu.id, password: '', phone: '9876543210' });
+    ex('E-18', 'saved, still Inactive, phone changed', c.status === 201 && u.status === 200 && store.user.find(x => x.id === nu.id).status === 0 && store.user.find(x => x.id === nu.id).phone === '9876543210', u.body);
+  });
+
+  sc('E-10', 'the people report pickers (Mechanic / Staff / Commissions) reach an inactive mechanic or staff member, every row', async () => {
+    for (let i = 0; i < 55; i++) store.mechanic.push({ id: 100 + i, name: `Mech ${String(i).padStart(2, '0')}`, phone: `90000${String(10000 + i)}`, status: 'Active' });
+    const m0 = store.mechanic[0];
+    await api('PATCH', `/api/mechanics/${m0.id}/status`, { status: 'Inactive' });
+    const st0 = store.staff[0];
+    await api('PATCH', `/api/staff/${st0.id}/status`, { status: 'Inactive' });
+    const m = await api('GET', REPORT_PICKER_URL.mechanic);
+    ex('E-10', 'mechanics: all 56, the inactive one marked Inactive', m.body.mechanics.length === store.mechanic.length && m.body.mechanics.some(x => x.id === m0.id && x.status === 'Inactive'), m.body.mechanics.length);
+    const st = await api('GET', REPORT_PICKER_URL.staff);
+    ex('E-10', 'staff: the inactive one too', st.body.staff.some(x => x.id === st0.id && x.status === 'Inactive'), st.body.staff);
+    const forms = await api('GET', '/api/mechanics?dropdown=true');
+    ex('E-10', 'the bill form dropdown stays active-only', !forms.body.mechanics.some(x => x.id === m0.id));
+  });
 
   // ------------------------------------------------------------ inactive products / dashboard low stock
   sc('E-S9', 'inactive products: reactivate by the status route; dashboard and Minimum Stock count active products only', async () => {

@@ -5,6 +5,7 @@ import { Eye } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ClearableInput, ExportMenu } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 interface DebitNote {
   id: number;
@@ -45,7 +46,7 @@ export default function DebitNotesReport() {
     page: 1,
     limit: 10,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   // Search and filter states
@@ -67,10 +68,7 @@ export default function DebitNotesReport() {
     fetchDebitNotes();
   }, [pagination.page, searchTerm, filters, sortBy, sortOrder]);
 
-  const fetchDebitNotes = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
@@ -83,7 +81,13 @@ export default function DebitNotesReport() {
         sortBy: sortBy,
         sortOrder: sortOrder
       });
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows('/api/reports/debit-notes', buildParams(), (d: any) => d.debitNotes);
 
+  const fetchDebitNotes = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
       const response = await fetch(`/api/reports/debit-notes?${params}`);
       if (response.ok) {
         const data = await response.json();
@@ -188,6 +192,7 @@ export default function DebitNotesReport() {
         <div className="flex items-center justify-end gap-2 mb-4">
           <ExportMenu
             data={debitNotes}
+            fetchAll={exportAll}
             columns={[
               { key: 'id', label: 'ID', enabled: true },
               { key: 'debit_note_no', label: 'Debit Note No', enabled: true },
@@ -216,7 +221,8 @@ export default function DebitNotesReport() {
               type="text"
               placeholder="Enter debit note no"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              // E-06: a new search / filter starts again at page 1.
+              onChange={(e) => { setSearchTerm(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -227,7 +233,7 @@ export default function DebitNotesReport() {
               type="text"
               placeholder="Filter by vendor"
               value={filters.vendorFilter}
-              onChange={(e) => setFilters(prev => ({ ...prev, vendorFilter: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, vendorFilter: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -238,7 +244,7 @@ export default function DebitNotesReport() {
               type="number"
               placeholder="Min amount"
               value={filters.amountMin}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMin: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMin: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -250,7 +256,7 @@ export default function DebitNotesReport() {
               type="number"
               placeholder="Max amount"
               value={filters.amountMax}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMax: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMax: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -261,7 +267,7 @@ export default function DebitNotesReport() {
             <DateRangeFilter
               startDate={filters.dateFrom}
               endDate={filters.dateTo}
-              onDateChange={(start, end) => setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }))}
+              onDateChange={(start, end) => { setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end })); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select date range..."
             />
           </div>

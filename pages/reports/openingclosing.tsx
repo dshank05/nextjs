@@ -30,7 +30,8 @@ export default function OpeningClosingStock() {
     const now = new Date()
     setDateFrom(formatStartDateForAPI(new Date(now.getFullYear(), now.getMonth(), 1)))
     setDateTo(formatEndDateForAPI(new Date(now.getFullYear(), now.getMonth() + 1, 0)))
-    fetch('/api/categories').then(r => (r.ok ? r.json() : { categories: [] })).then(d =>
+    // E-12: the lookup lives under /api/products (/api/categories was a 404).
+    fetch('/api/products/categories?dropdown=true').then(r => (r.ok ? r.json() : { categories: [] })).then(d =>
       setCategories([{ id: '', name: 'All categories' }, ...(d.categories || []).map((c: any) => ({ id: String(c.id), name: c.category_name }))])
     ).catch(() => {})
   }, [])

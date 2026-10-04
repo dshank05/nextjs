@@ -5,6 +5,7 @@ import { ListPagination, ListSummary, SortIcon, PageSizeSelect } from '../../com
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { ClearableInput } from '../../components/common';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useRefreshSharedCache } from '../../hooks/useSharedCaches';
 
 import type { StateRow } from '../../types/settings';
 
@@ -18,6 +19,8 @@ import type { StateRow } from '../../types/settings';
 
 export default function States() {
   const { showSnackbar } = useSnackbar();
+  // E-08: the bill and party forms read this from a shared cache - refresh it after a save.
+  const refreshShared = useRefreshSharedCache('states');
   // Search, sort, page and limit: the shared list hook (§7b).
   const list = useListQuery({ defaultSort: 'state_name' });
   const { pagination } = list;
@@ -118,6 +121,7 @@ export default function States() {
       }
 
       // Refresh the states list
+      refreshShared();
       await fetchStates();
 
       setShowConfirmModal(false);
@@ -147,6 +151,7 @@ export default function States() {
       const body = await response.json().catch(() => ({}));
       if (response.ok) {
         showSnackbar('success', 'State deleted');
+        refreshShared();
         await fetchStates();
       } else {
         // The 409 here is the useful case: it names why the state cannot go.

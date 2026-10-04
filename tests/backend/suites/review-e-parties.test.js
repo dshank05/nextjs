@@ -22,6 +22,7 @@ import vendIndex from '../../../pages/api/vendors/index';
 import vendOne from '../../../pages/api/vendors/[id]';
 import vendStatus from '../../../pages/api/vendors/[id]/status';
 const FX = require('../fixtures/parties/captured.json');
+import { REPORT_PICKER_URL, pickerName } from '../../../lib/party-details-picker';
 const qs = (search) => Object.fromEntries(new URLSearchParams(search || ''));
 const clone = (o) => JSON.parse(JSON.stringify(o));
 
@@ -35,9 +36,12 @@ function formBody(kind, rec) {
   const next = Object.fromEntries(keys.map(k => [k, rec[k] == null ? '' : String(rec[k])]));
   let values = next;
   if (kind === 'customer') {
-    SHIP.forEach((s, i) => { next[s] = next[s] || next[BILL[i]]; });
-    next.shipping_state_code = next.shipping_state_code && next.shipping_state_code !== '0' ? next.shipping_state_code : next.billing_state_code;
-    const copy = !rec.shipping_name || rec.shipping_name === rec.billing_name;
+    // E-01 / E-02 (fixed): copy only when shipping is blank or every shipping field equals billing;
+    // a separate shipping address loads as stored (blanks stay blank).
+    const noCode = (c) => !c || c === '0';
+    const same = SHIP.every((s, i) => next[s].trim() === next[BILL[i]].trim()) && (noCode(next.shipping_state_code) || next.shipping_state_code === next.billing_state_code);
+    const copy = !next.shipping_name.trim() || same;
+    if (noCode(next.shipping_state_code) && next.shipping_state === next.billing_state) next.shipping_state_code = next.billing_state_code;
     if (copy) values = { ...next, ...Object.fromEntries(SHIP.map((s, i) => [s, next[BILL[i]]])), shipping_state_code: next.billing_state_code };
   }
   const out = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v]));
@@ -51,6 +55,8 @@ const snap = (row) => JSON.stringify(Object.fromEntries(MASTER.filter(k => k in 
 const changedKeys = (a, b) => MASTER.filter(k => JSON.stringify(a[k] ?? null) !== JSON.stringify(b[k] ?? null));
 
 describe('Review E - parties', () => {
+  // The customer edit bodies in fixtures/parties were captured from the form before E-01 / E-02 were
+  // fixed; they were regenerated with this model after the fix (the page harness is not in this repo).
   test('E-P0 the form model used below sends exactly what the screen sent (captured)', () => {
     expect(sorted(formBody('customer', FX.customerEditUnchanged_before))).toBe(sorted(FX.customerEditUnchanged.body));
     expect(sorted(formBody('customer', FX.customerEditUnchangedSameName_before))).toBe(sorted(FX.customerEditUnchangedSameName.body));
@@ -178,7 +184,7 @@ describe('Review E - parties', () => {
     ex('E-01', 'saved', r.status === 200);
     ex('E-01', 'shipping address unchanged (today: overwritten with billing because the form ticks "Copy from Billing" when the names match)', snap(store.customer_details.find(c => c.id === 50)) === before,
       changedKeys(JSON.parse(before), store.customer_details.find(c => c.id === 50)));
-  }, { open: 'E-01' });
+  });
 
   sc('E-02', 'customer edit saved unchanged keeps blank shipping line 2 / city / pin / GSTIN blank', async () => {
     store.customer_details.push({ ...clone(FX.customerEditUnchanged_before), id: 51 });
@@ -186,17 +192,38 @@ describe('Review E - parties', () => {
     await call(custOne, 'PUT', { id: '51' }, FX.customerEditUnchanged.body);
     ex('E-02', 'nothing changes (today: shipping_address_2 takes billing line 2 "Lane 2")', snap(store.customer_details.find(c => c.id === 51)) === before,
       changedKeys(JSON.parse(before), store.customer_details.find(c => c.id === 51)));
-  }, { open: 'E-02' });
+  });
 
   sc('E-05', 'the ledger / balance-log / report party pickers can reach an inactive party that still owes', async () => {
     await create(K.sale, { partyId: 2, items: [[1, 1, 500, 0]] });
     await call(custStatus, 'PUT', { id: '2' }, { status: 'Inactive', confirmed: true });
     // PartyLedgerReport / PartyBalanceLogReport / customer-reports load their picker from this URL
-    const picker = await call(custIndex, 'GET', { dropdown: 'true' });
-    ex('E-05', 'Asha (inactive, owes 500) is offered (today: dropdown=true is active-only)', picker.body.customers.some(c => c.id === '2'), picker.body.customers.map(c => c.billing_name));
-  }, { open: 'E-05' });
+    // (lib/party-details-picker.ts REPORT_PICKER_URL.customer, E-05 fixed)
+    const picker = await call(custIndex, 'GET', qs(REPORT_PICKER_URL.customer.split('?')[1]));
+    ex('E-05', 'Asha (inactive, owes 500) is offered, marked Inactive', picker.body.customers.some(c => c.id === '2' && c.status === 'Inactive'), picker.body.customers.map(c => c.billing_name));
+    ex('E-05', 'shown as "(inactive)"', pickerName('Asha', 'Inactive') === 'Asha (inactive)' && pickerName('Ravi', 'Active') === 'Ravi');
+    const forms = await call(custIndex, 'GET', { dropdown: 'true' });
+    ex('E-05', 'the bill / payment forms\' dropdown stays active-only', !forms.body.customers.some(c => c.id === '2'), forms.body.customers.map(c => c.billing_name));
+  });
 
-  failing('E-06 Customer Reports: a new search starts again at page 1 (captured query keeps page=2; the vendor twin resets)  [OPEN E-06]', () => {
+  sc('E-05 vendor', 'the vendor ledger / balance-log / report pickers reach an inactive vendor', async () => {
+    await call(vendStatus, 'PUT', { id: '1' }, { status: 'Inactive', confirmed: true });
+    const picker = await call(vendIndex, 'GET', qs(REPORT_PICKER_URL.vendor.split('?')[1]));
+    ex('E-05', 'vendor 1 offered, marked Inactive; unpaginated', picker.body.vendors.some(v => v.id === '1' && v.status === 'Inactive') && picker.body.vendors.length === store.vendor_details.length, picker.body.vendors.map(v => v.vendor_name));
+    const forms = await call(vendIndex, 'GET', { dropdown: 'true' });
+    ex('E-05', 'the forms\' dropdown stays active-only', !forms.body.vendors.some(v => v.id === '1'));
+  });
+
+  sc('E-10 parties', 'Transport / Packing customer picker: every customer (not the first page of 50), inactive ones marked', async () => {
+    const base = store.customer_details.length;
+    for (let i = 0; i < 60; i++) store.customer_details.push({ ...clone(store.customer_details[0]), id: 200 + i, billing_name: `Cust ${String(i).padStart(2, '0')}`, status: i === 59 ? 'Inactive' : 'Active' });
+    const r = await call(custIndex, 'GET', qs(REPORT_PICKER_URL.customer.split('?')[1]));
+    ex('E-10', 'all customers offered', r.body.customers.length === base + 60 && r.body.customers.some(c => c.id === '259' && c.status === 'Inactive'), r.body.customers.length);
+  });
+
+  // E-06 fixed in pages/reports/customer-reports.tsx; the captured query was updated to what the fixed
+  // screen sends (page reset to 1) - the page harness that captured it is not in this repo.
+  test('E-06 Customer Reports: a new search starts again at page 1 (the vendor twin resets too)', () => {
     const q = Object.fromEntries(FX.customerOutstandingQueries);
     expect(qs(q['search Old (from page 2)']).page).toBe('1');
   });

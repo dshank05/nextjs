@@ -85,12 +85,17 @@ export default function Users() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // E-18: on edit, status is sent only when it was changed in this form.
+      // Re-sending the status loaded with the form re-activated a user that
+      // someone else had deactivated meanwhile; the API keeps the stored
+      // status when none is sent.
+      const statusChanged = !editingUser || formData.status !== editingUser.status.toString();
       const requestData = {
         username: formData.username,
         email: formData.email,
         phone: formData.phone || null,
         password: formData.password,
-        status: formData.status,
+        ...(statusChanged && { status: formData.status }),
         ...(editingUser && { id: formData.id })
       };
 

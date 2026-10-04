@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { SearchableSelect, ClearableInput, ExportMenu } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 import { AlertTriangle, Package, TrendingDown } from 'lucide-react';
 
 interface LowStockProduct {
@@ -34,7 +35,7 @@ export default function MinimumStockPage() {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,9 +58,11 @@ export default function MinimumStockPage() {
   const fetchFilterOptions = async () => {
     try {
       const [catRes, compRes, modRes] = await Promise.all([
-        fetch('/api/categories'),
-        fetch('/api/companies'),
-        fetch('/api/models')
+        // E-12: the lookups live under /api/products (these were 404s, so
+        // the filters offered only "All").
+        fetch('/api/products/categories?dropdown=true'),
+        fetch('/api/products/companies?dropdown=true'),
+        fetch('/api/products/models?dropdown=true')
       ]);
 
       if (catRes.ok) {
@@ -79,10 +82,7 @@ export default function MinimumStockPage() {
     }
   };
 
-  const fetchProducts = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         search: searchTerm,
@@ -90,6 +90,13 @@ export default function MinimumStockPage() {
         companyFilter,
         modelFilter
       });
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows('/api/reports/minimum-stock', buildParams(), (d: any) => d.products);
+
+  const fetchProducts = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
 
       const response = await fetch(`/api/reports/minimum-stock?${params}`);
       if (response.ok) {
@@ -178,7 +185,8 @@ export default function MinimumStockPage() {
               type="text"
               placeholder="Search products..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              // E-06: a new search / filter starts again at page 1.
+              onChange={(e) => { setSearchTerm(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -187,7 +195,7 @@ export default function MinimumStockPage() {
             <SearchableSelect
               options={categories.map(c => ({ id: c.id.toString(), name: c.category_name }))}
               selectedValue={categoryFilter}
-              onSelectionChange={(value) => setCategoryFilter(value || '')}
+              onSelectionChange={(value) => { setCategoryFilter(value || ''); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select category..."
             />
           </div>
@@ -197,7 +205,7 @@ export default function MinimumStockPage() {
             <SearchableSelect
               options={companies.map(c => ({ id: c.id.toString(), name: c.company_name }))}
               selectedValue={companyFilter}
-              onSelectionChange={(value) => setCompanyFilter(value || '')}
+              onSelectionChange={(value) => { setCompanyFilter(value || ''); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select company..."
             />
           </div>
@@ -207,7 +215,7 @@ export default function MinimumStockPage() {
             <SearchableSelect
               options={models.map(m => ({ id: m.id.toString(), name: m.model_name }))}
               selectedValue={modelFilter}
-              onSelectionChange={(value) => setModelFilter(value || '')}
+              onSelectionChange={(value) => { setModelFilter(value || ''); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select model..."
             />
           </div>
@@ -218,6 +226,7 @@ export default function MinimumStockPage() {
             </button>
             <ExportMenu
               data={products}
+              fetchAll={exportAll}
               columns={[
                 { key: 'product_name', label: 'Product Name', enabled: true },
                 { key: 'hsn', label: 'HSN', enabled: true },
@@ -244,7 +253,7 @@ export default function MinimumStockPage() {
               Showing {products.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to{' '}
               {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} products
             </div>
-            <div>Page {pagination.page} of {pagination.totalPages}</div>
+            <div>Page {pagination.page} of {Math.max(1, pagination.totalPages || 0)}</div>
           </div>
         )}
 

@@ -6,6 +6,8 @@ import { mergeLedgerEntries, recalculateBalance} from '../../lib/ledger-merge-ut
 import { formatStartDateForAPI, formatEndDateForAPI, getLocalDateString } from '../../lib/date-utils';
 import { useSnackbar } from '../SnackbarProvider';
 import { useSessionStorage } from '../../lib/sessionStorage';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 
 interface LedgerEntry {
@@ -35,11 +37,11 @@ interface Pagination {
 /** What differs between the vendor and the customer ledger: names and endpoints. */
 export const LEDGER_PARTIES = {
   vendor: {
-    label: 'Vendor', slug: 'vendor', listUrl: '/api/vendors?dropdown=true', listKey: 'vendors', nameField: 'vendor_name',
+    label: 'Vendor', slug: 'vendor', listUrl: REPORT_PICKER_URL.vendor, listKey: 'vendors', nameField: 'vendor_name',
     idParam: 'vendor_id', api: '/api/reports/vendor-ledger-accounting', entryApi: '/api/vendor-ledger'
   },
   customer: {
-    label: 'Customer', slug: 'customer', listUrl: '/api/customers?dropdown=true', listKey: 'customers', nameField: 'billing_name',
+    label: 'Customer', slug: 'customer', listUrl: REPORT_PICKER_URL.customer, listKey: 'customers', nameField: 'billing_name',
     idParam: 'customer_id', api: '/api/reports/customer-ledger-accounting', entryApi: '/api/customer-ledger'
   }
 } as const;
@@ -64,7 +66,7 @@ export function PartyLedgerReport({ party }: { party: LedgerParty }) {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   // ✅ Filters with sessionStorage persistence (unique per tab, persists on refresh)
@@ -128,11 +130,7 @@ export function PartyLedgerReport({ party }: { party: LedgerParty }) {
     }
   };
 
-  const fetchData = async () => {
-    if (!selectedParty) return;
-
-    setLoading(true);
-    try {
+  const buildParams = () => {
       const params = new URLSearchParams({
         [P.idParam]: selectedParty,
         page: pagination.page.toString(),
@@ -141,7 +139,27 @@ export function PartyLedgerReport({ party }: { party: LedgerParty }) {
 
       if (dateFrom) params.set('dateFrom', dateFrom);
       if (dateTo) params.set('dateTo', dateTo);
+      return params;
+  };
 
+  // E-16: export the whole ledger for the range, not the page on screen - merged
+  // and run on from the opening of the FIRST page, as the screen does per page.
+  const exportAll = async () => {
+    if (!selectedParty) return [];
+    let opening: number | null = null;
+    const rows = await fetchAllReportRows<LedgerEntry>(P.api, buildParams(), (d: any) => {
+      if (opening === null) opening = Number(d.openingBalance) || 0;
+      return d.entries;
+    }, 1000);
+    return recalculateBalance(mergeLedgerEntries(rows), opening ?? 0);
+  };
+
+  const fetchData = async () => {
+    if (!selectedParty) return;
+
+    setLoading(true);
+    try {
+      const params = buildParams();
       const response = await fetch(`${P.api}?${params}`);
       
       if (response.ok) {
@@ -257,9 +275,10 @@ export function PartyLedgerReport({ party }: { party: LedgerParty }) {
               {P.label} <span className="text-red-400">*</span>
             </label>
             <SearchableSelect
+              // E-05: inactive parties too (they can still owe), marked.
               options={parties.map(v => ({
                 id: v.id.toString(),
-                name: v[P.nameField]
+                name: pickerName(v[P.nameField], v.status)
               }))}
               selectedValue={selectedParty}
               onSelectionChange={(value) => {
@@ -316,6 +335,7 @@ export function PartyLedgerReport({ party }: { party: LedgerParty }) {
               </button>
               <ExportMenu
               data={accountingEntries}
+              fetchAll={exportAll}
               columns={[
                 { key: 'formattedDate', label: 'Date', enabled: true },
                 { key: 'particulars', label: 'Particulars', enabled: true },

@@ -1,6 +1,8 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
-import { reportDayRange, reportPage } from '../../../lib/api/report-query';
+import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
+import { fail } from '../../../lib/api/respond';
+import { saleCustomerNames } from '../../../lib/bill-party-name-report';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -58,19 +60,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
 
-      const customerIds = Array.from(new Set(sales.map(s => s.select_customer)));
-      const customers = await prisma.customer_details.findMany({
-        where: { id: { in: customerIds } },
-        select: { id: true, billing_name: true }
-      });
-      const customerMap = new Map(customers.map(c => [c.id, c.billing_name]));
+      // B-10: the name the bill was made out to (its snapshot), then the master.
+      const customerMap = await saleCustomerNames('sale', sales);
 
       sales.forEach(sale => {
         results.push({
           type: 'Sale',
           reference_no: `INV-${sale.invoice_no}`,
           date: sale.invoice_date,
-          customer_name: customerMap.get(sale.select_customer) || 'Unknown',
+          customer_name: customerMap.get(sale.id) || 'Unknown',
           staff_name: sale.staff?.name || 'Unknown',
           total_amount: Number(sale.total || 0),
           commission: Number(sale.commission || 0)
@@ -106,19 +104,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
 
-      const customerIds = Array.from(new Set(salex.map(s => s.select_customer).filter(Boolean)));
-      const customers = await prisma.customer_details.findMany({
-        where: { id: { in: customerIds as number[] } },
-        select: { id: true, billing_name: true }
-      });
-      const customerMap = new Map(customers.map(c => [c.id, c.billing_name]));
+      const customerMap = await saleCustomerNames('salex', salex);
 
       salex.forEach(sale => {
         results.push({
           type: 'Salex',
           reference_no: `INVX-${sale.invoice_no}`,
           date: sale.invoice_date,
-          customer_name: customerMap.get(sale.select_customer!) || 'Unknown',
+          customer_name: customerMap.get(sale.id) || 'Unknown',
           staff_name: sale.staff?.name || 'Unknown',
           total_amount: Number(sale.total || 0),
           commission: Number(sale.commission || 0)
@@ -218,16 +211,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       success: true,
       data: paginatedResults,
       summary,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
-      }
+      // E-11: an empty list is page 1 of 1.
+      pagination: reportPagination(pageNum, limitNum, total)
     });
 
   } catch (error) {
-    console.error('Error fetching staff sales report:', error);
-    return res.status(500).json({ error: 'Failed to fetch staff sales report' });
+    return fail(res, error, 'fetch the staff sales report');
   }
 }

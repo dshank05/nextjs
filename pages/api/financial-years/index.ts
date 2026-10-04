@@ -2,7 +2,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { prisma } from '../../../lib/db'
 import { withObservability } from '../../../lib/withObservability'
 import { fail } from '../../../lib/api/respond'
-import { validateFinancialYear } from '../../../lib/financial-year-rules'
+import { validateFinancialYear, toDateColumn } from '../../../lib/financial-year-rules'
 
 async function handler(
   req: NextApiRequest,
@@ -137,7 +137,11 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     if (checked.ok === false) {
       return res.status(400).json({ message: checked.message })
     }
-    const { startDate, endDate, fy } = checked.value
+    // E-04: the DATE columns get the calendar day typed (UTC midnight of it),
+    // not local midnight - which Prisma stored as the day before.
+    const startDate = toDateColumn(checked.value.startDate)
+    const endDate = toDateColumn(checked.value.endDate)
+    const { fy } = checked.value
 
     // Check if financial year already exists
     const existingFy = await prisma.financial_year.findFirst({

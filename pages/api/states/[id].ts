@@ -11,14 +11,17 @@ import { fail } from '../../../lib/api/respond'
  * the id as text, so both are checked there.
  */
 async function stateInUse(stateId: number, name: string): Promise<boolean> {
-  const [customer, vendor, sale, salex, purchase] = await Promise.all([
+  const [customer, vendor, sale, salex, purchase, shipto, shiptox] = await Promise.all([
     prisma.customer_details.findFirst({ where: { OR: [{ billing_state: name }, { shipping_state: name }] }, select: { id: true } }),
     prisma.vendor_details.findFirst({ where: { OR: [{ state: name }, { state: String(stateId) }] }, select: { id: true } }),
     prisma.bill_tosales.findFirst({ where: { billing_state: name }, select: { id: true } }),
     (prisma as any).bill_tosalesx.findFirst({ where: { billing_state: name }, select: { id: true } }),
-    prisma.bill_to.findFirst({ where: { state: name }, select: { id: true } })
+    prisma.bill_to.findFirst({ where: { state: name }, select: { id: true } }),
+    // E-09: the sale / Invoice C ship-to snapshots name a state too.
+    prisma.shipto.findFirst({ where: { shipping_state: name }, select: { id: true } }),
+    (prisma as any).shiptox.findFirst({ where: { shipping_state: name }, select: { id: true } })
   ])
-  return !!(customer || vendor || sale || salex || purchase)
+  return !!(customer || vendor || sale || salex || purchase || shipto || shiptox)
 }
 
 async function handler(

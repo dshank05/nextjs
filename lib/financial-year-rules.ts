@@ -32,6 +32,22 @@ export function parseLocalDate(value: string): Date {
 }
 
 /**
+ * The value to hand Prisma for a `@db.Date` column (E-04).
+ *
+ * Prisma writes a DateTime into a DATE column as its UTC calendar day, and
+ * reads a DATE back as UTC midnight of that day. A local-midnight Date
+ * (`parseLocalDate`) on a server in India is 18:30 UTC of the day BEFORE, so
+ * 1 April was stored as 31 March. UTC midnight of the same calendar day is
+ * stored as that day - and matches what the database hands back, so the
+ * overlap query compares like with like. Keep `parseLocalDate` for the
+ * April-1 / March-31 rules; use this only for what goes to (or is compared
+ * against) the column.
+ */
+export function toDateColumn(d: Date): Date {
+  return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+}
+
+/**
  * Validate a proposed financial year.
  *
  * @returns the parsed dates and derived label, or a message explaining the

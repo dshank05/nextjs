@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { Eye } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ClearableInput, ExportMenu, SearchableSelect } from '../../components/common';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
+import { fetchAllReportRows } from '../../lib/export-all-report';
+import { useSnackbar } from '../../components/SnackbarProvider';
 import { getLocalDateString } from '../../lib/date-utils';
 
 interface OutstandingCustomer {
@@ -45,6 +48,7 @@ type ViewType = 'outstanding' | 'credit-notes';
 
 export default function CustomerReportsPage() {
   const [activeView, setActiveView] = useState<ViewType>('outstanding');
+  const { showSnackbar } = useSnackbar();
   const [outstandingCustomers, setOutstandingCustomers] = useState<OutstandingCustomer[]>([]);
   const [creditNotes, setCreditNotes] = useState<CreditNote[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,7 +58,7 @@ export default function CustomerReportsPage() {
     page: 1,
     limit: 10,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -81,14 +85,15 @@ export default function CustomerReportsPage() {
 
   const fetchCustomerOptions = async () => {
     try {
-      const response = await fetch('/api/customers?dropdown=true');
+      // E-05: inactive customers too (they can still owe), marked.
+      const response = await fetch(REPORT_PICKER_URL.customer);
       if (response.ok) {
         const data = await response.json();
         setCustomerOptions([
           { id: '', name: 'All Customers' },
           ...data.customers.map((customer: any) => ({
             id: customer.id.toString(),
-            name: customer.billing_name || customer.name || ''
+            name: pickerName(customer.billing_name || customer.name || '', customer.status)
           }))
         ]);
       }
@@ -97,9 +102,11 @@ export default function CustomerReportsPage() {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
+  // The query the screen sends; the export (E-16) sends the same one for every page.
+  const endpoint = activeView === 'outstanding'
+    ? '/api/reports/customer-outstanding'
+    : '/api/reports/credit-notes';
+  const buildParams = () => {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -116,12 +123,19 @@ export default function CustomerReportsPage() {
       if (activeView === 'credit-notes') {
         params.set('paymentStatus', filters.paymentStatus);
       }
+      return params;
+  };
 
-      const endpoint = activeView === 'outstanding'
-        ? '/api/reports/customer-outstanding'
-        : '/api/reports/credit-notes';
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows(endpoint, buildParams(), (d: any) => activeView === 'outstanding' ? d.outstandingCustomers : d.creditNotes);
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
       const response = await fetch(`${endpoint}?${params}`);
+      // E-13: a failed load used to be ignored silently.
+      if (!response.ok) showSnackbar('error', 'Could not load the report');
       if (response.ok) {
         const data = await response.json();
         if (activeView === 'outstanding') {
@@ -134,6 +148,7 @@ export default function CustomerReportsPage() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      showSnackbar('error', 'Could not load the report');
     } finally {
       setLoading(false);
     }
@@ -179,7 +194,7 @@ export default function CustomerReportsPage() {
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('outstanding')}
+            onClick={() => { setActiveView('outstanding'); setPagination(prev => ({ ...prev, page: 1 })); }}
           >
             Outstanding Balances
           </button>
@@ -189,7 +204,7 @@ export default function CustomerReportsPage() {
                 ? 'bg-blue-600 text-white'
                 : 'text-slate-300 hover:bg-slate-700'
             }`}
-            onClick={() => setActiveView('credit-notes')}
+            onClick={() => { setActiveView('credit-notes'); setPagination(prev => ({ ...prev, page: 1 })); }}
           >
             Credit Notes
           </button>
@@ -198,6 +213,7 @@ export default function CustomerReportsPage() {
         <div className="flex items-center justify-end gap-2 mb-4">
           <ExportMenu
             data={activeView === 'outstanding' ? outstandingCustomers : creditNotes}
+            fetchAll={exportAll}
             columns={
               activeView === 'outstanding'
                 ? [
@@ -232,7 +248,8 @@ export default function CustomerReportsPage() {
               type="text"
               placeholder={activeView === 'outstanding' ? 'Search customers...' : 'Search credit notes...'}
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              // E-06: a new search / filter starts again at page 1 (as Vendor Reports does).
+              onChange={(e) => { setSearchTerm(e.target.value); setPagination(prev => ({ ...prev, page: 1 })); }}
             />
           </div>
 
@@ -243,6 +260,7 @@ export default function CustomerReportsPage() {
               selectedValue={filters.customerFilter}
               onSelectionChange={(value) => {
                 setFilters(prev => ({ ...prev, customerFilter: value || '' }));
+                setPagination(prev => ({ ...prev, page: 1 }));
               }}
               placeholder="Select customer..."
             />
@@ -254,7 +272,7 @@ export default function CustomerReportsPage() {
               type="number"
               placeholder="Min amount"
               value={filters.amountMin}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMin: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMin: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -265,7 +283,7 @@ export default function CustomerReportsPage() {
               type="number"
               placeholder="Max amount"
               value={filters.amountMax}
-              onChange={(e) => setFilters(prev => ({ ...prev, amountMax: e.target.value }))}
+              onChange={(e) => { setFilters(prev => ({ ...prev, amountMax: e.target.value })); setPagination(prev => ({ ...prev, page: 1 })); }}
               min="0"
             />
           </div>
@@ -275,7 +293,7 @@ export default function CustomerReportsPage() {
             <DateRangeFilter
               startDate={filters.dateFrom}
               endDate={filters.dateTo}
-              onDateChange={(start, end) => setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end }))}
+              onDateChange={(start, end) => { setFilters(prev => ({ ...prev, dateFrom: start, dateTo: end })); setPagination(prev => ({ ...prev, page: 1 })); }}
               placeholder="Select date range..."
             />
           </div>
@@ -293,10 +311,11 @@ export default function CustomerReportsPage() {
         {pagination && (
           <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
             <div>
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+              {/* E-13: an empty list read "Showing 1 to 0 of 0". */}
+              Showing {pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0} to{' '}
               {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} {activeView === 'outstanding' ? 'outstanding customers' : 'credit notes'}
             </div>
-            <div>Page {pagination.page} of {pagination.totalPages}</div>
+            <div>Page {pagination.page} of {Math.max(1, pagination.totalPages || 0)}</div>
           </div>
         )}
 

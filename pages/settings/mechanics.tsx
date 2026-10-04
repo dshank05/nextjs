@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useRefreshSharedCache } from '../../hooks/useSharedCaches';
 import { isTenDigitPhone } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useListQuery } from '../../hooks/useListQuery';
@@ -20,6 +21,8 @@ interface Mechanic {
 export default function MechanicDetails() {
   // S-17: see staffdetails - a hook called conditionally, silently stubbed.
   const { showSnackbar } = useSnackbar();
+  // E-08: the bill and party forms read this from a shared cache - refresh it after a save.
+  const refreshShared = useRefreshSharedCache('mechanics');
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -136,6 +139,7 @@ export default function MechanicDetails() {
         setShowModal(false);
         setShowSaveModal(false);
         fetchMechanics();
+        refreshShared();
         showSnackbar('success', `Mechanic ${editingMechanic ? 'updated' : 'created'} successfully`);
       } else {
         const errorData = await response.json();
@@ -186,6 +190,7 @@ export default function MechanicDetails() {
 
       if (response.ok) {
         fetchMechanics();
+        refreshShared();
         showSnackbar('success', `Mechanic ${changingMechanic.newStatus === 'Active' ? 'activated' : 'deactivated'} successfully`);
       } else {
         const errorData = await response.json();

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useRefreshSharedCache } from '../../hooks/useSharedCaches';
 import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useListQuery } from '../../hooks/useListQuery';
@@ -23,6 +24,8 @@ export default function StaffDetails() {
   // than an error. The provider is mounted in _app; if it ever is not, failing
   // loudly is the correct outcome.
   const { showSnackbar } = useSnackbar();
+  // E-08: the bill and party forms read this from a shared cache - refresh it after a save.
+  const refreshShared = useRefreshSharedCache('staff');
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -144,6 +147,7 @@ export default function StaffDetails() {
         setShowModal(false);
         setShowSaveModal(false);
         fetchStaff();
+        refreshShared();
         showSnackbar('success', `Staff member ${editingStaff ? 'updated' : 'created'} successfully`);
       } else {
         const errorData = await response.json();
@@ -196,6 +200,7 @@ export default function StaffDetails() {
 
       if (response.ok) {
         fetchStaff();
+        refreshShared();
         showSnackbar('success', `Staff member ${changingStaff.newStatus === 'Active' ? 'activated' : 'deactivated'} successfully`);
       } else {
         const errorData = await response.json();

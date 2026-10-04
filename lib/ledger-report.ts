@@ -40,14 +40,18 @@ export function ledgerReportRoute(party: keyof typeof PARTY) {
         if (range.end !== null) where.transaction_date.lte = range.end
       }
 
+      // E-14: zero-value rows (cancelled transactions) are not listed, so they
+      // are not paged or counted either - "Page x of y" counted rows that never
+      // showed. They move no balance, so the opening is unaffected.
+      const listed = { ...where, NOT: { debit: 0, credit: 0 } }
       const [entries, total, beforeRange, earlierPages] = await Promise.all([
-        table.findMany({ where, orderBy: ORDER, skip, take: limit }),
-        table.count({ where }),
+        table.findMany({ where: listed, orderBy: ORDER, skip, take: limit }),
+        table.count({ where: listed }),
         range?.start != null
           ? table.aggregate({ where: { [P.idField]: partyId, transaction_date: { lt: range.start } }, _sum: { debit: true, credit: true } })
           : Promise.resolve(null),
         skip > 0
-          ? table.findMany({ where, orderBy: ORDER, take: skip, select: { debit: true, credit: true } })
+          ? table.findMany({ where: listed, orderBy: ORDER, take: skip, select: { debit: true, credit: true } })
           : Promise.resolve([])
       ])
 

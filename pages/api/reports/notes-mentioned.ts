@@ -1,6 +1,7 @@
 import { NextApiRequest, NextApiResponse } from 'next';
 import { prisma } from '../../../lib/db';
-import { reportDayRange, reportPage } from '../../../lib/api/report-query';
+import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
+import { fail } from '../../../lib/api/respond';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'GET') {
@@ -152,16 +153,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(200).json({
       success: true,
       transactions: paginatedTransactions,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum)
-      }
+      // E-11: an empty list is page 1 of 1, not "Page 1 of 0".
+      pagination: reportPagination(pageNum, limitNum, total)
     });
 
   } catch (error) {
-    console.error('Error fetching notes mentioned:', error);
-    return res.status(500).json({ error: 'Failed to fetch notes mentioned' });
+    return fail(res, error, 'fetch the notes mentioned report');
   }
 }

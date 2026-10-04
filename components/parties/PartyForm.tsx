@@ -106,9 +106,20 @@ export function PartyForm({ kind }: { kind: PartyKind }) {
     const next = blank(kind)
     for (const k of Object.keys(next)) next[k] = existing[k] == null ? '' : String(existing[k])
     if (isCustomer) {
-      for (const [s, b] of SHIP_FROM_BILL) next[s] = next[s] || next[b]
-      next.shipping_state_code = next.shipping_state_code && next.shipping_state_code !== '0' ? next.shipping_state_code : next.billing_state_code
-      setCopy(!existing.shipping_name || existing.shipping_name === existing.billing_name)
+      // E-01: "Copy from Billing" is ticked only when there is no shipping
+      // address or EVERY shipping field equals its billing twin - not when
+      // the names alone match (a firm shipping to its own godown under its own
+      // name lost the godown address on any save). There is no stored flag;
+      // the fields are the record of it.
+      const noCode = (c: string) => !c || c === '0'
+      const sameAsBilling = SHIP_FROM_BILL.every(([s, b]) => next[s].trim() === next[b].trim())
+        && (noCode(next.shipping_state_code) || next.shipping_state_code === next.billing_state_code)
+      setCopy(!next.shipping_name.trim() || sameAsBilling)
+      // E-02: a separate shipping address loads as stored - its blank fields
+      // stay blank (filling them from billing saved billing's line 2 / city /
+      // pin / GSTIN into it). Only a missing state code follows billing, and
+      // only when it is the billing state.
+      if (noCode(next.shipping_state_code) && next.shipping_state === next.billing_state) next.shipping_state_code = next.billing_state_code
     }
     setForm(next)
   }, [existing, kind, isCustomer])

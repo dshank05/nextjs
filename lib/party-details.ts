@@ -126,6 +126,8 @@ export interface PartyListQuery {
   limit: number;
   search: string;
   dropdown: boolean;
+  /** E-05: with `dropdown`, inactive rows too (report pickers; the bill and payment forms stay active-only). */
+  includeInactive: boolean;
   status: string;
   sortBy: string;
   sortOrder: 'asc' | 'desc';
@@ -138,6 +140,7 @@ export function parsePartyListQuery(q: Record<string, unknown>): PartyListQuery 
     limit: Math.min(1000, Math.max(1, parseInt(one(q.limit), 10) || 50)),
     search: one(q.search),
     dropdown: one(q.dropdown) === 'true',
+    includeInactive: one(q.includeInactive) === 'true',
     status: one(q.status),
     sortBy: one(q.sortBy) || 'name',
     sortOrder: one(q.sortOrder) === 'desc' ? 'desc' : 'asc'
@@ -148,7 +151,7 @@ export async function listParties(kind: PartyKind, q: PartyListQuery) {
   const cfg = PARTY_CFG[kind];
   const db = prisma as any;
   const where: any = {};
-  if (q.dropdown) where.status = 'Active';
+  if (q.dropdown && !q.includeInactive) where.status = 'Active';
   else if (q.status === 'Active' || q.status === 'Inactive') where.status = q.status;
   if (q.search) {
     where.OR = [cfg.nameField, 'contact_no', 'email', cfg.cityField, cfg.gstinField].map(k => ({ [k]: { contains: q.search } }));

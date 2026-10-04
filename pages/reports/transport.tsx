@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { DateRangeFilter, ClearableInput, ExportMenu, SearchableSelect } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 interface TransportCostRecord {
   type: string;
@@ -27,7 +29,7 @@ export default function TransportCostReport() {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
   const [summary, setSummary] = useState<any>(null);
   const [filters, setFilters] = useState({
@@ -51,14 +53,15 @@ export default function TransportCostReport() {
 
   const fetchCustomers = async () => {
     try {
-      const response = await fetch('/api/customers');
+      // E-10: every row (not the first page of 50), inactive ones too, marked.
+      const response = await fetch(REPORT_PICKER_URL.customer);
       if (response.ok) {
         const data = await response.json();
         setCustomers([
           { id: '', name: 'All Customers' },
           ...data.customers.map((c: any) => ({
             id: c.id.toString(),
-            name: c.billing_name || c.name
+            name: pickerName(c.billing_name || c.name, c.status)
           }))
         ]);
       }
@@ -69,14 +72,14 @@ export default function TransportCostReport() {
 
   const fetchVendors = async () => {
     try {
-      const response = await fetch('/api/vendors');
+      const response = await fetch(REPORT_PICKER_URL.vendor);
       if (response.ok) {
         const data = await response.json();
         setVendors([
           { id: '', name: 'All Vendors' },
           ...data.vendors.map((v: any) => ({
             id: v.id.toString(),
-            name: v.vendor_name
+            name: pickerName(v.vendor_name, v.status)
           }))
         ]);
       }
@@ -85,14 +88,18 @@ export default function TransportCostReport() {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         ...filters
       });
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows('/api/reports/transport-cost', buildParams(), (d: any) => d.data);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
 
       const response = await fetch(`/api/reports/transport-cost?${params}`);
       if (response.ok) {
@@ -126,6 +133,7 @@ export default function TransportCostReport() {
           <h2 className="text-2xl font-bold text-white">Transport Cost Report</h2>
           <ExportMenu
             data={data}
+            fetchAll={exportAll}
             columns={[
               { key: 'type', label: 'Type', enabled: true },
               { key: 'reference_no', label: 'Reference', enabled: true },

@@ -4,6 +4,7 @@ import { Eye, Search } from 'lucide-react';
 import { ClearableInput, ExportMenu, SearchableSelect } from '../../components/common';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { getLocalDateString } from '../../lib/date-utils';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 interface Transaction {
   id: number;
@@ -30,7 +31,8 @@ export default function NotesMentioned() {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    // E-11: "Page 1 of 1" before any search, not "Page 1 of 0".
+    totalPages: 1
   });
 
   const [notesSearch, setNotesSearch] = useState('');
@@ -44,10 +46,7 @@ export default function NotesMentioned() {
     }
   }, [pagination.page, notesSearch, transactionType, dateFrom, dateTo]);
 
-  const fetchTransactions = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         notesSearch,
@@ -55,6 +54,15 @@ export default function NotesMentioned() {
         dateFrom,
         dateTo
       });
+  // E-16: export every matching row, not the page on screen (nothing before a search).
+  const exportAll = async () => notesSearch
+    ? fetchAllReportRows('/api/reports/notes-mentioned', buildParams(), (d: any) => d.transactions)
+    : [];
+
+  const fetchTransactions = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
 
       const response = await fetch(`/api/reports/notes-mentioned?${params}`);
       if (response.ok) {
@@ -137,6 +145,7 @@ export default function NotesMentioned() {
             </button>
             <ExportMenu
               data={transactions}
+              fetchAll={exportAll}
               columns={[
                 { key: 'invoice_no', label: 'Invoice No', enabled: true },
                 { key: 'type', label: 'Type', enabled: true },
@@ -159,7 +168,7 @@ export default function NotesMentioned() {
               Showing {transactions.length > 0 ? ((pagination.page - 1) * pagination.limit) + 1 : 0} to{' '}
               {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} transactions
             </div>
-            <div>Page {pagination.page} of {pagination.totalPages}</div>
+            <div>Page {pagination.page} of {Math.max(1, pagination.totalPages || 0)}</div>
           </div>
         )}
 

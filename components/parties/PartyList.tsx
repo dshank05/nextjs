@@ -7,6 +7,7 @@ import { getLocalDateString } from '../../lib/date-utils'
 import { subscribeBroadcast } from '../../lib/broadcast'
 import { useDebounce } from '../../hooks/useDebounce'
 import { PARTY_UI, usePartyList, type PartyKind } from '../../hooks/useParties'
+import { fetchAllReportRows } from '../../lib/export-all-report'
 
 /**
  * Customer Details and Vendor Details lists (one component; DETAILS_PLAN D3).
@@ -32,6 +33,13 @@ export function PartyList({ kind }: { kind: PartyKind }) {
   useEffect(() => subscribeBroadcast(msg => {
     if (msg.resource === P.plural && ['created', 'updated', 'deleted'].includes(msg.type)) qc.invalidateQueries({ queryKey: [`${kind}Details`] })
   }), [P.plural, kind, qc])
+
+  // E-16: export every matching row (same search and sort), not the page on screen.
+  const exportAll = () => {
+    const p = new URLSearchParams({ sortBy, sortOrder })
+    if (debounced) p.set('search', debounced)
+    return fetchAllReportRows(P.api, p, (d: any) => d[P.plural], 1000)
+  }
 
   const sort = (field: string) => {
     setSortOrder(sortBy === field && sortOrder === 'asc' ? 'desc' : 'asc')
@@ -76,6 +84,7 @@ export function PartyList({ kind }: { kind: PartyKind }) {
           <div className="flex items-center gap-2">
             <ExportMenu
               data={rows}
+              fetchAll={exportAll}
               columns={[
                 { key: 'id', label: 'ID', enabled: true },
                 { key: P.nameField, label: `${P.label} Name`, enabled: true },

@@ -4,6 +4,7 @@ import { Eye } from 'lucide-react';
 import { ClearableInput, ExportMenu } from '../../components/common';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { getLocalDateString } from '../../lib/date-utils';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 interface Purchase {
   id: number;
@@ -30,7 +31,7 @@ export default function BillReferencePurchase() {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   const [billRefSearch, setBillRefSearch] = useState('');
@@ -41,16 +42,20 @@ export default function BillReferencePurchase() {
     fetchPurchases();
   }, [pagination.page, billRefSearch, dateFrom, dateTo]);
 
-  const fetchPurchases = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         billReference: billRefSearch,
         dateFrom,
         dateTo
       });
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows('/api/reports/bill-reference-purchase', buildParams(), (d: any) => d.purchases);
+
+  const fetchPurchases = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
 
       const response = await fetch(`/api/reports/bill-reference-purchase?${params}`);
       if (response.ok) {
@@ -125,6 +130,7 @@ export default function BillReferencePurchase() {
             </button>
             <ExportMenu
               data={purchases}
+              fetchAll={exportAll}
               columns={[
                 { key: 'invoice_no', label: 'Invoice No', enabled: true },
                 { key: 'bill_reference', label: 'Bill Reference', enabled: true },

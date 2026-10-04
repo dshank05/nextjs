@@ -3,6 +3,9 @@ import Link from 'next/link';
 import { ShoppingCart, FileText, DollarSign } from 'lucide-react';
 import { DateRangeFilter } from '../../components/common/DateRangeFilter';
 import { ClearableInput, ExportMenu, SearchableSelect } from '../../components/common';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
+import { fetchAllReportRows } from '../../lib/export-all-report';
+import { useSnackbar } from '../../components/SnackbarProvider';
 
 interface OutstandingVendor {
   id: number;
@@ -58,6 +61,7 @@ type ViewType = 'outstanding' | 'debit-notes';
 
 export default function VendorLedgerPage() {
   const [activeView, setActiveView] = useState<ViewType>('outstanding');
+  const { showSnackbar } = useSnackbar();
 
   // Shared state for both views
   const [outstandingVendors, setOutstandingVendors] = useState<OutstandingVendor[]>([]);
@@ -69,7 +73,7 @@ export default function VendorLedgerPage() {
     page: 1,
     limit: 10,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
 
   // Search and filter states
@@ -101,14 +105,15 @@ export default function VendorLedgerPage() {
 
   const fetchVendorOptions = async () => {
     try {
-      const response = await fetch('/api/vendors?dropdown=true');
+      // E-05: inactive vendors too (they can still be owed), marked.
+      const response = await fetch(REPORT_PICKER_URL.vendor);
       if (response.ok) {
         const data = await response.json();
         setVendorOptions([
           { id: '', name: 'All Vendors' },
           ...data.vendors.map((vendor: any) => ({
             id: vendor.id.toString(),
-            name: vendor.vendor_name || vendor.name || ''
+            name: pickerName(vendor.vendor_name || vendor.name || '', vendor.status)
           }))
         ]);
       }
@@ -117,9 +122,11 @@ export default function VendorLedgerPage() {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
+  // The query the screen sends; the export (E-16) sends the same one for every page.
+  const endpoint = activeView === 'outstanding'
+    ? '/api/reports/vendor-outstanding'
+    : '/api/reports/debit-notes';
+  const buildParams = () => {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
@@ -136,12 +143,19 @@ export default function VendorLedgerPage() {
       if (activeView === 'debit-notes') {
         params.set('paymentStatus', filters.paymentStatus);
       }
+      return params;
+  };
 
-      const endpoint = activeView === 'outstanding'
-        ? '/api/reports/vendor-outstanding'
-        : '/api/reports/debit-notes';
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows(endpoint, buildParams(), (d: any) => activeView === 'outstanding' ? d.outstandingVendors : d.debitNotes);
 
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
       const response = await fetch(`${endpoint}?${params}`);
+      // E-13: a failed load used to be ignored silently.
+      if (!response.ok) showSnackbar('error', 'Could not load the report');
       if (response.ok) {
         const data = await response.json();
         if (activeView === 'outstanding') {
@@ -154,6 +168,7 @@ export default function VendorLedgerPage() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      showSnackbar('error', 'Could not load the report');
     } finally {
       setLoading(false);
     }
@@ -225,6 +240,7 @@ export default function VendorLedgerPage() {
         <div className="flex items-center justify-end gap-2 mb-4">
           <ExportMenu
             data={activeView === 'outstanding' ? outstandingVendors : debitNotes}
+            fetchAll={exportAll}
             columns={
               activeView === 'outstanding'
                 ? [
@@ -335,10 +351,11 @@ export default function VendorLedgerPage() {
         {pagination && (
           <div className="mb-4 flex justify-between items-center text-sm text-slate-400">
             <div>
-              Showing {(pagination.page - 1) * pagination.limit + 1} to{' '}
+              {/* E-13: an empty list read "Showing 1 to 0 of 0". */}
+              Showing {pagination.total > 0 ? (pagination.page - 1) * pagination.limit + 1 : 0} to{' '}
               {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} {activeView === 'outstanding' ? 'outstanding vendors' : 'debit notes'}
             </div>
-            <div>Page {pagination.page} of {pagination.totalPages}</div>
+            <div>Page {pagination.page} of {Math.max(1, pagination.totalPages || 0)}</div>
           </div>
         )}
 
@@ -380,14 +397,8 @@ export default function VendorLedgerPage() {
                     <td className="text-slate-300">{vendor.formattedDate}</td>
                     <td className="text-slate-300">{vendor.last_transaction_type}</td>
                     <td className="text-slate-300">
-                      {vendor.reference_type === 'purchase' && vendor.reference_url ? (
-                        <Link
-                          href={vendor.reference_url}
-                          className="text-blue-400 hover:text-blue-300 underline font-medium"
-                        >
-                          {vendor.reference_display}
-                        </Link>
-                      ) : vendor.reference_type === 'debit_note' && vendor.reference_url ? (
+                      {/* E-17: payments and refunds link too, as on Customer Reports. */}
+                      {vendor.reference_url ? (
                         <Link
                           href={vendor.reference_url}
                           className="text-blue-400 hover:text-blue-300 underline font-medium"

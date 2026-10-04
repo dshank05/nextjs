@@ -69,12 +69,12 @@
       "billing_state": "Uttar Pradesh",
       "billing_gstin": "09ABCDE1234F1Z5",
       "shipping_name": "Ravi Motors",
-      "shipping_address": "12 Ring Road",
+      "shipping_address": "Plot 7, Transport Nagar",
       "shipping_address_2": "",
-      "shipping_city": "Agra",
-      "shipping_pin_code": "282001",
+      "shipping_city": "Mathura",
+      "shipping_pin_code": "281001",
       "shipping_state": "Uttar Pradesh",
-      "shipping_gstin": "09ABCDE1234F1Z5",
+      "shipping_gstin": "",
       "contact_no": "9876500001",
       "contact_no_2": null,
       "contact_no_3": null,
@@ -127,7 +127,7 @@
       "billing_gstin": "",
       "shipping_name": "Asha Godown",
       "shipping_address": "Okhla Ph 2",
-      "shipping_address_2": "Lane 2",
+      "shipping_address_2": "",
       "shipping_city": "Delhi",
       "shipping_pin_code": "110020",
       "shipping_state": "Delhi",
@@ -330,7 +330,7 @@
     ],
     [
       "search Old (from page 2)",
-      "?page=2&limit=10&search=Old&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
+      "?page=1&limit=10&search=Old&customerFilter=&dateFrom=&dateTo=&amountMin=&amountMax=&sortBy=balance&sortOrder=desc"
     ]
   ],
   "vendorOutstandingQueries": [

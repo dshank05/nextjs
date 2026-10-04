@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ConfirmationModal } from '../../components/ConfirmationModal';
 import { useSnackbar } from '../../components/SnackbarProvider';
+import { useRefreshSharedCache } from '../../hooks/useSharedCaches';
 import { isValidGstin } from '../../lib/gst';
 import { isTenDigitPhone, isValidEmail } from '../../lib/validators';
 
@@ -21,6 +22,8 @@ interface BusinessDetailsData {
 
 export default function BusinessDetails() {
   const { showSnackbar } = useSnackbar();
+  // E-08: the bill and party forms read this from a shared cache - refresh it after a save.
+  const refreshShared = useRefreshSharedCache('businessDetails');
   const [businessData, setBusinessData] = useState<BusinessDetailsData>({
     // S-52: 1 was a guess at the singleton's id. 0 means "not loaded yet", which
     // is what the API's id-less PUT branch is for - it finds the existing row
@@ -165,6 +168,7 @@ export default function BusinessDetails() {
         setEditedData(updatedData);
         setIsEditing(false);
         setPendingData(null);
+        refreshShared();
         showSnackbar('success', result.message || 'Business details saved successfully!');
       } else {
         // Error - keep modals open and show error

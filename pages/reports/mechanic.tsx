@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { DateRangeFilter, ExportMenu, SearchableSelect } from '../../components/common';
 import { getLocalDateString } from '../../lib/date-utils';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
+import { fetchAllReportRows } from '../../lib/export-all-report';
 
 interface MechanicSaleRecord {
   type: string;
@@ -21,7 +23,7 @@ export default function MechanicSalesReport() {
     page: 1,
     limit: 50,
     total: 0,
-    totalPages: 0
+    totalPages: 1
   });
   const [summary, setSummary] = useState<any>(null);
   const [filters, setFilters] = useState({
@@ -44,14 +46,15 @@ export default function MechanicSalesReport() {
 
   const fetchMechanics = async () => {
     try {
-      const response = await fetch('/api/mechanics');
+      // E-10: every row (not the first page of 50), inactive ones too, marked.
+      const response = await fetch(REPORT_PICKER_URL.mechanic);
       if (response.ok) {
         const data = await response.json();
         setMechanics([
           { id: '', name: 'All Mechanics' },
           ...data.mechanics.map((m: any) => ({
             id: m.id.toString(),
-            name: m.name
+            name: pickerName(m.name, m.status)
           }))
         ]);
       }
@@ -60,14 +63,18 @@ export default function MechanicSalesReport() {
     }
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams({
+  const buildParams = () => new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
         ...filters
       });
+  // E-16: export every matching row, not the page on screen.
+  const exportAll = () => fetchAllReportRows('/api/reports/mechanic-sales', buildParams(), (d: any) => d.data);
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      const params = buildParams();
 
       const response = await fetch(`/api/reports/mechanic-sales?${params}`);
       if (response.ok) {
@@ -100,6 +107,7 @@ export default function MechanicSalesReport() {
           <h2 className="text-2xl font-bold text-white">Mechanic Sales Report</h2>
           <ExportMenu
             data={data}
+            fetchAll={exportAll}
             columns={[
               { key: 'type', label: 'Type', enabled: true },
               { key: 'reference_no', label: 'Reference', enabled: true },

@@ -304,7 +304,9 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     // S-29: this was Math.random().toString(36) - not a cryptographic
     // source, and about 60 bits of a weak generator. NextAuth does not use
     // auth_key today, which is the only reason it did not matter.
-    const authKey = randomBytes(24).toString("hex")
+    // E-03: 16 bytes = 32 hex characters - the column is VARCHAR(32), and
+    // MySQL in strict mode refuses anything longer (24 bytes made 48).
+    const authKey = randomBytes(16).toString("hex")
 
     // Create new user
     const user = await prisma.user.create({

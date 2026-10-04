@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '../auth/[...nextauth]';
 import { prisma } from '../../../lib/db';
 import { reportDayRange, reportPage, reportPagination } from '../../../lib/api/report-query';
+import { fail } from '../../../lib/api/respond';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -37,10 +38,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ]
       };
 
-      // Search by debit note number
+      // Search by debit note number or vendor name (E-17: credit notes search
+      // the customer name too; this searched the note number only).
       if (search) {
+        const text = String(search);
         whereConditions.AND.push({
-          debit_note_no: { contains: search }
+          OR: [
+            { debit_note_no: { contains: text } },
+            { vendor: { vendor_name: { contains: text } } }
+          ]
         });
       }
 
@@ -194,8 +200,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pagination: reportPagination(pageNum, limitNum, total)
       });
     } catch (error) {
-      console.error('Error fetching debit notes:', error);
-      return res.status(500).json({ message: 'Failed to fetch debit notes', error: String(error) });
+      // E-15: no raw error text to the browser.
+      return fail(res, error, 'fetch debit notes');
     }
   } else {
     res.setHeader('Allow', ['GET']);

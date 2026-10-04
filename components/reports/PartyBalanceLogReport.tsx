@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FileText, TrendingUp, TrendingDown } from 'lucide-react';
 import { SearchableSelect } from '../common';
+import { REPORT_PICKER_URL, pickerName } from '../../lib/party-details-picker';
 
 interface BalanceLog {
   id: number;
@@ -16,8 +17,8 @@ interface BalanceLog {
 }
 
 const PARTIES = {
-  vendor: { label: 'Vendor', listUrl: '/api/vendors?dropdown=true', listKey: 'vendors', nameField: 'vendor_name', idParam: 'vendor_id', api: '/api/reports/vendor-balance-logs' },
-  customer: { label: 'Customer', listUrl: '/api/customers?dropdown=true', listKey: 'customers', nameField: 'billing_name', idParam: 'customer_id', api: '/api/reports/customer-balance-logs' }
+  vendor: { label: 'Vendor', listUrl: REPORT_PICKER_URL.vendor, listKey: 'vendors', nameField: 'vendor_name', idParam: 'vendor_id', api: '/api/reports/vendor-balance-logs' },
+  customer: { label: 'Customer', listUrl: REPORT_PICKER_URL.customer, listKey: 'customers', nameField: 'billing_name', idParam: 'customer_id', api: '/api/reports/customer-balance-logs' }
 } as const;
 
 type Totals = Record<'total_paid' | 'total_allocated' | 'total_refunded' | 'total_refund_allocated', number>;
@@ -169,9 +170,10 @@ export function PartyBalanceLogReport({ party }: { party: keyof typeof PARTIES }
                 {P.label} <span className="text-red-400">*</span>
               </label>
               <SearchableSelect
+                // E-05: inactive parties too, marked.
                 options={vendors.map(v => ({
                   id: v.id.toString(),
-                  name: v[P.nameField]
+                  name: pickerName(v[P.nameField], v.status)
                 }))}
                 selectedValue={selectedVendor}
                 onSelectionChange={(value) => setSelectedVendor(value || '')}

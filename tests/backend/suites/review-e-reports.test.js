@@ -213,7 +213,12 @@ describe('Review E - reports, with the query strings the screens send', () => {
     const page = (await screenCall('debitNotes')).body;
     ex('E-R7', 'Debit Notes page: the same note', page.pagination.total === 1 && page.debitNotes[0].id === store.purchase_returns[0].id, page);
     const byName = (await screenCall('debitNotes', 'default', { search: 'Bosch' })).body;
-    ex('E-R7', 'twin: searching the vendor name on debit notes finds nothing (credit notes search the customer name)', byName.pagination.total === 0, byName.pagination);
+    // E-17 fixed: debit notes search the vendor name too, as credit notes search the customer name.
+    ex('E-R7', 'twin: searching the vendor name on debit notes finds the note', byName.pagination.total === 1 && byName.debitNotes[0].vendor_name === 'Bosch', byName.pagination);
+    const byNo = (await screenCall('debitNotes', 'default', { search: String(store.purchase_returns[0].debit_note_no).slice(-3) })).body;
+    ex('E-R7', 'and still the note number', byNo.pagination.total === 1, byNo.pagination);
+    const none = (await screenCall('debitNotes', 'default', { search: 'Nobody' })).body;
+    ex('E-R7', 'and nothing for another name', none.pagination.total === 0, none.pagination);
   });
 
   sc('E-R8', 'Ledger accounts (screen query after picking the party): opening from September, running balance, money rows only', async () => {
@@ -318,19 +323,56 @@ describe('Review E - reports, with the query strings the screens send', () => {
     const n = (await screenCall('notes', 'search urgent', { notesSearch: 'zzz' })).body;
     ex('E-11', 'minimum stock with nothing low: totalPages 1 (today 0)', ms.products.length === 0 && ms.pagination.totalPages === 1, ms.pagination);
     ex('E-11', 'notes with nothing found: totalPages 1 (today 0)', n.transactions.length === 0 && n.pagination.totalPages === 1, n.pagination);
-  }, { open: 'E-11' });
+  });
 
   sc('E-14', 'the ledger account\'s count matches the rows it lists (0 / 0 rows are not listed)', async () => {
     await create(K.sale, { partyId: 2, date: D(6), items: [[3, 1, 0, 0]] });
     await create(K.sale, { partyId: 2, date: D(7), items: [[1, 1, 100, 0]] });
     const L = (await screenCall('customerLedger', 'after pick', { customer_id: '2' })).body;
     ex('E-14', 'pagination.total = listed rows (today 2 for 1 row: the zero bill is counted, not shown)', L.pagination.total === L.entries.length, { total: L.pagination.total, rows: L.entries.length });
-  }, { open: 'E-14' });
+  });
 
-  failing('E-12 the stock reports\' filter lists load from routes that exist (captured: /api/categories, /api/companies, /api/models -> 404)  [OPEN E-12]', () => {
+  // E-12 fixed: the screens now fetch /api/products/<lookup>?dropdown=true. The page harness that
+  // captured the old URLs is not in this repo, so the URLs are read from the page sources here.
+  test('E-12 the stock reports\' filter lists load from routes that exist and answer the keys the screens read', async () => {
     const fs = require('fs'), path = require('path');
-    const exists = (p) => ['.ts', '/index.ts'].some(s => fs.existsSync(path.join(__dirname, '../../../pages', p + s)));
-    expect(['/api/categories', '/api/companies', '/api/models'].every(exists)).toBe(true);
+    const root = path.join(__dirname, '../../..');
+    const src = ['pages/reports/minimumstock.tsx', 'pages/reports/openingclosing.tsx'].map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+    const urls = [...src.matchAll(/fetch\('(\/api\/[^'?]+)(\?[^']*)?'\)/g)].map(m => [m[1], m[2] || '']);
+    expect(urls.map(u => u[0]).sort()).toEqual(['/api/products/categories', '/api/products/categories', '/api/products/companies', '/api/products/models']);
+    const KEY = { categories: 'categories', companies: 'companies', models: 'models' };
+    for (const [u, q] of urls) {
+      const name = u.split('/').pop();
+      const h = require(path.join(root, 'pages', u, 'index')).default;
+      const r = await call(h, 'GET', qs(q.slice(1)));
+      expect(r.status).toBe(200);
+      expect(Array.isArray(r.body[KEY[name]])).toBe(true);
+    }
+  });
+
+  sc('E-16', 'exports: fetchAllReportRows walks every page of the screen\'s query (ledger, debit notes)', async () => {
+    await story();
+    const { fetchAllReportRows } = require('../../../lib/export-all-report');
+    const keep = global.fetch;
+    const asked = [];
+    global.fetch = async (url) => {
+      const u = new URL(url, 'http://x');
+      asked.push(u.searchParams.get('page'));
+      const r = await call(R[u.pathname.replace('/api/reports/', '')], 'GET', Object.fromEntries(u.searchParams));
+      return { ok: r.status === 200, json: async () => r.body };
+    };
+    try {
+      const lq = qs(Q('customerLedger', 'after pick'));
+      const whole = (await call(R['customer-ledger-accounting'], 'GET', { ...lq, limit: '1000' })).body.entries;
+      const paged = await fetchAllReportRows('/api/reports/customer-ledger-accounting', lq, d => d.entries, 2);
+      ex('E-16', 'ledger: two rows a page, every row, in order', whole.length > 2 && JSON.stringify(paged.map(e => e.id)) === JSON.stringify(whole.map(e => e.id)) && asked.length === Math.ceil(whole.length / 2), { whole: whole.length, paged: paged.length, asked });
+      const dn = await fetchAllReportRows('/api/reports/debit-notes', qs(Q('debitNotes')), d => d.debitNotes, 1);
+      ex('E-16', 'debit notes: all of them', dn.length === store.purchase_returns.filter(r => r.debit_note_no).length, dn.length);
+      global.fetch = async () => ({ ok: false, json: async () => ({}) });
+      let threw = false;
+      try { await fetchAllReportRows('/api/reports/debit-notes', {}, d => d.debitNotes); } catch { threw = true; }
+      ex('E-16', 'a failed page throws (ExportMenu then falls back to the rows on screen)', threw);
+    } finally { global.fetch = keep; }
   });
 
   // ---------------------------------------------------------------- questions for the owner (current behaviour, passing)
